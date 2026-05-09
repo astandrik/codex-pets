@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { toPublicUrl } from "@/lib/base-path";
 import { getApprovedPetBySlug, incrementDownload } from "@/lib/pets/repository";
 
 export const runtime = "nodejs";
@@ -16,5 +17,6 @@ export async function GET(
   }
 
   await incrementDownload(slug);
-  return NextResponse.redirect(pet.zipUrl);
+  const zipUrl = pet.zipUrl.startsWith("/") ? toPublicUrl(pet.zipUrl) : pet.zipUrl;
+  return NextResponse.redirect(zipUrl);
 }
