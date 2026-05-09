@@ -37,7 +37,7 @@ export default async function MyPetsPage() {
   const pets = principal ? await listPetsForOwner(principal.userId) : [];
 
   return (
-    <Container as="main" maxWidth="xl" className="page-shell">
+    <Container as="main" maxWidth="xl" gutters={5} className="page-shell">
       <Flex direction="column" gap={3} className="page-section-header">
         <Label theme="info">Account</Label>
         <Text variant="display-2" as="h1">

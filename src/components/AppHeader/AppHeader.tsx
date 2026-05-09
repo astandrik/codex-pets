@@ -13,7 +13,7 @@ export async function AppHeader() {
     principal && isAdminUser(principal) ? await countPendingPets() : 0;
 
   return (
-    <Container as="header" maxWidth="xl" className="app-header">
+    <Container as="header" maxWidth="xl" gutters={5} className="app-header">
       <Flex alignItems="center" justifyContent="space-between" gap={4} wrap>
         <Link href="/" className="app-header__brand">
           <span className="app-header__mark" aria-hidden="true">

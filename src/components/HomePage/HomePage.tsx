@@ -34,7 +34,7 @@ function EmptyIcon() {
 
 export function HomePage({ pets, q, kind }: HomePageProps) {
   return (
-    <Container as="main" maxWidth="xl" className="page-shell">
+    <Container as="main" maxWidth="xl" gutters={5} className="page-shell">
       <Card view="filled" type="container" className="home-hero-card">
         <Flex
           as="section"

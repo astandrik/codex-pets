@@ -121,7 +121,7 @@ export default async function PetPage({ params }: PetPageProps) {
   ]);
 
   return (
-    <Container as="main" maxWidth="xl" className="page-shell">
+    <Container as="main" maxWidth="xl" gutters={5} className="page-shell">
       {petJsonLd ? (
         <script
           type="application/ld+json"

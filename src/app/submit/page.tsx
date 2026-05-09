@@ -42,7 +42,7 @@ export default async function SubmitPage() {
   const principal = await getCurrentPrincipal();
 
   return (
-    <Container as="main" maxWidth="xl" className="page-shell">
+    <Container as="main" maxWidth="xl" gutters={5} className="page-shell">
       <Flex direction="column" gap={3} className="page-section-header">
         <Label theme="info">Upload</Label>
         <Text variant="display-2" as="h1">

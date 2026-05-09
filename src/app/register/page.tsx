@@ -23,7 +23,7 @@ export default async function RegisterPage() {
   }
 
   return (
-    <Container as="main" maxWidth="m" className="page-shell">
+    <Container as="main" maxWidth="m" gutters={5} className="page-shell">
       <Flex direction="column" gap={3} className="page-section-header auth-page-header">
         <Label theme="info">Account</Label>
         <Text variant="display-2" as="h1">

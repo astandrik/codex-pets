@@ -3,6 +3,7 @@
 import { DefinitionList, Flex, Label } from "@gravity-ui/uikit";
 
 import type { PublicPet } from "@/lib/pets/types";
+import { formatUtcDateTime } from "@/lib/ui/dates";
 
 type PetMetaListProps = Pick<
   PublicPet,
@@ -32,11 +33,11 @@ export function PetMetaList({
         {ownerName ?? "Anonymous"}
       </DefinitionList.Item>
       <DefinitionList.Item name="Submitted">
-        {new Date(createdAt).toLocaleString()}
+        {formatUtcDateTime(createdAt)}
       </DefinitionList.Item>
       {approvedAt ? (
         <DefinitionList.Item name="Approved">
-          {new Date(approvedAt).toLocaleString()}
+          {formatUtcDateTime(approvedAt)}
         </DefinitionList.Item>
       ) : null}
       {tags.length > 0 ? (

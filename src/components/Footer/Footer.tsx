@@ -10,7 +10,7 @@ const YDB_URL = "https://ydb.tech/";
 
 export function Footer() {
   return (
-    <Container as="footer" maxWidth="xl" className="footer">
+    <Container as="footer" maxWidth="xl" gutters={5} className="footer">
       <div className="footer__content">
         <Text variant="caption-2" color="secondary" className="footer__note">
           Codex pet packs are community-submitted.

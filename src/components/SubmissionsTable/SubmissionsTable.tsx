@@ -12,6 +12,7 @@ import {
 
 import { AdminSubmissionActions } from "@/components/AdminSubmissionActions/AdminSubmissionActions";
 import { kindLabelTheme, statusLabelText, statusLabelTheme } from "@/lib/ui/labels";
+import { formatUtcDateTime } from "@/lib/ui/dates";
 import type { ApprovalStatus, PetKind } from "@/lib/pets/types";
 import "./SubmissionsTable.scss";
 
@@ -82,7 +83,7 @@ export function SubmissionsTable({ rows }: SubmissionsTableProps) {
         name: "Submitted",
         template: (row) => (
           <Text variant="caption-2">
-            {new Date(row.createdAt).toLocaleString()}
+            {formatUtcDateTime(row.createdAt)}
           </Text>
         ),
         width: 180,
