@@ -149,15 +149,15 @@ export default async function PetPage({ params }: PetPageProps) {
               size="l"
               href={withBasePath(`/api/pets/${pet.slug}/download`)}
             >
-              <ArrowDownToLine />
+              <ArrowDownToLine width={18} height={18} />
               Download ZIP
             </Button>
             <Button view="outlined" size="l" href={petJsonUrl} target="_blank">
-              <FileText />
+              <FileText width={18} height={18} />
               pet.json
             </Button>
             <Button view="outlined" size="l" href={spritesheetUrl} target="_blank">
-              <Picture />
+              <Picture width={18} height={18} />
               spritesheet
             </Button>
             {canAdminDelete ? (

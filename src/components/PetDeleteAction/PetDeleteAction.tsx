@@ -51,8 +51,10 @@ export function PetDeleteAction({ petId, mode }: PetDeleteActionProps) {
 
   return (
     <>
-      <Button view="outlined-danger" onClick={() => setOpen(true)}>
-        <TrashBin />
+      <Button view="outlined-danger" size="l" onClick={() => setOpen(true)}>
+        <Button.Icon>
+          <TrashBin />
+        </Button.Icon>
         Delete
       </Button>
       <Dialog open={open} onClose={() => setOpen(false)} size="s">

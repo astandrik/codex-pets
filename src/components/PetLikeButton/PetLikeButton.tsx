@@ -23,6 +23,7 @@ export function PetLikeButton({ slug, initialLikeCount }: PetLikeButtonProps) {
   const [busy, setBusy] = useState(false);
   const [liked, setLiked] = useState(false);
   const storageKey = `codex-pets-liked:${slug}`;
+  const label = liked ? "Liked" : "Like";
 
   async function likePet() {
     if (busy || liked) return;
@@ -67,9 +68,11 @@ export function PetLikeButton({ slug, initialLikeCount }: PetLikeButtonProps) {
       className={liked ? "pet-like-button pet-like-button_liked" : "pet-like-button"}
       aria-label={`${formatMetricCount(count)} likes`}
     >
-      {liked ? <HeartFill /> : <Heart />}
-      {liked ? "Liked" : "Like"}
-      <span className="pet-like-button__count">{formatMetricCount(count)}</span>
+      <Button.Icon>{liked ? <HeartFill /> : <Heart />}</Button.Icon>
+      <span className="pet-like-button__label">
+        {label}
+        <span className="pet-like-button__count">{formatMetricCount(count)}</span>
+      </span>
     </Button>
   );
 }

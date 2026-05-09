@@ -1,4 +1,10 @@
 .pet-like-button {
+  &__label {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.25em;
+  }
+
   &__count {
     font-variant-numeric: tabular-nums;
   }
