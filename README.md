@@ -35,8 +35,70 @@ NEXT_PUBLIC_APP_URL=https://example.com/codex-pets
 The public gallery renders without secrets. For account login, submit, moderation,
 and metrics you need `YDB_PETS_ENDPOINT`, `YDB_PETS_DATABASE`, and auth env.
 
-For a local-ydb-backed deployment, point the app at a reachable tenant endpoint,
-for example:
+### Local YDB quickstart
+
+For local app development, a plain local-ydb root database at `/local` is enough;
+you do not need a CMS tenant or dynamic node. The app runs on the host, so the
+local-ydb container must publish gRPC on `127.0.0.1:2136`.
+
+If you use the `local-ydb` MCP, start from a clean root database with
+`local_ydb_destroy_stack(confirm=true)` and
+`local_ydb_bootstrap_root_database(confirm=true)`. If the resulting container
+does not publish `127.0.0.1:2136`, recreate only the container on the same
+volume with a host gRPC port:
+
+```bash
+docker rm -f ydb-local
+docker run -d --name ydb-local --no-healthcheck --network ydb-net \
+  --restart unless-stopped \
+  -p 127.0.0.1:2136:2136 \
+  -p 127.0.0.1:8765:8765 \
+  -v ydb-local-data:/ydb_data \
+  -e GRPC_PORT=2136 \
+  -e MON_PORT=8765 \
+  -e GRPC_TLS_PORT= \
+  -e YDB_GRPC_ENABLE_TLS=0 \
+  -e YDB_ANONYMOUS_CREDENTIALS=1 \
+  -e YDB_LOCAL_SURVIVE_RESTART=1 \
+  ghcr.io/ydb-platform/local-ydb:26.1.1.6
+```
+
+Use these local app env vars:
+
+```bash
+AUTH_MODE=single-user
+AUTH_SINGLE_USER_ID=local-admin
+AUTH_SINGLE_USER_EMAIL=local-admin@example.com
+AUTH_SINGLE_USER_NAME="Local Admin"
+SESSION_COOKIE_SECRET=dev-cookie-secret
+PASSWORD_PEPPER=dev-password-pepper
+INITIAL_ADMIN_EMAILS=local-admin@example.com
+
+YDB_ANONYMOUS_CREDENTIALS=1
+YDB_ENDPOINT=grpc://127.0.0.1:2136
+YDB_PETS_ENDPOINT=grpc://127.0.0.1:2136
+YDB_PETS_DATABASE=/local
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+`YDB_ENDPOINT` is needed for local host-to-Docker runs because `ydb-sdk`
+otherwise follows discovery endpoints that may contain the Docker container
+hostname.
+
+Apply schema, seed data, and start the app:
+
+```bash
+docker cp ydb/schema.yql ydb-local:/tmp/codex-pets-schema.yql
+docker exec ydb-local /ydb -e grpc://localhost:2136 -d /local scripting yql -f /tmp/codex-pets-schema.yql
+npm run seed:dev:reset
+npm run dev -- --port 3000
+```
+
+Open `http://localhost:3000`. The local YDB monitoring UI is
+`http://127.0.0.1:8765`.
+
+For a remote or tenant-backed deployment, point the app at a reachable tenant
+endpoint, for example:
 
 ```bash
 YDB_PETS_ENDPOINT=grpc://ydb-host:2137
@@ -70,6 +132,14 @@ Create tables manually on the existing local-ydb tenant:
 ```bash
 ydb -e "$YDB_PETS_ENDPOINT" -d "$YDB_PETS_DATABASE" scripting yql -f ydb/schema.yql
 ```
+
+Seed local development data after the schema exists:
+
+```bash
+npm run seed:dev
+```
+
+Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 
 ## Current behavior
 
