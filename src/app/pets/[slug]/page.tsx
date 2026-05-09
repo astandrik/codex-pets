@@ -22,7 +22,9 @@ import { getPetBySlug, getPetMetrics } from "@/lib/pets/repository";
 import type { ApprovalStatus } from "@/lib/pets/types";
 import {
   buildPageTitle,
+  getBreadcrumbJsonLd,
   getOpenGraphImages,
+  getPetJsonLd,
   getTwitterImages,
   SITE_NAME,
 } from "@/lib/site-metadata";
@@ -103,9 +105,33 @@ export default async function PetPage({ params }: PetPageProps) {
     principal && pet.ownerId && principal.userId === pet.ownerId,
   );
   const canAdminDelete = Boolean(principal && isAdminUser(principal));
+  const petJsonLd =
+    pet.status === "approved"
+      ? getPetJsonLd({
+          ...pet,
+          zipUrl: pet.zipUrl,
+          petJsonUrl,
+          spritesheetUrl,
+        })
+      : null;
+  const breadcrumbJsonLd = getBreadcrumbJsonLd([
+    { name: "Home", path: "/" },
+    { name: "Gallery", path: "/" },
+    { name: pet.displayName, path: `/pets/${pet.slug}` },
+  ]);
 
   return (
     <Container as="main" maxWidth="xl" className="page-shell">
+      {petJsonLd ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(petJsonLd) }}
+        />
+      ) : null}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
       <PetBreadcrumbs displayName={pet.displayName} />
 
       <header className="pet-detail__header">
@@ -174,14 +200,13 @@ export default async function PetPage({ params }: PetPageProps) {
           <StatePreview spritesheetUrl={spritesheetUrl} />
         </Card>
         <Card view="raised" className="pet-detail__meta-card">
-          <PetMetaList
-            slug={pet.slug}
-            kind={pet.kind}
-            ownerName={pet.ownerName}
-            contactEmail={pet.contactEmail}
-            createdAt={pet.createdAt}
-            approvedAt={pet.approvedAt}
-            tags={pet.tags}
+            <PetMetaList
+              slug={pet.slug}
+              kind={pet.kind}
+              ownerName={pet.ownerName}
+              createdAt={pet.createdAt}
+              approvedAt={pet.approvedAt}
+              tags={pet.tags}
           />
         </Card>
       </section>

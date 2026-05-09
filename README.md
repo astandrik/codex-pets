@@ -165,6 +165,8 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 
 - `robots.txt` is served from `src/app/robots.ts`.
 - `sitemap.xml` is dynamic and includes all currently approved pets.
+- `llms.txt` is dynamic and provides a curated AI-readable map of the gallery,
+  manifest, and approved pet pages.
 - The sitemap updates automatically after moderation changes; no cron or manual
   rebuild is needed for new approved pets to appear there.
 - Yandex Metrika is loaded in production only and tracks:
@@ -181,7 +183,7 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - `/admin/submissions` — admin moderation queue
 - `/pets/[slug]` — pet detail page
 - `/api/manifest` — public slim manifest
-- `/robots.txt`, `/sitemap.xml` — SEO outputs
+- `/robots.txt`, `/sitemap.xml`, `/llms.txt` — SEO and AI-readable outputs
 
 ## Private deployment notes
 

@@ -11,7 +11,6 @@ import {
 } from "@gravity-ui/uikit";
 import { Magnifier } from "@gravity-ui/icons";
 
-import { withBasePath } from "@/lib/base-path";
 import "./GalleryFilter.scss";
 
 type GalleryFilterProps = {
@@ -37,13 +36,13 @@ export function GalleryFilter({ defaultQuery, defaultKind }: GalleryFilterProps)
     if (query.trim()) params.set("q", query.trim());
     if (kind && kind !== "all") params.set("kind", kind);
     const search = params.toString();
-    router.push(withBasePath(search ? `/?${search}` : "/"));
+    router.push(search ? `/?${search}` : "/");
   }
 
   function onReset() {
     setQuery("");
     setKind("all");
-    router.push(withBasePath("/"));
+    router.push("/");
   }
 
   return (

@@ -60,6 +60,10 @@
     aspect-ratio: 192 / 208;
     image-rendering: pixelated;
     background-repeat: no-repeat;
+    animation: pet-card-sprite-idle
+      var(--pet-card-frame-duration, 840ms)
+      steps(var(--pet-card-frame-count, 6))
+      infinite;
   }
 
   &__body {
@@ -107,5 +111,23 @@
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     color: var(--acc);
     font-weight: 650;
+  }
+}
+
+@keyframes pet-card-sprite-idle {
+  from {
+    background-position: 0% 0%;
+  }
+
+  to {
+    background-position: var(--pet-card-frame-end, 85.7142857143%) 0%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-card {
+    &__sprite {
+      animation: none;
+    }
   }
 }

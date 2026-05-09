@@ -4,11 +4,38 @@ import { toPublicUrl, withBasePath } from "@/lib/base-path";
 
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: {
-      userAgent: "*",
-      allow: [withBasePath("/"), withBasePath("/pets/"), withBasePath("/submit")],
-      disallow: [withBasePath("/admin"), withBasePath("/api/admin")],
-    },
+    rules: [
+      {
+        userAgent: "*",
+        allow: [
+          withBasePath("/"),
+          withBasePath("/pets/"),
+          withBasePath("/submit"),
+          withBasePath("/llms.txt"),
+        ],
+        disallow: [withBasePath("/admin"), withBasePath("/api/admin")],
+      },
+      {
+        userAgent: "OAI-SearchBot",
+        allow: [
+          withBasePath("/"),
+          withBasePath("/pets/"),
+          withBasePath("/submit"),
+          withBasePath("/llms.txt"),
+        ],
+        disallow: [withBasePath("/admin"), withBasePath("/api/admin")],
+      },
+      {
+        userAgent: "GPTBot",
+        allow: [
+          withBasePath("/"),
+          withBasePath("/pets/"),
+          withBasePath("/submit"),
+          withBasePath("/llms.txt"),
+        ],
+        disallow: [withBasePath("/admin"), withBasePath("/api/admin")],
+      },
+    ],
     sitemap: toPublicUrl("/sitemap.xml"),
   };
 }

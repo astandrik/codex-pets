@@ -15,6 +15,7 @@ import {
   SubmissionsTable,
   type SubmissionRow,
 } from "@/components/SubmissionsTable/SubmissionsTable";
+import { withBasePath } from "@/lib/base-path";
 
 function EmptyIcon() {
   return <Picture width={64} height={64} />;
@@ -70,7 +71,7 @@ export default async function AdminSubmissionsPage() {
             title="Sign in required"
             description="Sign in with an admin account to open the moderation queue."
             actions={
-              <Button view="action" href="/login">
+              <Button view="action" href={withBasePath("/login")}>
                 Login
               </Button>
             }

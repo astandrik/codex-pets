@@ -11,6 +11,7 @@ import {
 
 import { Picture } from "@gravity-ui/icons";
 import { MyPetActions } from "@/components/MyPetActions/MyPetActions";
+import { withBasePath } from "@/lib/base-path";
 
 function EmptyIcon() {
   return <Picture width={64} height={64} />;
@@ -57,10 +58,10 @@ export default async function MyPetsPage() {
             description="Submissions tied to your account will appear here once you sign in."
             actions={
               <Flex gap={2}>
-                <Button view="action" href="/login">
+                <Button view="action" href={withBasePath("/login")}>
                   Login
                 </Button>
-                <Button view="outlined" href="/register">
+                <Button view="outlined" href={withBasePath("/register")}>
                   Create account
                 </Button>
               </Flex>
@@ -84,7 +85,7 @@ export default async function MyPetsPage() {
             title="No submissions yet"
             description="Pets you submit from this account will appear here."
             actions={
-              <Button view="action" href="/submit">
+              <Button view="action" href={withBasePath("/submit")}>
                 Submit a pet
               </Button>
             }

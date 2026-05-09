@@ -1,10 +1,11 @@
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { Card, Flex, Label, Text } from "@/components/GravityUI/GravityUI";
 import { ArrowDownToLine, ArrowRight, Heart } from "@gravity-ui/icons";
 
 import { kindLabelTheme, statusLabelText, statusLabelTheme } from "@/lib/ui/labels";
 import { formatMetricCount, metricLabel } from "@/lib/ui/metrics";
-import { PET_SHEET } from "@/lib/pets/types";
+import { PET_SHEET, PET_STATES } from "@/lib/pets/types";
 import type { PublicPet } from "@/lib/pets/types";
 import "./PetCard.scss";
 
@@ -13,22 +14,35 @@ type PetCardProps = {
   showStatus?: boolean;
 };
 
+type SpriteStyle = CSSProperties & {
+  "--pet-card-frame-count": number;
+  "--pet-card-frame-duration": string;
+  "--pet-card-frame-end": string;
+};
+
+const PREVIEW_STATE = PET_STATES[0];
+const PREVIEW_FRAME_MS = 140;
+const PREVIEW_FRAME_END =
+  (PREVIEW_STATE.frames / (PET_SHEET.columns - 1)) * 100;
+const PREVIEW_FRAME_DURATION = `${PREVIEW_STATE.frames * PREVIEW_FRAME_MS}ms`;
+
 export function PetCard({ pet, showStatus = false }: PetCardProps) {
   const authorName = pet.ownerName ?? pet.contactEmail ?? "Anonymous";
+  const spriteStyle: SpriteStyle = {
+    backgroundImage: `url(${pet.spritesheetUrl})`,
+    backgroundSize: `${PET_SHEET.columns * 100}% ${PET_SHEET.rows * 100}%`,
+    backgroundPosition: "0% 0%",
+    "--pet-card-frame-count": PREVIEW_STATE.frames,
+    "--pet-card-frame-duration": PREVIEW_FRAME_DURATION,
+    "--pet-card-frame-end": `${PREVIEW_FRAME_END}%`,
+  };
 
   return (
     <Link href={`/pets/${pet.slug}`} className="pet-card-link">
       <Card view="raised" type="container" className="pet-card">
         <div className="pet-card__sprite-wrap" aria-hidden>
           <div className="pet-card__sprite-frame">
-            <div
-              className="pet-card__sprite"
-              style={{
-                backgroundImage: `url(${pet.spritesheetUrl})`,
-                backgroundSize: `${PET_SHEET.columns * 100}% ${PET_SHEET.rows * 100}%`,
-                backgroundPosition: "0% 0%",
-              }}
-            />
+            <div className="pet-card__sprite" style={spriteStyle} />
           </div>
         </div>
         <Flex direction="column" gap={2} className="pet-card__body">

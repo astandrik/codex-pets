@@ -9,7 +9,6 @@ type PetMetaListProps = Pick<
   | "slug"
   | "kind"
   | "ownerName"
-  | "contactEmail"
   | "createdAt"
   | "approvedAt"
   | "tags"
@@ -19,7 +18,6 @@ export function PetMetaList({
   slug,
   kind,
   ownerName,
-  contactEmail,
   createdAt,
   approvedAt,
   tags,
@@ -31,7 +29,7 @@ export function PetMetaList({
       </DefinitionList.Item>
       <DefinitionList.Item name="Kind">{kind}</DefinitionList.Item>
       <DefinitionList.Item name="Author">
-        {ownerName ?? contactEmail ?? "Anonymous"}
+        {ownerName ?? "Anonymous"}
       </DefinitionList.Item>
       <DefinitionList.Item name="Submitted">
         {new Date(createdAt).toLocaleString()}
