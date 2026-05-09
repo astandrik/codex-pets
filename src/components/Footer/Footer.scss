@@ -1,0 +1,13 @@
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  max-width: 1120px;
+  margin: var(--spacing-4xl) auto 0;
+  padding: var(--spacing-2xl) var(--spacing-lg);
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 14px;
+}

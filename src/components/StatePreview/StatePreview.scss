@@ -1,0 +1,47 @@
+.state-preview {
+  overflow: hidden;
+
+  &__stage {
+    display: grid;
+    min-height: 320px;
+    place-items: center;
+    border-bottom: 1px solid var(--line);
+    background: rgba(0, 0, 0, 0.2);
+  }
+
+  &__sprite {
+    width: min(192px, 58vw);
+    aspect-ratio: 192 / 208;
+    background-repeat: no-repeat;
+  }
+
+  &__controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--line);
+  }
+
+  &__button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    border: 0;
+    padding: var(--spacing-md);
+    background: var(--bg-elevated);
+    color: var(--muted-strong);
+    cursor: pointer;
+    text-align: left;
+
+    small {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    &--active {
+      background: rgba(255, 190, 92, 0.14);
+      color: var(--fg);
+    }
+  }
+}

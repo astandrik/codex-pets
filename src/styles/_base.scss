@@ -1,0 +1,73 @@
+@use 'mixins' as *;
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.5 var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: var(--acc);
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  font-size: 32px;
+  line-height: 1.1;
+  margin-bottom: var(--spacing-md);
+
+  @include sm {
+    font-size: 52px;
+  }
+}
+
+h2 {
+  font-size: 22px;
+  line-height: 1.2;
+
+  @include sm {
+    font-size: 28px;
+  }
+}
+
+code {
+  font-family: var(--font-mono);
+}
+
+pre {
+  overflow: auto;
+  padding: var(--spacing-lg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: rgba(0, 0, 0, 0.24);
+}
+
+img {
+  max-width: 100%;
+}

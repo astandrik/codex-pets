@@ -1,0 +1,14 @@
+.git
+.next
+.playwright-mcp
+node_modules
+npm-debug.log*
+coverage
+.env
+.env.local
+.env.*.local
+README.md
+DEPLOYMENT.md
+AGENTS.md
+src/**/*.test.ts
+src/**/*.test.tsx

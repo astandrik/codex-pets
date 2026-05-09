@@ -1,0 +1,60 @@
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: var(--spacing-lg);
+
+  &__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    color: var(--fg);
+    font-weight: 750;
+  }
+
+  &__mark {
+    display: inline-grid;
+    width: 32px;
+    height: 32px;
+    place-items: center;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    color: var(--acc);
+    font: 700 12px/1 var(--font-mono);
+  }
+
+  &__nav {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    flex-wrap: wrap;
+
+    a {
+      color: var(--muted-strong);
+    }
+  }
+
+  &__review-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
+
+  &__review-count {
+    display: inline-grid;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    place-items: center;
+    border-radius: var(--radius-full);
+    background: var(--acc);
+    color: #151617;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+  }
+}

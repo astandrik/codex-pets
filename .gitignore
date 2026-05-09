@@ -1,0 +1,52 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+/dist
+
+# testing
+/coverage
+/.nyc_output
+
+# env files
+.env
+.env*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# misc
+.DS_Store
+*.log
+*.swp
+*.swo
+*~
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# generated / cache
+*.tsbuildinfo
+next-env.d.ts
+.cache/
+.turbo/
+.eslintcache
+.playwright-mcp/
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+
+# private host-specific notes
+/private/

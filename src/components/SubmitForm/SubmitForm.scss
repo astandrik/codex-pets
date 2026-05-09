@@ -1,0 +1,55 @@
+.submit-form {
+  max-width: 720px;
+  padding: var(--spacing-2xl);
+
+  fieldset {
+    display: grid;
+    gap: var(--spacing-lg);
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  label {
+    display: grid;
+    gap: var(--spacing-sm);
+    color: var(--muted-strong);
+    font-size: 14px;
+  }
+
+  input,
+  select {
+    width: 100%;
+    min-height: 42px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-md);
+    background: rgba(0, 0, 0, 0.2);
+    color: var(--fg);
+    padding: 0 var(--spacing-md);
+  }
+
+  input[type='file'] {
+    padding: 9px var(--spacing-md);
+  }
+
+  &__divider {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    color: var(--muted);
+    font-size: 13px;
+
+    &::before,
+    &::after {
+      content: '';
+      height: 1px;
+      flex: 1;
+      background: var(--line);
+    }
+  }
+
+  &__message {
+    margin: var(--spacing-lg) 0 0;
+    color: var(--muted-strong);
+  }
+}

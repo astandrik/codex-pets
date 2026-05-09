@@ -1,0 +1,47 @@
+:root {
+  --bg: #151617;
+  --bg-elevated: #1d2022;
+  --fg: #f6f7f8;
+  --muted: rgba(246, 247, 248, 0.62);
+  --muted-strong: rgba(246, 247, 248, 0.78);
+  --line: rgba(246, 247, 248, 0.14);
+  --line-strong: rgba(246, 247, 248, 0.24);
+  --acc: #ffbe5c;
+  --acc-hover: #ffd28a;
+  --teal: #7ce0d6;
+  --green: #87d37c;
+  --red: #ff6f6f;
+  --blue: #8bb8ff;
+
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-hover: rgba(255, 255, 255, 0.1);
+  --pill-bg: rgba(255, 255, 255, 0.08);
+  --pill-border: rgba(255, 255, 255, 0.14);
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 20px;
+  --spacing-2xl: 24px;
+  --spacing-3xl: 32px;
+  --spacing-4xl: 40px;
+  --spacing-5xl: 48px;
+  --spacing-6xl: 60px;
+  --spacing-7xl: 80px;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-full: 999px;
+
+  --font-sans: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', monospace;
+}
+
+$breakpoint-sm: 640px;
+$breakpoint-md: 768px;
+$breakpoint-lg: 1024px;
+$breakpoint-xl: 1200px;
