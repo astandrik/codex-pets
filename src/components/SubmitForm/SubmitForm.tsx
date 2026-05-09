@@ -3,7 +3,18 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import JSZip from "jszip";
-import { Button } from "@gravity-ui/uikit";
+import {
+  Alert,
+  Button,
+  Card,
+  Divider,
+  Flex,
+  Select,
+  Text,
+  TextArea,
+  TextInput,
+  useToaster,
+} from "@gravity-ui/uikit";
 
 import { withBasePath } from "@/lib/base-path";
 import { trackGoal } from "@/lib/metrics/yandex";
@@ -24,31 +35,40 @@ type SubmitFormProps = {
   defaultContactEmail?: string | null;
 };
 
+const KIND_OPTIONS = [
+  { value: "creature", content: "Creature" },
+  { value: "object", content: "Object" },
+  { value: "character", content: "Character" },
+];
+
 export function SubmitForm({
   isAuthenticated,
   defaultContactEmail = null,
 }: SubmitFormProps) {
   const router = useRouter();
+  const { add } = useToaster();
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [petJsonFile, setPetJsonFile] = useState<File | null>(null);
   const [spriteFile, setSpriteFile] = useState<File | null>(null);
   const [contactEmail, setContactEmail] = useState(defaultContactEmail ?? "");
   const [kind, setKind] = useState("creature");
   const [tags, setTags] = useState("");
-  const [message, setMessage] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
-    setMessage("Preparing package...");
+    setError(null);
+    setProgress("Preparing package...");
 
     try {
       const prepared = zipFile
         ? await prepareFromZip(zipFile)
         : await prepareFromSeparateFiles(petJsonFile, spriteFile);
 
-      setMessage("Uploading package...");
+      setProgress("Uploading package...");
       await submitPetPackage({
         url: withBasePath("/api/submissions/register"),
         prepared,
@@ -62,91 +82,176 @@ export function SubmitForm({
         kind,
       });
 
+      add({
+        name: "pet-submit-success",
+        theme: "success",
+        title: `${prepared.displayName} submitted`,
+        content: "Your pet is now pending review.",
+      });
+
       if (isAuthenticated) {
         router.push("/my-pets");
         router.refresh();
       } else {
-        setMessage(`${prepared.displayName} is pending review.`);
+        setProgress(`${prepared.displayName} is pending review.`);
       }
-    } catch (error) {
+    } catch (err) {
       trackGoal("pet_submit_error", {
         authenticated: isAuthenticated,
         kind,
       });
-      setMessage(error instanceof Error ? error.message : String(error));
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      setProgress(null);
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <form className="submit-form panel" onSubmit={onSubmit}>
-      <fieldset disabled={busy}>
-        <label>
-          ZIP package
-          <input
-            type="file"
-            accept=".zip,application/zip"
-            onChange={(event) => setZipFile(event.target.files?.[0] ?? null)}
-          />
-        </label>
-
-        <div className="submit-form__divider">or upload files separately</div>
-
-        <label>
-          pet.json
-          <input
-            type="file"
-            accept="application/json,.json"
-            onChange={(event) =>
-              setPetJsonFile(event.target.files?.[0] ?? null)
-            }
-          />
-        </label>
-        <label>
-          spritesheet
-          <input
-            type="file"
-            accept="image/webp,image/png,.webp,.png"
-            onChange={(event) =>
-              setSpriteFile(event.target.files?.[0] ?? null)
-            }
-          />
-        </label>
-        {!isAuthenticated ? (
-          <label>
-            Contact email
-            <input
-              value={contactEmail}
-              onChange={(event) => setContactEmail(event.target.value)}
-              placeholder="optional@email.com"
-              autoComplete="email"
+    <Card view="raised" className="submit-form">
+      <form onSubmit={onSubmit}>
+        <fieldset className="submit-form__fieldset" disabled={busy}>
+          {error ? (
+            <Alert
+              theme="danger"
+              title="Submission failed"
+              message={error}
+              onClose={() => setError(null)}
             />
-          </label>
-        ) : null}
-        <label>
-          Kind
-          <select value={kind} onChange={(event) => setKind(event.target.value)}>
-            <option value="creature">Creature</option>
-            <option value="object">Object</option>
-            <option value="character">Character</option>
-          </select>
-        </label>
-        <label>
-          Tags
-          <input
-            value={tags}
-            onChange={(event) => setTags(event.target.value)}
-            placeholder="cozy, focused, robot"
-          />
-        </label>
+          ) : null}
 
-        <Button view="action" size="l" type="submit" loading={busy}>
-          Submit for review
-        </Button>
-      </fieldset>
-      {message ? <p className="submit-form__message">{message}</p> : null}
-    </form>
+          <Flex direction="column" gap={3}>
+            <Text variant="subheader-2" as="h2">
+              Upload package
+            </Text>
+            <FieldRow label="ZIP package" htmlFor="submit-zip">
+              <input
+                id="submit-zip"
+                className="submit-form__file"
+                type="file"
+                accept=".zip,application/zip"
+                onChange={(event) => setZipFile(event.target.files?.[0] ?? null)}
+              />
+            </FieldRow>
+
+            <Flex
+              alignItems="center"
+              gap={3}
+              className="submit-form__divider-row"
+            >
+              <Divider orientation="horizontal" className="submit-form__divider-line" />
+              <Text variant="caption-2" color="secondary">
+                or upload files separately
+              </Text>
+              <Divider orientation="horizontal" className="submit-form__divider-line" />
+            </Flex>
+
+            <FieldRow label="pet.json" htmlFor="submit-petjson">
+              <input
+                id="submit-petjson"
+                className="submit-form__file"
+                type="file"
+                accept="application/json,.json"
+                onChange={(event) =>
+                  setPetJsonFile(event.target.files?.[0] ?? null)
+                }
+              />
+            </FieldRow>
+            <FieldRow label="spritesheet" htmlFor="submit-sprite">
+              <input
+                id="submit-sprite"
+                className="submit-form__file"
+                type="file"
+                accept="image/webp,image/png,.webp,.png"
+                onChange={(event) =>
+                  setSpriteFile(event.target.files?.[0] ?? null)
+                }
+              />
+            </FieldRow>
+          </Flex>
+
+          <Divider orientation="horizontal" />
+
+          <Flex direction="column" gap={3}>
+            <Text variant="subheader-2" as="h2">
+              Metadata
+            </Text>
+            {!isAuthenticated ? (
+              <FieldRow label="Contact email" htmlFor="submit-email">
+                <TextInput
+                  id="submit-email"
+                  value={contactEmail}
+                  onUpdate={setContactEmail}
+                  placeholder="optional@email.com"
+                  autoComplete="email"
+                  size="l"
+                  hasClear
+                />
+              </FieldRow>
+            ) : null}
+            <FieldRow label="Kind" htmlFor="submit-kind">
+              <Select
+                id="submit-kind"
+                value={[kind]}
+                onUpdate={(values) => setKind(values[0] ?? "creature")}
+                options={KIND_OPTIONS}
+                size="l"
+                width="max"
+              />
+            </FieldRow>
+            <FieldRow
+              label="Tags"
+              htmlFor="submit-tags"
+              note="Comma-separated keywords."
+            >
+              <TextArea
+                id="submit-tags"
+                value={tags}
+                onUpdate={setTags}
+                placeholder="cozy, focused, robot"
+                size="l"
+                minRows={2}
+              />
+            </FieldRow>
+          </Flex>
+
+          <Flex justifyContent="flex-end" gap={3} alignItems="center">
+            {progress ? (
+              <Text variant="body-2" color="secondary">
+                {progress}
+              </Text>
+            ) : null}
+            <Button view="action" size="l" type="submit" loading={busy}>
+              Submit for review
+            </Button>
+          </Flex>
+        </fieldset>
+      </form>
+    </Card>
+  );
+}
+
+type FieldRowProps = {
+  label: string;
+  htmlFor: string;
+  note?: string;
+  children: React.ReactNode;
+};
+
+function FieldRow({ label, htmlFor, note, children }: FieldRowProps) {
+  return (
+    <Flex direction="column" gap={1} className="submit-form__field">
+      <label className="submit-form__label" htmlFor={htmlFor}>
+        {label}
+      </label>
+      {children}
+      {note ? (
+        <Text variant="caption-2" color="secondary">
+          {note}
+        </Text>
+      ) : null}
+    </Flex>
   );
 }
 

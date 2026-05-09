@@ -1,40 +1,46 @@
 .app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-lg);
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: var(--spacing-lg);
+  padding: var(--spacing-2xl) var(--spacing-lg);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 
   &__brand {
     display: inline-flex;
     align-items: center;
     gap: var(--spacing-sm);
-    color: var(--fg);
+    color: var(--g-color-text-primary);
     font-weight: 750;
+    text-decoration: none;
+  }
+
+  &__brand-text {
+    font-size: 16px;
   }
 
   &__mark {
     display: inline-grid;
-    width: 32px;
-    height: 32px;
+    width: 44px;
+    height: 44px;
     place-items: center;
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius-md);
-    background: var(--surface);
-    color: var(--acc);
-    font: 700 12px/1 var(--font-mono);
+    border-radius: var(--radius-lg);
+    background: linear-gradient(135deg, #ffd47a, var(--acc));
+    color: var(--g-color-text-dark-primary);
+    box-shadow: 0 10px 24px rgba(255, 189, 74, 0.2);
   }
 
-  &__nav {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-md);
-    flex-wrap: wrap;
+  &__mark-icon {
+    width: 25px;
+    height: 25px;
+    fill: currentColor;
+    shape-rendering: crispEdges;
+  }
 
-    a {
-      color: var(--muted-strong);
+  &__link {
+    color: var(--g-color-text-secondary);
+    font-size: 15px;
+    text-decoration: none;
+    transition: color 0.15s ease;
+
+    &:hover {
+      color: var(--g-color-text-primary);
     }
   }
 
@@ -42,19 +48,5 @@
     display: inline-flex;
     align-items: center;
     gap: var(--spacing-xs);
-  }
-
-  &__review-count {
-    display: inline-grid;
-    min-width: 20px;
-    height: 20px;
-    padding: 0 6px;
-    place-items: center;
-    border-radius: var(--radius-full);
-    background: var(--acc);
-    color: #151617;
-    font-size: 12px;
-    font-weight: 700;
-    line-height: 1;
   }
 }

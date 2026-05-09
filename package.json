@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest run",
+    "db:migrate": "node scripts/apply-ydb-migrations.mjs",
     "seed:dev": "node scripts/seed-dev-data.mjs",
     "seed:dev:reset": "node scripts/seed-dev-data.mjs --reset"
   },

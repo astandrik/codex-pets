@@ -1,11 +1,38 @@
+import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Button } from "@gravity-ui/uikit";
+import {
+  Button,
+  Card,
+  Container,
+  Flex,
+  Label,
+  Text,
+} from "@/components/GravityUI/GravityUI";
+import { ArrowDownToLine, FileText, Picture } from "@gravity-ui/icons";
 
 import { PetDeleteAction } from "@/components/PetDeleteAction/PetDeleteAction";
+import { PetBreadcrumbs } from "@/components/PetDetails/PetBreadcrumbs";
+import { PetMetaList } from "@/components/PetDetails/PetMetaList";
+import { PetLikeButton } from "@/components/PetLikeButton/PetLikeButton";
 import { StatePreview } from "@/components/StatePreview/StatePreview";
 import { withBasePath } from "@/lib/base-path";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
-import { getPetBySlug } from "@/lib/pets/repository";
+import { getPetBySlug, getPetMetrics } from "@/lib/pets/repository";
+import type { ApprovalStatus } from "@/lib/pets/types";
+import {
+  buildPageTitle,
+  getOpenGraphImages,
+  getTwitterImages,
+  SITE_NAME,
+} from "@/lib/site-metadata";
+import { formatMetricCount, metricLabel } from "@/lib/ui/metrics";
+import {
+  kindLabelTheme,
+  statusLabelText,
+  statusLabelTheme,
+} from "@/lib/ui/labels";
+import "./pet-detail.scss";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +41,53 @@ type PetPageProps = {
   params: Promise<{ slug: string }>;
 };
 
+export async function generateMetadata({
+  params,
+}: PetPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const pet = await getPetBySlug(slug);
+
+  if (!pet || pet.status === "deleted") {
+    return {
+      title: "Pet not found",
+      robots: {
+        index: false,
+        follow: false,
+      },
+    };
+  }
+
+  const path = `/pets/${pet.slug}`;
+  const description = getPetMetadataDescription(
+    pet.displayName,
+    pet.kind,
+    pet.description,
+  );
+
+  return {
+    title: pet.displayName,
+    description,
+    alternates: {
+      canonical: withBasePath(path),
+    },
+    robots: getPetRobots(pet.status),
+    openGraph: {
+      type: "website",
+      siteName: SITE_NAME,
+      title: buildPageTitle(pet.displayName),
+      description,
+      url: withBasePath(path),
+      images: getOpenGraphImages(),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: buildPageTitle(pet.displayName),
+      description,
+      images: getTwitterImages(),
+    },
+  };
+}
+
 export default async function PetPage({ params }: PetPageProps) {
   const { slug } = await params;
   const principal = await getCurrentPrincipal();
@@ -21,38 +95,69 @@ export default async function PetPage({ params }: PetPageProps) {
   if (!pet) notFound();
   if (pet.status === "deleted") notFound();
 
+  const metrics = await getPetMetrics(slug);
   const statusSummary = getStatusSummary(pet.status);
   const petJsonUrl = toPublicAssetUrl(pet.petJsonUrl);
   const spritesheetUrl = toPublicAssetUrl(pet.spritesheetUrl);
-  const canOwnerDelete = Boolean(principal && pet.ownerId && principal.userId === pet.ownerId);
+  const canOwnerDelete = Boolean(
+    principal && pet.ownerId && principal.userId === pet.ownerId,
+  );
   const canAdminDelete = Boolean(principal && isAdminUser(principal));
 
   return (
-    <main className="wrap">
-      <section className="pet-detail">
-        <div>
-          <div className="pet-detail__meta">
-            <p className="pill">{pet.kind}</p>
+    <Container as="main" maxWidth="xl" className="page-shell">
+      <PetBreadcrumbs displayName={pet.displayName} />
+
+      <header className="pet-detail__header">
+        <Flex direction="column" gap={3}>
+          <Flex gap={2} wrap>
+            <Label theme={kindLabelTheme(pet.kind)}>{pet.kind}</Label>
             {pet.status !== "approved" ? (
-              <p className="pill">{statusSummary.label}</p>
+              <Label theme={statusLabelTheme(pet.status)}>
+                {statusLabelText(pet.status)}
+              </Label>
             ) : null}
-          </div>
-          <h1>{pet.displayName}</h1>
-          <p className="lead">
+          </Flex>
+          <Text variant="display-2" as="h1">
+            {pet.displayName}
+          </Text>
+          <Text variant="body-2" color="secondary" className="pet-detail__lead">
             {pet.description}
             {pet.status !== "approved" ? ` ${statusSummary.message}` : ""}
-          </p>
-          <div className="pet-detail__actions">
+          </Text>
+          <div className="pet-detail__metrics" aria-label="Pet metrics">
+            {pet.status === "approved" ? (
+              <PetLikeButton
+                slug={pet.slug}
+                initialLikeCount={metrics.likeCount}
+              />
+            ) : (
+              <span className="pet-detail__metric">
+                {formatMetricCount(metrics.likeCount)}{" "}
+                {metricLabel(metrics.likeCount, "like")}
+              </span>
+            )}
+            <span className="pet-detail__metric">
+              <ArrowDownToLine width={16} height={16} />
+              {formatMetricCount(metrics.downloadCount)}{" "}
+              {metricLabel(metrics.downloadCount, "download")}
+            </span>
+          </div>
+          <Flex gap={3} wrap className="pet-detail__actions">
             <Button
               view="action"
+              size="l"
               href={withBasePath(`/api/pets/${pet.slug}/download`)}
             >
+              <ArrowDownToLine />
               Download ZIP
             </Button>
-            <Button view="outlined" href={petJsonUrl} target="_blank">
+            <Button view="outlined" size="l" href={petJsonUrl} target="_blank">
+              <FileText />
               pet.json
             </Button>
-            <Button view="outlined" href={spritesheetUrl} target="_blank">
+            <Button view="outlined" size="l" href={spritesheetUrl} target="_blank">
+              <Picture />
               spritesheet
             </Button>
             {canAdminDelete ? (
@@ -60,19 +165,43 @@ export default async function PetPage({ params }: PetPageProps) {
             ) : canOwnerDelete ? (
               <PetDeleteAction petId={pet.id} mode="owner" />
             ) : null}
-          </div>
-          <pre>{`npx petdex install ${pet.slug}`}</pre>
-        </div>
-        <StatePreview spritesheetUrl={spritesheetUrl} />
+          </Flex>
+        </Flex>
+      </header>
+
+      <section className="pet-detail__body">
+        <Card view="raised" className="pet-detail__preview-card">
+          <StatePreview spritesheetUrl={spritesheetUrl} />
+        </Card>
+        <Card view="raised" className="pet-detail__meta-card">
+          <PetMetaList
+            slug={pet.slug}
+            kind={pet.kind}
+            ownerName={pet.ownerName}
+            contactEmail={pet.contactEmail}
+            createdAt={pet.createdAt}
+            approvedAt={pet.approvedAt}
+            tags={pet.tags}
+          />
+        </Card>
       </section>
-    </main>
+
+      {pet.status !== "approved" ? (
+        <Text variant="caption-2" color="secondary">
+          {statusSummary.message}
+        </Text>
+      ) : null}
+
+      <Text variant="caption-2" color="secondary" className="pet-detail__back">
+        <Link href="/">← Back to gallery</Link>
+      </Text>
+    </Container>
   );
 }
 
-function getStatusSummary(status: "approved" | "pending" | "rejected" | "deleted"): {
-  label: string;
-  message: string;
-} {
+function getStatusSummary(
+  status: "approved" | "pending" | "rejected" | "deleted",
+): { label: string; message: string } {
   if (status === "pending") {
     return {
       label: "Pending review",
@@ -96,10 +225,47 @@ function getStatusSummary(status: "approved" | "pending" | "rejected" | "deleted
     };
   }
 
+  return { label: "Approved", message: "" };
+}
+
+function getPetRobots(status: ApprovalStatus): Metadata["robots"] {
+  if (status === "approved") {
+    return {
+      index: true,
+      follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+        "max-image-preview": "large",
+        "max-snippet": -1,
+        "max-video-preview": -1,
+      },
+    };
+  }
+
   return {
-    label: "Approved",
-    message: "",
+    index: false,
+    follow: false,
   };
+}
+
+function getPetMetadataDescription(
+  displayName: string,
+  kind: string,
+  description: string,
+): string {
+  return truncateMetaDescription(
+    `${displayName} is a ${kind} Codex pet pack. ${description}`,
+  );
+}
+
+function truncateMetaDescription(value: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 160) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, 157).trimEnd()}...`;
 }
 
 function toPublicAssetUrl(value: string): string {

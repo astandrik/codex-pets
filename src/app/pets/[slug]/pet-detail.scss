@@ -1,0 +1,60 @@
+@use '@/styles/mixins' as *;
+
+.pet-detail {
+  &__breadcrumbs {
+    margin-bottom: var(--spacing-lg);
+  }
+
+  &__header {
+    margin-bottom: var(--spacing-3xl);
+  }
+
+  &__lead {
+    max-width: 720px;
+  }
+
+  &__actions {
+    margin-top: var(--spacing-md);
+  }
+
+  &__metrics {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+  }
+
+  &__metric {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    gap: var(--spacing-xs);
+    padding: 0 var(--spacing-md);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--g-color-text-secondary);
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__body {
+    display: grid;
+    gap: var(--spacing-2xl);
+
+    @include lg {
+      grid-template-columns: minmax(0, 1fr) 360px;
+      align-items: start;
+    }
+  }
+
+  &__preview-card,
+  &__meta-card {
+    padding: var(--spacing-2xl);
+  }
+
+  &__back {
+    margin-top: var(--spacing-3xl);
+    display: inline-block;
+  }
+}

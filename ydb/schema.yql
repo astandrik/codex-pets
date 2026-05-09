@@ -103,6 +103,13 @@ CREATE TABLE codex_pet_metrics (
   pet_slug Utf8 NOT NULL,
   download_count Uint32 NOT NULL,
   install_count Uint32 NOT NULL,
+  like_count Uint32 NOT NULL,
   updated_at Utf8 NOT NULL,
   PRIMARY KEY (pet_slug)
+);
+
+CREATE TABLE codex_schema_migrations (
+  id Utf8 NOT NULL,
+  applied_at Utf8 NOT NULL,
+  PRIMARY KEY (id)
 );

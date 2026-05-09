@@ -90,6 +90,7 @@ Apply schema, seed data, and start the app:
 ```bash
 docker cp ydb/schema.yql ydb-local:/tmp/codex-pets-schema.yql
 docker exec ydb-local /ydb -e grpc://localhost:2136 -d /local scripting yql -f /tmp/codex-pets-schema.yql
+npm run db:migrate
 npm run seed:dev:reset
 npm run dev -- --port 3000
 ```
@@ -131,6 +132,12 @@ Create tables manually on the existing local-ydb tenant:
 
 ```bash
 ydb -e "$YDB_PETS_ENDPOINT" -d "$YDB_PETS_DATABASE" scripting yql -f ydb/schema.yql
+```
+
+Apply migrations to an existing database:
+
+```bash
+npm run db:migrate
 ```
 
 Seed local development data after the schema exists:

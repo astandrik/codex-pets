@@ -1,0 +1,11 @@
+.pet-like-button {
+  &__count {
+    font-variant-numeric: tabular-nums;
+  }
+
+  &_liked {
+    svg {
+      color: #ff668a;
+    }
+  }
+}

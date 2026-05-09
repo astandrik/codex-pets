@@ -20,16 +20,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "weekly",
       priority: 0.7,
     },
-    {
-      url: toPublicUrl("/login"),
-      changeFrequency: "monthly",
-      priority: 0.3,
-    },
-    {
-      url: toPublicUrl("/register"),
-      changeFrequency: "monthly",
-      priority: 0.3,
-    },
   ];
 
   const petEntries: MetadataRoute.Sitemap = pets.map((pet) => ({

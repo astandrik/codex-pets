@@ -3,4 +3,8 @@
   gap: var(--spacing-sm);
   flex-wrap: wrap;
   align-items: center;
+
+  &__hint {
+    margin-bottom: var(--spacing-sm);
+  }
 }

@@ -1,0 +1,11 @@
+.submissions-table {
+  &__title {
+    color: var(--g-color-text-primary);
+    font-weight: 600;
+    text-decoration: none;
+
+    &:hover {
+      color: var(--g-color-text-link-hover);
+    }
+  }
+}

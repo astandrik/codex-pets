@@ -6,7 +6,20 @@ import { withBasePath } from "@/lib/base-path";
 import { slugify, type PetJson } from "@/lib/pets/validation";
 import { statusAfterModeration } from "@/lib/pets/moderation";
 
-const EMPTY_METRICS = { downloadCount: 0, installCount: 0 };
+export type PublicPetMetrics = {
+  downloadCount: number;
+  likeCount: number;
+};
+
+type PetMetrics = PublicPetMetrics & {
+  installCount: number;
+};
+
+const EMPTY_METRICS: PetMetrics = {
+  downloadCount: 0,
+  installCount: 0,
+  likeCount: 0,
+};
 
 type PetRow = {
   slug: string;
@@ -83,8 +96,11 @@ LIMIT 200;
         pet.tags.some((tag) => tag.includes(q))
       );
     });
+  const metricsBySlug = await getMetricsBySlugs(rows.map((row) => row.slug));
 
-  return rows.map((row) => toPublicPet(row, EMPTY_METRICS));
+  return rows.map((row) =>
+    toPublicPet(row, metricsBySlug.get(row.slug) ?? EMPTY_METRICS),
+  );
 }
 
 export async function getApprovedPetBySlug(
@@ -136,9 +152,12 @@ LIMIT 200;
     ),
   );
 
-  return rowsFromResult(result)
-    .map(parsePetRow)
-    .map((row) => toPublicPet(row, EMPTY_METRICS));
+  const rows = rowsFromResult(result).map(parsePetRow);
+  const metricsBySlug = await getMetricsBySlugs(rows.map((row) => row.slug));
+
+  return rows.map((row) =>
+    toPublicPet(row, metricsBySlug.get(row.slug) ?? EMPTY_METRICS),
+  );
 }
 
 export async function listPendingPets(): Promise<PublicPet[]> {
@@ -158,9 +177,12 @@ LIMIT 200;
     ),
   );
 
-  return rowsFromResult(result)
-    .map(parsePetRow)
-    .map((row) => toPublicPet(row, EMPTY_METRICS));
+  const rows = rowsFromResult(result).map(parsePetRow);
+  const metricsBySlug = await getMetricsBySlugs(rows.map((row) => row.slug));
+
+  return rows.map((row) =>
+    toPublicPet(row, metricsBySlug.get(row.slug) ?? EMPTY_METRICS),
+  );
 }
 
 export async function countPendingPets(): Promise<number> {
@@ -397,20 +419,65 @@ export async function incrementDownload(slug: string): Promise<void> {
 DECLARE $pet_slug AS Utf8;
 DECLARE $download_count AS Uint32;
 DECLARE $install_count AS Uint32;
+DECLARE $like_count AS Uint32;
 DECLARE $updated_at AS Utf8;
 
 UPSERT INTO ${TABLES.metrics}
-(pet_slug, download_count, install_count, updated_at)
-VALUES ($pet_slug, $download_count, $install_count, $updated_at);
+(pet_slug, download_count, install_count, like_count, updated_at)
+VALUES ($pet_slug, $download_count, $install_count, $like_count, $updated_at);
       `,
       {
         $pet_slug: TypedValues.utf8(slug),
         $download_count: TypedValues.uint32(current.downloadCount + 1),
         $install_count: TypedValues.uint32(current.installCount),
+        $like_count: TypedValues.uint32(current.likeCount),
         $updated_at: TypedValues.utf8(now),
       },
     ),
   );
+}
+
+export async function incrementLike(slug: string): Promise<number> {
+  if (!isYdbConfigured()) return 0;
+
+  const current = await getMetrics(slug);
+  const nextLikeCount = current.likeCount + 1;
+  const now = new Date().toISOString();
+
+  await withSession((session) =>
+    session.executeQuery(
+      `
+DECLARE $pet_slug AS Utf8;
+DECLARE $download_count AS Uint32;
+DECLARE $install_count AS Uint32;
+DECLARE $like_count AS Uint32;
+DECLARE $updated_at AS Utf8;
+
+UPSERT INTO ${TABLES.metrics}
+(pet_slug, download_count, install_count, like_count, updated_at)
+VALUES ($pet_slug, $download_count, $install_count, $like_count, $updated_at);
+      `,
+      {
+        $pet_slug: TypedValues.utf8(slug),
+        $download_count: TypedValues.uint32(current.downloadCount),
+        $install_count: TypedValues.uint32(current.installCount),
+        $like_count: TypedValues.uint32(nextLikeCount),
+        $updated_at: TypedValues.utf8(now),
+      },
+    ),
+  );
+
+  return nextLikeCount;
+}
+
+export async function getPetMetrics(
+  slug: string,
+): Promise<PublicPetMetrics> {
+  const metrics = await getMetrics(slug);
+  return {
+    downloadCount: metrics.downloadCount,
+    likeCount: metrics.likeCount,
+  };
 }
 
 async function getPetById(id: string): Promise<PetRow | null> {
@@ -440,31 +507,46 @@ async function resolveUniqueSlug(base: string): Promise<string> {
   return `${base.slice(0, 40)}-${crypto.randomUUID().slice(0, 6)}`;
 }
 
-async function getMetrics(slug: string): Promise<{
-  downloadCount: number;
-  installCount: number;
-}> {
-  if (!isYdbConfigured()) return EMPTY_METRICS;
+async function getMetrics(slug: string): Promise<PetMetrics> {
+  const metrics = await getMetricsBySlugs([slug]);
+  return metrics.get(slug) ?? EMPTY_METRICS;
+}
+
+async function getMetricsBySlugs(slugs: string[]): Promise<Map<string, PetMetrics>> {
+  if (!isYdbConfigured() || slugs.length === 0) return new Map();
+
+  const uniqueSlugs = Array.from(new Set(slugs));
+  const declarations = uniqueSlugs
+    .map((_, index) => `DECLARE $slug${index} AS Utf8;`)
+    .join("\n");
+  const predicate = uniqueSlugs
+    .map((_, index) => `pet_slug = $slug${index}`)
+    .join(" OR ");
+  const params = Object.fromEntries(
+    uniqueSlugs.map((slug, index) => [`$slug${index}`, TypedValues.utf8(slug)]),
+  );
 
   const result = await withSession((session) =>
     session.executeQuery(
       `
-DECLARE $pet_slug AS Utf8;
-SELECT download_count, install_count
+${declarations}
+SELECT pet_slug, download_count, install_count, like_count
 FROM ${TABLES.metrics}
-WHERE pet_slug = $pet_slug
-LIMIT 1;
+WHERE ${predicate};
       `,
-      { $pet_slug: TypedValues.utf8(slug) },
+      params,
     ),
   );
 
-  const row = rowsFromResult(result)[0];
-  if (!row) return EMPTY_METRICS;
-  return {
-    downloadCount: uintAt(row, 0),
-    installCount: uintAt(row, 1),
-  };
+  const metrics = new Map<string, PetMetrics>();
+  for (const row of rowsFromResult(result)) {
+    metrics.set(textAt(row, 0), {
+      downloadCount: uintAt(row, 1),
+      installCount: uintAt(row, 2),
+      likeCount: uintAt(row, 3),
+    });
+  }
+  return metrics;
 }
 
 async function insertReview(input: {
@@ -553,7 +635,7 @@ function parsePetRow(row: Parameters<typeof textAt>[0]): PetRow {
 
 function toPublicPet(
   row: PetRow,
-  metrics: { downloadCount: number },
+  metrics: PublicPetMetrics,
 ): PublicPet {
   return {
     id: row.id,
@@ -572,6 +654,7 @@ function toPublicPet(
     createdAt: row.createdAt,
     approvedAt: row.approvedAt,
     downloadCount: metrics.downloadCount,
+    likeCount: metrics.likeCount,
   };
 }
 

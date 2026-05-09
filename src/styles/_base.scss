@@ -11,49 +11,14 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--bg);
+  background:
+    radial-gradient(circle at 15% -8%, rgba(255, 189, 74, 0.08), transparent 34rem),
+    radial-gradient(circle at 86% 8%, rgba(102, 139, 255, 0.08), transparent 30rem),
+    linear-gradient(180deg, #0c0e15 0%, var(--bg) 42%, #070910 100%);
   color: var(--fg);
   font: 16px/1.5 var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-a {
-  color: var(--acc);
-  text-decoration: none;
-}
-
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
-h1,
-h2,
-h3,
-p {
-  margin-top: 0;
-}
-
-h1 {
-  font-size: 32px;
-  line-height: 1.1;
-  margin-bottom: var(--spacing-md);
-
-  @include sm {
-    font-size: 52px;
-  }
-}
-
-h2 {
-  font-size: 22px;
-  line-height: 1.2;
-
-  @include sm {
-    font-size: 28px;
-  }
 }
 
 code {
@@ -70,4 +35,8 @@ pre {
 
 img {
   max-width: 100%;
+}
+
+a {
+  color: inherit;
 }

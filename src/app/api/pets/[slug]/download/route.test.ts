@@ -37,6 +37,7 @@ describe("GET /api/pets/[slug]/download", () => {
       createdAt: new Date().toISOString(),
       approvedAt: new Date().toISOString(),
       downloadCount: 0,
+      likeCount: 0,
     });
 
     const response = await GET(new Request("http://localhost"), {

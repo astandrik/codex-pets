@@ -1,64 +1,98 @@
-import { AdminSubmissionActions } from "@/components/AdminSubmissionActions/AdminSubmissionActions";
-import Link from "next/link";
+import type { Metadata } from "next";
+
+import {
+  Button,
+  Container,
+  Flex,
+  Label,
+  PlaceholderContainer,
+  Text,
+} from "@/components/GravityUI/GravityUI";
+
+import { Picture } from "@gravity-ui/icons";
+
+import {
+  SubmissionsTable,
+  type SubmissionRow,
+} from "@/components/SubmissionsTable/SubmissionsTable";
+
+function EmptyIcon() {
+  return <Picture width={64} height={64} />;
+}
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { listPendingPets } from "@/lib/pets/repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+export const metadata: Metadata = {
+  title: "Pending submissions",
+  description: "Admin moderation queue for Codex Pets submissions.",
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
+
 export default async function AdminSubmissionsPage() {
   const principal = await getCurrentPrincipal();
   const isAdmin = isAdminUser(principal);
   const pets = isAdmin ? await listPendingPets() : [];
+  const rows: SubmissionRow[] = pets.map((pet) => ({
+    id: pet.id,
+    slug: pet.slug,
+    displayName: pet.displayName,
+    description: pet.description,
+    kind: pet.kind,
+    status: pet.status,
+    createdAt: pet.createdAt,
+    ownerName: pet.ownerName,
+    contactEmail: pet.contactEmail,
+  }));
 
   return (
-    <main className="wrap">
-      <section>
-        <p className="pill">Admin</p>
-        <h1>Pending submissions</h1>
-        <p className="lead">
+    <Container as="main" maxWidth="xl" className="page-shell">
+      <Flex direction="column" gap={3} className="page-section-header">
+        <Label theme="warning">Admin</Label>
+        <Text variant="display-2" as="h1">
+          Pending submissions
+        </Text>
+        <Text variant="body-2" color="secondary">
           Manual queue for approving or rejecting uploaded Codex pet packages.
-        </p>
-      </section>
+        </Text>
+      </Flex>
 
-      {!principal ? (
-        <div className="empty-state">
-          Sign in with an admin account to open the moderation queue.
-          <p>
-            <Link href="/login">Login</Link>
-          </p>
-        </div>
-      ) : !isAdmin ? (
-        <div className="empty-state">This account does not have admin access.</div>
-      ) : pets.length > 0 ? (
-        <div className="admin-list">
-          {pets.map((pet) => (
-            <article className="admin-list__item panel" key={pet.id}>
-              <div>
-                <div className="admin-list__meta">
-                  <p className="pill">{pet.kind}</p>
-                  <Link href={`/pets/${pet.slug}`} className="admin-list__link">
-                    Open pet
-                  </Link>
-                </div>
-                <h2>
-                  <Link href={`/pets/${pet.slug}`} className="admin-list__title-link">
-                    {pet.displayName}
-                  </Link>
-                </h2>
-                <p className="muted">{pet.description}</p>
-                <p className="muted">
-                  Submitted by {pet.ownerName ?? pet.contactEmail ?? "anonymous"} on{" "}
-                  {new Date(pet.createdAt).toLocaleString()}
-                </p>
-              </div>
-              <AdminSubmissionActions petId={pet.id} />
-            </article>
-          ))}
-        </div>
-      ) : (
-        <div className="empty-state">No pending submissions.</div>
-      )}
-    </main>
+      <section className="page-section">
+        {!principal ? (
+          <PlaceholderContainer
+            size="l"
+            image={<EmptyIcon />}
+            title="Sign in required"
+            description="Sign in with an admin account to open the moderation queue."
+            actions={
+              <Button view="action" href="/login">
+                Login
+              </Button>
+            }
+          />
+        ) : !isAdmin ? (
+          <PlaceholderContainer
+            size="l"
+            image={<EmptyIcon />}
+            title="No admin access"
+            description="This account does not have admin access."
+          />
+        ) : rows.length > 0 ? (
+          <SubmissionsTable rows={rows} />
+        ) : (
+          <PlaceholderContainer
+            size="l"
+            image={<EmptyIcon />}
+            title="Inbox zero"
+            description="No pending submissions right now."
+          />
+        )}
+      </section>
+    </Container>
   );
 }

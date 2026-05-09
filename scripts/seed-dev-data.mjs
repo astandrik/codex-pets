@@ -84,6 +84,7 @@ const pets = [
     glyph: "OO",
     downloadCount: 37,
     installCount: 18,
+    likeCount: 12,
     createdDaysAgo: 9,
     approvedDaysAgo: 7,
   },
@@ -102,6 +103,7 @@ const pets = [
     glyph: "TC",
     downloadCount: 22,
     installCount: 11,
+    likeCount: 9,
     createdDaysAgo: 6,
     approvedDaysAgo: 5,
   },
@@ -120,6 +122,7 @@ const pets = [
     glyph: "PP",
     downloadCount: 14,
     installCount: 8,
+    likeCount: 6,
     createdDaysAgo: 4,
     approvedDaysAgo: 3,
   },
@@ -138,6 +141,7 @@ const pets = [
     glyph: "PX",
     downloadCount: 0,
     installCount: 0,
+    likeCount: 0,
     createdDaysAgo: 1,
   },
   {
@@ -156,6 +160,7 @@ const pets = [
     rejectionReason: "Demo rejection reason for local moderation testing.",
     downloadCount: 0,
     installCount: 0,
+    likeCount: 0,
     createdDaysAgo: 2,
     rejectedDaysAgo: 1,
   },
@@ -418,16 +423,18 @@ async function upsertMetric(driver, pet) {
 DECLARE $pet_slug AS Utf8;
 DECLARE $download_count AS Uint32;
 DECLARE $install_count AS Uint32;
+DECLARE $like_count AS Uint32;
 DECLARE $updated_at AS Utf8;
 
 UPSERT INTO ${TABLES.metrics}
-(pet_slug, download_count, install_count, updated_at)
-VALUES ($pet_slug, $download_count, $install_count, $updated_at);
+(pet_slug, download_count, install_count, like_count, updated_at)
+VALUES ($pet_slug, $download_count, $install_count, $like_count, $updated_at);
     `,
     {
       $pet_slug: TypedValues.utf8(pet.slug),
       $download_count: TypedValues.uint32(pet.downloadCount),
       $install_count: TypedValues.uint32(pet.installCount),
+      $like_count: TypedValues.uint32(pet.likeCount),
       $updated_at: TypedValues.utf8(isoDaysAgo(0)),
     },
   );

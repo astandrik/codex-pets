@@ -1,34 +1,28 @@
 .auth-form {
-  max-width: 520px;
+  max-width: 460px;
+  margin: 0 auto;
   padding: var(--spacing-2xl);
 
-  fieldset {
-    display: grid;
+  &__fieldset {
+    display: flex;
+    flex-direction: column;
     gap: var(--spacing-lg);
     margin: 0;
     padding: 0;
     border: 0;
   }
 
-  label {
-    display: grid;
-    gap: var(--spacing-sm);
-    color: var(--muted-strong);
+  &__label {
+    color: var(--g-color-text-secondary);
     font-size: 14px;
   }
 
-  input {
-    width: 100%;
-    min-height: 42px;
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius-md);
-    background: rgba(0, 0, 0, 0.2);
-    color: var(--fg);
-    padding: 0 var(--spacing-md);
-  }
+  &__link {
+    color: var(--g-color-text-link);
+    text-decoration: none;
 
-  &__message {
-    margin: var(--spacing-lg) 0 0;
-    color: var(--muted-strong);
+    &:hover {
+      color: var(--g-color-text-link-hover);
+    }
   }
 }

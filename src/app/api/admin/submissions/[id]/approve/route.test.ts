@@ -55,6 +55,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
       createdAt: new Date().toISOString(),
       approvedAt: new Date().toISOString(),
       downloadCount: 0,
+      likeCount: 0,
     });
 
     const response = await POST(new Request("http://localhost"), {

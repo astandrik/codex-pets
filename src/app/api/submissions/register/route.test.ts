@@ -64,6 +64,7 @@ describe("POST /api/submissions/register", () => {
       createdAt: new Date().toISOString(),
       approvedAt: null,
       downloadCount: 0,
+      likeCount: 0,
     });
 
     const formData = new FormData();
@@ -152,6 +153,7 @@ describe("POST /api/submissions/register", () => {
       createdAt: new Date().toISOString(),
       approvedAt: null,
       downloadCount: 0,
+      likeCount: 0,
     });
 
     const formData = new FormData();

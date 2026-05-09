@@ -51,6 +51,12 @@ Apply the current schema from:
 
 - [ydb/schema.yql](./ydb/schema.yql)
 
+For an existing database, apply migrations after deploying schema changes:
+
+```bash
+npm run db:migrate
+```
+
 The schema currently includes:
 
 - `codex_pets`
@@ -61,6 +67,7 @@ The schema currently includes:
 - `codex_password_reset_tokens`
 - `codex_pet_reviews`
 - `codex_pet_metrics`
+- `codex_schema_migrations`
 
 `codex_pet_upload_sessions` is legacy and may remain present if it already
 exists.

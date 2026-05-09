@@ -1,4 +1,12 @@
 .g-root_theme_dark {
   --g-color-base-brand: var(--acc);
   --g-color-line-brand: var(--acc);
+  --g-color-text-link: var(--acc);
+  --g-color-text-link-hover: var(--acc-hover);
+  --g-color-line-generic: rgba(255, 255, 255, 0.12);
+  --g-color-line-generic-hover: rgba(255, 189, 74, 0.42);
+}
+
+.g-button_view_action {
+  box-shadow: 0 12px 26px rgba(255, 189, 74, 0.18);
 }

@@ -2,54 +2,39 @@
   max-width: 720px;
   padding: var(--spacing-2xl);
 
-  fieldset {
-    display: grid;
-    gap: var(--spacing-lg);
+  &__fieldset {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xl);
     margin: 0;
     padding: 0;
     border: 0;
   }
 
-  label {
-    display: grid;
-    gap: var(--spacing-sm);
-    color: var(--muted-strong);
+  &__field {
+    min-width: 0;
+  }
+
+  &__label {
+    color: var(--g-color-text-secondary);
     font-size: 14px;
   }
 
-  input,
-  select {
+  &__file {
     width: 100%;
     min-height: 42px;
-    border: 1px solid var(--line-strong);
+    border: 1px solid var(--g-color-line-generic-accent);
     border-radius: var(--radius-md);
     background: rgba(0, 0, 0, 0.2);
-    color: var(--fg);
-    padding: 0 var(--spacing-md);
-  }
-
-  input[type='file'] {
+    color: var(--g-color-text-primary);
     padding: 9px var(--spacing-md);
   }
 
-  &__divider {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-md);
-    color: var(--muted);
-    font-size: 13px;
-
-    &::before,
-    &::after {
-      content: '';
-      height: 1px;
-      flex: 1;
-      background: var(--line);
-    }
+  &__divider-row {
+    margin: var(--spacing-sm) 0;
   }
 
-  &__message {
-    margin: var(--spacing-lg) 0 0;
-    color: var(--muted-strong);
+  &__divider-line {
+    flex: 1;
   }
 }
