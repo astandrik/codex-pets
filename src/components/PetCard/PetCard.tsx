@@ -1,8 +1,10 @@
 import Link from "next/link";
+import Image from "next/image";
 import type { CSSProperties } from "react";
 import { Card, Flex, Label, Text } from "@/components/GravityUI/GravityUI";
 import { ArrowDownToLine, ArrowRight, Heart } from "@gravity-ui/icons";
 
+import { getPetIdleStripUrl } from "@/lib/pets/asset-urls";
 import { kindLabelTheme, statusLabelText, statusLabelTheme } from "@/lib/ui/labels";
 import { formatMetricCount, metricLabel } from "@/lib/ui/metrics";
 import { PET_SHEET, PET_STATES } from "@/lib/pets/types";
@@ -14,27 +16,27 @@ type PetCardProps = {
   showStatus?: boolean;
 };
 
-type SpriteStyle = CSSProperties & {
+type StripStyle = CSSProperties & {
   "--pet-card-frame-count": number;
   "--pet-card-frame-duration": string;
-  "--pet-card-frame-end": string;
+  "--pet-card-strip-end": string;
+  "--pet-card-strip-width": string;
 };
 
 const PREVIEW_STATE = PET_STATES[0];
 const PREVIEW_FRAME_MS = 140;
-const PREVIEW_FRAME_END =
-  (PREVIEW_STATE.frames / (PET_SHEET.columns - 1)) * 100;
+const PREVIEW_FRAME_WIDTH = 104;
 const PREVIEW_FRAME_DURATION = `${PREVIEW_STATE.frames * PREVIEW_FRAME_MS}ms`;
+const PREVIEW_STRIP_WIDTH = PREVIEW_FRAME_WIDTH * PREVIEW_STATE.frames;
 
 export function PetCard({ pet, showStatus = false }: PetCardProps) {
   const authorName = pet.ownerName ?? pet.contactEmail ?? "Anonymous";
-  const spriteStyle: SpriteStyle = {
-    backgroundImage: `url(${pet.spritesheetUrl})`,
-    backgroundSize: `${PET_SHEET.columns * 100}% ${PET_SHEET.rows * 100}%`,
-    backgroundPosition: "0% 0%",
+  const idleStripUrl = getPetIdleStripUrl(pet.spritesheetUrl);
+  const stripStyle: StripStyle = {
     "--pet-card-frame-count": PREVIEW_STATE.frames,
     "--pet-card-frame-duration": PREVIEW_FRAME_DURATION,
-    "--pet-card-frame-end": `${PREVIEW_FRAME_END}%`,
+    "--pet-card-strip-end": `-${PREVIEW_STRIP_WIDTH}px`,
+    "--pet-card-strip-width": `${PREVIEW_STRIP_WIDTH}px`,
   };
 
   return (
@@ -42,7 +44,24 @@ export function PetCard({ pet, showStatus = false }: PetCardProps) {
       <Card view="raised" type="container" className="pet-card">
         <div className="pet-card__sprite-wrap" aria-hidden>
           <div className="pet-card__sprite-frame">
-            <div className="pet-card__sprite" style={spriteStyle} />
+            {idleStripUrl ? (
+              <span className="pet-card__sprite-viewport" style={stripStyle}>
+                <Image
+                  src={idleStripUrl}
+                  alt=""
+                  width={PET_SHEET.cellWidth * PREVIEW_STATE.frames}
+                  height={PET_SHEET.cellHeight}
+                  className="pet-card__sprite-strip"
+                  loading="lazy"
+                  decoding="async"
+                  sizes={`${PREVIEW_STRIP_WIDTH}px`}
+                  unoptimized
+                  draggable={false}
+                />
+              </span>
+            ) : (
+              <span className="pet-card__sprite-placeholder" />
+            )}
           </div>
         </div>
         <Flex direction="column" gap={2} className="pet-card__body">

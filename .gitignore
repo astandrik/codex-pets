@@ -17,6 +17,9 @@
 
 # env files
 .env
+.env.runtime
+*.env.runtime
+*.env.runtime.local
 .env*.local
 .env.development.local
 .env.test.local
@@ -50,3 +53,4 @@ next-env.d.ts
 
 # private host-specific notes
 /private/
+/telegram-preview-root-cause.md

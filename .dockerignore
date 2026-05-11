@@ -2,9 +2,11 @@
 .next
 .playwright-mcp
 node_modules
+private
 npm-debug.log*
 coverage
 .env
+.env.runtime
 .env.local
 .env.*.local
 README.md

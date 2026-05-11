@@ -1,0 +1,114 @@
+map $http_user_agent $codex_preview_bot_ua {
+    default 0;
+    ~*(TelegramBot|WebpageBot|Twitterbot|Slackbot|LinkedInBot|facebookexternalhit|Discordbot|WhatsApp|SkypeUriPreview) 1;
+}
+
+map $http_user_agent $codex_preview_browserish_ua {
+    default 0;
+    ~*(Firefox/(75|77)\.0|Chrome/(72|96)\.0\.) 1;
+}
+
+map $remote_addr $codex_preview_ip {
+    default 0;
+    ~^149\.154\.161\. 1;
+    ~^95\.161\.76\. 1;
+    ~^93\.158\.188\. 1;
+}
+
+map "$codex_preview_bot_ua:$codex_preview_browserish_ua:$codex_preview_ip" $codex_preview_request {
+    default 0;
+    ~^1: 1;
+    0:1:1 1;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name pets.example.com;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name pets.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/pets.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/pets.example.com/privkey.pem;
+
+    client_max_body_size 20m;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location = /opengraph-image {
+        proxy_pass http://127.0.0.1:3001/opengraph-image;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location = / {
+        if ($codex_preview_request) {
+            rewrite ^ /api/preview/site break;
+        }
+
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    location ~ ^/pets/([^/?#]+)$ {
+        set $codex_pet_slug $1;
+
+        if ($codex_preview_request) {
+            rewrite ^ /api/preview/pets/$codex_pet_slug break;
+        }
+
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    location ^~ /api/assets/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}

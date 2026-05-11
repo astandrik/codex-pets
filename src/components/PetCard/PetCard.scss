@@ -55,15 +55,35 @@
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
   }
 
-  &__sprite {
+  &__sprite-viewport,
+  &__sprite-placeholder {
+    display: block;
     width: 104px;
     aspect-ratio: 192 / 208;
+  }
+
+  &__sprite-viewport {
+    overflow: hidden;
+  }
+
+  &__sprite-strip {
+    display: block;
+    width: var(--pet-card-strip-width, 624px);
+    max-width: none;
+    height: auto;
     image-rendering: pixelated;
-    background-repeat: no-repeat;
     animation: pet-card-sprite-idle
       var(--pet-card-frame-duration, 840ms)
       steps(var(--pet-card-frame-count, 6))
       infinite;
+    will-change: transform;
+  }
+
+  &__sprite-placeholder {
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background:
+      linear-gradient(145deg, rgba(255, 189, 74, 0.15), transparent 58%),
+      rgba(255, 255, 255, 0.04);
   }
 
   &__body {
@@ -116,17 +136,17 @@
 
 @keyframes pet-card-sprite-idle {
   from {
-    background-position: 0% 0%;
+    transform: translate3d(0, 0, 0);
   }
 
   to {
-    background-position: var(--pet-card-frame-end, 85.7142857143%) 0%;
+    transform: translate3d(var(--pet-card-strip-end, -624px), 0, 0);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .pet-card {
-    &__sprite {
+    &__sprite-strip {
       animation: none;
     }
   }

@@ -10,20 +10,22 @@ import {
   Text,
 } from "@/components/GravityUI/GravityUI";
 import { ArrowDownToLine, FileText, Picture } from "@gravity-ui/icons";
+import { unstable_cache } from "next/cache";
 
-import { PetDeleteAction } from "@/components/PetDeleteAction/PetDeleteAction";
+import { PetDeleteGate } from "@/components/PetDeleteAction/PetDeleteGate";
 import { PetBreadcrumbs } from "@/components/PetDetails/PetBreadcrumbs";
 import { PetMetaList } from "@/components/PetDetails/PetMetaList";
 import { PetLikeButton } from "@/components/PetLikeButton/PetLikeButton";
 import { StatePreview } from "@/components/StatePreview/StatePreview";
-import { withBasePath } from "@/lib/base-path";
-import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
+import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import { getPetBySlug, getPetMetrics } from "@/lib/pets/repository";
 import type { ApprovalStatus } from "@/lib/pets/types";
 import {
   buildPageTitle,
   getBreadcrumbJsonLd,
   getOpenGraphImages,
+  getPetMetadataDescription,
+  getPetSocialImagePath,
   getPetJsonLd,
   getTwitterImages,
   SITE_NAME,
@@ -43,11 +45,23 @@ type PetPageProps = {
   params: Promise<{ slug: string }>;
 };
 
+const getCachedPetBySlug = unstable_cache(
+  async (slug: string) => getPetBySlug(slug),
+  ["pet-page-by-slug"],
+  { revalidate: 60 },
+);
+
+const getCachedPetMetrics = unstable_cache(
+  async (slug: string) => getPetMetrics(slug),
+  ["pet-page-metrics"],
+  { revalidate: 60 },
+);
+
 export async function generateMetadata({
   params,
 }: PetPageProps): Promise<Metadata> {
   const { slug } = await params;
-  const pet = await getPetBySlug(slug);
+  const pet = await getCachedPetBySlug(slug);
 
   if (!pet || pet.status === "deleted") {
     return {
@@ -60,11 +74,20 @@ export async function generateMetadata({
   }
 
   const path = `/pets/${pet.slug}`;
+  const socialImageUrl = getPetSocialImagePath(pet.slug);
   const description = getPetMetadataDescription(
     pet.displayName,
     pet.kind,
     pet.description,
   );
+  const petSocialImage = {
+    url: socialImageUrl,
+    secureUrl: toPublicUrl(socialImageUrl),
+    width: 1200,
+    height: 630,
+    alt: `${pet.displayName} Codex pet preview`,
+    type: "image/png",
+  };
 
   return {
     title: pet.displayName,
@@ -74,37 +97,36 @@ export async function generateMetadata({
     },
     robots: getPetRobots(pet.status),
     openGraph: {
-      type: "website",
+      type: "article",
       siteName: SITE_NAME,
       title: buildPageTitle(pet.displayName),
       description,
       url: withBasePath(path),
-      images: getOpenGraphImages(),
+      images: getOpenGraphImages([petSocialImage], {
+        includeFallback: false,
+      }),
     },
     twitter: {
       card: "summary_large_image",
       title: buildPageTitle(pet.displayName),
       description,
-      images: getTwitterImages(),
+      images: getTwitterImages([petSocialImage], {
+        includeFallback: false,
+      }),
     },
   };
 }
 
 export default async function PetPage({ params }: PetPageProps) {
   const { slug } = await params;
-  const principal = await getCurrentPrincipal();
-  const pet = await getPetBySlug(slug);
+  const pet = await getCachedPetBySlug(slug);
   if (!pet) notFound();
   if (pet.status === "deleted") notFound();
 
-  const metrics = await getPetMetrics(slug);
+  const metrics = await getCachedPetMetrics(slug);
   const statusSummary = getStatusSummary(pet.status);
   const petJsonUrl = toPublicAssetUrl(pet.petJsonUrl);
   const spritesheetUrl = toPublicAssetUrl(pet.spritesheetUrl);
-  const canOwnerDelete = Boolean(
-    principal && pet.ownerId && principal.userId === pet.ownerId,
-  );
-  const canAdminDelete = Boolean(principal && isAdminUser(principal));
   const petJsonLd =
     pet.status === "approved"
       ? getPetJsonLd({
@@ -186,11 +208,7 @@ export default async function PetPage({ params }: PetPageProps) {
               <Picture width={18} height={18} />
               spritesheet
             </Button>
-            {canAdminDelete ? (
-              <PetDeleteAction petId={pet.id} mode="admin" />
-            ) : canOwnerDelete ? (
-              <PetDeleteAction petId={pet.id} mode="owner" />
-            ) : null}
+            <PetDeleteGate petId={pet.id} slug={pet.slug} />
           </Flex>
         </Flex>
       </header>
@@ -272,25 +290,6 @@ function getPetRobots(status: ApprovalStatus): Metadata["robots"] {
     index: false,
     follow: false,
   };
-}
-
-function getPetMetadataDescription(
-  displayName: string,
-  kind: string,
-  description: string,
-): string {
-  return truncateMetaDescription(
-    `${displayName} is a ${kind} Codex pet pack. ${description}`,
-  );
-}
-
-function truncateMetaDescription(value: string): string {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  if (normalized.length <= 160) {
-    return normalized;
-  }
-
-  return `${normalized.slice(0, 157).trimEnd()}...`;
 }
 
 function toPublicAssetUrl(value: string): string {

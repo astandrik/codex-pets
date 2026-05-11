@@ -11,6 +11,8 @@ const basePath =
 
 const nextConfig: NextConfig = {
   basePath,
+  // Telegram link previews do not execute streamed metadata payloads.
+  htmlLimitedBots: /.*/,
   serverExternalPackages: ["ydb-sdk", "@yandex-cloud/nodejs-sdk"],
   turbopack: {
     root,

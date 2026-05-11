@@ -1,17 +1,10 @@
 import Link from "next/link";
-import { Button, Container, Flex, Label } from "@/components/GravityUI/GravityUI";
-import { Plus } from "@gravity-ui/icons";
+import { Container, Flex } from "@/components/GravityUI/GravityUI";
 
-import { withBasePath } from "@/lib/base-path";
-import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
-import { countPendingPets } from "@/lib/pets/repository";
+import { AppHeaderNav } from "@/components/AppHeader/AppHeaderNav";
 import "./AppHeader.scss";
 
 export async function AppHeader() {
-  const principal = await getCurrentPrincipal();
-  const pendingReviewCount =
-    principal && isAdminUser(principal) ? await countPendingPets() : 0;
-
   return (
     <Container as="header" maxWidth="xl" gutters={5} className="app-header">
       <Flex alignItems="center" justifyContent="space-between" gap={4} wrap>
@@ -31,53 +24,7 @@ export async function AppHeader() {
           </span>
           <span className="app-header__brand-text">Codex Pets</span>
         </Link>
-        <Flex
-          as="nav"
-          alignItems="center"
-          gap={3}
-          wrap
-          aria-label="Primary"
-          className="app-header__nav"
-        >
-          {principal ? (
-            <>
-              <Link href="/my-pets" prefetch={false} className="app-header__link">
-                My pets
-              </Link>
-              {isAdminUser(principal) ? (
-                <Link
-                  href="/admin/submissions"
-                  prefetch={false}
-                  className="app-header__link app-header__review-link"
-                >
-                  <span>Review</span>
-                  <Label
-                    theme={pendingReviewCount > 0 ? "warning" : "unknown"}
-                    size="s"
-                  >
-                    {pendingReviewCount}
-                  </Label>
-                </Link>
-              ) : null}
-              <a href={withBasePath("/logout")} className="app-header__link">
-                Logout
-              </a>
-            </>
-          ) : (
-            <>
-              <Link href="/login" prefetch={false} className="app-header__link">
-                Login
-              </Link>
-              <Link href="/register" prefetch={false} className="app-header__link">
-                Register
-              </Link>
-            </>
-          )}
-          <Button view="action" size="m" href={withBasePath("/submit")}>
-            <Plus />
-            Submit
-          </Button>
-        </Flex>
+        <AppHeaderNav />
       </Flex>
     </Container>
   );

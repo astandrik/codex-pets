@@ -1,6 +1,9 @@
 import { TypedValues, withSession } from "@/lib/ydb/client";
 import { bytesAt, rowsFromResult, textAt } from "@/lib/ydb/result";
 import { TABLES } from "@/lib/ydb/schema";
+import { assetUrl } from "@/lib/pets/asset-urls";
+
+export { assetUrl } from "@/lib/pets/asset-urls";
 
 const ASSET_CONTENT_TYPES = new Map<string, string>([
   ["pet.json", "application/json; charset=utf-8"],
@@ -8,10 +11,6 @@ const ASSET_CONTENT_TYPES = new Map<string, string>([
   ["spritesheet.png", "image/png"],
   ["pet.zip", "application/zip"],
 ]);
-
-export function assetUrl(assetId: string, filename: string): string {
-  return `/api/assets/${assetId}/${filename}`;
-}
 
 export async function storePetAssetsInYdb(input: {
   assetId: string;
@@ -71,25 +70,7 @@ export async function readPetAssetFile(input: {
     throw new Error("Unsupported asset file.");
   }
 
-  const result = await withSession((session) =>
-    session.executeQuery(
-      `
-DECLARE $asset_id AS Utf8;
-SELECT pet_json_bytes, spritesheet_bytes, zip_bytes, spritesheet_ext
-FROM ${TABLES.assets}
-WHERE asset_id = $asset_id
-LIMIT 1;
-      `,
-      { $asset_id: TypedValues.utf8(input.assetId) },
-    ),
-  );
-
-  const row = rowsFromResult(result)[0];
-  if (!row) {
-    throw new Error("Asset not found.");
-  }
-
-  const spritesheetExt = textAt(row, 3) === "png" ? "png" : "webp";
+  const { row, spritesheetExt } = await readAssetRow(input.assetId);
   if (input.filename === "pet.json") {
     return { buffer: bytesAt(row, 0), contentType };
   }
@@ -101,4 +82,48 @@ LIMIT 1;
   }
 
   throw new Error("Asset variant mismatch.");
+}
+
+export async function readPetSpritesheetAsset(input: {
+  assetId: string;
+}): Promise<{
+  buffer: Buffer;
+  contentType: string;
+  filename: string;
+}> {
+  const { row, spritesheetExt } = await readAssetRow(input.assetId);
+  const filename = `spritesheet.${spritesheetExt}`;
+  return {
+    buffer: bytesAt(row, 1),
+    contentType: ASSET_CONTENT_TYPES.get(filename) ?? "image/webp",
+    filename,
+  };
+}
+
+async function readAssetRow(assetId: string): Promise<{
+  row: ReturnType<typeof rowsFromResult>[number];
+  spritesheetExt: "webp" | "png";
+}> {
+  const result = await withSession((session) =>
+    session.executeQuery(
+      `
+DECLARE $asset_id AS Utf8;
+SELECT pet_json_bytes, spritesheet_bytes, zip_bytes, spritesheet_ext
+FROM ${TABLES.assets}
+WHERE asset_id = $asset_id
+LIMIT 1;
+      `,
+      { $asset_id: TypedValues.utf8(assetId) },
+    ),
+  );
+
+  const row = rowsFromResult(result)[0];
+  if (!row) {
+    throw new Error("Asset not found.");
+  }
+
+  return {
+    row,
+    spritesheetExt: textAt(row, 3) === "png" ? "png" : "webp",
+  };
 }

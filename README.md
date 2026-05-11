@@ -35,6 +35,34 @@ NEXT_PUBLIC_APP_URL=https://example.com/codex-pets
 The public gallery renders without secrets. For account login, submit, moderation,
 and metrics you need `YDB_PETS_ENDPOINT`, `YDB_PETS_DATABASE`, and auth env.
 
+## Production notes
+
+For a dedicated public subdomain such as `https://pets.example.com`, prefer:
+
+```bash
+NEXT_PUBLIC_APP_URL=https://pets.example.com
+NEXT_PUBLIC_BASE_PATH=
+```
+
+If the app container talks to YDB by Docker hostname, for example
+`grpc://ydb-local:2136`, run the app on the same Docker network as the YDB
+containers:
+
+```bash
+docker run --network ydb-net ...
+```
+
+Telegram and similar preview crawlers are handled by lightweight preview routes:
+
+- `/api/preview/site`
+- `/api/preview/pets/[slug]`
+
+The reverse proxy should rewrite preview-bot requests for `/` and `/pets/<slug>`
+to those endpoints before proxying to the normal App Router pages. See:
+
+- [deploy/nginx-pets-subdomain.conf.example](./deploy/nginx-pets-subdomain.conf.example)
+- [deploy/nginx-pets-edge-proxy.conf.example](./deploy/nginx-pets-edge-proxy.conf.example)
+
 ### Local YDB quickstart
 
 For local app development, a plain local-ydb root database at `/local` is enough;

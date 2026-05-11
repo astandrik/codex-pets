@@ -1,5 +1,3 @@
-"use client";
-
 import {
   Button,
   Card,
@@ -7,7 +5,7 @@ import {
   Flex,
   PlaceholderContainer,
   Text,
-} from "@gravity-ui/uikit";
+} from "@/components/GravityUI/GravityUI";
 import {
   ArrowDownToLine,
   ArrowRight,
@@ -20,19 +18,20 @@ import {
 import { GalleryFilter } from "@/components/GalleryFilter/GalleryFilter";
 import { PetCard } from "@/components/PetCard/PetCard";
 import { withBasePath } from "@/lib/base-path";
-import type { PublicPet } from "@/lib/pets/types";
+import type { PetKind, PublicPet } from "@/lib/pets/types";
 
 type HomePageProps = {
   pets: PublicPet[];
-  q: string;
-  kind: string;
+  filteredPets: PublicPet[];
+  query: string;
+  kind: PetKind | "all";
 };
 
 function EmptyIcon() {
   return <Picture width={64} height={64} />;
 }
 
-export function HomePage({ pets, q, kind }: HomePageProps) {
+export function HomePage({ pets, filteredPets, query, kind }: HomePageProps) {
   return (
     <Container as="main" maxWidth="xl" gutters={5} className="page-shell">
       <Card view="filled" type="container" className="home-hero-card">
@@ -128,13 +127,17 @@ export function HomePage({ pets, q, kind }: HomePageProps) {
             Gallery
           </Text>
           <span className="section-heading__badge">
-            {pets.length} approved pets
+            {filteredPets.length} approved pets
           </span>
         </Flex>
-        <GalleryFilter defaultQuery={q} defaultKind={kind} />
-        {pets.length > 0 ? (
+        <GalleryFilter
+          key={`${query}:${kind}`}
+          defaultQuery={query}
+          defaultKind={kind}
+        />
+        {filteredPets.length > 0 ? (
           <div className="pet-grid">
-            {pets.map((pet) => (
+            {filteredPets.map((pet) => (
               <PetCard key={pet.slug} pet={pet} />
             ))}
           </div>

@@ -1,18 +1,18 @@
 import type { Metadata } from "next";
 
-import { toPublicUrl, withBasePath } from "@/lib/base-path";
+import { toPublicUrl } from "@/lib/base-path";
 import type { PublicPet } from "@/lib/pets/types";
 
-export const SITE_NAME = "Codex Pets";
-export const SITE_TAGLINE = "Animated companions for Codex";
+export const SITE_NAME = "Companion Gallery";
+export const SITE_TAGLINE = "Animated pets for Codex";
 export const SITE_TITLE = `${SITE_NAME} - ${SITE_TAGLINE}`;
 export const SITE_DESCRIPTION =
   "Browse, preview, upload, and download community-made animated pet packs for Codex.";
 export const SITE_IMAGE_ALT =
-  "Codex Pets gallery for animated Codex companions";
+  "Companion Gallery for animated Codex companions";
 
 export const SITE_KEYWORDS = [
-  "Codex Pets",
+  "Companion Gallery",
   "Codex",
   "animated pets",
   "pet packs",
@@ -27,27 +27,109 @@ export const SOCIAL_IMAGE = {
   alt: SITE_IMAGE_ALT,
 } as const;
 
+export type SocialImage = {
+  url: string;
+  width: number;
+  height: number;
+  alt: string;
+  secureUrl?: string;
+  type?: string;
+};
+
+type SocialImageOptions = {
+  includeFallback?: boolean;
+};
+
+type TwitterImageInput = string | SocialImage;
+
 export function buildPageTitle(title: string): string {
   return `${title} - ${SITE_NAME}`;
 }
 
-export function getOpenGraphImages(): NonNullable<
+export function getOpenGraphImages(
+  images: SocialImage[] = [],
+  options: SocialImageOptions = {},
+): NonNullable<
   NonNullable<Metadata["openGraph"]>["images"]
 > {
+  const fallbackImages =
+    options.includeFallback === false
+      ? []
+      : [
+          {
+            url: normalizeSocialImageUrl(SOCIAL_IMAGE.path),
+            secureUrl: normalizeSocialImageUrl(SOCIAL_IMAGE.path),
+            width: SOCIAL_IMAGE.width,
+            height: SOCIAL_IMAGE.height,
+            alt: SOCIAL_IMAGE.alt,
+            type: "image/png",
+          },
+        ];
+
   return [
-    {
-      url: withBasePath(SOCIAL_IMAGE.path),
-      width: SOCIAL_IMAGE.width,
-      height: SOCIAL_IMAGE.height,
-      alt: SOCIAL_IMAGE.alt,
-    },
+    ...images.map((image) => ({
+      ...image,
+      url: normalizeSocialImageUrl(image.url),
+      secureUrl: image.secureUrl
+        ? normalizeSocialImageUrl(image.secureUrl)
+        : normalizeSocialImageUrl(image.url),
+    })),
+    ...fallbackImages,
   ];
 }
 
-export function getTwitterImages(): NonNullable<
+export function getTwitterImages(
+  images: TwitterImageInput[] = [],
+  options: SocialImageOptions = {},
+): NonNullable<
   NonNullable<Metadata["twitter"]>["images"]
 > {
-  return [withBasePath(SOCIAL_IMAGE.path)];
+  const fallbackImages =
+    options.includeFallback === false
+      ? []
+      : [
+          {
+            url: normalizeSocialImageUrl(SOCIAL_IMAGE.path),
+            secureUrl: normalizeSocialImageUrl(SOCIAL_IMAGE.path),
+            alt: SOCIAL_IMAGE.alt,
+            type: "image/png",
+            width: SOCIAL_IMAGE.width,
+            height: SOCIAL_IMAGE.height,
+          },
+        ];
+
+  return [
+    ...images.map((image) =>
+      typeof image === "string"
+        ? normalizeSocialImageUrl(image)
+        : {
+            ...image,
+            url: normalizeSocialImageUrl(image.url),
+            secureUrl: image.secureUrl
+              ? normalizeSocialImageUrl(image.secureUrl)
+              : normalizeSocialImageUrl(image.url),
+          },
+    ),
+    ...fallbackImages,
+  ];
+}
+
+export function getSiteSocialImagePath(): string {
+  return "/opengraph-image";
+}
+
+export function getPetSocialImagePath(slug: string): string {
+  return `/pets/${encodeURIComponent(slug)}/opengraph-image.png`;
+}
+
+export function getPetMetadataDescription(
+  displayName: string,
+  kind: string,
+  description: string,
+): string {
+  return truncateMetaDescription(
+    `${displayName} is a ${kind} Codex pet pack. ${description}`,
+  );
 }
 
 export function getWebsiteJsonLd() {
@@ -130,4 +212,17 @@ export function getPetJsonLd(
 
 function absoluteUrl(value: string): string {
   return value.startsWith("/") ? toPublicUrl(value) : value;
+}
+
+function normalizeSocialImageUrl(value: string): string {
+  return value.startsWith("/") ? toPublicUrl(value) : value;
+}
+
+function truncateMetaDescription(value: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 160) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, 157).trimEnd()}...`;
 }

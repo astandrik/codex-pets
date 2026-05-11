@@ -8,15 +8,13 @@ import {
   SOCIAL_IMAGE,
 } from "@/lib/site-metadata";
 
-export const runtime = "nodejs";
-export const alt = SITE_IMAGE_ALT;
-export const size = {
+export const siteOgAlt = SITE_IMAGE_ALT;
+export const siteOgSize = {
   width: SOCIAL_IMAGE.width,
   height: SOCIAL_IMAGE.height,
 };
-export const contentType = "image/png";
 
-export default function Image() {
+export function renderSiteOgImage(): ImageResponse {
   return new ImageResponse(
     (
       <div
@@ -199,6 +197,6 @@ export default function Image() {
         </div>
       </div>
     ),
-    size,
+    siteOgSize,
   );
 }
