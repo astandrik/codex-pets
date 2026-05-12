@@ -10,7 +10,10 @@ export const dynamic = "force-dynamic";
 
 const getApprovedPetsSnapshot = unstable_cache(
   async () => listApprovedPets(),
-  ["approved-pets-gallery"],
+  [
+    "approved-pets-gallery",
+    process.env.CODEX_PETS_DATA_SOURCE?.trim() || "ydb",
+  ],
   { revalidate: 60 },
 );
 

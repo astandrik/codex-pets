@@ -9,10 +9,44 @@ const basePath =
     ? `/${configuredBasePath.replace(/^\/+|\/+$/g, "")}`
     : undefined;
 
+const htmlLimitedBotUserAgents = [
+  "TelegramBot",
+  "WebpageBot",
+  // Next 16.0.10 defaults; setting htmlLimitedBots overrides the built-in list.
+  "[\\w-]+-Google",
+  "Google-[\\w-]+",
+  "Chrome-Lighthouse",
+  "Slurp",
+  "DuckDuckBot",
+  "baiduspider",
+  "yandex",
+  "sogou",
+  "bitlybot",
+  "tumblr",
+  "vkShare",
+  "quora link preview",
+  "redditbot",
+  "ia_archiver",
+  "Bingbot",
+  "BingPreview",
+  "applebot",
+  "facebookexternalhit",
+  "facebookcatalog",
+  "Twitterbot",
+  "LinkedInBot",
+  "Slackbot",
+  "Discordbot",
+  "WhatsApp",
+  "SkypeUriPreview",
+  "Yeti",
+  "googleweblight",
+] as const;
+
+const htmlLimitedBots = new RegExp(htmlLimitedBotUserAgents.join("|"), "i");
+
 const nextConfig: NextConfig = {
   basePath,
-  // Telegram link previews do not execute streamed metadata payloads.
-  htmlLimitedBots: /.*/,
+  htmlLimitedBots,
   serverExternalPackages: ["ydb-sdk", "@yandex-cloud/nodejs-sdk"],
   turbopack: {
     root,

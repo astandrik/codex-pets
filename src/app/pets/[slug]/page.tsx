@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import {
   Button,
   Card,
@@ -45,10 +46,8 @@ type PetPageProps = {
   params: Promise<{ slug: string }>;
 };
 
-const getCachedPetBySlug = unstable_cache(
+const getPetBySlugForRequest = cache(
   async (slug: string) => getPetBySlug(slug),
-  ["pet-page-by-slug"],
-  { revalidate: 60 },
 );
 
 const getCachedPetMetrics = unstable_cache(
@@ -61,7 +60,7 @@ export async function generateMetadata({
   params,
 }: PetPageProps): Promise<Metadata> {
   const { slug } = await params;
-  const pet = await getCachedPetBySlug(slug);
+  const pet = await getPetBySlugForRequest(slug);
 
   if (!pet || pet.status === "deleted") {
     return {
@@ -119,7 +118,7 @@ export async function generateMetadata({
 
 export default async function PetPage({ params }: PetPageProps) {
   const { slug } = await params;
-  const pet = await getCachedPetBySlug(slug);
+  const pet = await getPetBySlugForRequest(slug);
   if (!pet) notFound();
   if (pet.status === "deleted") notFound();
 

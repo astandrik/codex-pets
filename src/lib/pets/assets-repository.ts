@@ -2,6 +2,12 @@ import { TypedValues, withSession } from "@/lib/ydb/client";
 import { bytesAt, rowsFromResult, textAt } from "@/lib/ydb/result";
 import { TABLES } from "@/lib/ydb/schema";
 import { assetUrl } from "@/lib/pets/asset-urls";
+import { isMockPetsDataSource } from "@/lib/pets/mock-data";
+import {
+  readMockPetAssetFile,
+  readMockPetSpritesheetAsset,
+  storeMockPetAssetFiles,
+} from "@/lib/pets/mock-assets";
 
 export { assetUrl } from "@/lib/pets/asset-urls";
 
@@ -23,6 +29,10 @@ export async function storePetAssetsInYdb(input: {
   spritesheetUrl: string;
   zipUrl: string;
 }> {
+  if (isMockPetsDataSource()) {
+    return storeMockPetAssetFiles(input);
+  }
+
   await withSession((session) =>
     session.executeQuery(
       `
@@ -65,6 +75,10 @@ export async function readPetAssetFile(input: {
   buffer: Buffer;
   contentType: string;
 }> {
+  if (isMockPetsDataSource()) {
+    return readMockPetAssetFile(input);
+  }
+
   const contentType = ASSET_CONTENT_TYPES.get(input.filename);
   if (!contentType) {
     throw new Error("Unsupported asset file.");
@@ -91,6 +105,10 @@ export async function readPetSpritesheetAsset(input: {
   contentType: string;
   filename: string;
 }> {
+  if (isMockPetsDataSource()) {
+    return readMockPetSpritesheetAsset(input);
+  }
+
   const { row, spritesheetExt } = await readAssetRow(input.assetId);
   const filename = `spritesheet.${spritesheetExt}`;
   return {

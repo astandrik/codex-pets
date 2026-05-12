@@ -96,7 +96,9 @@ export function AppHeaderNav() {
         </>
       )}
       <Button view="action" size="m" href={withBasePath("/submit")}>
-        <Plus />
+        <Button.Icon>
+          <Plus />
+        </Button.Icon>
         Submit
       </Button>
     </Flex>

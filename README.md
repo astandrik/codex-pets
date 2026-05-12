@@ -35,6 +35,15 @@ NEXT_PUBLIC_APP_URL=https://example.com/codex-pets
 The public gallery renders without secrets. For account login, submit, moderation,
 and metrics you need `YDB_PETS_ENDPOINT`, `YDB_PETS_DATABASE`, and auth env.
 
+To run without YDB on generated sample data:
+
+```bash
+CODEX_PETS_DATA_SOURCE=mock AUTH_MODE=single-user \
+  AUTH_SINGLE_USER_EMAIL=local-admin@example.com \
+  NEXT_PUBLIC_APP_URL=http://localhost:3000 \
+  npm run dev -- --port 3000
+```
+
 ## Production notes
 
 For a dedicated public subdomain such as `https://pets.example.com`, prefer:

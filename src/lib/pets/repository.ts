@@ -5,6 +5,17 @@ import type { ApprovalStatus, PetKind, PublicPet } from "@/lib/pets/types";
 import { withBasePath } from "@/lib/base-path";
 import { slugify, type PetJson } from "@/lib/pets/validation";
 import { statusAfterModeration } from "@/lib/pets/moderation";
+import {
+  createMockPetRecord,
+  getMockPetById,
+  getMockPetBySlug,
+  incrementMockDownload,
+  incrementMockLike,
+  isMockPetsDataSource,
+  listMockPetRecords,
+  moderateMockPet,
+  softDeleteMockPetById,
+} from "@/lib/pets/mock-data";
 
 export type PublicPetMetrics = {
   downloadCount: number;
@@ -66,6 +77,10 @@ export type PetFilters = {
 export async function listApprovedPets(
   filters: PetFilters = {},
 ): Promise<PublicPet[]> {
+  if (isMockPetsDataSource()) {
+    return listMockPets(filters, "approved");
+  }
+
   if (!isYdbConfigured()) return [];
 
   const result = await withSession((session) =>
@@ -106,6 +121,12 @@ LIMIT 200;
 export async function getApprovedPetBySlug(
   slug: string,
 ): Promise<PublicPet | null> {
+  if (isMockPetsDataSource()) {
+    const pet = getMockPetBySlug(slug);
+    if (!pet || pet.status !== "approved") return null;
+    return toPublicPet(pet, pet.metrics);
+  }
+
   const pet = await getPetBySlug(slug);
   if (!pet || pet.status !== "approved") return null;
   const metrics = await getMetrics(slug);
@@ -113,6 +134,10 @@ export async function getApprovedPetBySlug(
 }
 
 export async function getPetBySlug(slug: string): Promise<PetRow | null> {
+  if (isMockPetsDataSource()) {
+    return getMockPetBySlug(slug);
+  }
+
   if (!isYdbConfigured()) return null;
 
   const result = await withSession((session) =>
@@ -132,6 +157,12 @@ LIMIT 1;
 }
 
 export async function listPetsForOwner(ownerId: string): Promise<PublicPet[]> {
+  if (isMockPetsDataSource()) {
+    return listMockPetRecords().filter(
+      (pet) => pet.ownerId === ownerId && pet.status !== "deleted",
+    ).map((pet) => toPublicPet(pet, pet.metrics));
+  }
+
   if (!isYdbConfigured()) return [];
 
   const result = await withSession((session) =>
@@ -161,6 +192,10 @@ LIMIT 200;
 }
 
 export async function listPendingPets(): Promise<PublicPet[]> {
+  if (isMockPetsDataSource()) {
+    return listMockPets({}, "pending");
+  }
+
   if (!isYdbConfigured()) return [];
 
   const result = await withSession((session) =>
@@ -186,6 +221,10 @@ LIMIT 200;
 }
 
 export async function countPendingPets(): Promise<number> {
+  if (isMockPetsDataSource()) {
+    return listMockPetRecords().filter((pet) => pet.status === "pending").length;
+  }
+
   if (!isYdbConfigured()) return 0;
 
   const result = await withSession((session) =>
@@ -207,6 +246,31 @@ WHERE status = $status;
 export async function createPendingPet(
   input: CreatePendingPetInput,
 ): Promise<PublicPet> {
+  if (isMockPetsDataSource()) {
+    const slug = slugify(input.petJson.id || input.petJson.displayName);
+    if (!slug) {
+      throw new Error("Pet id cannot be converted into a public slug.");
+    }
+
+    const pet = createMockPetRecord({
+      requestedSlug: slug,
+      displayName: input.petJson.displayName,
+      description: input.petJson.description,
+      spritesheetUrl: input.spritesheetUrl,
+      petJsonUrl: input.petJsonUrl,
+      zipUrl: input.zipUrl,
+      spritesheetExt: input.spritesheetExt,
+      kind: input.kind,
+      tags: input.tags,
+      ownerId: input.ownerId,
+      ownerEmail: input.ownerEmail,
+      ownerName: input.ownerName,
+      contactEmail: input.contactEmail,
+    });
+
+    return toPublicPet(pet, pet.metrics);
+  }
+
   const requestedSlug = slugify(input.petJson.id || input.petJson.displayName);
   if (!requestedSlug) {
     throw new Error("Pet id cannot be converted into a public slug.");
@@ -302,6 +366,11 @@ export async function moderatePet(input: {
   decision: "approved" | "rejected";
   reason?: string;
 }): Promise<PublicPet | null> {
+  if (isMockPetsDataSource()) {
+    const pet = moderateMockPet(input);
+    return pet ? toPublicPet(pet, pet.metrics) : null;
+  }
+
   const pet = await getPetById(input.petId);
   if (!pet) return null;
 
@@ -376,6 +445,10 @@ export async function softDeletePetById(input: {
   actorUserId: string;
   actorRole: "user" | "admin";
 }): Promise<boolean> {
+  if (isMockPetsDataSource()) {
+    return softDeleteMockPetById(input);
+  }
+
   const pet = await getPetById(input.petId);
   if (!pet || pet.status === "deleted") {
     return false;
@@ -408,6 +481,11 @@ WHERE slug = $slug;
 }
 
 export async function incrementDownload(slug: string): Promise<void> {
+  if (isMockPetsDataSource()) {
+    incrementMockDownload(slug);
+    return;
+  }
+
   if (!isYdbConfigured()) return;
 
   const current = await getMetrics(slug);
@@ -438,6 +516,10 @@ VALUES ($pet_slug, $download_count, $install_count, $like_count, $updated_at);
 }
 
 export async function incrementLike(slug: string): Promise<number> {
+  if (isMockPetsDataSource()) {
+    return incrementMockLike(slug);
+  }
+
   if (!isYdbConfigured()) return 0;
 
   const current = await getMetrics(slug);
@@ -473,6 +555,15 @@ VALUES ($pet_slug, $download_count, $install_count, $like_count, $updated_at);
 export async function getPetMetrics(
   slug: string,
 ): Promise<PublicPetMetrics> {
+  if (isMockPetsDataSource()) {
+    const pet = getMockPetBySlug(slug);
+    const metrics = pet?.metrics ?? EMPTY_METRICS;
+    return {
+      downloadCount: metrics.downloadCount,
+      likeCount: metrics.likeCount,
+    };
+  }
+
   const metrics = await getMetrics(slug);
   return {
     downloadCount: metrics.downloadCount,
@@ -481,6 +572,10 @@ export async function getPetMetrics(
 }
 
 async function getPetById(id: string): Promise<PetRow | null> {
+  if (isMockPetsDataSource()) {
+    return getMockPetById(id);
+  }
+
   const result = await withSession((session) =>
     session.executeQuery(
       `
@@ -660,6 +755,26 @@ function toPublicPet(
 
 function toPublicUrl(value: string): string {
   return value.startsWith("/") ? withBasePath(value) : value;
+}
+
+function listMockPets(
+  filters: PetFilters,
+  status: ApprovalStatus,
+): PublicPet[] {
+  const q = filters.q?.trim().toLowerCase();
+
+  return listMockPetRecords().filter((pet) => {
+    if (pet.status !== status) return false;
+    if (filters.kind && filters.kind !== "all" && pet.kind !== filters.kind) {
+      return false;
+    }
+    if (!q) return true;
+    return (
+      pet.displayName.toLowerCase().includes(q) ||
+      pet.description.toLowerCase().includes(q) ||
+      pet.tags.some((tag) => tag.includes(q))
+    );
+  }).map((pet) => toPublicPet(pet, pet.metrics));
 }
 
 function parseTags(value: string): string[] {
