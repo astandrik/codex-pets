@@ -61,6 +61,9 @@ export function AppHeaderNav() {
       aria-label="Primary"
       className="app-header__nav"
     >
+      <Link href="/about" prefetch={false} className="app-header__link">
+        About
+      </Link>
       {principal ? (
         <>
           <Link href="/my-pets" prefetch={false} className="app-header__link">

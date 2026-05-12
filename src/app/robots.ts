@@ -9,6 +9,7 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: "*",
         allow: [
           withBasePath("/"),
+          withBasePath("/about"),
           withBasePath("/pets/"),
           withBasePath("/submit"),
           withBasePath("/llms.txt"),
@@ -19,6 +20,7 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: "OAI-SearchBot",
         allow: [
           withBasePath("/"),
+          withBasePath("/about"),
           withBasePath("/pets/"),
           withBasePath("/submit"),
           withBasePath("/llms.txt"),
@@ -29,6 +31,7 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: "GPTBot",
         allow: [
           withBasePath("/"),
+          withBasePath("/about"),
           withBasePath("/pets/"),
           withBasePath("/submit"),
           withBasePath("/llms.txt"),

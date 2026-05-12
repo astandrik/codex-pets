@@ -60,7 +60,11 @@
     object-position: left center;
   }
 
-  &__manifest {
+  &__links {
     order: 3;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--spacing-md);
   }
 }

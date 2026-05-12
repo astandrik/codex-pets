@@ -55,9 +55,14 @@ export function Footer() {
             </a>
           </span>
         </div>
-        <Link href="/api/manifest" className="footer__link footer__manifest">
-          Manifest
-        </Link>
+        <div className="footer__links" aria-label="Footer links">
+          <Link href="/about" className="footer__link">
+            About
+          </Link>
+          <Link href="/api/manifest" className="footer__link">
+            Manifest
+          </Link>
+        </div>
       </div>
     </Container>
   );
