@@ -10,6 +10,7 @@ import {
   getMockPetById,
   getMockPetBySlug,
   incrementMockDownload,
+  incrementMockInstall,
   incrementMockLike,
   isMockPetsDataSource,
   listMockPetRecords,
@@ -19,12 +20,11 @@ import {
 
 export type PublicPetMetrics = {
   downloadCount: number;
+  installCount: number;
   likeCount: number;
 };
 
-type PetMetrics = PublicPetMetrics & {
-  installCount: number;
-};
+type PetMetrics = PublicPetMetrics;
 
 const EMPTY_METRICS: PetMetrics = {
   downloadCount: 0,
@@ -515,6 +515,41 @@ VALUES ($pet_slug, $download_count, $install_count, $like_count, $updated_at);
   );
 }
 
+export async function incrementInstall(slug: string): Promise<void> {
+  if (isMockPetsDataSource()) {
+    incrementMockInstall(slug);
+    return;
+  }
+
+  if (!isYdbConfigured()) return;
+
+  const current = await getMetrics(slug);
+  const now = new Date().toISOString();
+
+  await withSession((session) =>
+    session.executeQuery(
+      `
+DECLARE $pet_slug AS Utf8;
+DECLARE $download_count AS Uint32;
+DECLARE $install_count AS Uint32;
+DECLARE $like_count AS Uint32;
+DECLARE $updated_at AS Utf8;
+
+UPSERT INTO ${TABLES.metrics}
+(pet_slug, download_count, install_count, like_count, updated_at)
+VALUES ($pet_slug, $download_count, $install_count, $like_count, $updated_at);
+      `,
+      {
+        $pet_slug: TypedValues.utf8(slug),
+        $download_count: TypedValues.uint32(current.downloadCount),
+        $install_count: TypedValues.uint32(current.installCount + 1),
+        $like_count: TypedValues.uint32(current.likeCount),
+        $updated_at: TypedValues.utf8(now),
+      },
+    ),
+  );
+}
+
 export async function incrementLike(slug: string): Promise<number> {
   if (isMockPetsDataSource()) {
     return incrementMockLike(slug);
@@ -560,6 +595,7 @@ export async function getPetMetrics(
     const metrics = pet?.metrics ?? EMPTY_METRICS;
     return {
       downloadCount: metrics.downloadCount,
+      installCount: metrics.installCount,
       likeCount: metrics.likeCount,
     };
   }
@@ -567,6 +603,7 @@ export async function getPetMetrics(
   const metrics = await getMetrics(slug);
   return {
     downloadCount: metrics.downloadCount,
+    installCount: metrics.installCount,
     likeCount: metrics.likeCount,
   };
 }
@@ -749,6 +786,7 @@ function toPublicPet(
     createdAt: row.createdAt,
     approvedAt: row.approvedAt,
     downloadCount: metrics.downloadCount,
+    installCount: metrics.installCount,
     likeCount: metrics.likeCount,
   };
 }

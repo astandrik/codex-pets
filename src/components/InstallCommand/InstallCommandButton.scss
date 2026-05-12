@@ -1,0 +1,61 @@
+.install-command {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--g-color-text-secondary);
+
+  &__icon {
+    flex: none;
+    color: var(--g-color-text-hint);
+  }
+
+  &__code {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--g-color-text-primary);
+    font-size: 12px;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__button {
+    position: relative;
+    z-index: 2;
+    flex: none;
+
+    .g-button__text {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--spacing-xs);
+    }
+  }
+
+  &_card {
+    position: relative;
+    z-index: 2;
+    margin: var(--spacing-lg) var(--spacing-2xl) var(--spacing-md);
+    padding: var(--spacing-xs) var(--spacing-xs) var(--spacing-xs)
+      var(--spacing-md);
+  }
+
+  &_detail {
+    width: min(100%, 520px);
+    min-height: 44px;
+    padding: var(--spacing-xs) var(--spacing-xs) var(--spacing-xs)
+      var(--spacing-md);
+  }
+}
+
+@media (max-width: 520px) {
+  .install-command {
+    &__button-text {
+      display: none;
+    }
+  }
+}

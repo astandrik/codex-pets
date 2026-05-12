@@ -93,5 +93,6 @@ export type PublicPet = {
   createdAt: string;
   approvedAt: string | null;
   downloadCount: number;
+  installCount: number;
   likeCount: number;
 };

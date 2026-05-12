@@ -10,11 +10,17 @@ import {
   Label,
   Text,
 } from "@/components/GravityUI/GravityUI";
-import { ArrowDownToLine, FileText, Picture } from "@gravity-ui/icons";
+import {
+  ArrowDownToLine,
+  FileText,
+  FolderArrowDown,
+  Picture,
+} from "@gravity-ui/icons";
 import { unstable_cache } from "next/cache";
 
 import { PetDeleteGate } from "@/components/PetDeleteAction/PetDeleteGate";
 import { PetBreadcrumbs } from "@/components/PetDetails/PetBreadcrumbs";
+import { InstallCommandButton } from "@/components/InstallCommand/InstallCommandButton";
 import { PetMetaList } from "@/components/PetDetails/PetMetaList";
 import { PetLikeButton } from "@/components/PetLikeButton/PetLikeButton";
 import { StatePreview } from "@/components/StatePreview/StatePreview";
@@ -189,8 +195,16 @@ export default async function PetPage({ params }: PetPageProps) {
               {formatMetricCount(metrics.downloadCount)}{" "}
               {metricLabel(metrics.downloadCount, "download")}
             </span>
+            <span className="pet-detail__metric">
+              <FolderArrowDown width={16} height={16} />
+              {formatMetricCount(metrics.installCount)}{" "}
+              {metricLabel(metrics.installCount, "install")}
+            </span>
           </div>
           <Flex gap={3} wrap className="pet-detail__actions">
+            {pet.status === "approved" ? (
+              <InstallCommandButton slug={pet.slug} surface="detail" />
+            ) : null}
             <Button
               view="action"
               size="l"

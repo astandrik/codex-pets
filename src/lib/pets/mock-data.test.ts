@@ -76,6 +76,7 @@ describe("mock pet data source", () => {
     await expect(incrementLike(created.slug)).resolves.toBe(1);
     await expect(getPetMetrics(created.slug)).resolves.toEqual({
       downloadCount: 1,
+      installCount: 0,
       likeCount: 1,
     });
 

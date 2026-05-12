@@ -318,6 +318,20 @@ export function incrementMockDownload(slug: string): void {
   });
 }
 
+export function incrementMockInstall(slug: string): void {
+  const pet = getMockPetBySlug(slug);
+  if (!pet) return;
+
+  writeMockPet({
+    ...pet,
+    metrics: {
+      ...pet.metrics,
+      installCount: pet.metrics.installCount + 1,
+    },
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 export function incrementMockLike(slug: string): number {
   const pet = getMockPetBySlug(slug);
   if (!pet) return 0;

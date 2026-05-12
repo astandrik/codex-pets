@@ -1,20 +1,5 @@
-.pet-card-link {
-  display: block;
-  text-decoration: none;
-  color: inherit;
-  transition: transform 0.18s ease;
-
-  &:hover {
-    transform: translateY(-2px);
-  }
-
-  &:hover .pet-card {
-    border-color: var(--g-color-line-generic-hover);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
-  }
-}
-
 .pet-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -28,12 +13,26 @@
   text-decoration: none;
   transition:
     border-color 0.18s ease,
-    box-shadow 0.18s ease;
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+
+  &:hover {
+    transform: translateY(-2px);
+    border-color: var(--g-color-line-generic-hover);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
+  }
+
+  &__overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+  }
 
   &__sprite-wrap {
     display: grid;
     place-items: center;
-    height: 230px;
+    height: 300px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     background:
       radial-gradient(
@@ -46,7 +45,7 @@
 
   &__sprite-frame {
     display: grid;
-    width: 140px;
+    width: 220px;
     aspect-ratio: 1;
     place-items: center;
     background:
@@ -58,7 +57,7 @@
   &__sprite-viewport,
   &__sprite-placeholder {
     display: block;
-    width: 104px;
+    width: 176px;
     aspect-ratio: 192 / 208;
   }
 

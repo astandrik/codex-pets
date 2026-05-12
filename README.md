@@ -238,3 +238,16 @@ Each pet is distributed as:
 
 The v1 validator expects an 8x9 atlas at `1536x1872`, where each cell is
 `192x208`.
+
+## CLI install
+
+Approved gallery pets can be installed into Codex from npm:
+
+```bash
+npx @astandrik/codex-pets install zero-two-2
+```
+
+The CLI reads `/api/manifest` from `https://pets.ydb-qdrant.tech` by default
+and writes to `${CODEX_HOME:-~/.codex}/pets/<slug>/`. Use `--force` to replace
+an existing local pet folder, or `CODEX_PETS_URL` / `--url` to point at another
+deployment.

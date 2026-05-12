@@ -38,6 +38,7 @@ describe("POST /api/pets/[slug]/like", () => {
       createdAt: new Date().toISOString(),
       approvedAt: new Date().toISOString(),
       downloadCount: 3,
+      installCount: 2,
       likeCount: 6,
     });
     vi.mocked(incrementLike).mockResolvedValueOnce(7);

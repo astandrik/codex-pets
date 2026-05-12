@@ -64,6 +64,7 @@ describe("POST /api/submissions/register", () => {
       createdAt: new Date().toISOString(),
       approvedAt: null,
       downloadCount: 0,
+      installCount: 0,
       likeCount: 0,
     });
 
@@ -153,6 +154,7 @@ describe("POST /api/submissions/register", () => {
       createdAt: new Date().toISOString(),
       approvedAt: null,
       downloadCount: 0,
+      installCount: 0,
       likeCount: 0,
     });
 
