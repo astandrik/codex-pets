@@ -22,16 +22,16 @@
 
 .pet-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--spacing-2xl);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
   margin-top: var(--spacing-3xl);
 
-  @include sm {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  @include md {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   @include lg {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 

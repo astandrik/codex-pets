@@ -220,7 +220,7 @@ export async function runCli(argv, io = {}) {
   const baseUrl = parsed.baseUrl ?? env.CODEX_PETS_URL ?? DEFAULT_BASE_URL;
 
   if (parsed.version) {
-    stdout("0.1.0");
+    stdout("0.1.1");
     return;
   }
 
@@ -254,6 +254,9 @@ export async function runCli(argv, io = {}) {
       warn: stderr,
     });
     stdout(`Installed ${result.pet.slug} to ${result.targetDir}`);
+    stdout(
+      "If Codex is already running, restart it before selecting the pet in Settings -> Appearance -> Pets.",
+    );
     return;
   }
 

@@ -250,4 +250,5 @@ npx @astandrik/codex-pets install zero-two-2
 The CLI reads `/api/manifest` from `https://pets.ydb-qdrant.tech` by default
 and writes to `${CODEX_HOME:-~/.codex}/pets/<slug>/`. Use `--force` to replace
 an existing local pet folder, or `CODEX_PETS_URL` / `--url` to point at another
-deployment.
+deployment. If Codex is already running, restart it before selecting the new pet
+in Settings -> Appearance -> Pets.

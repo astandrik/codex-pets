@@ -39,7 +39,14 @@ export function InstallCommandButton({
   return (
     <div className={`install-command install-command_${surface}`}>
       <TerminalLine width={16} height={16} className="install-command__icon" />
-      <code className="install-command__code">{command}</code>
+      {surface === "card" ? (
+        <code className="install-command__code" title={command}>
+          <span className="install-command__prefix">install</span>{" "}
+          <span className="install-command__slug">{slug}</span>
+        </code>
+      ) : (
+        <code className="install-command__code">{command}</code>
+      )}
       <Button
         view="flat"
         size="s"

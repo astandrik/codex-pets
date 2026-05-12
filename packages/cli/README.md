@@ -8,6 +8,8 @@ npx @astandrik/codex-pets install zero-two-2
 
 The CLI reads the public manifest from `https://pets.ydb-qdrant.tech` by
 default and writes files into `${CODEX_HOME:-~/.codex}/pets/<slug>/`.
+If Codex is already running, restart it before selecting the new pet in
+Settings -> Appearance -> Pets.
 
 ## Commands
 

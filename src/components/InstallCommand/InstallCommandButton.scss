@@ -24,6 +24,15 @@
     white-space: nowrap;
   }
 
+  &__prefix {
+    color: var(--g-color-text-hint);
+  }
+
+  &__slug {
+    color: var(--g-color-text-primary);
+    font-weight: 600;
+  }
+
   &__button {
     position: relative;
     z-index: 2;
@@ -42,6 +51,14 @@
     margin: var(--spacing-lg) var(--spacing-2xl) var(--spacing-md);
     padding: var(--spacing-xs) var(--spacing-xs) var(--spacing-xs)
       var(--spacing-md);
+
+    .install-command__button-text {
+      display: none;
+    }
+
+    .install-command__slug {
+      font-size: 13px;
+    }
   }
 
   &_detail {
