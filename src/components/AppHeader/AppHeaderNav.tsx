@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Button, Flex, Label } from "@/components/GravityUI/GravityUI";
 import { Plus } from "@gravity-ui/icons";
 
@@ -19,6 +20,7 @@ type HeaderNavResponse = {
 
 export function AppHeaderNav() {
   const [data, setData] = useState<HeaderNavResponse | null>(null);
+  const pathname = usePathname();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -46,34 +48,58 @@ export function AppHeaderNav() {
 
     void load();
     return () => controller.abort();
-  }, []);
+  }, [pathname]);
 
   const principal = data?.principal ?? null;
   const pendingReviewCount = data?.pendingReviewCount ?? 0;
   const isAdmin = principal?.role === "admin";
 
+  const isActive = (href: string) =>
+    pathname === href || pathname.startsWith(`${href}/`);
+
+  const linkProps = (href: string, extraClassName?: string) => {
+    const active = isActive(href);
+    const activeClassName = active ? " app-header__link_active" : "";
+    const extraClass = extraClassName ? ` ${extraClassName}` : "";
+
+    return {
+      className: `app-header__link${activeClassName}${extraClass}`,
+      "aria-current": active ? "page" : undefined,
+    } as const;
+  };
+
   return (
     <Flex
       as="nav"
       alignItems="center"
-      gap={3}
+      gap={2}
       wrap
       aria-label="Primary"
       className="app-header__nav"
     >
-      <Link href="/about" prefetch={false} className="app-header__link">
-        About
-      </Link>
-      {principal ? (
-        <>
-          <Link href="/my-pets" prefetch={false} className="app-header__link">
-            My pets
+      <ul className="app-header__links">
+        <li>
+          <Link href="/about" prefetch={false} {...linkProps("/about")}>
+            About
           </Link>
-          {isAdmin ? (
+        </li>
+        {principal ? (
+          <li>
+            <Link
+              href="/my-pets"
+              prefetch={false}
+              {...linkProps("/my-pets")}
+            >
+              My pets
+            </Link>
+          </li>
+        ) : null}
+        {principal && isAdmin ? (
+          <li>
             <Link
               href="/admin/submissions"
               prefetch={false}
-              className="app-header__link app-header__review-link"
+              {...linkProps("/admin/submissions", "app-header__review-link")}
             >
               <span>Review</span>
               <Label
@@ -83,27 +109,55 @@ export function AppHeaderNav() {
                 {pendingReviewCount}
               </Label>
             </Link>
-          ) : null}
-          <a href={withBasePath("/logout")} className="app-header__link">
-            Logout
-          </a>
-        </>
-      ) : (
-        <>
-          <Link href="/login" prefetch={false} className="app-header__link">
-            Login
-          </Link>
-          <Link href="/register" prefetch={false} className="app-header__link">
-            Register
-          </Link>
-        </>
-      )}
-      <Button view="action" size="m" href={withBasePath("/submit")}>
-        <Button.Icon>
-          <Plus />
-        </Button.Icon>
-        Submit
-      </Button>
+          </li>
+        ) : null}
+      </ul>
+
+      <span className="app-header__divider" aria-hidden="true" />
+
+      <div className="app-header__actions">
+        {principal ? (
+          <>
+            <span className="app-header__user" title={principal.email ?? undefined}>
+              <span className="app-header__user-avatar" aria-hidden="true">
+                {(principal.name ?? principal.email ?? "?")
+                  .trim()
+                  .charAt(0)
+                  .toUpperCase()}
+              </span>
+              <span className="app-header__user-name">
+                {principal.name ?? principal.email ?? "Account"}
+              </span>
+            </span>
+            <a href={withBasePath("/logout")} className="app-header__link">
+              Logout
+            </a>
+          </>
+        ) : (
+          <>
+            <Link
+              href="/login"
+              prefetch={false}
+              {...linkProps("/login")}
+            >
+              Login
+            </Link>
+            <Link
+              href="/register"
+              prefetch={false}
+              {...linkProps("/register")}
+            >
+              Register
+            </Link>
+          </>
+        )}
+        <Button view="action" size="m" href={withBasePath("/submit")}>
+          <Button.Icon>
+            <Plus />
+          </Button.Icon>
+          Submit
+        </Button>
+      </div>
     </Flex>
   );
 }
