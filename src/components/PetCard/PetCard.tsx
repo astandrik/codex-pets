@@ -2,17 +2,12 @@ import Link from "next/link";
 import Image from "next/image";
 import type { CSSProperties } from "react";
 import { Card, Flex, Label, Text } from "@/components/GravityUI/GravityUI";
-import {
-  ArrowDownToLine,
-  ArrowRight,
-  FolderArrowDown,
-  Heart,
-} from "@gravity-ui/icons";
+import { ArrowRight } from "@gravity-ui/icons";
 
 import { InstallCommandButton } from "@/components/InstallCommand/InstallCommandButton";
+import { PetCardMetrics } from "@/components/PetCard/PetCardMetrics";
 import { getPetIdleStripUrl } from "@/lib/pets/asset-urls";
 import { kindLabelTheme, statusLabelText, statusLabelTheme } from "@/lib/ui/labels";
-import { formatMetricCount, metricLabel } from "@/lib/ui/metrics";
 import { PET_SHEET, PET_STATES } from "@/lib/pets/types";
 import type { PublicPet } from "@/lib/pets/types";
 import "./PetCard.scss";
@@ -75,7 +70,7 @@ export function PetCard({ pet, showStatus = false }: PetCardProps) {
         </div>
       </div>
       <Flex direction="column" gap={2} className="pet-card__body">
-        <Flex gap={2} wrap>
+        <Flex gap={1} wrap className="pet-card__badges">
           <Label theme={kindLabelTheme(pet.kind)} size="s">
             {pet.kind}
           </Label>
@@ -108,23 +103,14 @@ export function PetCard({ pet, showStatus = false }: PetCardProps) {
             ))}
           </Flex>
         ) : null}
-        <div className="pet-card__metrics" aria-label="Pet metrics">
-          <span className="pet-card__metric">
-            <Heart width={16} height={16} />
-            {formatMetricCount(pet.likeCount)}{" "}
-            {metricLabel(pet.likeCount, "like")}
-          </span>
-          <span className="pet-card__metric">
-            <ArrowDownToLine width={16} height={16} />
-            {formatMetricCount(pet.downloadCount)}{" "}
-            {metricLabel(pet.downloadCount, "download")}
-          </span>
-          <span className="pet-card__metric">
-            <FolderArrowDown width={16} height={16} />
-            {formatMetricCount(pet.installCount)}{" "}
-            {metricLabel(pet.installCount, "install")}
-          </span>
-        </div>
+        <PetCardMetrics
+          slug={pet.slug}
+          displayName={pet.displayName}
+          status={pet.status}
+          likeCount={pet.likeCount}
+          downloadCount={pet.downloadCount}
+          installCount={pet.installCount}
+        />
       </Flex>
       {pet.status === "approved" ? (
         <InstallCommandButton slug={pet.slug} surface="card" />

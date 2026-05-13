@@ -99,6 +99,23 @@
     line-height: 1.5;
   }
 
+  &__badges,
+  &__tags {
+    .g-label {
+      --g-label-height: 14px;
+      min-height: 14px;
+      padding: 0 4px;
+      font-size: 9px;
+      line-height: 14px;
+      border-radius: 3px;
+    }
+
+    .g-label__content {
+      font-size: 9px;
+      line-height: 14px;
+    }
+  }
+
   &__tags {
     margin-top: var(--spacing-md);
   }
@@ -117,7 +134,41 @@
     align-items: center;
     min-width: 0;
     gap: var(--spacing-xs);
+    appearance: none;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
     font-variant-numeric: tabular-nums;
+    text-align: left;
+    text-decoration: none;
+  }
+
+  &__metric-action {
+    position: relative;
+    z-index: 2;
+    cursor: pointer;
+
+    &:hover {
+      color: var(--g-color-text-primary);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--g-color-line-brand);
+      outline-offset: 3px;
+      border-radius: 3px;
+    }
+
+    &:disabled {
+      cursor: default;
+    }
+
+    &_liked {
+      svg {
+        color: #ff668a;
+      }
+    }
   }
 
   &__details {
