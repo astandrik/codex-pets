@@ -9,11 +9,14 @@ import {
   getTwitterImages,
   SITE_NAME,
 } from "@/lib/site-metadata";
+import { AboutResourceLinks } from "./AboutResourceLinks";
 import "./about.scss";
 
 const ABOUT_DESCRIPTION =
   "Learn how Codex Pets works: a moderated community gallery, npm CLI installer, and Codex-compatible pet pack format.";
 const INSTALL_COMMAND = "npx @astandrik/codex-pets install zero-two-2";
+const GITHUB_REPOSITORY_URL = "https://github.com/astandrik/codex-pets";
+const NPM_PACKAGE_URL = "https://www.npmjs.com/package/@astandrik/codex-pets";
 
 const packFacts = [
   "pet.json metadata",
@@ -74,6 +77,7 @@ export default function AboutPage() {
     name: "About Codex Pets",
     url: toPublicUrl("/about"),
     description: ABOUT_DESCRIPTION,
+    sameAs: [GITHUB_REPOSITORY_URL, NPM_PACKAGE_URL],
     isPartOf: {
       "@type": "WebSite",
       name: SITE_NAME,
@@ -117,6 +121,10 @@ export default function AboutPage() {
                 <Plus />
                 Submit a pet
               </Button>
+              <AboutResourceLinks
+                githubUrl={GITHUB_REPOSITORY_URL}
+                npmPackageUrl={NPM_PACKAGE_URL}
+              />
             </Flex>
           </Flex>
 
