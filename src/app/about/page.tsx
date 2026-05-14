@@ -175,6 +175,34 @@ export default function AboutPage() {
             sitemap, and public manifest.
           </Text>
         </article>
+
+        <article className="about-section about-agent">
+          <Text variant="display-1" as="h2">
+            Agent access
+          </Text>
+          <Text variant="body-2" color="secondary">
+            Regular agents should use the public HTTP contract: the{" "}
+            <a href={withBasePath("/api/manifest")}>manifest</a>,{" "}
+            <a href={withBasePath("/api/pets")}>approved pet JSON</a>, pet
+            detail JSON at <code>/api/pets/&lt;slug&gt;</code>, and the npm
+            install command. Browser WebMCP is an optional enhancement for
+            WebMCP-capable browsers that expose <code>navigator.modelContext</code>.
+          </Text>
+          <ul className="about-agent__list">
+            <li>
+              <span>Manifest</span>
+              <code>/api/manifest</code>
+            </li>
+            <li>
+              <span>Install</span>
+              <code>npx @astandrik/codex-pets install &lt;slug&gt;</code>
+            </li>
+            <li>
+              <span>Browser WebMCP</span>
+              <code>search_codex_pets, get_codex_pet</code>
+            </li>
+          </ul>
+        </article>
       </section>
 
       <section className="page-section about-faq" aria-labelledby="about-faq-title">

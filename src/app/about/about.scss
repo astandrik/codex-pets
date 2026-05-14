@@ -145,6 +145,34 @@
   }
 }
 
+.about-agent {
+  &__list {
+    display: grid;
+    gap: var(--spacing-sm);
+    max-width: 760px;
+    padding: 0;
+    margin: var(--spacing-lg) 0 0;
+    list-style: none;
+  }
+
+  &__list li {
+    display: grid;
+    grid-template-columns: minmax(110px, 160px) minmax(0, 1fr);
+    gap: var(--spacing-md);
+    align-items: start;
+    min-width: 0;
+    padding: var(--spacing-sm) 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--muted-strong);
+  }
+
+  &__list code {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--g-color-text-primary);
+  }
+}
+
 .about-faq {
   max-width: 860px;
 
@@ -193,5 +221,10 @@
   .about-pack,
   .about-faq__item {
     padding: var(--spacing-lg);
+  }
+
+  .about-agent__list li {
+    grid-template-columns: 1fr;
+    gap: 4px;
   }
 }

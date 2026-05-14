@@ -14,7 +14,8 @@ Public site: https://pets.ydb-qdrant.tech/.
 - App-owned email+password auth with YDB-backed users and sessions
 - Pet assets stored in YDB as binary blobs
 - Dynamic `robots.txt`, `sitemap.xml`, and `llms.txt`
-- Read-only WebMCP tools registered in supported browsers for agent access
+- Agent-facing HTTP access through `llms.txt`, `/api/manifest`, and `/api/pets`
+- Optional read-only browser WebMCP tools in supported browser runtimes
 - Yandex Metrika using the same counter as `ydb-qdrant-ui` (`104844437`)
 - JSZip + Sharp for package validation
 
@@ -207,7 +208,17 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - `sitemap.xml` is dynamic and includes all currently approved pets.
 - `llms.txt` is dynamic and provides a curated AI-readable map of the gallery,
   manifest, and approved pet pages.
-- Browser WebMCP support is read-only. Supported browsers can discover:
+- HTTP agent access is the primary public machine contract:
+  - `/api/manifest` — approved pet list with page URLs, install commands, and
+    asset URLs
+  - `/api/pets?q=<query>&kind=all|creature|object|character` — approved pet
+    list/search JSON
+  - `/api/pets/<slug>` — public detail JSON for one approved pet
+  - `npx @astandrik/codex-pets install <slug>` — CLI install command format
+- Browser WebMCP is a read-only progressive enhancement. It only works in
+  browser runtimes that expose `navigator.modelContext`; ordinary HTTP
+  crawlers and ChatGPT browsing sessions should use the endpoints above.
+  Supported browser WebMCP tools:
   - `search_codex_pets` — search approved pets through `/api/pets`
   - `get_codex_pet` — fetch one approved pet through `/api/pets/[slug]`
   - `get_codex_pets_manifest` — fetch `/api/manifest`
@@ -229,7 +240,9 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - `/my-pets` — owner view
 - `/admin/submissions` — admin moderation queue
 - `/pets/[slug]` — pet detail page
-- `/api/manifest` — public slim manifest
+- `/api/manifest` — public agent/CLI manifest
+- `/api/pets` — public approved pet list/search JSON
+- `/api/pets/[slug]` — public approved pet detail JSON
 - `/robots.txt`, `/sitemap.xml`, `/llms.txt` — SEO and AI-readable outputs
 
 ## Agent-facing checks
@@ -246,7 +259,8 @@ curl -I http://localhost:3000/llms.txt
 
 For WebMCP itself, use a WebMCP-capable Chrome or lab browser and check that
 `navigator.modelContext` exposes the read-only tools listed above. In normal
-browsers without WebMCP, the client registrar is a no-op.
+browsers without WebMCP, the client registrar is a no-op; this is expected and
+does not affect the HTTP agent contract.
 
 ## Private deployment notes
 
