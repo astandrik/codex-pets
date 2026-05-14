@@ -24,6 +24,7 @@ import { InstallCommandButton } from "@/components/InstallCommand/InstallCommand
 import { PetMetaList } from "@/components/PetDetails/PetMetaList";
 import { PetLikeButton } from "@/components/PetLikeButton/PetLikeButton";
 import { StatePreview } from "@/components/StatePreview/StatePreview";
+import { CurrentPetWebMCPTool } from "@/components/WebMCP/CurrentPetWebMCPTool";
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import { getPetBySlug, getPetMetrics } from "@/lib/pets/repository";
 import type { ApprovalStatus } from "@/lib/pets/types";
@@ -132,11 +133,12 @@ export default async function PetPage({ params }: PetPageProps) {
   const statusSummary = getStatusSummary(pet.status);
   const petJsonUrl = toPublicAssetUrl(pet.petJsonUrl);
   const spritesheetUrl = toPublicAssetUrl(pet.spritesheetUrl);
+  const zipUrl = toPublicAssetUrl(pet.zipUrl);
   const petJsonLd =
     pet.status === "approved"
       ? getPetJsonLd({
           ...pet,
-          zipUrl: pet.zipUrl,
+          zipUrl,
           petJsonUrl,
           spritesheetUrl,
         })
@@ -159,6 +161,24 @@ export default async function PetPage({ params }: PetPageProps) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
+      {pet.status === "approved" ? (
+        <CurrentPetWebMCPTool
+          pet={{
+            slug: pet.slug,
+            displayName: pet.displayName,
+            description: pet.description,
+            spritesheetUrl,
+            petJsonUrl,
+            zipUrl,
+            kind: pet.kind,
+            tags: pet.tags,
+            status: pet.status,
+            ownerName: pet.ownerName,
+            createdAt: pet.createdAt,
+            approvedAt: pet.approvedAt,
+          }}
+        />
+      ) : null}
       <PetBreadcrumbs displayName={pet.displayName} />
 
       <header className="pet-detail__header">

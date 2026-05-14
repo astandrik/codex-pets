@@ -6,6 +6,7 @@ import "@/styles/globals.scss";
 
 import { AppHeader } from "@/components/AppHeader/AppHeader";
 import { Footer } from "@/components/Footer/Footer";
+import { WebMCPRegistrar } from "@/components/WebMCP/WebMCPRegistrar";
 import { Providers } from "@/app/Providers";
 import YandexMetrika from "@/app/YandexMetrika";
 import { getPublicOrigin, toPublicUrl, withBasePath } from "@/lib/base-path";
@@ -100,6 +101,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
         />
         <Providers>
+          <WebMCPRegistrar />
           <AppHeader />
           {children}
           <Footer />

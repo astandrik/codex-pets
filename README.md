@@ -4,6 +4,8 @@ Community gallery for Codex-compatible animated pets with local accounts,
 manual moderation, YDB-backed asset storage, and public detail pages for
 approved and pending pets.
 
+Public site: `https://pets.ydb-qdrant.tech/`.
+
 ## Stack
 
 - Next.js 16 App Router, React 19, TypeScript strict
@@ -11,7 +13,8 @@ approved and pending pets.
 - local-ydb / YDB native gRPC via `ydb-sdk`
 - App-owned email+password auth with YDB-backed users and sessions
 - Pet assets stored in YDB as binary blobs
-- Dynamic `robots.txt` and `sitemap.xml`
+- Dynamic `robots.txt`, `sitemap.xml`, and `llms.txt`
+- Read-only WebMCP tools registered in supported browsers for agent access
 - Yandex Metrika using the same counter as `ydb-qdrant-ui` (`104844437`)
 - JSZip + Sharp for package validation
 
@@ -198,12 +201,19 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - Admins can delete any pet from the pet detail page.
 - Deleted pets disappear from owner lists, public listings, and `sitemap.xml`.
 
-## SEO and analytics
+## SEO, agents, and analytics
 
 - `robots.txt` is served from `src/app/robots.ts`.
 - `sitemap.xml` is dynamic and includes all currently approved pets.
 - `llms.txt` is dynamic and provides a curated AI-readable map of the gallery,
   manifest, and approved pet pages.
+- Browser WebMCP support is read-only. Supported browsers can discover:
+  - `search_codex_pets` — search approved pets through `/api/pets`
+  - `get_codex_pet` — fetch one approved pet through `/api/pets/[slug]`
+  - `get_codex_pets_manifest` — fetch `/api/manifest`
+  - `get_current_codex_pet` — inspect the approved pet open in the current tab
+- WebMCP intentionally does not expose submit, like, download/install counters,
+  auth, admin, moderation, or delete actions.
 - The sitemap updates automatically after moderation changes; no cron or manual
   rebuild is needed for new approved pets to appear there.
 - Yandex Metrika is loaded in production only and tracks:
@@ -221,6 +231,22 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - `/pets/[slug]` — pet detail page
 - `/api/manifest` — public slim manifest
 - `/robots.txt`, `/sitemap.xml`, `/llms.txt` — SEO and AI-readable outputs
+
+## Agent-facing checks
+
+Use `CODEX_PETS_DATA_SOURCE=mock npm run dev -- --port 3000` to smoke-check
+agent-facing routes without local YDB. Expected public endpoints:
+
+```bash
+curl -I http://localhost:3000/
+curl -I http://localhost:3000/api/pets
+curl -I http://localhost:3000/api/manifest
+curl -I http://localhost:3000/llms.txt
+```
+
+For WebMCP itself, use a WebMCP-capable Chrome or lab browser and check that
+`navigator.modelContext` exposes the read-only tools listed above. In normal
+browsers without WebMCP, the client registrar is a no-op.
 
 ## Private deployment notes
 
