@@ -4,7 +4,7 @@ Community gallery for Codex-compatible animated pets with local accounts,
 manual moderation, YDB-backed asset storage, and public detail pages for
 approved and pending pets.
 
-Public site: `https://pets.ydb-qdrant.tech/`.
+Public site: https://pets.ydb-qdrant.tech/.
 
 ## Stack
 
