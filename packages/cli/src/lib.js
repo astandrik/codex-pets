@@ -220,7 +220,7 @@ export async function runCli(argv, io = {}) {
   const baseUrl = parsed.baseUrl ?? env.CODEX_PETS_URL ?? DEFAULT_BASE_URL;
 
   if (parsed.version) {
-    stdout("0.1.1");
+    stdout("0.1.2");
     return;
   }
 

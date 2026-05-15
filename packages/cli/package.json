@@ -1,12 +1,13 @@
 {
   "name": "@astandrik/codex-pets",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "CLI installer for Codex Pets gallery pets.",
   "type": "module",
   "bin": {
-    "codex-pets": "src/index.js"
+    "codex-pets": "bin/codex-pets.cjs"
   },
   "files": [
+    "bin/codex-pets.cjs",
     "src/index.js",
     "src/lib.js",
     "README.md"
