@@ -51,11 +51,23 @@ describe("GET /api/pets/[slug]/share", () => {
     expect(body.share.badge.markdown).toContain(
       "https://pets.example/badge/orbit-otter.svg",
     );
+    expect(body.share.card.markdown).toContain(
+      "https://pets.example/card/orbit-otter.gif?mode=sprite&scale=2&state=idle",
+    );
     expect(body.share.embed.iframe).toContain(
-      'src="https://pets.example/embed/orbit-otter"',
+      'src="https://pets.example/embed/orbit-otter?mode=sprite&amp;scale=2&amp;state=idle"',
     );
     expect(body.share.install.command).toBe(
       "npx @astandrik/codex-pets install orbit-otter",
+    );
+    expect(body.markdownBadge).toBe(body.share.badge.markdown);
+    expect(body.markdownCard).toBe(body.share.card.markdown);
+    expect(body.iframe).toBe(body.share.embed.iframe);
+    expect(body.installCommand).toBe(
+      "npx @astandrik/codex-pets install orbit-otter",
+    );
+    expect(body.installPrompt).toBe(
+      "Install the Orbit Otter Codex pet from https://pets.example/pets/orbit-otter",
     );
     expect(JSON.stringify(body)).not.toContain("private@example.com");
     expect(JSON.stringify(body)).not.toContain("downloadCount");

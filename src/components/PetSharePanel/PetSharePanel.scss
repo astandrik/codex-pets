@@ -1,0 +1,115 @@
+.pet-share-panel {
+  padding: var(--spacing-2xl);
+
+  &__controls {
+    display: grid;
+    gap: var(--spacing-md);
+  }
+
+  &__control {
+    display: grid;
+    gap: var(--spacing-xs);
+  }
+
+  &__control-label {
+    font-weight: 650;
+  }
+
+  &__segmented {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+  }
+
+  &__segment {
+    min-width: 48px;
+    min-height: 32px;
+    padding: 0 var(--spacing-md);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--g-color-text-secondary);
+    font: inherit;
+    cursor: pointer;
+
+    &_active {
+      border-color: var(--g-color-line-brand);
+      background: rgba(59, 130, 246, 0.16);
+      color: var(--g-color-text-primary);
+    }
+  }
+
+  &__select-wrap {
+    display: inline-flex;
+    width: min(100%, 240px);
+  }
+
+  &__select {
+    width: 100%;
+    min-height: 36px;
+    padding: 0 var(--spacing-md);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--g-color-text-primary);
+    font: inherit;
+  }
+
+  &__snippets {
+    display: grid;
+    gap: var(--spacing-md);
+  }
+
+  &__snippet {
+    display: grid;
+    gap: var(--spacing-xs);
+    min-width: 0;
+  }
+
+  &__label {
+    font-weight: 650;
+  }
+
+  &__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--spacing-sm);
+    min-width: 0;
+    padding: var(--spacing-xs) var(--spacing-xs) var(--spacing-xs)
+      var(--spacing-md);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  &__code {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--g-color-text-primary);
+    font-size: 12px;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__button {
+    flex: none;
+
+    .g-button__text {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--spacing-xs);
+    }
+  }
+}
+
+@media (max-width: 520px) {
+  .pet-share-panel {
+    &__button {
+      span {
+        display: none;
+      }
+    }
+  }
+}

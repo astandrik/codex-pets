@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  AGENT_EMBED_HEIGHT,
-  AGENT_EMBED_WIDTH,
+  AGENT_SPRITE_HEIGHT,
+  AGENT_SPRITE_WIDTH,
   buildAgentBadgeCode,
+  buildAgentCardCode,
   buildAgentEmbedCode,
+  buildAgentInstallPrompt,
   buildAgentInstallInstructions,
   buildBadgeSvg,
 } from "@/lib/pets/agent-snippets";
@@ -48,19 +50,53 @@ describe("agent snippets", () => {
     });
   });
 
+  it("builds animated README card snippets", () => {
+    expect(
+      buildAgentCardCode({
+        name: "Orbit [Otter]",
+        pageUrl: "https://pets.example/pets/orbit-otter",
+        gifUrl:
+          "https://pets.example/card/orbit-otter.gif?mode=sprite&scale=2&state=idle",
+      }),
+    ).toEqual({
+      markdown:
+        "[![Orbit \\[Otter\\] Codex pet](https://pets.example/card/orbit-otter.gif?mode=sprite&scale=2&state=idle)](https://pets.example/pets/orbit-otter)",
+      html: '<a href="https://pets.example/pets/orbit-otter"><img alt="Orbit [Otter] Codex pet" src="https://pets.example/card/orbit-otter.gif?mode=sprite&amp;scale=2&amp;state=idle" width="384" height="416"></a>',
+      gifUrl:
+        "https://pets.example/card/orbit-otter.gif?mode=sprite&scale=2&state=idle",
+      width: AGENT_SPRITE_WIDTH,
+      height: AGENT_SPRITE_HEIGHT,
+    });
+  });
+
   it("builds iframe embed code", () => {
     expect(
       buildAgentEmbedCode({
         name: 'Orbit "Otter"',
-        embedUrl: "https://pets.example/embed/orbit-otter",
+        embedUrl:
+          "https://pets.example/embed/orbit-otter?mode=sprite&scale=2&state=idle",
+        width: AGENT_SPRITE_WIDTH,
+        height: AGENT_SPRITE_HEIGHT,
       }),
     ).toEqual({
       iframe:
-        '<iframe title="Codex pet: Orbit &quot;Otter&quot;" src="https://pets.example/embed/orbit-otter" width="360" height="420" loading="lazy"></iframe>',
-      url: "https://pets.example/embed/orbit-otter",
-      width: AGENT_EMBED_WIDTH,
-      height: AGENT_EMBED_HEIGHT,
+        '<iframe title="Codex pet: Orbit &quot;Otter&quot;" src="https://pets.example/embed/orbit-otter?mode=sprite&amp;scale=2&amp;state=idle" width="384" height="416" loading="lazy"></iframe>',
+      url:
+        "https://pets.example/embed/orbit-otter?mode=sprite&scale=2&state=idle",
+      width: AGENT_SPRITE_WIDTH,
+      height: AGENT_SPRITE_HEIGHT,
     });
+  });
+
+  it("builds agent install prompt text", () => {
+    expect(
+      buildAgentInstallPrompt({
+        name: "Orbit Otter",
+        pageUrl: "https://pets.example/pets/orbit-otter",
+      }),
+    ).toBe(
+      "Install the Orbit Otter Codex pet from https://pets.example/pets/orbit-otter",
+    );
   });
 
   it("escapes badge SVG text", () => {

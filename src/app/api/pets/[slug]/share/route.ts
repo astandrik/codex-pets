@@ -25,8 +25,14 @@ export async function GET(
   return NextResponse.json(
     {
       pet: agentPet,
+      markdownBadge: agentPet.badge.markdown,
+      markdownCard: agentPet.card.markdown,
+      iframe: agentPet.embed.iframe,
+      installCommand: agentPet.installCommand,
+      installPrompt: agentPet.installPrompt,
       share: {
         badge: agentPet.badge,
+        card: agentPet.card,
         embed: agentPet.embed,
         install: agentPet.install,
       },

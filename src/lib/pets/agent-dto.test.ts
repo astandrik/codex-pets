@@ -49,6 +49,19 @@ describe("agent DTO", () => {
       packageUrl: "https://pets.example/api/assets/asset_1/pet.zip",
       previewImageUrl: "https://pets.example/api/assets/asset_1/preview.webp",
       idleStripUrl: "https://pets.example/api/assets/asset_1/idle-strip.webp",
+      installPrompt:
+        "Install the Orbit Otter Codex pet from https://pets.example/pets/orbit-otter",
+      card: {
+        gifUrl:
+          "https://pets.example/card/orbit-otter.gif?mode=sprite&scale=2&state=idle",
+        width: 384,
+        height: 416,
+      },
+      embed: {
+        url: "https://pets.example/embed/orbit-otter?mode=sprite&scale=2&state=idle",
+        width: 384,
+        height: 416,
+      },
       compatibleWith: ["codex"],
       license: "unknown",
       validation: {
@@ -141,7 +154,7 @@ describe("agent DTO", () => {
   });
 
   it("parses safe slugs for pets and badge files", async () => {
-    const { readSafeAgentSlug, readSafeBadgeSlug } = await import(
+    const { readSafeAgentSlug, readSafeBadgeSlug, readSafeCardSlug } = await import(
       "@/lib/pets/agent-dto"
     );
     const trailingHyphenSlug = `${"a".repeat(47)}-`;
@@ -151,5 +164,7 @@ describe("agent DTO", () => {
     expect(readSafeAgentSlug("../admin")).toBeNull();
     expect(readSafeBadgeSlug("orbit-otter.svg")).toBe("orbit-otter");
     expect(readSafeBadgeSlug("orbit-otter.png")).toBeNull();
+    expect(readSafeCardSlug("orbit-otter.gif")).toBe("orbit-otter");
+    expect(readSafeCardSlug("orbit-otter.png")).toBeNull();
   });
 });

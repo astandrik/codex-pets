@@ -70,6 +70,7 @@ describe("POST /mcp", () => {
       "get_install_instructions",
       "get_badge_code",
       "get_embed_code",
+      "get_card_code",
     ]);
     expect(body.result.tools[0].annotations.readOnlyHint).toBe(true);
   });
@@ -103,6 +104,7 @@ describe("POST /mcp", () => {
     ["get_install_instructions", "install"],
     ["get_badge_code", "badge"],
     ["get_embed_code", "embed"],
+    ["get_card_code", "card"],
   ])("calls %s", async (toolName, expectedKey) => {
     repositoryMocks.getApprovedPetBySlug.mockResolvedValueOnce(approvedPet);
 

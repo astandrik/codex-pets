@@ -2,6 +2,8 @@ import { buildPetInstallCommand } from "@/lib/pets/install-command";
 
 export const AGENT_EMBED_WIDTH = 360;
 export const AGENT_EMBED_HEIGHT = 420;
+export const AGENT_SPRITE_WIDTH = 384;
+export const AGENT_SPRITE_HEIGHT = 416;
 
 export type AgentInstallInstructions = {
   slug: string;
@@ -30,6 +32,14 @@ export type AgentBadgeCode = {
   markdown: string;
   html: string;
   svgUrl: string;
+};
+
+export type AgentCardCode = {
+  markdown: string;
+  html: string;
+  gifUrl: string;
+  width: number;
+  height: number;
 };
 
 export type AgentEmbedCode = {
@@ -94,16 +104,48 @@ export function buildAgentBadgeCode(input: {
   };
 }
 
+export function buildAgentCardCode(input: {
+  name: string;
+  pageUrl: string;
+  gifUrl: string;
+  width?: number;
+  height?: number;
+}): AgentCardCode {
+  const alt = `${input.name} Codex pet`;
+  const width = input.width ?? AGENT_SPRITE_WIDTH;
+  const height = input.height ?? AGENT_SPRITE_HEIGHT;
+
+  return {
+    markdown: `[![${escapeMarkdownAlt(alt)}](${input.gifUrl})](${input.pageUrl})`,
+    html: `<a href="${escapeHtmlAttribute(input.pageUrl)}"><img alt="${escapeHtmlAttribute(alt)}" src="${escapeHtmlAttribute(input.gifUrl)}" width="${width}" height="${height}"></a>`,
+    gifUrl: input.gifUrl,
+    width,
+    height,
+  };
+}
+
 export function buildAgentEmbedCode(input: {
   name: string;
   embedUrl: string;
+  width?: number;
+  height?: number;
 }): AgentEmbedCode {
+  const width = input.width ?? AGENT_EMBED_WIDTH;
+  const height = input.height ?? AGENT_EMBED_HEIGHT;
+
   return {
-    iframe: `<iframe title="${escapeHtmlAttribute(`Codex pet: ${input.name}`)}" src="${escapeHtmlAttribute(input.embedUrl)}" width="${AGENT_EMBED_WIDTH}" height="${AGENT_EMBED_HEIGHT}" loading="lazy"></iframe>`,
+    iframe: `<iframe title="${escapeHtmlAttribute(`Codex pet: ${input.name}`)}" src="${escapeHtmlAttribute(input.embedUrl)}" width="${width}" height="${height}" loading="lazy"></iframe>`,
     url: input.embedUrl,
-    width: AGENT_EMBED_WIDTH,
-    height: AGENT_EMBED_HEIGHT,
+    width,
+    height,
   };
+}
+
+export function buildAgentInstallPrompt(input: {
+  name: string;
+  pageUrl: string;
+}): string {
+  return `Install the ${input.name} Codex pet from ${input.pageUrl}`;
 }
 
 export function buildBadgeSvg(input: {

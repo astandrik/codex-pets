@@ -49,6 +49,7 @@ Available MCP tools:
 - `get_install_instructions` — get install commands without incrementing metrics
 - `get_badge_code` — generate README badge snippets
 - `get_embed_code` — generate iframe embed snippets
+- `get_card_code` — generate animated GIF snippets, defaulting to sprite-only mode
 
 HTTP fallback routes are public too:
 
@@ -58,6 +59,7 @@ HTTP fallback routes are public too:
 - `/api/tags`
 - `/api/pets/<slug>/share`
 - `/badge/<slug>.svg`
+- `/card/<slug>.gif`
 - `/embed/<slug>`
 
 If you deploy under a subpath such as `/codex-pets`, set:
@@ -245,7 +247,7 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - HTTP agent access is the primary public machine contract:
   - `/mcp` — Streamable HTTP MCP endpoint with read-only tools:
     `search_pets`, `get_pet`, `get_install_instructions`, `get_badge_code`,
-    and `get_embed_code`
+    `get_embed_code`, and `get_card_code`
   - `/api/manifest` — approved pet list with page URLs, install commands, and
     asset URLs
   - `/api/pets?q=<query>&kind=all|creature|object|character` — approved pet
@@ -256,7 +258,8 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
   - `/api/pets/<slug>/install` — read-only install instructions with no metric
     mutation
   - `/badge/<slug>.svg` — README badge SVG
-  - `/embed/<slug>` — minimal iframe embed page
+  - `/card/<slug>.gif` — animated GIF share surface. Supports `mode=sprite|card`, `state`, and `scale`; default sharable output is sprite-only.
+  - `/embed/<slug>` — iframe embed page. Supports `mode=sprite|card`, `state`, `scale`, `theme`, `compact`, and visibility toggles.
   - `npx @astandrik/codex-pets install <slug>` — CLI install command format
 - Browser WebMCP is a read-only progressive enhancement. It only works in
   browser runtimes that expose `navigator.modelContext`; ordinary HTTP
@@ -290,7 +293,7 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - `/api/pets/[slug]` — public approved pet detail JSON
 - `/api/tags`, `/api/pets/[slug]/share`, `/api/pets/[slug]/install` —
   read-only agent/share JSON
-- `/badge/[slug].svg`, `/embed/[slug]` — share surfaces
+- `/badge/[slug].svg`, `/card/[slug].gif`, `/embed/[slug]` — share surfaces
 - `/robots.txt`, `/sitemap.xml`, `/llms.txt` — SEO and AI-readable outputs
 
 ## Agent-facing checks

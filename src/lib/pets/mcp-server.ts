@@ -151,6 +151,26 @@ export function createCodexPetsMcpServer(): McpServer {
     },
   );
 
+  server.registerTool(
+    "get_card_code",
+    {
+      title: "Get animated README card code",
+      description: "Return Markdown and HTML animated card snippets for an approved Codex pet.",
+      inputSchema: slugInputSchema,
+      annotations: READ_ONLY_TOOL,
+    },
+    async (args) => {
+      const result = await readApprovedAgentPet(args.slug);
+      return result.ok
+        ? toolResult({
+            slug: result.pet.slug,
+            name: result.pet.name,
+            card: result.pet.card,
+          })
+        : toolError(result.code, result.message);
+    },
+  );
+
   return server;
 }
 

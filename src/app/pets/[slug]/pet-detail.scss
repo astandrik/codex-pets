@@ -53,6 +53,11 @@
     padding: var(--spacing-2xl);
   }
 
+  &__side {
+    display: grid;
+    gap: var(--spacing-2xl);
+  }
+
   &__back {
     margin-top: var(--spacing-3xl);
     display: inline-block;

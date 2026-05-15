@@ -52,11 +52,64 @@ describe("GET /embed/[slug]", () => {
     );
     expect(body).toContain("Orbit &lt;Otter&gt;");
     expect(body).toContain(
-      'src="https://pets.example/api/assets/a/idle-strip.webp"',
+      "background-image:url('https://pets.example/api/assets/a/spritesheet.webp')",
     );
     expect(body).toContain(
       'href="https://pets.example/pets/orbit-otter"',
     );
+    expect(body).toContain("Creator");
+    expect(body).toContain("space");
+  });
+
+  it("applies safe embed query options", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    repositoryMocks.getApprovedPetBySlug.mockResolvedValueOnce(approvedPet);
+    const { GET } = await import("@/app/embed/[slug]/route");
+
+    const response = await GET(
+      new Request(
+        "https://pets.example/embed/orbit-otter?theme=dark&state=review&compact=true&showInstall=false&showAuthor=false&showTags=false",
+      ),
+      {
+        params: Promise.resolve({ slug: "orbit-otter" }),
+      },
+    );
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain('<html lang="en" class="theme-dark">');
+    expect(body).toContain('class="embed-card embed-card--compact"');
+    expect(body).toContain("--pet-row-y:-3328px");
+    expect(body).toContain("--pet-frames:6");
+    expect(body).not.toContain("Creator");
+    expect(body).not.toContain('<p class="embed-card__tags">');
+    expect(body).not.toContain('<a class="embed-card__install"');
+  });
+
+  it("renders sprite-only mode with scale and state params", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    repositoryMocks.getApprovedPetBySlug.mockResolvedValueOnce(approvedPet);
+    const { GET } = await import("@/app/embed/[slug]/route");
+
+    const response = await GET(
+      new Request(
+        "https://pets.example/embed/orbit-otter?mode=sprite&state=running&scale=2&theme=dark",
+      ),
+      {
+        params: Promise.resolve({ slug: "orbit-otter" }),
+      },
+    );
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain('class="embed-sprite"');
+    expect(body).toContain("width:384px");
+    expect(body).toContain("height:416px");
+    expect(body).toContain("--pet-row-y:-2912px");
+    expect(body).toContain("--pet-end-x:-2304px");
+    expect(body).not.toContain("View in registry");
+    expect(body).not.toContain("<h1>");
+    expect(body).not.toContain('class="embed-card__meta"');
   });
 
   it("rejects invalid slugs", async () => {

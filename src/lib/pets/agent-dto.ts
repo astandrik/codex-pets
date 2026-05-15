@@ -3,18 +3,24 @@ import {
   getPetIdleStripUrl,
   getPetPreviewUrl,
 } from "@/lib/pets/asset-urls";
+import { spriteDimensions } from "@/lib/pets/sprite-rendering";
 import type { PetKind, PublicPet } from "@/lib/pets/types";
 import {
   buildAgentBadgeCode,
+  buildAgentCardCode,
   buildAgentEmbedCode,
+  buildAgentInstallPrompt,
   buildAgentInstallInstructions,
   type AgentBadgeCode,
+  type AgentCardCode,
   type AgentEmbedCode,
   type AgentInstallInstructions,
 } from "@/lib/pets/agent-snippets";
 
 export const AGENT_DEFAULT_PET_LIMIT = 10;
 export const AGENT_MAX_PET_LIMIT = 60;
+const DEFAULT_SHARE_STATE = "idle";
+const DEFAULT_SHARE_SCALE = 2;
 
 const SAFE_SLUG = /^[a-z0-9][a-z0-9-]{0,47}$/;
 const PET_KINDS = new Set<PetKind>(["creature", "object", "character"]);
@@ -39,8 +45,10 @@ export type AgentPet = {
   previewImageUrl: string | null;
   idleStripUrl: string | null;
   installCommand: string;
+  installPrompt: string;
   install: AgentInstallInstructions;
   badge: AgentBadgeCode;
+  card: AgentCardCode;
   embed: AgentEmbedCode;
   compatibleWith: ["codex"];
   license: "unknown";
@@ -70,7 +78,18 @@ export function createAgentPet(pet: PublicPet): AgentPet {
   const previewImageUrl = getPetPreviewUrl(pet.spritesheetUrl);
   const idleStripUrl = getPetIdleStripUrl(pet.spritesheetUrl);
   const svgUrl = toPublicUrl(`/badge/${encodeURIComponent(pet.slug)}.svg`);
-  const embedUrl = toPublicUrl(`/embed/${encodeURIComponent(pet.slug)}`);
+  const shareParams = new URLSearchParams({
+    mode: "sprite",
+    scale: String(DEFAULT_SHARE_SCALE),
+    state: DEFAULT_SHARE_STATE,
+  });
+  const gifUrl = toPublicUrl(
+    `/card/${encodeURIComponent(pet.slug)}.gif?${shareParams.toString()}`,
+  );
+  const embedUrl = toPublicUrl(
+    `/embed/${encodeURIComponent(pet.slug)}?${shareParams.toString()}`,
+  );
+  const spriteSize = spriteDimensions(DEFAULT_SHARE_SCALE);
   const install = buildAgentInstallInstructions({
     slug: pet.slug,
     mcpUrl: toPublicUrl("/mcp"),
@@ -99,15 +118,28 @@ export function createAgentPet(pet: PublicPet): AgentPet {
     previewImageUrl: previewImageUrl ? toAgentPublicUrl(previewImageUrl) : null,
     idleStripUrl: idleStripUrl ? toAgentPublicUrl(idleStripUrl) : null,
     installCommand: install.command,
+    installPrompt: buildAgentInstallPrompt({
+      name: pet.displayName,
+      pageUrl,
+    }),
     install,
     badge: buildAgentBadgeCode({
       name: pet.displayName,
       pageUrl,
       svgUrl,
     }),
+    card: buildAgentCardCode({
+      name: pet.displayName,
+      pageUrl,
+      gifUrl,
+      width: spriteSize.width,
+      height: spriteSize.height,
+    }),
     embed: buildAgentEmbedCode({
       name: pet.displayName,
       embedUrl,
+      width: spriteSize.width,
+      height: spriteSize.height,
     }),
     compatibleWith: ["codex"],
     license: "unknown",
@@ -191,6 +223,11 @@ export function readSafeAgentSlug(value: unknown): string | null {
 
 export function readSafeBadgeSlug(file: string): string | null {
   if (!file.endsWith(".svg")) return null;
+  return readSafeAgentSlug(file.slice(0, -4));
+}
+
+export function readSafeCardSlug(file: string): string | null {
+  if (!file.endsWith(".gif")) return null;
   return readSafeAgentSlug(file.slice(0, -4));
 }
 

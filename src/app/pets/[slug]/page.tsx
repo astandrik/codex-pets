@@ -23,9 +23,11 @@ import { PetBreadcrumbs } from "@/components/PetDetails/PetBreadcrumbs";
 import { InstallCommandButton } from "@/components/InstallCommand/InstallCommandButton";
 import { PetMetaList } from "@/components/PetDetails/PetMetaList";
 import { PetLikeButton } from "@/components/PetLikeButton/PetLikeButton";
+import { PetSharePanel } from "@/components/PetSharePanel/PetSharePanel";
 import { StatePreview } from "@/components/StatePreview/StatePreview";
 import { CurrentPetWebMCPTool } from "@/components/WebMCP/CurrentPetWebMCPTool";
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
+import { createAgentPet } from "@/lib/pets/agent-dto";
 import { getPetBySlug, getPetMetrics } from "@/lib/pets/repository";
 import type { ApprovalStatus } from "@/lib/pets/types";
 import {
@@ -134,6 +136,15 @@ export default async function PetPage({ params }: PetPageProps) {
   const petJsonUrl = toPublicAssetUrl(pet.petJsonUrl);
   const spritesheetUrl = toPublicAssetUrl(pet.spritesheetUrl);
   const zipUrl = toPublicAssetUrl(pet.zipUrl);
+  const agentPet =
+    pet.status === "approved"
+      ? createAgentPet({
+          ...pet,
+          downloadCount: metrics.downloadCount,
+          installCount: metrics.installCount,
+          likeCount: metrics.likeCount,
+        })
+      : null;
   const petJsonLd =
     pet.status === "approved"
       ? getPetJsonLd({
@@ -237,7 +248,12 @@ export default async function PetPage({ params }: PetPageProps) {
               <FileText width={18} height={18} />
               pet.json
             </Button>
-            <Button view="outlined" size="l" href={spritesheetUrl} target="_blank">
+            <Button
+              view="outlined"
+              size="l"
+              href={spritesheetUrl}
+              target="_blank"
+            >
               <Picture width={18} height={18} />
               spritesheet
             </Button>
@@ -250,7 +266,8 @@ export default async function PetPage({ params }: PetPageProps) {
         <Card view="raised" className="pet-detail__preview-card">
           <StatePreview spritesheetUrl={spritesheetUrl} />
         </Card>
-        <Card view="raised" className="pet-detail__meta-card">
+        <div className="pet-detail__side">
+          <Card view="raised" className="pet-detail__meta-card">
             <PetMetaList
               slug={pet.slug}
               kind={pet.kind}
@@ -258,8 +275,22 @@ export default async function PetPage({ params }: PetPageProps) {
               createdAt={pet.createdAt}
               approvedAt={pet.approvedAt}
               tags={pet.tags}
-          />
-        </Card>
+            />
+          </Card>
+          {agentPet ? (
+            <PetSharePanel
+              slug={pet.slug}
+              source={{
+                badgeMarkdown: agentPet.badge.markdown,
+                cardGifUrl: agentPet.card.gifUrl,
+                embedUrl: agentPet.embed.url,
+                installPrompt: agentPet.installPrompt,
+                name: agentPet.name,
+                pageUrl: agentPet.pageUrl,
+              }}
+            />
+          ) : null}
+        </div>
       </section>
 
       {pet.status !== "approved" ? (
