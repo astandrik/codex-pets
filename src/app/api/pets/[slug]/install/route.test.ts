@@ -5,7 +5,7 @@ vi.mock("@/lib/pets/repository", () => ({
   incrementInstall: vi.fn(),
 }));
 
-import { POST } from "@/app/api/pets/[slug]/install/route";
+import { GET, POST } from "@/app/api/pets/[slug]/install/route";
 import { getApprovedPetBySlug, incrementInstall } from "@/lib/pets/repository";
 
 const approvedPet = {
@@ -54,5 +54,39 @@ describe("POST /api/pets/[slug]/install", () => {
 
     await expect(response.json()).resolves.toEqual({ ok: true });
     expect(incrementInstall).toHaveBeenCalledWith("boba");
+  });
+});
+
+describe("GET /api/pets/[slug]/install", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns install instructions without incrementing metrics", async () => {
+    vi.mocked(getApprovedPetBySlug).mockResolvedValueOnce(approvedPet);
+
+    const response = await GET(new Request("http://localhost"), {
+      params: Promise.resolve({ slug: "boba" }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      slug: "boba",
+      name: "Boba",
+      install: {
+        command: "npx @astandrik/codex-pets install boba",
+      },
+    });
+    expect(incrementInstall).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid slugs", async () => {
+    const response = await GET(new Request("http://localhost"), {
+      params: Promise.resolve({ slug: "../admin" }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(incrementInstall).not.toHaveBeenCalled();
   });
 });

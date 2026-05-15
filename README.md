@@ -14,7 +14,8 @@ Public site: https://pets.ydb-qdrant.tech/.
 - App-owned email+password auth with YDB-backed users and sessions
 - Pet assets stored in YDB as binary blobs
 - Dynamic `robots.txt`, `sitemap.xml`, and `llms.txt`
-- Agent-facing HTTP access through `llms.txt`, `/api/manifest`, and `/api/pets`
+- Agent-facing HTTP access through `llms.txt`, `/mcp`, `/api/manifest`, and
+  `/api/pets`
 - Optional read-only browser WebMCP tools in supported browser runtimes
 - Yandex Metrika using the same counter as `ydb-qdrant-ui` (`104844437`)
 - JSZip + Sharp for package validation
@@ -22,12 +23,42 @@ Public site: https://pets.ydb-qdrant.tech/.
 ## Development
 
 ```bash
+nvm use 24
 npm install
 cp .env.example .env.local
 npm run dev
 ```
 
 Open `http://localhost:3000`.
+
+## Agent access
+
+Codex Pets exposes a public read-only MCP server so coding agents can search,
+inspect, install, and share approved pet packs.
+
+Connect Codex:
+
+```bash
+codex mcp add codexPets --url https://pets.ydb-qdrant.tech/mcp
+```
+
+Available MCP tools:
+
+- `search_pets` — search approved pets
+- `get_pet` — fetch one public pet card
+- `get_install_instructions` — get install commands without incrementing metrics
+- `get_badge_code` — generate README badge snippets
+- `get_embed_code` — generate iframe embed snippets
+
+HTTP fallback routes are public too:
+
+- `/api/manifest`
+- `/api/pets`
+- `/api/pets/<slug>`
+- `/api/tags`
+- `/api/pets/<slug>/share`
+- `/badge/<slug>.svg`
+- `/embed/<slug>`
 
 If you deploy under a subpath such as `/codex-pets`, set:
 
@@ -208,12 +239,24 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - `sitemap.xml` is dynamic and includes all currently approved pets.
 - `llms.txt` is dynamic and provides a curated AI-readable map of the gallery,
   manifest, and approved pet pages.
+- `/mcp` is a public read-only Streamable HTTP MCP server for coding agents.
+  Codex can connect with:
+  `codex mcp add codexPets --url https://pets.ydb-qdrant.tech/mcp`.
 - HTTP agent access is the primary public machine contract:
+  - `/mcp` — Streamable HTTP MCP endpoint with read-only tools:
+    `search_pets`, `get_pet`, `get_install_instructions`, `get_badge_code`,
+    and `get_embed_code`
   - `/api/manifest` — approved pet list with page URLs, install commands, and
     asset URLs
   - `/api/pets?q=<query>&kind=all|creature|object|character` — approved pet
     list/search JSON
   - `/api/pets/<slug>` — public detail JSON for one approved pet
+  - `/api/tags` — current tag counts for approved pets
+  - `/api/pets/<slug>/share` — sanitized install, badge, and embed snippets
+  - `/api/pets/<slug>/install` — read-only install instructions with no metric
+    mutation
+  - `/badge/<slug>.svg` — README badge SVG
+  - `/embed/<slug>` — minimal iframe embed page
   - `npx @astandrik/codex-pets install <slug>` — CLI install command format
 - Browser WebMCP is a read-only progressive enhancement. It only works in
   browser runtimes that expose `navigator.modelContext`; ordinary HTTP
@@ -240,9 +283,14 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - `/my-pets` — owner view
 - `/admin/submissions` — admin moderation queue
 - `/pets/[slug]` — pet detail page
+- `/agents` — agent and MCP connection guide
+- `/mcp` — public read-only Streamable HTTP MCP endpoint
 - `/api/manifest` — public agent/CLI manifest
 - `/api/pets` — public approved pet list/search JSON
 - `/api/pets/[slug]` — public approved pet detail JSON
+- `/api/tags`, `/api/pets/[slug]/share`, `/api/pets/[slug]/install` —
+  read-only agent/share JSON
+- `/badge/[slug].svg`, `/embed/[slug]` — share surfaces
 - `/robots.txt`, `/sitemap.xml`, `/llms.txt` — SEO and AI-readable outputs
 
 ## Agent-facing checks
@@ -254,7 +302,18 @@ agent-facing routes without local YDB. Expected public endpoints:
 curl -I http://localhost:3000/
 curl -I http://localhost:3000/api/pets
 curl -I http://localhost:3000/api/manifest
+curl -I http://localhost:3000/api/tags
 curl -I http://localhost:3000/llms.txt
+curl -i http://localhost:3000/mcp
+```
+
+For a JSON-response MCP smoke test:
+
+```bash
+curl -s http://localhost:3000/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
 For WebMCP itself, use a WebMCP-capable Chrome or lab browser and check that

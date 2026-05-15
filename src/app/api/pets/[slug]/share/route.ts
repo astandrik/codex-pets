@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createAgentPet, readSafeAgentSlug } from "@/lib/pets/agent-dto";
-import { getApprovedPetBySlug, incrementInstall } from "@/lib/pets/repository";
+import { getApprovedPetBySlug } from "@/lib/pets/repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,9 +24,12 @@ export async function GET(
   const agentPet = createAgentPet(pet);
   return NextResponse.json(
     {
-      slug: agentPet.slug,
-      name: agentPet.name,
-      install: agentPet.install,
+      pet: agentPet,
+      share: {
+        badge: agentPet.badge,
+        embed: agentPet.embed,
+        install: agentPet.install,
+      },
     },
     {
       headers: {
@@ -35,18 +38,4 @@ export async function GET(
       },
     },
   );
-}
-
-export async function POST(
-  _req: Request,
-  { params }: { params: Promise<{ slug: string }> },
-): Promise<Response> {
-  const { slug } = await params;
-  const pet = await getApprovedPetBySlug(slug);
-  if (!pet) {
-    return NextResponse.json({ error: "not_found" }, { status: 404 });
-  }
-
-  await incrementInstall(slug);
-  return NextResponse.json({ ok: true });
 }

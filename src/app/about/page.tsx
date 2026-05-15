@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Check, Plus, TerminalLine } from "@gravity-ui/icons";
-import { Button, Container, Flex, Label, Text } from "@/components/GravityUI/GravityUI";
+import {
+  Button,
+  Container,
+  Flex,
+  Label,
+  Text,
+} from "@/components/GravityUI/GravityUI";
 
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import {
@@ -13,7 +19,7 @@ import { AboutResourceLinks } from "./AboutResourceLinks";
 import "./about.scss";
 
 const ABOUT_DESCRIPTION =
-  "Learn how Codex Pets works: a moderated community gallery, npm CLI installer, and Codex-compatible pet pack format.";
+  "Learn how Codex Pets works: a moderated community gallery, MCP registry, npm CLI installer, and Codex-compatible pet pack format.";
 const INSTALL_COMMAND = "npx @astandrik/codex-pets install zero-two-2";
 const GITHUB_REPOSITORY_URL = "https://github.com/astandrik/codex-pets";
 const NPM_PACKAGE_URL = "https://www.npmjs.com/package/@astandrik/codex-pets";
@@ -71,6 +77,7 @@ export const metadata: Metadata = {
 };
 
 export default function AboutPage() {
+  const mcpCommand = `codex mcp add codexPets --url ${toPublicUrl("/mcp")}`;
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "AboutPage",
@@ -106,7 +113,8 @@ export default function AboutPage() {
             </Text>
             <Text variant="body-2" color="secondary" className="about-hero__lead">
               Browse community-made animated pet packs, install one with the
-              npm CLI, or submit your own two-file pack for moderation.
+              npm CLI or MCP tools, or submit your own two-file pack for
+              moderation.
             </Text>
             <div className="about-command" aria-label="Example install command">
               <TerminalLine width={18} height={18} className="about-command__icon" />
@@ -125,6 +133,10 @@ export default function AboutPage() {
                 githubUrl={GITHUB_REPOSITORY_URL}
                 npmPackageUrl={NPM_PACKAGE_URL}
               />
+              <Button view="flat" size="l" href={withBasePath("/agents")}>
+                Agent guide
+                <ArrowRight />
+              </Button>
             </Flex>
           </Flex>
 
@@ -189,17 +201,28 @@ export default function AboutPage() {
             Agent access
           </Text>
           <Text variant="body-2" color="secondary">
-            Regular agents should use the public HTTP contract: the{" "}
+            Agents can connect to the public read-only{" "}
+            <a href={withBasePath("/mcp")}>Streamable HTTP MCP endpoint</a>, or
+            use the HTTP contract: the{" "}
             <a href={withBasePath("/api/manifest")}>manifest</a>,{" "}
             <a href={withBasePath("/api/pets")}>approved pet JSON</a>, pet
-            detail JSON at <code>/api/pets/&lt;slug&gt;</code>, and the npm
-            install command. Browser WebMCP is an optional enhancement for
-            WebMCP-capable browsers that expose <code>navigator.modelContext</code>.
+            detail JSON at <code>/api/pets/&lt;slug&gt;</code>, share snippets,
+            and the npm install command. Browser WebMCP is an optional
+            enhancement for WebMCP-capable browsers that expose{" "}
+            <code>navigator.modelContext</code>.
           </Text>
           <ul className="about-agent__list">
             <li>
+              <span>MCP</span>
+              <code>{mcpCommand}</code>
+            </li>
+            <li>
               <span>Manifest</span>
               <code>/api/manifest</code>
+            </li>
+            <li>
+              <span>Share</span>
+              <code>/api/pets/&lt;slug&gt;/share</code>
             </li>
             <li>
               <span>Install</span>
