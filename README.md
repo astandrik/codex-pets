@@ -252,20 +252,31 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - `/mcp` is a public read-only Streamable HTTP MCP server for coding agents.
   Codex can connect with:
   `codex mcp add codexPets --url https://pets.ydb-qdrant.tech/mcp`.
+- Official MCP Registry name:
+  `tech.ydb-qdrant.pets/codex-pets-ydb-qdrant`.
+- `server.json` and `/.well-known/mcp/server.json` expose MCP Registry
+  metadata for the public remote server.
+- `/.well-known/mcp-registry-auth` exposes the public HTTP domain auth record
+  used by `mcp-publisher`.
 - HTTP agent access is the primary public machine contract:
   - `/mcp` — Streamable HTTP MCP endpoint with read-only tools:
     `search_pets`, `get_pet`, `get_install_instructions`, `get_badge_code`,
     `get_embed_code`, and `get_card_code`
+  - `/server.json` and `/.well-known/mcp/server.json` — MCP Registry metadata
+    pointing to the public Streamable HTTP remote
+  - `/.well-known/mcp-registry-auth` — public MCP Registry HTTP auth record
   - `/api/manifest` — approved pet list with page URLs, install commands, and
     asset URLs
   - `/api/manifest.toon` — TOON mirror of the public manifest for LLM-friendly
     retrieval
   - `/api/pets?q=<query>&kind=all|creature|object|character` — approved pet
-    list/search JSON
+    list/search JSON without private contact emails
   - `/api/pets.toon?q=<query>&kind=all|creature|object|character` — TOON
-    mirror of approved pet list/search
-  - `/api/pets/<slug>` — public detail JSON for one approved pet
-  - `/api/pets/<slug>.toon` — TOON mirror of public detail data
+    mirror of approved pet list/search without private contact emails
+  - `/api/pets/<slug>` — public detail JSON for one approved pet without
+    private contact emails
+  - `/api/pets/<slug>.toon` — TOON mirror of public detail data without private
+    contact emails
   - `/api/tags` — current tag counts for approved pets
   - `/api/tags.toon` — TOON mirror of current tag counts
   - `/api/pets/<slug>/share` — sanitized install, badge, and embed snippets
@@ -309,6 +320,7 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - `/pets/[slug]` — pet detail page
 - `/agents` — agent and MCP connection guide
 - `/mcp` — public read-only Streamable HTTP MCP endpoint
+- `/server.json`, `/.well-known/mcp/server.json` — MCP Registry metadata
 - `/api/manifest` — public agent/CLI manifest
 - `/api/manifest.toon` — TOON mirror of the public manifest
 - `/api/pets` — public approved pet list/search JSON

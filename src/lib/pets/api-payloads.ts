@@ -2,6 +2,8 @@ import { toPublicUrl } from "@/lib/base-path";
 import { buildPetInstallCommand } from "@/lib/pets/install-command";
 import type { PublicPet } from "@/lib/pets/types";
 
+export type PublicPetPayload = Omit<PublicPet, "contactEmail">;
+
 export function buildManifestPayload(
   pets: PublicPet[],
   generatedAt = new Date().toISOString(),
@@ -30,12 +32,34 @@ export function buildManifestPayload(
 export function buildPetsPayload(pets: PublicPet[]) {
   return {
     total: pets.length,
-    pets,
+    pets: pets.map(createPublicPetPayload),
   };
 }
 
 export function buildPetDetailPayload(pet: PublicPet) {
-  return { pet };
+  return { pet: createPublicPetPayload(pet) };
+}
+
+export function createPublicPetPayload(pet: PublicPet): PublicPetPayload {
+  return {
+    id: pet.id,
+    slug: pet.slug,
+    displayName: pet.displayName,
+    description: pet.description,
+    spritesheetUrl: pet.spritesheetUrl,
+    petJsonUrl: pet.petJsonUrl,
+    zipUrl: pet.zipUrl,
+    spritesheetExt: pet.spritesheetExt,
+    kind: pet.kind,
+    tags: pet.tags,
+    status: pet.status,
+    ownerName: pet.ownerName,
+    createdAt: pet.createdAt,
+    approvedAt: pet.approvedAt,
+    downloadCount: pet.downloadCount,
+    installCount: pet.installCount,
+    likeCount: pet.likeCount,
+  };
 }
 
 export function buildTagsPayload(

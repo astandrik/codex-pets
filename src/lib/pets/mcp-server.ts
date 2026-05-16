@@ -14,6 +14,7 @@ import {
   trackMcpToolCall,
 } from "@/lib/metrics/yandex-measurement";
 import { getApprovedPetBySlug, listApprovedPets } from "@/lib/pets/repository";
+import { MCP_REGISTRY_SERVER_VERSION } from "@/lib/pets/mcp-registry";
 
 type McpToolName = McpToolCallPayload["tool"];
 type SlugMcpToolName = Exclude<McpToolName, "search_pets">;
@@ -49,7 +50,7 @@ const slugInputSchema = {
 export function createCodexPetsMcpServer(): McpServer {
   const server = new McpServer({
     name: "codex-pets-registry",
-    version: "0.1.0",
+    version: MCP_REGISTRY_SERVER_VERSION,
   });
 
   server.registerTool(

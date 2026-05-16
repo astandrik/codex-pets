@@ -22,7 +22,27 @@ const approvedPet = {
   tags: ["round"],
   status: "approved" as const,
   ownerName: "Creator",
-  contactEmail: null,
+  contactEmail: "private@example.com",
+  createdAt: "2026-05-01T00:00:00.000Z",
+  approvedAt: "2026-05-02T00:00:00.000Z",
+  downloadCount: 0,
+  installCount: 0,
+  likeCount: 0,
+};
+
+const approvedPetPayload = {
+  id: "pet_1",
+  slug: "boba",
+  displayName: "Boba",
+  description: "Demo pet",
+  spritesheetUrl: "https://assets/pets/boba.webp",
+  petJsonUrl: "https://assets/pets/boba.json",
+  zipUrl: "https://assets/pets/boba.zip",
+  spritesheetExt: "webp" as const,
+  kind: "creature" as const,
+  tags: ["round"],
+  status: "approved" as const,
+  ownerName: "Creator",
   createdAt: "2026-05-01T00:00:00.000Z",
   approvedAt: "2026-05-02T00:00:00.000Z",
   downloadCount: 0,
@@ -52,7 +72,8 @@ describe("GET /api/pets/[slug]", () => {
     expect(response.headers.get("Link")).toBe(
       '<https://pets.example/api/pets/boba.toon>; rel="alternate"; type="text/toon"',
     );
-    expect(body).toEqual({ pet: approvedPet });
+    expect(body).toEqual({ pet: approvedPetPayload });
+    expect(JSON.stringify(body)).not.toContain("private@example.com");
   });
 
   it("returns a TOON pet detail matching the JSON payload", async () => {

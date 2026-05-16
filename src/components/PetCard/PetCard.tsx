@@ -31,7 +31,7 @@ const PREVIEW_FRAME_DURATION = `${PREVIEW_STATE.frames * PREVIEW_FRAME_MS}ms`;
 const PREVIEW_STRIP_WIDTH = PREVIEW_FRAME_WIDTH * PREVIEW_STATE.frames;
 
 export function PetCard({ pet, showStatus = false }: PetCardProps) {
-  const authorName = pet.ownerName ?? pet.contactEmail ?? "Anonymous";
+  const authorName = pet.ownerName ?? "Anonymous";
   const idleStripUrl = getPetIdleStripUrl(pet.spritesheetUrl);
   const stripStyle: StripStyle = {
     "--pet-card-frame-count": PREVIEW_STATE.frames,

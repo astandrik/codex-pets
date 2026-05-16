@@ -22,7 +22,27 @@ const approvedPet = {
   tags: ["space"],
   status: "approved" as const,
   ownerName: "Creator",
-  contactEmail: null,
+  contactEmail: "private@example.com",
+  createdAt: "2026-05-01T00:00:00.000Z",
+  approvedAt: "2026-05-02T00:00:00.000Z",
+  downloadCount: 0,
+  installCount: 0,
+  likeCount: 0,
+};
+
+const approvedPetPayload = {
+  id: "pet_1",
+  slug: "orbit-otter",
+  displayName: "Orbit Otter",
+  description: "Demo pet",
+  spritesheetUrl: "https://assets/pets/orbit.webp",
+  petJsonUrl: "https://assets/pets/orbit.json",
+  zipUrl: "https://assets/pets/orbit.zip",
+  spritesheetExt: "webp" as const,
+  kind: "creature" as const,
+  tags: ["space"],
+  status: "approved" as const,
+  ownerName: "Creator",
   createdAt: "2026-05-01T00:00:00.000Z",
   approvedAt: "2026-05-02T00:00:00.000Z",
   downloadCount: 0,
@@ -57,8 +77,9 @@ describe("GET /api/pets", () => {
     );
     expect(body).toEqual({
       total: 1,
-      pets: [approvedPet],
+      pets: [approvedPetPayload],
     });
+    expect(JSON.stringify(body)).not.toContain("private@example.com");
   });
 
   it("returns TOON search results matching the JSON payload", async () => {
