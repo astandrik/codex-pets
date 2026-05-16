@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { decode } from "@toon-format/toon";
 
 const repositoryMocks = vi.hoisted(() => ({
   listApprovedPets: vi.fn(),
@@ -60,5 +61,38 @@ describe("GET /api/tags", () => {
         { name: "terminal", count: 1 },
       ],
     });
+  });
+
+  it("returns TOON tag counts matching the JSON payload", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-16T00:00:00.000Z"));
+
+    try {
+      const pets = [
+        basePet,
+        {
+          ...basePet,
+          slug: "terminal-cube",
+          tags: ["space", "terminal"],
+        },
+      ];
+      repositoryMocks.listApprovedPets.mockResolvedValueOnce(pets);
+      const { GET: getJson } = await import("@/app/api/tags/route");
+      const jsonResponse = await getJson();
+      const jsonBody = await jsonResponse.json();
+
+      repositoryMocks.listApprovedPets.mockResolvedValueOnce(pets);
+      const { GET: getToon } = await import("@/app/api/tags.toon/route");
+      const toonResponse = await getToon();
+      const toonBody = decode(await toonResponse.text());
+
+      expect(toonResponse.status).toBe(200);
+      expect(toonResponse.headers.get("Content-Type")).toBe(
+        "text/toon; charset=utf-8",
+      );
+      expect(toonBody).toEqual(jsonBody);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

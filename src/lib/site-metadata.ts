@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { toPublicUrl } from "@/lib/base-path";
+import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import type { PublicPet } from "@/lib/pets/types";
 
 export const SITE_NAME = "Companion Gallery";
@@ -18,6 +18,7 @@ export const SITE_KEYWORDS = [
   "pet packs",
   "spritesheet",
   "community gallery",
+  "TOON",
 ];
 
 export const SOCIAL_IMAGE = {
@@ -41,6 +42,7 @@ type SocialImageOptions = {
 };
 
 type TwitterImageInput = string | SocialImage;
+type AlternateTypes = NonNullable<NonNullable<Metadata["alternates"]>["types"]>;
 
 export function buildPageTitle(title: string): string {
   return `${title} - ${SITE_NAME}`;
@@ -118,8 +120,55 @@ export function getSiteSocialImagePath(): string {
   return "/opengraph-image";
 }
 
+export function getAgentResourceAlternateTypes(): AlternateTypes {
+  return {
+    "application/json": [
+      {
+        title: "Public manifest JSON",
+        url: withBasePath("/api/manifest"),
+      },
+      {
+        title: "Approved pet search JSON",
+        url: withBasePath("/api/pets"),
+      },
+    ],
+    "text/toon": [
+      {
+        title: "Public manifest TOON",
+        url: withBasePath("/api/manifest.toon"),
+      },
+      {
+        title: "Approved pet search TOON",
+        url: withBasePath("/api/pets.toon"),
+      },
+    ],
+  };
+}
+
 export function getPetSocialImagePath(slug: string): string {
   return `/pets/${encodeURIComponent(slug)}/opengraph-image.png`;
+}
+
+export function getPetResourceAlternateTypes(
+  slug: string,
+  displayName: string,
+): AlternateTypes {
+  const encodedSlug = encodeURIComponent(slug);
+
+  return {
+    "application/json": [
+      {
+        title: `${displayName} JSON`,
+        url: withBasePath(`/api/pets/${encodedSlug}`),
+      },
+    ],
+    "text/toon": [
+      {
+        title: `${displayName} TOON`,
+        url: withBasePath(`/api/pets/${encodedSlug}.toon`),
+      },
+    ],
+  };
 }
 
 export function getPetMetadataDescription(

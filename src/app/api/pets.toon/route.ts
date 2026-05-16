@@ -1,12 +1,11 @@
-import { NextResponse } from "next/server";
-
 import { toPublicUrl } from "@/lib/base-path";
 import { buildPetsPayload } from "@/lib/pets/api-payloads";
 import { listApprovedPets } from "@/lib/pets/repository";
 import { normalizeKind } from "@/lib/pets/validation";
 import {
   alternateLinkHeader,
-  TOON_MEDIA_TYPE,
+  JSON_MEDIA_TYPE,
+  toonResponse,
 } from "@/lib/toon/response";
 
 export const runtime = "nodejs";
@@ -19,11 +18,11 @@ export async function GET(req: Request): Promise<Response> {
   const kind = rawKind && rawKind !== "all" ? normalizeKind(rawKind) : "all";
 
   const pets = await listApprovedPets({ q, kind });
-  return NextResponse.json(buildPetsPayload(pets), {
+  return toonResponse(buildPetsPayload(pets), {
     headers: {
       Link: alternateLinkHeader(
-        toPublicUrl(`/api/pets.toon${url.search}`),
-        TOON_MEDIA_TYPE,
+        toPublicUrl(`/api/pets${url.search}`),
+        JSON_MEDIA_TYPE,
       ),
     },
   });

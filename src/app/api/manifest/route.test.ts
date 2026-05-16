@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { decode } from "@toon-format/toon";
 
 const repositoryMocks = vi.hoisted(() => ({
   listApprovedPets: vi.fn(),
@@ -68,5 +69,35 @@ describe("GET /api/manifest", () => {
         },
       ],
     });
+  });
+
+  it("returns a TOON manifest matching the JSON payload", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-16T00:00:00.000Z"));
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "");
+
+    try {
+      repositoryMocks.listApprovedPets.mockResolvedValueOnce([approvedPet]);
+      const { GET: getJson } = await import("@/app/api/manifest/route");
+      const jsonResponse = await getJson();
+      const jsonBody = await jsonResponse.json();
+
+      repositoryMocks.listApprovedPets.mockResolvedValueOnce([approvedPet]);
+      const { GET: getToon } = await import("@/app/api/manifest.toon/route");
+      const toonResponse = await getToon();
+      const toonBody = decode(await toonResponse.text());
+
+      expect(toonResponse.status).toBe(200);
+      expect(toonResponse.headers.get("Content-Type")).toBe(
+        "text/toon; charset=utf-8",
+      );
+      expect(toonResponse.headers.get("Link")).toBe(
+        '<https://pets.example/api/manifest>; rel="alternate"; type="application/json"',
+      );
+      expect(toonBody).toEqual(jsonBody);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -11,6 +11,7 @@ import { Providers } from "@/app/Providers";
 import YandexMetrika from "@/app/YandexMetrika";
 import { getPublicOrigin, toPublicUrl, withBasePath } from "@/lib/base-path";
 import {
+  getAgentResourceAlternateTypes,
   getSiteSocialImagePath,
   getWebsiteJsonLd,
   SITE_DESCRIPTION,
@@ -37,6 +38,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(getPublicOrigin()),
   alternates: {
     canonical: withBasePath("/"),
+    types: getAgentResourceAlternateTypes(),
   },
   robots: {
     index: true,

@@ -35,6 +35,7 @@ import {
   getBreadcrumbJsonLd,
   getOpenGraphImages,
   getPetMetadataDescription,
+  getPetResourceAlternateTypes,
   getPetSocialImagePath,
   getPetJsonLd,
   getTwitterImages,
@@ -102,6 +103,7 @@ export async function generateMetadata({
     description,
     alternates: {
       canonical: withBasePath(path),
+      types: getPetResourceAlternateTypes(pet.slug, pet.displayName),
     },
     robots: getPetRobots(pet.status),
     openGraph: {

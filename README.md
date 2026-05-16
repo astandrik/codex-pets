@@ -14,8 +14,8 @@ Public site: https://pets.ydb-qdrant.tech/.
 - App-owned email+password auth with YDB-backed users and sessions
 - Pet assets stored in YDB as binary blobs
 - Dynamic `robots.txt`, `sitemap.xml`, and `llms.txt`
-- Agent-facing HTTP access through `llms.txt`, `/mcp`, `/api/manifest`, and
-  `/api/pets`
+- Agent-facing HTTP access through `llms.txt`, `/mcp`, JSON routes, and TOON
+  mirrors for core registry data
 - Optional read-only browser WebMCP tools in supported browser runtimes
 - Yandex Metrika using the same counter as `ydb-qdrant-ui` (`104844437`),
   with optional server-side aggregate MCP metrics
@@ -55,9 +55,13 @@ Available MCP tools:
 HTTP fallback routes are public too:
 
 - `/api/manifest`
+- `/api/manifest.toon`
 - `/api/pets`
+- `/api/pets.toon`
 - `/api/pets/<slug>`
+- `/api/pets/<slug>.toon`
 - `/api/tags`
+- `/api/tags.toon`
 - `/api/pets/<slug>/share`
 - `/badge/<slug>.svg`
 - `/card/<slug>.gif`
@@ -253,10 +257,16 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
     `get_embed_code`, and `get_card_code`
   - `/api/manifest` — approved pet list with page URLs, install commands, and
     asset URLs
+  - `/api/manifest.toon` — TOON mirror of the public manifest for LLM-friendly
+    retrieval
   - `/api/pets?q=<query>&kind=all|creature|object|character` — approved pet
     list/search JSON
+  - `/api/pets.toon?q=<query>&kind=all|creature|object|character` — TOON
+    mirror of approved pet list/search
   - `/api/pets/<slug>` — public detail JSON for one approved pet
+  - `/api/pets/<slug>.toon` — TOON mirror of public detail data
   - `/api/tags` — current tag counts for approved pets
+  - `/api/tags.toon` — TOON mirror of current tag counts
   - `/api/pets/<slug>/share` — sanitized install, badge, and embed snippets
   - `/api/pets/<slug>/install` — read-only install instructions with no metric
     mutation
@@ -299,10 +309,14 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - `/agents` — agent and MCP connection guide
 - `/mcp` — public read-only Streamable HTTP MCP endpoint
 - `/api/manifest` — public agent/CLI manifest
+- `/api/manifest.toon` — TOON mirror of the public manifest
 - `/api/pets` — public approved pet list/search JSON
+- `/api/pets.toon` — TOON mirror of approved pet list/search
 - `/api/pets/[slug]` — public approved pet detail JSON
+- `/api/pets/[slug].toon` — TOON mirror of public pet detail data
 - `/api/tags`, `/api/pets/[slug]/share`, `/api/pets/[slug]/install` —
   read-only agent/share JSON
+- `/api/tags.toon` — TOON mirror of approved tag counts
 - `/badge/[slug].svg`, `/card/[slug].gif`, `/embed/[slug]` — share surfaces
 - `/robots.txt`, `/sitemap.xml`, `/llms.txt` — SEO and AI-readable outputs
 
@@ -314,8 +328,11 @@ agent-facing routes without local YDB. Expected public endpoints:
 ```bash
 curl -I http://localhost:3000/
 curl -I http://localhost:3000/api/pets
+curl -I http://localhost:3000/api/pets.toon
 curl -I http://localhost:3000/api/manifest
+curl -I http://localhost:3000/api/manifest.toon
 curl -I http://localhost:3000/api/tags
+curl -I http://localhost:3000/api/tags.toon
 curl -I http://localhost:3000/llms.txt
 curl -i http://localhost:3000/mcp
 ```

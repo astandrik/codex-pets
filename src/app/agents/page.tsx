@@ -10,6 +10,7 @@ import {
 
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import {
+  getAgentResourceAlternateTypes,
   getOpenGraphImages,
   getTwitterImages,
   SITE_NAME,
@@ -23,6 +24,7 @@ export const metadata: Metadata = {
   description: AGENTS_DESCRIPTION,
   alternates: {
     canonical: withBasePath("/agents"),
+    types: getAgentResourceAlternateTypes(),
   },
   openGraph: {
     type: "website",
@@ -87,6 +89,10 @@ export default function AgentsPage() {
               Public manifest
               <ArrowRight />
             </Button>
+            <Button view="flat" size="l" href={withBasePath("/api/manifest.toon")}>
+              TOON manifest
+              <ArrowRight />
+            </Button>
           </Flex>
         </Flex>
       </section>
@@ -140,6 +146,12 @@ export default function AgentsPage() {
           <li>
             <code>/api/manifest</code> lists approved pets with install commands
             and asset URLs.
+          </li>
+          <li>
+            <code>/api/manifest.toon</code>, <code>/api/pets.toon</code>,{" "}
+            <code>/api/pets/&lt;slug&gt;.toon</code>, and{" "}
+            <code>/api/tags.toon</code> mirror the core JSON registry data in
+            TOON.
           </li>
           <li>
             <code>/api/pets</code> searches approved pets with <code>q</code>{" "}
