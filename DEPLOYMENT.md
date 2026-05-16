@@ -236,7 +236,7 @@ Current app behavior:
 - owner delete and admin delete via soft delete (`status = deleted`)
 - `robots.txt` served by the app
 - dynamic `sitemap.xml`
-- dynamic `llms.txt`
+- dynamic `llms.txt` with `/llm.txt` alias
 - approved pets automatically appear in `sitemap.xml` without cron or rebuild
 - Yandex Metrika loaded in production
 - optional server-side MCP aggregate metrics through Yandex Metrika Measurement
@@ -260,6 +260,7 @@ curl -I https://example.com/codex-pets/register
 curl -I https://example.com/codex-pets/robots.txt
 curl -I https://example.com/codex-pets/sitemap.xml
 curl -I https://example.com/codex-pets/llms.txt
+curl -I https://example.com/codex-pets/llm.txt
 curl -I https://example.com/opengraph-image
 curl -A 'TelegramBot (like TwitterBot)' -sS https://example.com/codex-pets/ | rg 'og:image'
 curl -A 'TelegramBot (like TwitterBot)' -sS 'https://example.com/codex-pets/pets/tigran?v=preview-1' | rg 'og:image|og:url|canonical'
@@ -273,7 +274,7 @@ Manual checks:
 3. submit works anonymously
 4. `My pets` shows only owner-attached pets
 5. admin queue is available to admin accounts only
-6. approved pets show up in the gallery, sitemap, and llms.txt
+6. approved pets show up in the gallery, sitemap, and llms.txt / llm.txt
 7. deleted pets disappear from owner lists, public lists, and detail pages
 
 ## Updates

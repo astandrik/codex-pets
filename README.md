@@ -13,9 +13,9 @@ Public site: https://pets.ydb-qdrant.tech/.
 - local-ydb / YDB native gRPC via `ydb-sdk`
 - App-owned email+password auth with YDB-backed users and sessions
 - Pet assets stored in YDB as binary blobs
-- Dynamic `robots.txt`, `sitemap.xml`, and `llms.txt`
-- Agent-facing HTTP access through `llms.txt`, `/mcp`, JSON routes, and TOON
-  mirrors for core registry data
+- Dynamic `robots.txt`, `sitemap.xml`, and `llms.txt` with `/llm.txt` alias
+- Agent-facing HTTP access through `llms.txt` / `llm.txt`, `/mcp`, JSON routes,
+  and TOON mirrors for core registry data
 - Optional read-only browser WebMCP tools in supported browser runtimes
 - Yandex Metrika using the same counter as `ydb-qdrant-ui` (`104844437`),
   with optional server-side aggregate MCP metrics
@@ -247,7 +247,8 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - `robots.txt` is served from `src/app/robots.ts`.
 - `sitemap.xml` is dynamic and includes all currently approved pets.
 - `llms.txt` is dynamic and provides a curated AI-readable map of the gallery,
-  manifest, and approved pet pages.
+  manifest, and approved pet pages. `/llm.txt` is a direct plain-text alias for
+  fetchers that request the singular filename.
 - `/mcp` is a public read-only Streamable HTTP MCP server for coding agents.
   Codex can connect with:
   `codex mcp add codexPets --url https://pets.ydb-qdrant.tech/mcp`.
@@ -318,7 +319,8 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
   read-only agent/share JSON
 - `/api/tags.toon` — TOON mirror of approved tag counts
 - `/badge/[slug].svg`, `/card/[slug].gif`, `/embed/[slug]` — share surfaces
-- `/robots.txt`, `/sitemap.xml`, `/llms.txt` — SEO and AI-readable outputs
+- `/robots.txt`, `/sitemap.xml`, `/llms.txt`, `/llm.txt` — SEO and
+  AI-readable outputs
 
 ## Agent-facing checks
 
@@ -334,6 +336,7 @@ curl -I http://localhost:3000/api/manifest.toon
 curl -I http://localhost:3000/api/tags
 curl -I http://localhost:3000/api/tags.toon
 curl -I http://localhost:3000/llms.txt
+curl -I http://localhost:3000/llm.txt
 curl -i http://localhost:3000/mcp
 ```
 
