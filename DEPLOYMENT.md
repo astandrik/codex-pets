@@ -39,6 +39,11 @@ PORT=3000
 NEXT_PUBLIC_APP_URL=https://example.com/codex-pets
 NEXT_PUBLIC_BASE_PATH=/codex-pets
 
+# Optional aggregate MCP tool-call metrics through Yandex Metrika Measurement
+# Protocol. Use a dedicated technical Metrika ClientID, not a user identifier.
+YANDEX_METRIKA_MP_TOKEN=
+YANDEX_METRIKA_MP_CLIENT_ID=
+
 AUTH_MODE=app-session
 SESSION_COOKIE_SECRET=replace-with-random-secret
 PASSWORD_PEPPER=replace-with-another-random-secret
@@ -234,6 +239,14 @@ Current app behavior:
 - dynamic `llms.txt`
 - approved pets automatically appear in `sitemap.xml` without cron or rebuild
 - Yandex Metrika loaded in production
+- optional server-side MCP aggregate metrics through Yandex Metrika Measurement
+  Protocol when `YANDEX_METRIKA_MP_TOKEN` and `YANDEX_METRIKA_MP_CLIENT_ID` are
+  configured
+
+MCP metrics use a dedicated technical Metrika ClientID and a synthetic `/mcp`
+pageview before the `mcp_tool_call` goal event. They do not send raw MCP search
+text, IP address, user-agent, origin header, contact email, owner email, or owner
+identifiers.
 
 ## Smoke checks
 

@@ -9,7 +9,14 @@ import {
   normalizeAgentSearchFilters,
   readSafeAgentSlug,
 } from "@/lib/pets/agent-dto";
+import {
+  type McpToolCallPayload,
+  trackMcpToolCall,
+} from "@/lib/metrics/yandex-measurement";
 import { getApprovedPetBySlug, listApprovedPets } from "@/lib/pets/repository";
+
+type McpToolName = McpToolCallPayload["tool"];
+type SlugMcpToolName = Exclude<McpToolName, "search_pets">;
 
 type McpToolResult = {
   structuredContent: Record<string, unknown>;
@@ -19,11 +26,13 @@ type McpToolResult = {
 
 type ReadAgentPetResult = {
   ok: true;
+  slug: string;
   pet: AgentPet;
 } | {
   ok: false;
   code: "invalid_argument" | "not_found";
   message: string;
+  slug?: string;
 };
 
 const READ_ONLY_TOOL = {
@@ -59,19 +68,36 @@ export function createCodexPetsMcpServer(): McpServer {
       annotations: READ_ONLY_TOOL,
     },
     async (args) => {
-      const filters = normalizeAgentSearchFilters(args);
-      const pets = await listApprovedPets({
-        q: filters.query,
-        kind: filters.kind,
-      });
-      const filteredPets = filterAgentPets(pets, filters);
-      const agentPets = createAgentPets(filteredPets);
+      try {
+        const filters = normalizeAgentSearchFilters(args);
+        const pets = await listApprovedPets({
+          q: filters.query,
+          kind: filters.kind,
+        });
+        const filteredPets = filterAgentPets(pets, filters);
+        const agentPets = createAgentPets(filteredPets);
 
-      return toolResult({
-        total: agentPets.length,
-        limit: filters.limit,
-        pets: agentPets,
-      });
+        await trackMcpToolCall({
+          tool: "search_pets",
+          status: "success",
+          kind: filters.kind,
+          hasQuery: Boolean(filters.query),
+          resultCount: agentPets.length,
+          limit: filters.limit,
+        });
+
+        return toolResult({
+          total: agentPets.length,
+          limit: filters.limit,
+          pets: agentPets,
+        });
+      } catch (error) {
+        await trackMcpToolCall({
+          tool: "search_pets",
+          status: "error",
+        });
+        throw error;
+      }
     },
   );
 
@@ -84,10 +110,9 @@ export function createCodexPetsMcpServer(): McpServer {
       annotations: READ_ONLY_TOOL,
     },
     async (args) => {
-      const result = await readApprovedAgentPet(args.slug);
-      return result.ok
-        ? toolResult({ pet: result.pet })
-        : toolError(result.code, result.message);
+      return handleApprovedPetTool("get_pet", args.slug, (pet) => ({
+        pet,
+      }));
     },
   );
 
@@ -100,14 +125,15 @@ export function createCodexPetsMcpServer(): McpServer {
       annotations: READ_ONLY_TOOL,
     },
     async (args) => {
-      const result = await readApprovedAgentPet(args.slug);
-      return result.ok
-        ? toolResult({
-            slug: result.pet.slug,
-            name: result.pet.name,
-            install: result.pet.install,
-          })
-        : toolError(result.code, result.message);
+      return handleApprovedPetTool(
+        "get_install_instructions",
+        args.slug,
+        (pet) => ({
+          slug: pet.slug,
+          name: pet.name,
+          install: pet.install,
+        }),
+      );
     },
   );
 
@@ -120,14 +146,11 @@ export function createCodexPetsMcpServer(): McpServer {
       annotations: READ_ONLY_TOOL,
     },
     async (args) => {
-      const result = await readApprovedAgentPet(args.slug);
-      return result.ok
-        ? toolResult({
-            slug: result.pet.slug,
-            name: result.pet.name,
-            badge: result.pet.badge,
-          })
-        : toolError(result.code, result.message);
+      return handleApprovedPetTool("get_badge_code", args.slug, (pet) => ({
+        slug: pet.slug,
+        name: pet.name,
+        badge: pet.badge,
+      }));
     },
   );
 
@@ -140,14 +163,11 @@ export function createCodexPetsMcpServer(): McpServer {
       annotations: READ_ONLY_TOOL,
     },
     async (args) => {
-      const result = await readApprovedAgentPet(args.slug);
-      return result.ok
-        ? toolResult({
-            slug: result.pet.slug,
-            name: result.pet.name,
-            embed: result.pet.embed,
-          })
-        : toolError(result.code, result.message);
+      return handleApprovedPetTool("get_embed_code", args.slug, (pet) => ({
+        slug: pet.slug,
+        name: pet.name,
+        embed: pet.embed,
+      }));
     },
   );
 
@@ -160,18 +180,46 @@ export function createCodexPetsMcpServer(): McpServer {
       annotations: READ_ONLY_TOOL,
     },
     async (args) => {
-      const result = await readApprovedAgentPet(args.slug);
-      return result.ok
-        ? toolResult({
-            slug: result.pet.slug,
-            name: result.pet.name,
-            card: result.pet.card,
-          })
-        : toolError(result.code, result.message);
+      return handleApprovedPetTool("get_card_code", args.slug, (pet) => ({
+        slug: pet.slug,
+        name: pet.name,
+        card: pet.card,
+      }));
     },
   );
 
   return server;
+}
+
+async function handleApprovedPetTool(
+  tool: SlugMcpToolName,
+  slugInput: unknown,
+  buildContent: (pet: AgentPet) => Record<string, unknown>,
+): Promise<McpToolResult> {
+  try {
+    const result = await readApprovedAgentPet(slugInput);
+    if (!result.ok) {
+      await trackMcpToolCall({
+        tool,
+        status: result.code,
+        ...(result.slug ? { slug: result.slug } : {}),
+      });
+      return toolError(result.code, result.message);
+    }
+
+    await trackMcpToolCall({
+      tool,
+      status: "success",
+      slug: result.slug,
+    });
+    return toolResult(buildContent(result.pet));
+  } catch (error) {
+    await trackMcpToolCall({
+      tool,
+      status: "error",
+    });
+    throw error;
+  }
 }
 
 async function readApprovedAgentPet(
@@ -192,11 +240,13 @@ async function readApprovedAgentPet(
       ok: false,
       code: "not_found",
       message: "Approved pet not found.",
+      slug,
     };
   }
 
   return {
     ok: true,
+    slug,
     pet: createAgentPet(pet),
   };
 }

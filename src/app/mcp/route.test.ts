@@ -5,9 +5,17 @@ const repositoryMocks = vi.hoisted(() => ({
   getApprovedPetBySlug: vi.fn(),
 }));
 
+const metricsMocks = vi.hoisted(() => ({
+  trackMcpToolCall: vi.fn(),
+}));
+
 vi.mock("@/lib/pets/repository", () => ({
   listApprovedPets: repositoryMocks.listApprovedPets,
   getApprovedPetBySlug: repositoryMocks.getApprovedPetBySlug,
+}));
+
+vi.mock("@/lib/metrics/yandex-measurement", () => ({
+  trackMcpToolCall: metricsMocks.trackMcpToolCall,
 }));
 
 const approvedPet = {
@@ -97,6 +105,14 @@ describe("POST /mcp", () => {
       "private@example.com",
     );
     expect(body.result.content[0].text).toContain('"orbit-otter"');
+    expect(metricsMocks.trackMcpToolCall).toHaveBeenCalledWith({
+      tool: "search_pets",
+      status: "success",
+      kind: "all",
+      hasQuery: true,
+      resultCount: 1,
+      limit: 5,
+    });
   });
 
   it.each([
@@ -121,9 +137,14 @@ describe("POST /mcp", () => {
 
     expect(body.result.isError).toBeUndefined();
     expect(body.result.structuredContent[expectedKey]).toBeDefined();
+    expect(metricsMocks.trackMcpToolCall).toHaveBeenCalledWith({
+      tool: toolName,
+      status: "success",
+      slug: "orbit-otter",
+    });
   });
 
-  it("returns structured tool errors", async () => {
+  it("returns structured tool errors and tracks invalid arguments", async () => {
     const body = await callMcp({
       id: 5,
       method: "tools/call",
@@ -142,6 +163,59 @@ describe("POST /mcp", () => {
         message: "Invalid pet slug.",
       },
     });
+    expect(metricsMocks.trackMcpToolCall).toHaveBeenCalledWith({
+      tool: "get_pet",
+      status: "invalid_argument",
+    });
+    expect(metricsMocks.trackMcpToolCall.mock.calls[0]?.[0]).not.toHaveProperty(
+      "slug",
+    );
+  });
+
+  it("tracks missing approved pets as not_found", async () => {
+    repositoryMocks.getApprovedPetBySlug.mockResolvedValueOnce(null);
+
+    const body = await callMcp({
+      id: 6,
+      method: "tools/call",
+      params: {
+        name: "get_pet",
+        arguments: {
+          slug: "missing-pet",
+        },
+      },
+    });
+
+    expect(body.result.isError).toBe(true);
+    expect(body.result.structuredContent.error.code).toBe("not_found");
+    expect(metricsMocks.trackMcpToolCall).toHaveBeenCalledWith({
+      tool: "get_pet",
+      status: "not_found",
+      slug: "missing-pet",
+    });
+  });
+
+  it("tracks unexpected tool errors before the SDK returns an error result", async () => {
+    repositoryMocks.getApprovedPetBySlug.mockRejectedValueOnce(
+      new Error("YDB unavailable"),
+    );
+
+    const body = await callMcp({
+      id: 7,
+      method: "tools/call",
+      params: {
+        name: "get_pet",
+        arguments: {
+          slug: "orbit-otter",
+        },
+      },
+    });
+
+    expect(body.result.isError).toBe(true);
+    expect(metricsMocks.trackMcpToolCall).toHaveBeenCalledWith({
+      tool: "get_pet",
+      status: "error",
+    });
   });
 
   it("rejects forbidden origins before MCP handling", async () => {
@@ -152,7 +226,7 @@ describe("POST /mcp", () => {
     const response = await POST(
       mcpRequest(
         {
-          id: 6,
+          id: 8,
           method: "tools/list",
         },
         {

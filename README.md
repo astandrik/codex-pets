@@ -17,7 +17,8 @@ Public site: https://pets.ydb-qdrant.tech/.
 - Agent-facing HTTP access through `llms.txt`, `/mcp`, `/api/manifest`, and
   `/api/pets`
 - Optional read-only browser WebMCP tools in supported browser runtimes
-- Yandex Metrika using the same counter as `ydb-qdrant-ui` (`104844437`)
+- Yandex Metrika using the same counter as `ydb-qdrant-ui` (`104844437`),
+  with optional server-side aggregate MCP metrics
 - JSZip + Sharp for package validation
 
 ## Development
@@ -71,6 +72,8 @@ NEXT_PUBLIC_APP_URL=https://example.com/codex-pets
 
 The public gallery renders without secrets. For account login, submit, moderation,
 and metrics you need `YDB_PETS_ENDPOINT`, `YDB_PETS_DATABASE`, and auth env.
+Optional server-side MCP metrics also need `YANDEX_METRIKA_MP_TOKEN` and
+`YANDEX_METRIKA_MP_CLIENT_ID`.
 
 To run without YDB on generated sample data:
 
@@ -277,6 +280,13 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
   - account register/login success and error
   - pet submit success and error
   - moderation approve/reject/delete
+- Server-side MCP aggregate metrics are optional. They are enabled only when
+  `YANDEX_METRIKA_MP_TOKEN` and `YANDEX_METRIKA_MP_CLIENT_ID` are configured.
+  MCP metrics use a dedicated technical Metrika ClientID and send a synthetic
+  `/mcp` pageview before the `mcp_tool_call` goal event. The payload includes
+  only aggregate tool dimensions such as tool name, status, safe slug, kind,
+  result count, and limit; it does not include raw MCP search text, IP address,
+  user-agent, origin header, contact email, owner email, or owner identifiers.
 
 ## Main routes
 
