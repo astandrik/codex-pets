@@ -12,6 +12,14 @@ describe("next config", () => {
     expect(htmlLimitedBots?.test("Bingbot")).toBe(true);
     expect(
       htmlLimitedBots?.test(
+        "Googlebot/2.1 (+http://www.google.com/bot.html)",
+      ),
+    ).toBe(true);
+    expect(htmlLimitedBots?.test("GPTBot")).toBe(true);
+    expect(htmlLimitedBots?.test("OAI-SearchBot")).toBe(true);
+    expect(htmlLimitedBots?.test("ChatGPT-User")).toBe(true);
+    expect(
+      htmlLimitedBots?.test(
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
       ),
     ).toBe(false);

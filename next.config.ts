@@ -13,6 +13,10 @@ const htmlLimitedBotUserAgents = [
   "TelegramBot",
   "WebpageBot",
   // Next 16.0.10 defaults; setting htmlLimitedBots overrides the built-in list.
+  "Googlebot",
+  "GPTBot",
+  "OAI-SearchBot",
+  "ChatGPT-User",
   "[\\w-]+-Google",
   "Google-[\\w-]+",
   "Chrome-Lighthouse",
