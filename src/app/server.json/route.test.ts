@@ -23,8 +23,9 @@ describe("GET /server.json", () => {
         "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
       name: "tech.ydb-qdrant.pets/codex-pets-ydb-qdrant",
       title: "Codex Pets Registry",
-      description: "Search, preview, and install community Codex pet packs.",
-      version: "0.1.0",
+      description:
+        "Search, preview, install community Codex pet packs, and discover the pet request flow.",
+      version: "0.2.0",
       websiteUrl: "https://pets.example/",
       remotes: [
         {

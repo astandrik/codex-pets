@@ -108,6 +108,15 @@ function createSiteTools(): WebMCPTool[] {
       annotations: { readOnlyHint: true, untrustedContentHint: true },
       execute: getCodexPetsManifest,
     },
+    {
+      name: "get_codex_pet_request_info",
+      title: "Get Codex Pet Request Info",
+      description:
+        "Get the public request page URL, required fields, and reference image limits for asking admins to generate a new Codex pet. This tool is read-only and does not create requests.",
+      inputSchema: EMPTY_SCHEMA,
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
+      execute: getCodexPetRequestInfo,
+    },
   ];
 }
 
@@ -188,6 +197,53 @@ async function getCodexPetsManifest() {
       },
     },
   );
+}
+
+function getCodexPetRequestInfo() {
+  return toolResult("Use the public request page to ask for a new Codex pet.", {
+    request: {
+      pageUrl: `${window.location.origin}${withBasePath("/request")}`,
+      method: "Open the public request page and submit the form there.",
+      privacy:
+        "Pet generation requests are private to admins. Completed pets are linked manually after upload.",
+      fields: [
+        {
+          name: "contactEmail",
+          required: true,
+          description: "Contact email for follow-up about the request.",
+        },
+        {
+          name: "prompt",
+          required: true,
+          maxLength: 2000,
+          description:
+            "Short brief describing the character, object, mood, colors, and must-have details.",
+        },
+        {
+          name: "kind",
+          required: false,
+          values: ["creature", "object", "character"],
+          default: "creature",
+        },
+        {
+          name: "requesterName",
+          required: false,
+          maxLength: 80,
+        },
+        {
+          name: "displayNameHint",
+          required: false,
+          maxLength: 80,
+        },
+        {
+          name: "referenceImage",
+          required: false,
+          contentTypes: ["image/png", "image/jpeg", "image/webp"],
+          maxBytes: 5242880,
+        },
+      ],
+    },
+  });
 }
 
 async function fetchJson<T>(

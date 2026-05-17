@@ -62,7 +62,7 @@ describe("POST /mcp", () => {
 
     expect(body.result.serverInfo).toMatchObject({
       name: "codex-pets-registry",
-      version: "0.1.0",
+      version: "0.2.0",
     });
   });
 
@@ -79,8 +79,34 @@ describe("POST /mcp", () => {
       "get_badge_code",
       "get_embed_code",
       "get_card_code",
+      "get_pet_request_info",
     ]);
     expect(body.result.tools[0].annotations.readOnlyHint).toBe(true);
+  });
+
+  it("returns pet request workflow discovery", async () => {
+    const body = await callMcp({
+      id: 9,
+      method: "tools/call",
+      params: {
+        name: "get_pet_request_info",
+        arguments: {},
+      },
+    });
+
+    expect(body.result.isError).toBeUndefined();
+    expect(body.result.structuredContent.request.pageUrl).toContain("/request");
+    expect(body.result.structuredContent.request.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "contactEmail", required: true }),
+        expect.objectContaining({ name: "prompt", required: true }),
+        expect.objectContaining({ name: "referenceImage", maxBytes: 5242880 }),
+      ]),
+    );
+    expect(metricsMocks.trackMcpToolCall).toHaveBeenCalledWith({
+      tool: "get_pet_request_info",
+      status: "success",
+    });
   });
 
   it("calls search_pets", async () => {

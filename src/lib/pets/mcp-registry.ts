@@ -6,8 +6,8 @@ export const MCP_REGISTRY_SERVER_NAME =
   "tech.ydb-qdrant.pets/codex-pets-ydb-qdrant";
 export const MCP_REGISTRY_SERVER_TITLE = "Codex Pets Registry";
 export const MCP_REGISTRY_SERVER_DESCRIPTION =
-  "Search, preview, and install community Codex pet packs.";
-export const MCP_REGISTRY_SERVER_VERSION = "0.1.0";
+  "Search, preview, install community Codex pet packs, and discover the pet request flow.";
+export const MCP_REGISTRY_SERVER_VERSION = "0.2.0";
 export const MCP_REGISTRY_AUTH_RECORD =
   "v=MCPv1; k=ed25519; p=hf1UAXtYZTedJy3YtpjRYpB6IZRoZKEyzHJ+Wc/uxrc=";
 

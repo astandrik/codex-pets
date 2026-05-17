@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v4";
 
+import { toPublicUrl } from "@/lib/base-path";
 import {
   type AgentPet,
   createAgentPet,
@@ -17,7 +18,10 @@ import { getApprovedPetBySlug, listApprovedPets } from "@/lib/pets/repository";
 import { MCP_REGISTRY_SERVER_VERSION } from "@/lib/pets/mcp-registry";
 
 type McpToolName = McpToolCallPayload["tool"];
-type SlugMcpToolName = Exclude<McpToolName, "search_pets">;
+type SlugMcpToolName = Exclude<
+  McpToolName,
+  "search_pets" | "get_pet_request_info"
+>;
 
 type McpToolResult = {
   structuredContent: Record<string, unknown>;
@@ -189,7 +193,76 @@ export function createCodexPetsMcpServer(): McpServer {
     },
   );
 
+  server.registerTool(
+    "get_pet_request_info",
+    {
+      title: "Get pet request info",
+      description:
+        "Return the public Codex pet request page URL, required fields, and reference image limits. This tool is read-only and does not create requests.",
+      inputSchema: {},
+      annotations: READ_ONLY_TOOL,
+    },
+    async () => {
+      await trackMcpToolCall({
+        tool: "get_pet_request_info",
+        status: "success",
+      });
+      return toolResult(buildPetRequestInfo());
+    },
+  );
+
   return server;
+}
+
+function buildPetRequestInfo(): Record<string, unknown> {
+  return {
+    request: {
+      pageUrl: toPublicRequestUrl(),
+      method: "Open the public request page and submit the form there.",
+      privacy:
+        "Pet generation requests are private to admins. Completed pets are linked manually after upload.",
+      fields: [
+        {
+          name: "contactEmail",
+          required: true,
+          description: "Contact email for follow-up about the request.",
+        },
+        {
+          name: "prompt",
+          required: true,
+          maxLength: 2000,
+          description:
+            "Short brief describing the character, object, mood, colors, and must-have details.",
+        },
+        {
+          name: "kind",
+          required: false,
+          values: ["creature", "object", "character"],
+          default: "creature",
+        },
+        {
+          name: "requesterName",
+          required: false,
+          maxLength: 80,
+        },
+        {
+          name: "displayNameHint",
+          required: false,
+          maxLength: 80,
+        },
+        {
+          name: "referenceImage",
+          required: false,
+          contentTypes: ["image/png", "image/jpeg", "image/webp"],
+          maxBytes: 5242880,
+        },
+      ],
+    },
+  };
+}
+
+function toPublicRequestUrl(): string {
+  return toPublicUrl("/request");
 }
 
 async function handleApprovedPetTool(

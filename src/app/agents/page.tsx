@@ -17,7 +17,7 @@ import {
 } from "@/lib/site-metadata";
 
 const AGENTS_DESCRIPTION =
-  "Connect coding agents to Codex Pets through the public read-only MCP endpoint and HTTP registry routes.";
+  "Connect coding agents to Codex Pets through the public read-only MCP endpoint, request discovery, and HTTP registry routes.";
 
 export const metadata: Metadata = {
   title: "Agent Access",
@@ -78,7 +78,8 @@ export default function AgentsPage() {
           <Text variant="body-2" color="secondary" style={{ maxWidth: 760 }}>
             Find, install, and share approved Codex pets from your browser or
             directly from your AI coding agent. The MCP server and HTTP routes
-            are read-only and return only approved public registry data.
+            are read-only and return approved public registry data plus request
+            workflow discovery.
           </Text>
           <Flex gap={2} wrap>
             <Button view="action" size="l" href={withBasePath("/mcp")}>
@@ -135,6 +136,15 @@ export default function AgentsPage() {
           <li>
             <code>get_embed_code</code> returns iframe embed code.
           </li>
+          <li>
+            <code>get_card_code</code> returns Markdown and HTML animated card
+            snippets.
+          </li>
+          <li>
+            <code>get_pet_request_info</code> returns the public request page,
+            required fields, and reference image limits without creating a
+            request.
+          </li>
         </ul>
       </section>
 
@@ -160,6 +170,10 @@ export default function AgentsPage() {
           <li>
             <code>/api/pets/&lt;slug&gt;/share</code> returns install, badge,
             and embed snippets.
+          </li>
+          <li>
+            <code>/request</code> is the public form for asking admins to
+            generate a new Codex pet.
           </li>
           <li>
             <code>/badge/&lt;slug&gt;.svg</code> and{" "}
