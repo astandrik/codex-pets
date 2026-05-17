@@ -16,6 +16,7 @@ type HeaderNavResponse = {
     role: "user" | "admin";
   } | null;
   pendingReviewCount: number;
+  openRequestCount: number;
 };
 
 export function AppHeaderNav() {
@@ -52,6 +53,7 @@ export function AppHeaderNav() {
 
   const principal = data?.principal ?? null;
   const pendingReviewCount = data?.pendingReviewCount ?? 0;
+  const openRequestCount = data?.openRequestCount ?? 0;
   const isAdmin = principal?.role === "admin";
 
   const isActive = (href: string) =>
@@ -84,32 +86,60 @@ export function AppHeaderNav() {
           </Link>
         </li>
         {principal ? (
-          <li>
-            <Link
-              href="/my-pets"
-              prefetch={false}
-              {...linkProps("/my-pets")}
-            >
-              My pets
-            </Link>
-          </li>
+          <>
+            <li>
+              <Link
+                href="/my-pets"
+                prefetch={false}
+                {...linkProps("/my-pets")}
+              >
+                My pets
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/my-requests"
+                prefetch={false}
+                {...linkProps("/my-requests")}
+              >
+                My requests
+              </Link>
+            </li>
+          </>
         ) : null}
         {principal && isAdmin ? (
-          <li>
-            <Link
-              href="/admin/submissions"
-              prefetch={false}
-              {...linkProps("/admin/submissions", "app-header__review-link")}
-            >
-              <span>Review</span>
-              <Label
-                theme={pendingReviewCount > 0 ? "warning" : "unknown"}
-                size="s"
+          <>
+            <li>
+              <Link
+                href="/admin/submissions"
+                prefetch={false}
+                {...linkProps("/admin/submissions", "app-header__review-link")}
               >
-                {pendingReviewCount}
-              </Label>
-            </Link>
-          </li>
+                <span>Review</span>
+                <Label
+                  theme={pendingReviewCount > 0 ? "warning" : "unknown"}
+                  size="s"
+                >
+                  {pendingReviewCount}
+                </Label>
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/admin/requests"
+                prefetch={false}
+                {...linkProps("/admin/requests", "app-header__review-link")}
+              >
+                <span>Requests</span>
+                <Label
+                  theme={openRequestCount > 0 ? "warning" : "unknown"}
+                  size="s"
+                >
+                  {openRequestCount}
+                </Label>
+              </Link>
+            </li>
+          </>
         ) : null}
       </ul>
 
@@ -151,6 +181,9 @@ export function AppHeaderNav() {
             </Link>
           </>
         )}
+        <Button view="outlined" size="m" href={withBasePath("/request")}>
+          Request
+        </Button>
         <Button view="action" size="m" href={withBasePath("/submit")}>
           <Button.Icon>
             <Plus />

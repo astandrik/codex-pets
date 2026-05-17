@@ -108,6 +108,35 @@ CREATE TABLE codex_pet_metrics (
   PRIMARY KEY (pet_slug)
 );
 
+CREATE TABLE codex_pet_generation_requests (
+  id Utf8 NOT NULL,
+  status Utf8 NOT NULL,
+  kind Utf8 NOT NULL,
+  display_name_hint Utf8 NOT NULL,
+  prompt Utf8 NOT NULL,
+  contact_email Utf8 NOT NULL,
+  requester_name Utf8 NOT NULL,
+  requester_user_id Utf8 NOT NULL,
+  linked_pet_id Utf8 NOT NULL,
+  linked_pet_slug Utf8 NOT NULL,
+  admin_note Utf8 NOT NULL,
+  created_at Utf8 NOT NULL,
+  updated_at Utf8 NOT NULL,
+  fulfilled_at Utf8 NOT NULL,
+  rejected_at Utf8 NOT NULL,
+  PRIMARY KEY (id)
+);
+
+CREATE TABLE codex_pet_generation_request_images (
+  request_id Utf8 NOT NULL,
+  file_name Utf8 NOT NULL,
+  content_type Utf8 NOT NULL,
+  size_bytes Uint32 NOT NULL,
+  image_bytes String NOT NULL,
+  created_at Utf8 NOT NULL,
+  PRIMARY KEY (request_id)
+);
+
 CREATE TABLE codex_schema_migrations (
   id Utf8 NOT NULL,
   applied_at Utf8 NOT NULL,

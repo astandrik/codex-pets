@@ -1,8 +1,8 @@
 # Codex Pets
 
 Community gallery for Codex-compatible animated pets with local accounts,
-manual moderation, YDB-backed asset storage, and public detail pages for
-approved and pending pets.
+manual moderation, public generation requests, YDB-backed asset storage, and
+public detail pages for approved and pending pets.
 
 Public site: https://pets.ydb-qdrant.tech/.
 
@@ -234,10 +234,16 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - Public users can browse the gallery and open `/pets/[slug]`.
 - Public users can submit a pet without logging in by providing files and an
   optional contact email.
+- Public users can request a generated pet without logging in by providing a
+  contact email, text brief, and optional reference image.
 - Logged-in users can see only their own pets under `/my-pets`.
+- Logged-in users can see their own pet generation requests under
+  `/my-requests`.
 - Admins are determined by `INITIAL_ADMIN_EMAILS`.
 - Admins can approve, reject, and delete pending pets from
   `/admin/submissions`.
+- Admins can review generation requests and link them to existing pets from
+  `/admin/requests`.
 - Owners can delete their own pets from `/my-pets`.
 - Admins can delete any pet from the pet detail page.
 - Deleted pets disappear from owner lists, public listings, and `sitemap.xml`.
@@ -301,6 +307,7 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - Yandex Metrika is loaded in production only and tracks:
   - account register/login success and error
   - pet submit success and error
+  - pet generation request success and error
   - moderation approve/reject/delete
 - Server-side MCP aggregate metrics are optional. They are enabled only when
   `YANDEX_METRIKA_MP_TOKEN` and `YANDEX_METRIKA_MP_CLIENT_ID` are configured.
@@ -313,10 +320,13 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 ## Main routes
 
 - `/` — public gallery
+- `/request` — public pet generation request flow
 - `/submit` — public submit flow
 - `/login`, `/register`, `/logout` — local account flow
 - `/my-pets` — owner view
+- `/my-requests` — logged-in user generation request view
 - `/admin/submissions` — admin moderation queue
+- `/admin/requests` — admin pet generation request queue
 - `/pets/[slug]` — pet detail page
 - `/agents` — agent and MCP connection guide
 - `/mcp` — public read-only Streamable HTTP MCP endpoint

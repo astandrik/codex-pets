@@ -78,6 +78,8 @@ The schema currently includes:
 - `codex_password_reset_tokens`
 - `codex_pet_reviews`
 - `codex_pet_metrics`
+- `codex_pet_generation_requests`
+- `codex_pet_generation_request_images`
 - `codex_schema_migrations`
 
 `codex_pet_upload_sessions` is legacy and may remain present if it already
@@ -231,8 +233,12 @@ Current app behavior:
 
 - public gallery and pet detail pages
 - anonymous submit with optional contact email
+- anonymous pet generation requests with required contact email and optional
+  reference image
 - local account login/register/logout
+- logged-in user generation request history
 - admin moderation queue
+- admin pet generation request queue
 - owner delete and admin delete via soft delete (`status = deleted`)
 - `robots.txt` served by the app
 - dynamic `sitemap.xml`
@@ -277,10 +283,12 @@ Manual checks:
 1. public pages open without browser-level auth prompt
 2. login/register/logout work
 3. submit works anonymously
-4. `My pets` shows only owner-attached pets
-5. admin queue is available to admin accounts only
-6. approved pets show up in the gallery, sitemap, and llms.txt / llm.txt
-7. deleted pets disappear from owner lists, public lists, and detail pages
+4. pet generation requests work anonymously with and without a reference image
+5. `My pets` shows only owner-attached pets
+6. `My requests` shows only requests created while signed in
+7. admin queues are available to admin accounts only
+8. approved pets show up in the gallery, sitemap, and llms.txt / llm.txt
+9. deleted pets disappear from owner lists, public lists, and detail pages
 
 ## Updates
 

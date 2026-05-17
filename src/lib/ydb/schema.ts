@@ -8,4 +8,6 @@ export const TABLES = {
   uploadSessions: "codex_pet_upload_sessions",
   reviews: "codex_pet_reviews",
   metrics: "codex_pet_metrics",
+  generationRequests: "codex_pet_generation_requests",
+  generationRequestImages: "codex_pet_generation_request_images",
 } as const;

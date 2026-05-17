@@ -60,6 +60,9 @@ export function HomePage({ pets, filteredPets, query, kind }: HomePageProps) {
                 <Plus />
                 Submit a pet
               </Button>
+              <Button view="outlined" size="l" href={withBasePath("/request")}>
+                Request a pet
+              </Button>
               <Button view="outlined" size="l" href="#gallery">
                 Browse gallery
                 <ArrowRight />
@@ -148,10 +151,15 @@ export function HomePage({ pets, filteredPets, query, kind }: HomePageProps) {
             title="No approved pets yet"
             description="Submitted pets will appear here after moderation."
             actions={
-              <Button view="action" href={withBasePath("/submit")}>
-                <Plus />
-                Submit the first pet
-              </Button>
+              <Flex gap={2} wrap>
+                <Button view="action" href={withBasePath("/submit")}>
+                  <Plus />
+                  Submit the first pet
+                </Button>
+                <Button view="outlined" href={withBasePath("/request")}>
+                  Request a pet
+                </Button>
+              </Flex>
             }
           />
         )}

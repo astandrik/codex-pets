@@ -1,0 +1,52 @@
+.pet-request-form {
+  max-width: 760px;
+  padding: var(--spacing-2xl);
+
+  &__fieldset {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xl);
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  &__field {
+    min-width: 0;
+  }
+
+  &__label {
+    color: var(--g-color-text-secondary);
+    font-size: 14px;
+  }
+
+  &__file {
+    width: 100%;
+    min-height: 42px;
+    border: 1px solid var(--g-color-line-generic-accent);
+    border-radius: var(--radius-md);
+    background: rgba(0, 0, 0, 0.2);
+    color: var(--g-color-text-primary);
+    padding: 9px var(--spacing-md);
+  }
+
+  &__reference {
+    margin-top: var(--spacing-sm);
+  }
+
+  &__reference-image {
+    width: 96px;
+    height: 96px;
+    flex: 0 0 auto;
+    background-color: var(--g-color-base-generic);
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: contain;
+    border: 1px solid var(--g-color-line-generic-accent);
+    border-radius: var(--radius-md);
+  }
+
+  &__reference-meta {
+    min-width: 0;
+  }
+}

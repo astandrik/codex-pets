@@ -75,6 +75,19 @@ export const PET_STATES = [
 
 export type PetKind = "creature" | "object" | "character";
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "deleted";
+export type GenerationRequestStatus =
+  | "pending"
+  | "in_progress"
+  | "fulfilled"
+  | "rejected"
+  | "deleted";
+
+export type PetGenerationRequestReferenceImage = {
+  url: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+};
 
 export type PublicPet = {
   id: string;
@@ -95,4 +108,23 @@ export type PublicPet = {
   downloadCount: number;
   installCount: number;
   likeCount: number;
+};
+
+export type PetGenerationRequest = {
+  id: string;
+  status: GenerationRequestStatus;
+  kind: PetKind;
+  displayNameHint: string | null;
+  prompt: string;
+  contactEmail: string;
+  requesterName: string | null;
+  requesterUserId: string | null;
+  linkedPetId: string | null;
+  linkedPetSlug: string | null;
+  referenceImage: PetGenerationRequestReferenceImage | null;
+  adminNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+  fulfilledAt: string | null;
+  rejectedAt: string | null;
 };

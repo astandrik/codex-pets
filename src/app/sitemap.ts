@@ -30,6 +30,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.7,
     },
     {
+      url: toPublicUrl("/request"),
+      lastModified: generatedAt,
+      changeFrequency: "weekly",
+      priority: 0.7,
+    },
+    {
       url: toPublicUrl("/submit"),
       lastModified: generatedAt,
       changeFrequency: "weekly",

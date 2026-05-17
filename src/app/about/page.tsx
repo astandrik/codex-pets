@@ -45,7 +45,7 @@ const faqs = [
   {
     question: "Can I submit my own pet?",
     answer:
-      "Yes. Upload a ZIP, or upload pet.json plus spritesheet.webp or spritesheet.png from the submit page. New submissions stay pending until an admin reviews them.",
+      "Yes. Upload a ZIP, or upload pet.json plus spritesheet.webp or spritesheet.png from the submit page. If you need a new pet generated first, send a request instead.",
   },
   {
     question: "What files does a pack need?",
@@ -191,7 +191,8 @@ export default function AboutPage() {
           <Text variant="body-2" color="secondary">
             Approved pets can be installed from npm with the Codex Pets CLI.
             Creators can submit packs from the <Link href="/submit">submit page</Link>;
-            admins review every submission before it appears in the gallery,
+            anyone can also <Link href="/request">request a generated pet</Link>.
+            Admins review every submission before it appears in the gallery,
             sitemap, and public manifest.
           </Text>
         </article>

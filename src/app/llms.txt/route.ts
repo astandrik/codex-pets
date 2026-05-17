@@ -47,6 +47,7 @@ export async function GET(): Promise<Response> {
       `- [Gallery](${toPublicUrl("/")}): Browse approved Codex pet packs and search by name, description, kind, or tag.`,
       `- [About](${toPublicUrl("/about")}): Learn how Codex Pets works, including the package format, npm CLI installer, and moderation flow.`,
       `- [Agents](${toPublicUrl("/agents")}): Connect coding agents through MCP or the HTTP contract.`,
+      `- [Request a pet](${toPublicUrl("/request")}): Send a private text brief and optional reference image for admins to review and fulfill manually.`,
       `- [Submit a pet](${toPublicUrl("/submit")}): Upload a ZIP or pet.json plus spritesheet for moderation.`,
       "",
       "## Machine-readable resources",
