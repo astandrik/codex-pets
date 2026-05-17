@@ -110,6 +110,8 @@ export type PublicPet = {
   likeCount: number;
 };
 
+export type PublicPetSummary = Omit<PublicPet, "contactEmail">;
+
 export type PetGenerationRequest = {
   id: string;
   status: GenerationRequestStatus;

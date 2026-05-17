@@ -9,11 +9,11 @@ import { PetCardMetrics } from "@/components/PetCard/PetCardMetrics";
 import { getPetIdleStripUrl } from "@/lib/pets/asset-urls";
 import { kindLabelTheme, statusLabelText, statusLabelTheme } from "@/lib/ui/labels";
 import { PET_SHEET, PET_STATES } from "@/lib/pets/types";
-import type { PublicPet } from "@/lib/pets/types";
+import type { PublicPetSummary } from "@/lib/pets/types";
 import "./PetCard.scss";
 
 type PetCardProps = {
-  pet: PublicPet;
+  pet: PublicPetSummary;
   showStatus?: boolean;
 };
 

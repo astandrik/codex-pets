@@ -16,13 +16,18 @@ import {
 } from "@gravity-ui/icons";
 
 import { GalleryFilter } from "@/components/GalleryFilter/GalleryFilter";
+import {
+  HomeHeroPetPicker,
+  type HomeHeroPet,
+} from "@/components/HomePage/HomeHeroPetPicker";
 import { PetCard } from "@/components/PetCard/PetCard";
 import { withBasePath } from "@/lib/base-path";
-import type { PetKind, PublicPet } from "@/lib/pets/types";
+import { pickRandomHeroPetIndex } from "@/components/HomePage/home-hero-random";
+import type { PetKind, PublicPetSummary } from "@/lib/pets/types";
 
 type HomePageProps = {
-  pets: PublicPet[];
-  filteredPets: PublicPet[];
+  pets: PublicPetSummary[];
+  filteredPets: PublicPetSummary[];
   query: string;
   kind: PetKind | "all";
 };
@@ -32,17 +37,21 @@ function EmptyIcon() {
 }
 
 export function HomePage({ pets, filteredPets, query, kind }: HomePageProps) {
+  const heroPets = pets.map(toHomeHeroPet);
+  const initialHeroPetIndex = pickRandomHeroPetIndex(heroPets.length) ?? 0;
+
   return (
     <Container as="main" maxWidth="xl" gutters={5} className="page-shell">
       <Card view="filled" type="container" className="home-hero-card">
         <Flex
           as="section"
           gap={8}
-          alignItems="center"
+          alignItems="flex-start"
           justifyContent="space-between"
           className="home-hero"
           wrap
         >
+          <Flex direction="column" gap={6} className="home-hero__main">
           <Flex direction="column" gap={3} className="home-hero__copy">
             <Text variant="caption-2" color="brand" className="home-hero__eyebrow">
               The Codex pet registry
@@ -69,23 +78,6 @@ export function HomePage({ pets, filteredPets, query, kind }: HomePageProps) {
               </Button>
             </Flex>
           </Flex>
-          <div className="home-hero__visual" aria-hidden>
-            <div className="home-pet">
-              <span className="home-pet__shine" />
-              <span className="home-pet__spark home-pet__spark_one" />
-              <span className="home-pet__spark home-pet__spark_two" />
-              <span className="home-pet__spark home-pet__spark_three" />
-              <span className="home-pet__ear home-pet__ear_left" />
-              <span className="home-pet__ear home-pet__ear_right" />
-              <span className="home-pet__face">
-                <span className="home-pet__eye home-pet__eye_left" />
-                <span className="home-pet__eye home-pet__eye_right" />
-                <span className="home-pet__cheek home-pet__cheek_left" />
-                <span className="home-pet__cheek home-pet__cheek_right" />
-                <span className="home-pet__mouth" />
-              </span>
-            </div>
-          </div>
           <div className="home-hero__stats" aria-label="Registry highlights">
             <div className="home-hero__stat">
               <span className="home-hero__stat-icon">
@@ -114,6 +106,13 @@ export function HomePage({ pets, filteredPets, query, kind }: HomePageProps) {
                 <small>drop in and enjoy</small>
               </span>
             </div>
+          </div>
+          </Flex>
+          <div className="home-hero__visual">
+            <HomeHeroPetPicker
+              pets={heroPets}
+              initialIndex={initialHeroPetIndex}
+            />
           </div>
         </Flex>
       </Card>
@@ -166,4 +165,15 @@ export function HomePage({ pets, filteredPets, query, kind }: HomePageProps) {
       </section>
     </Container>
   );
+}
+
+function toHomeHeroPet(pet: PublicPetSummary): HomeHeroPet {
+  return {
+    slug: pet.slug,
+    displayName: pet.displayName,
+    description: pet.description,
+    kind: pet.kind,
+    ownerName: pet.ownerName,
+    spritesheetUrl: pet.spritesheetUrl,
+  };
 }

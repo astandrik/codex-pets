@@ -1,7 +1,7 @@
 import { HomePage } from "@/components/HomePage/HomePage";
 import { unstable_cache } from "next/cache";
 import { listApprovedPets } from "@/lib/pets/repository";
-import type { PetKind, PublicPet } from "@/lib/pets/types";
+import type { PetKind, PublicPet, PublicPetSummary } from "@/lib/pets/types";
 
 export const runtime = "nodejs";
 // Keep request-time rendering because YDB runtime env is only available in the
@@ -41,7 +41,7 @@ function parseKind(value: string | null): PetKind | "all" {
 }
 
 function matchesFilter(
-  pet: PublicPet,
+  pet: PublicPetSummary,
   query: string,
   kind: PetKind | "all",
 ): boolean {
@@ -64,7 +64,7 @@ export default async function Home({ searchParams }: HomeProps) {
   const params = await searchParams;
   const query = firstParam(params?.q)?.trim().toLowerCase() ?? "";
   const kind = parseKind(firstParam(params?.kind));
-  const pets = await getApprovedPetsSnapshot();
+  const pets = (await getApprovedPetsSnapshot()).map(toPublicPetSummary);
   const filteredPets = pets.filter((pet) => matchesFilter(pet, query, kind));
 
   return (
@@ -75,4 +75,26 @@ export default async function Home({ searchParams }: HomeProps) {
       kind={kind}
     />
   );
+}
+
+function toPublicPetSummary(pet: PublicPet): PublicPetSummary {
+  return {
+    id: pet.id,
+    slug: pet.slug,
+    displayName: pet.displayName,
+    description: pet.description,
+    spritesheetUrl: pet.spritesheetUrl,
+    petJsonUrl: pet.petJsonUrl,
+    zipUrl: pet.zipUrl,
+    spritesheetExt: pet.spritesheetExt,
+    kind: pet.kind,
+    tags: pet.tags,
+    status: pet.status,
+    ownerName: pet.ownerName,
+    createdAt: pet.createdAt,
+    approvedAt: pet.approvedAt,
+    downloadCount: pet.downloadCount,
+    installCount: pet.installCount,
+    likeCount: pet.likeCount,
+  };
 }
