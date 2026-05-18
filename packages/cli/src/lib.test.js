@@ -32,6 +32,17 @@ describe("codex-pets cli helpers", () => {
     });
   });
 
+  it("parses mcp options", () => {
+    expect(parseArgs(["mcp", "--url", "https://x.test"])).toEqual({
+      command: "mcp",
+      slug: null,
+      force: false,
+      baseUrl: "https://x.test",
+      help: false,
+      version: false,
+    });
+  });
+
   it("builds API urls under a base path", () => {
     expect(buildApiUrl("https://pets.test/codex-pets", "/api/manifest")).toBe(
       "https://pets.test/codex-pets/api/manifest",

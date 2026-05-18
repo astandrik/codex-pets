@@ -220,7 +220,7 @@ export async function runCli(argv, io = {}) {
   const baseUrl = parsed.baseUrl ?? env.CODEX_PETS_URL ?? DEFAULT_BASE_URL;
 
   if (parsed.version) {
-    stdout("0.1.2");
+    stdout("0.2.0");
     return;
   }
 
@@ -260,6 +260,15 @@ export async function runCli(argv, io = {}) {
     return;
   }
 
+  if (parsed.command === "mcp") {
+    const { runMcpServer } = await import("./mcp.js");
+    await runMcpServer({
+      baseUrl,
+      fetchImpl: io.fetchImpl,
+    });
+    return;
+  }
+
   throw new Error(`Unknown command: ${parsed.command}`);
 }
 
@@ -269,6 +278,7 @@ function helpText() {
 Usage:
   codex-pets list [--url <baseUrl>]
   codex-pets install <slug> [--force] [--url <baseUrl>]
+  codex-pets mcp [--url <baseUrl>]
   codex-pets --help
   codex-pets --version
 

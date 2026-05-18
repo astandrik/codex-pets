@@ -1,15 +1,20 @@
 {
   "name": "@astandrik/codex-pets",
-  "version": "0.1.2",
-  "description": "CLI installer for Codex Pets gallery pets.",
+  "version": "0.2.0",
+  "description": "CLI installer and local MCP server for Codex Pets gallery pets.",
   "type": "module",
   "bin": {
     "codex-pets": "bin/codex-pets.cjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
   },
   "files": [
     "bin/codex-pets.cjs",
     "src/index.js",
     "src/lib.js",
+    "src/mcp.js",
     "README.md"
   ],
   "engines": {

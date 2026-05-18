@@ -43,6 +43,12 @@ Connect Codex:
 codex mcp add codexPets --url https://pets.ydb-qdrant.tech/mcp
 ```
 
+Run a local stdio MCP server that proxies the public gallery:
+
+```bash
+npx @astandrik/codex-pets mcp
+```
+
 Available MCP tools:
 
 - `search_pets` — search approved pets

@@ -9,6 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "mcp:stdio": "node packages/cli/src/index.js mcp",
     "lint": "eslint .",
     "test": "vitest run",
     "db:migrate": "node scripts/apply-ydb-migrations.mjs",
