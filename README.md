@@ -78,6 +78,8 @@ The public gallery renders without secrets. For account login, submit, moderatio
 and metrics you need `YDB_PETS_ENDPOINT`, `YDB_PETS_DATABASE`, and auth env.
 Optional server-side MCP metrics also need `YANDEX_METRIKA_MP_TOKEN` and
 `YANDEX_METRIKA_MP_CLIENT_ID`.
+Optional IndexNow notifications are enabled by `INDEXNOW_KEY`; the app serves
+`/<key>.txt` and pings IndexNow after an admin approves a pet.
 
 To run without YDB on generated sample data:
 
@@ -316,6 +318,9 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
   only aggregate tool dimensions such as tool name, status, safe slug, kind,
   result count, and limit; it does not include raw MCP search text, IP address,
   user-agent, origin header, contact email, owner email, or owner identifiers.
+- IndexNow is optional. Set `INDEXNOW_KEY` in the runtime env to enable the
+  public key file and approval-time notifications for the gallery, the new pet
+  detail page, `sitemap.xml`, `llms.txt`, and `/api/manifest`.
 
 ## Main routes
 
