@@ -44,6 +44,10 @@ NEXT_PUBLIC_BASE_PATH=/codex-pets
 YANDEX_METRIKA_MP_TOKEN=
 YANDEX_METRIKA_MP_CLIENT_ID=
 
+# Optional IndexNow notifications for deploys and approved pets.
+INDEXNOW_KEY=
+INDEXNOW_ENDPOINT=
+
 AUTH_MODE=app-session
 SESSION_COOKIE_SECRET=replace-with-random-secret
 PASSWORD_PEPPER=replace-with-another-random-secret
@@ -111,6 +115,11 @@ docker run -d --name codex-pets \
 If `YDB_PETS_ENDPOINT` or `YDB_STATIC_CREDENTIALS_AUTH_ENDPOINT` points to a
 Docker hostname such as `ydb-local`, the app container must join the same Docker
 network as the YDB containers so that name resolution works.
+
+When `INDEXNOW_KEY` is configured, the app serves the verification file at
+`/<INDEXNOW_KEY>.txt`, notifies IndexNow after admin approval publishes a pet,
+and the deploy helper sends a best-effort notification for static public routes
+after smoke checks.
 
 When using a split edge/app host pattern, the app host can stay private. Only
 the edge host needs public DNS, TLS certificates, and `/.well-known/acme-challenge/`
