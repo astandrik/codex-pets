@@ -48,7 +48,28 @@ const READ_ONLY_TOOL = {
 } as const;
 
 const slugInputSchema = {
-  slug: z.string().describe("Approved Codex pet slug."),
+  slug: z.string().describe("Exact slug of an approved public Codex pet."),
+};
+
+const searchInputSchema = {
+  query: z.string().describe(
+    "Optional text matched against approved pet names, descriptions, tags, and authors.",
+  ).optional(),
+  kind: z.enum(["all", "creature", "object", "character"]).describe(
+    "Optional pet kind filter. Use all or omit the field to include every kind.",
+  ).optional(),
+  tags: z.union([z.string(), z.array(z.string())]).describe(
+    "Optional tag filter as a comma-separated string or array. All provided tags must match.",
+  ).optional(),
+  author: z.string().describe(
+    "Optional author name text matched against the public submitter name.",
+  ).optional(),
+  compatibleWith: z.union([z.string(), z.array(z.string())]).describe(
+    "Optional compatibility filter. Use codex for Codex-compatible pets; other values return no matches.",
+  ).optional(),
+  limit: z.union([z.number(), z.string()]).describe(
+    "Optional maximum result count. Defaults to 10 and is clamped to 1-60.",
+  ).optional(),
 };
 
 export function createCodexPetsMcpServer(): McpServer {
@@ -61,15 +82,9 @@ export function createCodexPetsMcpServer(): McpServer {
     "search_pets",
     {
       title: "Search Codex pets",
-      description: "Search approved Codex pets by query, kind, tags, author, and compatibility.",
-      inputSchema: {
-        query: z.string().optional(),
-        kind: z.enum(["all", "creature", "object", "character"]).optional(),
-        tags: z.union([z.string(), z.array(z.string())]).optional(),
-        author: z.string().optional(),
-        compatibleWith: z.union([z.string(), z.array(z.string())]).optional(),
-        limit: z.union([z.number(), z.string()]).optional(),
-      },
+      description:
+        "Use to discover one or more approved public Codex pet packs by query, kind, tags, author, or Codex compatibility. Prefer this over get_pet when you do not already have an exact slug or need multiple candidates. Do not use for private generation requests or known-slug install/share snippets; use get_pet_request_info or a slug-specific get_* tool instead.",
+      inputSchema: searchInputSchema,
       annotations: READ_ONLY_TOOL,
     },
     async (args) => {
@@ -110,7 +125,8 @@ export function createCodexPetsMcpServer(): McpServer {
     "get_pet",
     {
       title: "Get Codex pet",
-      description: "Fetch one approved public Codex pet card by slug.",
+      description:
+        "Use when you already have an exact approved pet slug and need the sanitized public pet card, asset URLs, page URL, and install command for that one pet. Use search_pets first when you only have a name/query or need multiple results. Do not use for focused install, badge, embed, card, or request workflow details; use the matching get_* tool instead.",
       inputSchema: slugInputSchema,
       annotations: READ_ONLY_TOOL,
     },
@@ -125,7 +141,8 @@ export function createCodexPetsMcpServer(): McpServer {
     "get_install_instructions",
     {
       title: "Get install instructions",
-      description: "Return read-only install instructions for an approved Codex pet.",
+      description:
+        "Use for a known approved pet slug when the user wants CLI or manual install instructions. Do not use to search for pets or inspect general metadata; use search_pets or get_pet instead. This tool is read-only and does not increment install or download counters.",
       inputSchema: slugInputSchema,
       annotations: READ_ONLY_TOOL,
     },
@@ -146,7 +163,8 @@ export function createCodexPetsMcpServer(): McpServer {
     "get_badge_code",
     {
       title: "Get README badge code",
-      description: "Return Markdown and HTML README badge snippets for an approved Codex pet.",
+      description:
+        "Use for a known approved pet slug when the user needs README badge Markdown, HTML, or SVG URL. Do not use for animated README cards, website iframe embeds, install instructions, or pet discovery; use get_card_code, get_embed_code, get_install_instructions, or search_pets instead.",
       inputSchema: slugInputSchema,
       annotations: READ_ONLY_TOOL,
     },
@@ -163,7 +181,8 @@ export function createCodexPetsMcpServer(): McpServer {
     "get_embed_code",
     {
       title: "Get website embed code",
-      description: "Return iframe embed code for an approved Codex pet.",
+      description:
+        "Use for a known approved pet slug when the user needs website iframe embed HTML or an embed URL. Do not use for README badges/cards, install instructions, or pet discovery; use get_badge_code, get_card_code, get_install_instructions, or search_pets instead.",
       inputSchema: slugInputSchema,
       annotations: READ_ONLY_TOOL,
     },
@@ -180,7 +199,8 @@ export function createCodexPetsMcpServer(): McpServer {
     "get_card_code",
     {
       title: "Get animated README card code",
-      description: "Return Markdown and HTML animated card snippets for an approved Codex pet.",
+      description:
+        "Use for a known approved pet slug when the user needs animated README card Markdown, HTML, or GIF URL. Do not use for simple badges, website iframe embeds, install instructions, or pet discovery; use get_badge_code, get_embed_code, get_install_instructions, or search_pets instead.",
       inputSchema: slugInputSchema,
       annotations: READ_ONLY_TOOL,
     },
@@ -198,7 +218,7 @@ export function createCodexPetsMcpServer(): McpServer {
     {
       title: "Get pet request info",
       description:
-        "Return the public Codex pet request page URL, required fields, and reference image limits. This tool is read-only and does not create requests.",
+        "Use when the user wants to request a new Codex pet or understand the public request form fields and reference image limits. Do not use to create, submit, update, or inspect private generation requests; no MCP tool exposes those operations. Use search_pets or get_pet for existing approved pets.",
       inputSchema: {},
       annotations: READ_ONLY_TOOL,
     },

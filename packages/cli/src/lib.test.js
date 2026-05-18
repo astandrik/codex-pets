@@ -9,6 +9,7 @@ import {
   installPet,
   listPets,
   parseArgs,
+  runCli,
 } from "./lib.js";
 
 const tempDirs = [];
@@ -47,6 +48,14 @@ describe("codex-pets cli helpers", () => {
     expect(buildApiUrl("https://pets.test/codex-pets", "/api/manifest")).toBe(
       "https://pets.test/codex-pets/api/manifest",
     );
+  });
+
+  it("prints the CLI version", async () => {
+    const stdout = vi.fn();
+
+    await runCli(["--version"], { stdout });
+
+    expect(stdout).toHaveBeenCalledWith("1.0.0");
   });
 
   it("lists manifest pets", async () => {

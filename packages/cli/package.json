@@ -1,6 +1,6 @@
 {
   "name": "@astandrik/codex-pets",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "CLI installer and local MCP server for Codex Pets gallery pets.",
   "type": "module",
   "bin": {
@@ -15,6 +15,7 @@
     "src/index.js",
     "src/lib.js",
     "src/mcp.js",
+    "src/version.js",
     "README.md"
   ],
   "engines": {

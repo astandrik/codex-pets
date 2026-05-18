@@ -25,7 +25,7 @@ describe("GET /server.json", () => {
       title: "Codex Pets Registry",
       description:
         "Search, preview, install community Codex pet packs, and discover the pet request flow.",
-      version: "0.2.0",
+      version: "1.0.0",
       websiteUrl: "https://pets.example/",
       remotes: [
         {

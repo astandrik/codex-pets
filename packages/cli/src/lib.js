@@ -3,6 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { CODEX_PETS_CLI_VERSION } from "./version.js";
+
 export const DEFAULT_BASE_URL = "https://pets.ydb-qdrant.tech";
 
 const SPRITESHEET_RE = /^spritesheet\.(webp|png)$/;
@@ -220,7 +222,7 @@ export async function runCli(argv, io = {}) {
   const baseUrl = parsed.baseUrl ?? env.CODEX_PETS_URL ?? DEFAULT_BASE_URL;
 
   if (parsed.version) {
-    stdout("0.2.0");
+    stdout(CODEX_PETS_CLI_VERSION);
     return;
   }
 

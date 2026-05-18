@@ -62,7 +62,7 @@ describe("POST /mcp", () => {
 
     expect(body.result.serverInfo).toMatchObject({
       name: "codex-pets-registry",
-      version: "0.2.0",
+      version: "1.0.0",
     });
   });
 
@@ -71,8 +71,13 @@ describe("POST /mcp", () => {
       id: 2,
       method: "tools/list",
     });
+    const tools = body.result.tools as Array<{
+      name: string;
+      description: string;
+      annotations: { readOnlyHint: boolean };
+    }>;
 
-    expect(body.result.tools.map((tool: { name: string }) => tool.name)).toEqual([
+    expect(tools.map((tool) => tool.name)).toEqual([
       "search_pets",
       "get_pet",
       "get_install_instructions",
@@ -81,7 +86,20 @@ describe("POST /mcp", () => {
       "get_card_code",
       "get_pet_request_info",
     ]);
-    expect(body.result.tools[0].annotations.readOnlyHint).toBe(true);
+    expect(tools[0].annotations.readOnlyHint).toBe(true);
+    expect(
+      tools.every(
+        (tool) =>
+          tool.description.includes("Use") &&
+          tool.description.includes("Do not use"),
+      ),
+    ).toBe(true);
+    expect(
+      tools.find((tool) => tool.name === "search_pets")?.description,
+    ).toContain("Prefer this over get_pet");
+    expect(
+      tools.find((tool) => tool.name === "get_pet_request_info")?.description,
+    ).toContain("no MCP tool exposes those operations");
   });
 
   it("returns pet request workflow discovery", async () => {

@@ -53,12 +53,16 @@ npx @astandrik/codex-pets mcp
 
 Available MCP tools:
 
-- `search_pets` — search approved pets
-- `get_pet` — fetch one public pet card
+- `search_pets` — discover approved pets when you need candidates or lack an
+  exact slug
+- `get_pet` — fetch one public pet card when you already have an approved slug
 - `get_install_instructions` — get install commands without incrementing metrics
-- `get_badge_code` — generate README badge snippets
-- `get_embed_code` — generate iframe embed snippets
-- `get_card_code` — generate animated GIF snippets, defaulting to sprite-only mode
+- `get_badge_code` — generate README badge snippets for a known slug
+- `get_embed_code` — generate iframe embed snippets for a known slug
+- `get_card_code` — generate animated GIF snippets for a known slug, defaulting
+  to sprite-only mode
+- `get_pet_request_info` — discover the public new-pet request workflow; it does
+  not submit or inspect private requests
 
 HTTP fallback routes are public too:
 
@@ -277,7 +281,7 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - HTTP agent access is the primary public machine contract:
   - `/mcp` — Streamable HTTP MCP endpoint with read-only tools:
     `search_pets`, `get_pet`, `get_install_instructions`, `get_badge_code`,
-    `get_embed_code`, and `get_card_code`
+    `get_embed_code`, `get_card_code`, and `get_pet_request_info`
   - `/server.json` and `/.well-known/mcp/server.json` — MCP Registry metadata
     pointing to the public Streamable HTTP remote
   - `/.well-known/mcp-registry-auth` — public MCP Registry HTTP auth record

@@ -36,6 +36,15 @@ npx @astandrik/codex-pets mcp
 This local process serves the same read-only tools as the public remote server,
 but fetches live data from the configured gallery URL.
 
+Available tools:
+
+- `search_pets` for discovery when you need candidates or lack an exact slug
+- `get_pet` for one approved public pet when you already know its slug
+- `get_install_instructions`, `get_badge_code`, `get_embed_code`, and
+  `get_card_code` for known-slug install and share snippets
+- `get_pet_request_info` for the public new-pet request workflow; it does not
+  submit or inspect private requests
+
 Example MCP client config:
 
 ```json
