@@ -63,3 +63,20 @@ describe("GET /.well-known/mcp-registry-auth", () => {
     );
   });
 });
+
+describe("GET /.well-known/glama.json", () => {
+  it("returns the Glama connector claim metadata", async () => {
+    const { GET } = await import("@/app/.well-known/glama.json/route");
+
+    const response = GET();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe(
+      "public, max-age=300, s-maxage=3600",
+    );
+    expect(await response.json()).toEqual({
+      $schema: "https://glama.ai/mcp/schemas/connector.json",
+      maintainers: [{ email: "astandrik@gmail.com" }],
+    });
+  });
+});

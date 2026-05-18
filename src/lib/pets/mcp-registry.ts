@@ -10,6 +10,9 @@ export const MCP_REGISTRY_SERVER_DESCRIPTION =
 export const MCP_REGISTRY_SERVER_VERSION = "0.2.0";
 export const MCP_REGISTRY_AUTH_RECORD =
   "v=MCPv1; k=ed25519; p=hf1UAXtYZTedJy3YtpjRYpB6IZRoZKEyzHJ+Wc/uxrc=";
+export const GLAMA_CONNECTOR_SCHEMA_URL =
+  "https://glama.ai/mcp/schemas/connector.json";
+export const GLAMA_CONNECTOR_MAINTAINER_EMAIL = "astandrik@gmail.com";
 
 export type McpRegistryServerMetadata = {
   $schema: string;
@@ -21,6 +24,13 @@ export type McpRegistryServerMetadata = {
   remotes: Array<{
     type: "streamable-http";
     url: string;
+  }>;
+};
+
+export type GlamaConnectorClaimMetadata = {
+  $schema: string;
+  maintainers: Array<{
+    email: string;
   }>;
 };
 
@@ -36,6 +46,17 @@ export function buildMcpRegistryServerMetadata(): McpRegistryServerMetadata {
       {
         type: "streamable-http",
         url: toPublicUrl("/mcp"),
+      },
+    ],
+  };
+}
+
+export function buildGlamaConnectorClaimMetadata(): GlamaConnectorClaimMetadata {
+  return {
+    $schema: GLAMA_CONNECTOR_SCHEMA_URL,
+    maintainers: [
+      {
+        email: GLAMA_CONNECTOR_MAINTAINER_EMAIL,
       },
     ],
   };
