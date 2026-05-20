@@ -33,6 +33,7 @@ const PREVIEW_STATE = PET_STATES[0];
 const PREVIEW_FRAME_MS = 140;
 const PREVIEW_FRAME_DURATION = `${PREVIEW_STATE.frames * PREVIEW_FRAME_MS}ms`;
 const PREVIEW_STRIP_WIDTH = PET_SHEET.cellWidth * PREVIEW_STATE.frames;
+const RECENT_HERO_PET_LIMIT = 5;
 
 export function HomeHeroPetPicker({
   pets,
@@ -41,6 +42,7 @@ export function HomeHeroPetPicker({
   const [selectedIndex, setSelectedIndex] = useState(() =>
     normalizeInitialIndex(pets.length, initialIndex),
   );
+  const [recentIndexes, setRecentIndexes] = useState<number[]>([]);
   const pet = pets[selectedIndex];
 
   if (!pet) {
@@ -56,7 +58,9 @@ export function HomeHeroPetPicker({
 
   function handleShuffleClick() {
     const nextIndex =
-      pickRandomHeroPetIndex(pets.length, selectedIndex) ?? selectedIndex;
+      pickRandomHeroPetIndex(pets.length, selectedIndex, {
+        excludedIndexes: recentIndexes,
+      }) ?? selectedIndex;
     const nextPet = pets[nextIndex];
 
     if (!nextPet || nextIndex === selectedIndex) {
@@ -64,6 +68,19 @@ export function HomeHeroPetPicker({
     }
 
     setSelectedIndex(nextIndex);
+    setRecentIndexes((indexes) =>
+      [
+        selectedIndex,
+        ...indexes.filter(
+          (index) =>
+            index !== selectedIndex &&
+            index !== nextIndex &&
+            Number.isInteger(index) &&
+            index >= 0 &&
+            index < pets.length,
+        ),
+      ].slice(0, recentHeroPetLimit(pets.length)),
+    );
     trackGoal("home_hero_pet_shuffle", {
       fromSlug: pet.slug,
       toSlug: nextPet.slug,
@@ -175,6 +192,10 @@ function normalizeInitialIndex(length: number, index: number): number {
   }
 
   return Number.isInteger(index) && index >= 0 && index < length ? index : 0;
+}
+
+function recentHeroPetLimit(length: number): number {
+  return Math.min(RECENT_HERO_PET_LIMIT, Math.max(length - 2, 0));
 }
 
 function FallbackHeroPet() {

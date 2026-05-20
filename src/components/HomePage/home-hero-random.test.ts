@@ -28,4 +28,38 @@ describe("pickRandomHeroPetIndex", () => {
       expect(next).toBeLessThan(5);
     }
   });
+
+  it("avoids recently shown indexes when alternatives exist", () => {
+    expect(
+      pickRandomHeroPetIndex(6, 2, {
+        excludedIndexes: [0, 1, 3],
+        random: () => 0,
+      }),
+    ).toBe(4);
+    expect(
+      pickRandomHeroPetIndex(6, 2, {
+        excludedIndexes: [0, 1, 3],
+        random: () => 0.99,
+      }),
+    ).toBe(5);
+  });
+
+  it("falls back to avoiding only the current index when exclusions cover every alternative", () => {
+    const next = pickRandomHeroPetIndex(3, 1, {
+      excludedIndexes: [0, 2],
+      random: () => 0.99,
+    });
+
+    expect(next).toBe(2);
+    expect(next).not.toBe(1);
+  });
+
+  it("ignores invalid excluded indexes", () => {
+    expect(
+      pickRandomHeroPetIndex(4, 0, {
+        excludedIndexes: [-1, 0.5, 4, 99],
+        random: () => 0,
+      }),
+    ).toBe(1);
+  });
 });
