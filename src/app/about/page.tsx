@@ -23,6 +23,8 @@ const ABOUT_DESCRIPTION =
 const INSTALL_COMMAND = "npx @astandrik/codex-pets install zero-two-2";
 const GITHUB_REPOSITORY_URL = "https://github.com/astandrik/codex-pets";
 const NPM_PACKAGE_URL = "https://www.npmjs.com/package/@astandrik/codex-pets";
+const LOCAL_YDB_TOOLKIT_URL = "https://github.com/astandrik/local-ydb-toolkit";
+const YDB_URL = "https://ydb.tech/";
 
 const packFacts = [
   "pet.json metadata",
@@ -194,6 +196,26 @@ export default function AboutPage() {
             anyone can also <Link href="/request">request a generated pet</Link>.
             Admins review every submission before it appears in the gallery,
             sitemap, and public manifest.
+          </Text>
+        </article>
+
+        <article className="about-section">
+          <Text variant="display-1" as="h2">
+            YDB data layer
+          </Text>
+          <Text variant="body-2" color="secondary">
+            Codex Pets stores pet metadata, moderation state, counters, and
+            binary assets in <a href={YDB_URL}>YDB</a>. Local development can
+            run against local-ydb; the related{" "}
+            <a
+              href={LOCAL_YDB_TOOLKIT_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              local-ydb-toolkit on GitHub
+            </a>{" "}
+            captures the reusable local YDB workflow used around these
+            projects.
           </Text>
         </article>
 
