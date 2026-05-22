@@ -166,7 +166,8 @@ export default function AgentsPage() {
           </li>
           <li>
             <code>/api/pets</code> searches approved pets with <code>q</code>{" "}
-            and <code>kind</code> query parameters.
+            <code>kind</code>, and comma-separated <code>tags</code> query
+            parameters.
           </li>
           <li>
             <code>/api/pets/&lt;slug&gt;/share</code> returns install, badge,

@@ -23,4 +23,15 @@
   &__actions {
     margin-left: auto;
   }
+
+  &__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-lg);
+  }
+
+  &__tag {
+    max-width: 100%;
+  }
 }

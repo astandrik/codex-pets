@@ -107,3 +107,80 @@ describe("social metadata images", () => {
     ).toBe(petImage);
   });
 });
+
+describe("gallery page metadata", () => {
+  it("builds filtered metadata for tag-only gallery pages", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://example.test/codex-pets");
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/codex-pets");
+
+    const { buildGalleryPageMetadata } = await import("@/lib/site-metadata");
+    const metadata = buildGalleryPageMetadata({
+      query: "",
+      kind: "all",
+      tags: ["space"],
+    });
+
+    expect(metadata.title).toBe("Codex pets tagged #space");
+    expect(metadata.description).toContain("tagged #space");
+    expect(metadata.alternates?.canonical).toBe("/codex-pets/?tags=space");
+    expect(metadata.alternates?.types).toEqual({
+      "application/json": [
+        {
+          title: "Filtered approved pet search JSON",
+          url: "/codex-pets/api/pets?tags=space",
+        },
+      ],
+      "text/toon": [
+        {
+          title: "Filtered approved pet search TOON",
+          url: "/codex-pets/api/pets.toon?tags=space",
+        },
+      ],
+    });
+    expect(metadata.openGraph).toMatchObject({
+      title: "Codex pets tagged #space - Companion Gallery",
+      url: "/codex-pets/?tags=space",
+    });
+
+    vi.unstubAllEnvs();
+  });
+
+  it("builds canonical metadata for combined gallery filters", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://example.test");
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "");
+
+    const { buildGalleryPageMetadata } = await import("@/lib/site-metadata");
+    const metadata = buildGalleryPageMetadata({
+      query: "green",
+      kind: "object",
+      tags: ["terminal", "space"],
+    });
+
+    expect(metadata.title).toBe(
+      'Object Codex pets matching "green" tagged #space and #terminal',
+    );
+    expect(metadata.alternates?.canonical).toBe(
+      '/?q=green&kind=object&tags=space,terminal',
+    );
+    expect(metadata.alternates?.types).toMatchObject({
+      "application/json": [
+        {
+          url: "/api/pets?q=green&kind=object&tags=space,terminal",
+        },
+      ],
+      "text/toon": [
+        {
+          url: "/api/pets.toon?q=green&kind=object&tags=space,terminal",
+        },
+      ],
+    });
+    expect(metadata.twitter).toMatchObject({
+      title:
+        'Object Codex pets matching "green" tagged #space and #terminal - Companion Gallery',
+    });
+
+    vi.unstubAllEnvs();
+  });
+});

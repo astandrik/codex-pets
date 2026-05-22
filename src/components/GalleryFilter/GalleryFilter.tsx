@@ -9,13 +9,22 @@ import {
   Select,
   TextInput,
 } from "@gravity-ui/uikit";
-import { Magnifier } from "@gravity-ui/icons";
+import { Magnifier, Xmark } from "@gravity-ui/icons";
 
+import {
+  buildGalleryHref,
+  hasGalleryFilters,
+  normalizeGalleryTags,
+  parseGalleryKind,
+} from "@/lib/pets/gallery-filters";
+import type { PetKind } from "@/lib/pets/types";
 import "./GalleryFilter.scss";
 
 type GalleryFilterProps = {
   defaultQuery: string;
-  defaultKind: string;
+  defaultKind: PetKind | "all";
+  defaultTags: string[];
+  suggestedTags: string[];
 };
 
 const KIND_OPTIONS = [
@@ -25,24 +34,43 @@ const KIND_OPTIONS = [
   { value: "character", content: "Characters" },
 ];
 
-export function GalleryFilter({ defaultQuery, defaultKind }: GalleryFilterProps) {
+export function GalleryFilter({
+  defaultQuery,
+  defaultKind,
+  defaultTags,
+  suggestedTags,
+}: GalleryFilterProps) {
   const router = useRouter();
   const [query, setQuery] = useState(defaultQuery);
   const [kind, setKind] = useState(defaultKind);
+  const [tags, setTags] = useState(defaultTags);
+  const activeTags = new Set(tags);
+  const hasAppliedFilters = hasGalleryFilters({
+    query: defaultQuery,
+    kind: defaultKind,
+    tags: defaultTags,
+  });
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const params = new URLSearchParams();
-    if (query.trim()) params.set("q", query.trim());
-    if (kind && kind !== "all") params.set("kind", kind);
-    const search = params.toString();
-    router.push(search ? `/?${search}` : "/");
+    router.push(buildGalleryHref({ query, kind, tags }), { scroll: false });
   }
 
-  function onReset() {
+  function onClear() {
     setQuery("");
     setKind("all");
-    router.push("/");
+    setTags([]);
+    router.push("/", { scroll: false });
+  }
+
+  function onToggleTag(tag: string) {
+    const nextTags = activeTags.has(tag)
+      ? tags.filter((value) => value !== tag)
+      : normalizeGalleryTags([...tags, tag]);
+    setTags(nextTags);
+    router.push(buildGalleryHref({ query, kind, tags: nextTags }), {
+      scroll: false,
+    });
   }
 
   return (
@@ -66,7 +94,7 @@ export function GalleryFilter({ defaultQuery, defaultKind }: GalleryFilterProps)
           <Flex className="gallery-filter-card__select">
             <Select
               value={[kind]}
-              onUpdate={(values) => setKind(values[0] ?? "all")}
+              onUpdate={(values) => setKind(parseGalleryKind(values[0]))}
               size="l"
               width="max"
               options={KIND_OPTIONS}
@@ -74,13 +102,45 @@ export function GalleryFilter({ defaultQuery, defaultKind }: GalleryFilterProps)
           </Flex>
           <Flex gap={2} className="gallery-filter-card__actions">
             <Button type="submit" view="action" size="l">
+              <Magnifier />
               Apply
             </Button>
-            <Button type="button" view="outlined" size="l" onClick={onReset}>
-              Reset
+            <Button
+              type="button"
+              view="outlined"
+              size="l"
+              onClick={onClear}
+              disabled={!hasAppliedFilters}
+            >
+              <Xmark />
+              Clear
             </Button>
           </Flex>
         </Flex>
+        {suggestedTags.length > 0 ? (
+          <div
+            className="gallery-filter-card__tags"
+            aria-label="Suggested tags"
+          >
+            {suggestedTags.map((tag) => {
+              const selected = activeTags.has(tag);
+              return (
+                <Button
+                  key={tag}
+                  type="button"
+                  view={selected ? "action" : "outlined"}
+                  size="m"
+                  selected={selected}
+                  onClick={() => onToggleTag(tag)}
+                  extraProps={{ "aria-pressed": selected }}
+                  className="gallery-filter-card__tag"
+                >
+                  #{tag}
+                </Button>
+              );
+            })}
+          </div>
+        ) : null}
       </form>
     </Card>
   );

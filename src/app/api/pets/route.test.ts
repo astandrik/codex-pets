@@ -68,17 +68,20 @@ describe("GET /api/pets", () => {
     const { GET } = await import("@/app/api/pets/route");
 
     const response = await GET(
-      new Request("https://pets.example/api/pets?q=space&kind=creature"),
+      new Request(
+        "https://pets.example/api/pets?q=space&kind=creature&tags=friendly,space",
+      ),
     );
     const body = await response.json();
 
     expect(repositoryMocks.listApprovedPets).toHaveBeenCalledWith({
       q: "space",
       kind: "creature",
+      tags: ["friendly", "space"],
     });
     expect(response.status).toBe(200);
     expect(response.headers.get("Link")).toBe(
-      '<https://pets.example/api/pets.toon?q=space&kind=creature>; rel="alternate"; type="text/toon"',
+      '<https://pets.example/api/pets.toon?q=space&kind=creature&tags=friendly,space>; rel="alternate"; type="text/toon"',
     );
     expect(body).toEqual({
       total: 1,
@@ -90,10 +93,10 @@ describe("GET /api/pets", () => {
   it("returns TOON search results matching the JSON payload", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
     const request = new Request(
-      "https://pets.example/api/pets?q=space&kind=creature",
+      "https://pets.example/api/pets?q=space&kind=creature&tags=friendly,space",
     );
     const toonRequest = new Request(
-      "https://pets.example/api/pets.toon?q=space&kind=creature",
+      "https://pets.example/api/pets.toon?q=space&kind=creature&tags=friendly,space",
     );
 
     repositoryMocks.listApprovedPets.mockResolvedValueOnce([approvedPet]);
@@ -111,7 +114,7 @@ describe("GET /api/pets", () => {
       "text/toon; charset=utf-8",
     );
     expect(toonResponse.headers.get("Link")).toBe(
-      '<https://pets.example/api/pets?q=space&kind=creature>; rel="alternate"; type="application/json"',
+      '<https://pets.example/api/pets?q=space&kind=creature&tags=friendly,space>; rel="alternate"; type="application/json"',
     );
     expect(toonBody).toEqual(jsonBody);
   });

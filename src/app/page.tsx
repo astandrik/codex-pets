@@ -1,7 +1,14 @@
+import type { Metadata } from "next";
 import { HomePage } from "@/components/HomePage/HomePage";
 import { unstable_cache } from "next/cache";
+import {
+  matchesGalleryFilters,
+  parseGalleryFilters,
+  pickSuggestedGalleryTags,
+} from "@/lib/pets/gallery-filters";
 import { listApprovedPets } from "@/lib/pets/repository";
-import type { PetKind, PublicPet, PublicPetSummary } from "@/lib/pets/types";
+import { buildGalleryPageMetadata } from "@/lib/site-metadata";
+import type { PublicPet, PublicPetSummary } from "@/lib/pets/types";
 
 export const runtime = "nodejs";
 // Keep request-time rendering because YDB runtime env is only available in the
@@ -21,58 +28,27 @@ type HomeProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-function firstParam(value: string | string[] | undefined): string | null {
-  if (Array.isArray(value)) {
-    return value[0] ?? null;
-  }
-  return value ?? null;
-}
-
-function parseKind(value: string | null): PetKind | "all" {
-  if (
-    value === "character" ||
-    value === "creature" ||
-    value === "object"
-  ) {
-    return value;
-  }
-
-  return "all";
-}
-
-function matchesFilter(
-  pet: PublicPetSummary,
-  query: string,
-  kind: PetKind | "all",
-): boolean {
-  if (kind !== "all" && pet.kind !== kind) {
-    return false;
-  }
-
-  if (!query) {
-    return true;
-  }
-
-  return (
-    pet.displayName.toLowerCase().includes(query) ||
-    pet.description.toLowerCase().includes(query) ||
-    pet.tags.some((tag) => tag.toLowerCase().includes(query))
-  );
+export async function generateMetadata({
+  searchParams,
+}: HomeProps): Promise<Metadata> {
+  const filters = parseGalleryFilters(await searchParams);
+  return buildGalleryPageMetadata(filters);
 }
 
 export default async function Home({ searchParams }: HomeProps) {
-  const params = await searchParams;
-  const query = firstParam(params?.q)?.trim().toLowerCase() ?? "";
-  const kind = parseKind(firstParam(params?.kind));
+  const filters = parseGalleryFilters(await searchParams);
   const pets = (await getApprovedPetsSnapshot()).map(toPublicPetSummary);
-  const filteredPets = pets.filter((pet) => matchesFilter(pet, query, kind));
+  const filteredPets = pets.filter((pet) => matchesGalleryFilters(pet, filters));
+  const suggestedTags = pickSuggestedGalleryTags(pets, filters.tags);
 
   return (
     <HomePage
       pets={pets}
       filteredPets={filteredPets}
-      query={query}
-      kind={kind}
+      query={filters.query}
+      kind={filters.kind}
+      selectedTags={filters.tags}
+      suggestedTags={suggestedTags}
     />
   );
 }

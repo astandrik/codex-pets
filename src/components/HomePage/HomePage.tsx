@@ -30,15 +30,26 @@ type HomePageProps = {
   filteredPets: PublicPetSummary[];
   query: string;
   kind: PetKind | "all";
+  selectedTags: string[];
+  suggestedTags: string[];
 };
 
 function EmptyIcon() {
   return <Picture width={64} height={64} />;
 }
 
-export function HomePage({ pets, filteredPets, query, kind }: HomePageProps) {
+export function HomePage({
+  pets,
+  filteredPets,
+  query,
+  kind,
+  selectedTags,
+  suggestedTags,
+}: HomePageProps) {
   const heroPets = pets.map(toHomeHeroPet);
   const initialHeroPetIndex = pickRandomHeroPetIndex(heroPets.length) ?? 0;
+  const hasActiveFilters =
+    Boolean(query) || kind !== "all" || selectedTags.length > 0;
 
   return (
     <Container as="main" maxWidth="xl" gutters={5} className="page-shell">
@@ -133,9 +144,11 @@ export function HomePage({ pets, filteredPets, query, kind }: HomePageProps) {
           </span>
         </Flex>
         <GalleryFilter
-          key={`${query}:${kind}`}
+          key={`${query}:${kind}:${selectedTags.join(",")}`}
           defaultQuery={query}
           defaultKind={kind}
+          defaultTags={selectedTags}
+          suggestedTags={suggestedTags}
         />
         {filteredPets.length > 0 ? (
           <div className="pet-grid">
@@ -147,8 +160,16 @@ export function HomePage({ pets, filteredPets, query, kind }: HomePageProps) {
           <PlaceholderContainer
             size="l"
             image={<EmptyIcon />}
-            title="No approved pets yet"
-            description="Submitted pets will appear here after moderation."
+            title={
+              hasActiveFilters
+                ? "No pets match these filters"
+                : "No approved pets yet"
+            }
+            description={
+              hasActiveFilters
+                ? "Clear the filters or try a different tag combination."
+                : "Submitted pets will appear here after moderation."
+            }
             actions={
               <Flex gap={2} wrap>
                 <Button view="action" href={withBasePath("/submit")}>

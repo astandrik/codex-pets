@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
+import {
+  normalizeGalleryFilters,
+  serializeGalleryFilters,
+  type GalleryFilters,
+} from "@/lib/pets/gallery-filters";
 import type { PublicPet } from "@/lib/pets/types";
 
 export const SITE_NAME = "Companion Gallery";
@@ -145,6 +150,58 @@ export function getAgentResourceAlternateTypes(): AlternateTypes {
   };
 }
 
+function getGalleryResourceAlternateTypes(search: string): AlternateTypes {
+  return {
+    "application/json": [
+      {
+        title: "Filtered approved pet search JSON",
+        url: withBasePath(`/api/pets?${search}`),
+      },
+    ],
+    "text/toon": [
+      {
+        title: "Filtered approved pet search TOON",
+        url: withBasePath(`/api/pets.toon?${search}`),
+      },
+    ],
+  };
+}
+
+export function buildGalleryPageMetadata(filters: GalleryFilters): Metadata {
+  const normalizedFilters = normalizeGalleryFilters(filters);
+  const search = serializeGalleryFilters(normalizedFilters);
+  if (!search) {
+    return {};
+  }
+
+  const path = `/?${search}`;
+  const title = getGalleryFilterTitle(normalizedFilters);
+  const description = getGalleryFilterDescription(normalizedFilters);
+
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: withBasePath(path),
+      types: getGalleryResourceAlternateTypes(search),
+    },
+    openGraph: {
+      type: "website",
+      siteName: SITE_NAME,
+      title: buildPageTitle(title),
+      description,
+      url: withBasePath(path),
+      images: getOpenGraphImages(),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: buildPageTitle(title),
+      description,
+      images: getTwitterImages(),
+    },
+  };
+}
+
 export function getPetSocialImagePath(slug: string): string {
   return `/pets/${encodeURIComponent(slug)}/opengraph-image.png`;
 }
@@ -271,6 +328,50 @@ function normalizeSocialImageUrl(value: string): string {
   return value.startsWith("/") ? toPublicUrl(value) : value;
 }
 
+function getGalleryFilterTitle(filters: GalleryFilters): string {
+  const kindLabel =
+    filters.kind === "all" ? "Codex pets" : `${KIND_LABELS[filters.kind]} Codex pets`;
+  const parts = [kindLabel];
+
+  if (filters.query) {
+    parts.push(`matching "${filters.query}"`);
+  }
+  if (filters.tags.length > 0) {
+    parts.push(`tagged ${formatTagList(filters.tags)}`);
+  }
+
+  return parts.join(" ");
+}
+
+function getGalleryFilterDescription(filters: GalleryFilters): string {
+  const kindLabel =
+    filters.kind === "all"
+      ? "approved"
+      : `approved ${KIND_LABELS[filters.kind].toLowerCase()}`;
+  const details: string[] = [];
+
+  if (filters.query) {
+    details.push(`matching "${filters.query}"`);
+  }
+  if (filters.tags.length > 0) {
+    details.push(`tagged ${formatTagList(filters.tags)}`);
+  }
+
+  const detailText = details.length > 0 ? ` ${details.join(" and ")}` : "";
+  return truncateMetaDescription(
+    `Browse ${kindLabel} Codex pet packs${detailText}. Preview animations and download ZIP-ready companions for Codex.`,
+  );
+}
+
+function formatTagList(tags: readonly string[]): string {
+  const formatted = tags.map((tag) => `#${tag}`);
+  if (formatted.length <= 2) {
+    return formatted.join(" and ");
+  }
+
+  return `${formatted.slice(0, -1).join(", ")}, and ${formatted.at(-1)}`;
+}
+
 function truncateMetaDescription(value: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
   if (normalized.length <= 160) {
@@ -279,3 +380,9 @@ function truncateMetaDescription(value: string): string {
 
   return `${normalized.slice(0, 157).trimEnd()}...`;
 }
+
+const KIND_LABELS = {
+  character: "Character",
+  creature: "Creature",
+  object: "Object",
+} as const;

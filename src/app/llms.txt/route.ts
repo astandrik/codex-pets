@@ -61,7 +61,7 @@ export async function GET(): Promise<Response> {
       `- [Sitemap](${toPublicUrl("/sitemap.xml")}): Dynamic XML sitemap with public pages and approved pet pages.`,
       `- [Public manifest JSON](${toPublicUrl("/api/manifest")}): Feed containing the current approved pet list, page URLs, install commands, and asset URLs.`,
       `- [Public manifest TOON](${toPublicUrl("/api/manifest.toon")}): TOON mirror of the public manifest for LLM-friendly retrieval.`,
-      `- [Public pet search JSON](${toPublicUrl("/api/pets")}): Endpoint for approved pets. Optional query parameters: q and kind=all|creature|object|character.`,
+      `- [Public pet search JSON](${toPublicUrl("/api/pets")}): Endpoint for approved pets. Optional query parameters: q, kind=all|creature|object|character, and comma-separated tags.`,
       `- [Public pet search TOON](${toPublicUrl("/api/pets.toon")}): TOON mirror of public pet search with the same query parameters.`,
       `- [MCP endpoint](${toPublicUrl("/mcp")}): Streamable HTTP MCP server exposing read-only tools for approved pets.`,
       `- [Pet request page](${toPublicUrl("/request")}): Human-facing request form for generated pets. Required fields: contactEmail and prompt. Optional fields: requesterName, displayNameHint, kind, referenceImage.`,

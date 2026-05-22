@@ -15,6 +15,10 @@ import { withBasePath } from "@/lib/base-path";
 import { slugify, type PetJson } from "@/lib/pets/validation";
 import { statusAfterModeration } from "@/lib/pets/moderation";
 import {
+  matchesGalleryFilters,
+  normalizeGalleryFilters,
+} from "@/lib/pets/gallery-filters";
+import {
   createMockPetRecord,
   getMockPetById,
   getMockPetBySlug,
@@ -81,6 +85,7 @@ export type CreatePendingPetInput = {
 export type PetFilters = {
   q?: string;
   kind?: PetKind | "all";
+  tags?: string[];
 };
 
 export async function listApprovedPets(
@@ -106,20 +111,10 @@ LIMIT 200;
     ),
   );
 
-  const q = filters.q?.trim().toLowerCase();
+  const normalizedFilters = normalizeGalleryFilters(filters);
   const rows = rowsFromResult(result)
     .map(parsePetRow)
-    .filter((pet) => {
-      if (filters.kind && filters.kind !== "all" && pet.kind !== filters.kind) {
-        return false;
-      }
-      if (!q) return true;
-      return (
-        pet.displayName.toLowerCase().includes(q) ||
-        pet.description.toLowerCase().includes(q) ||
-        pet.tags.some((tag) => tag.includes(q))
-      );
-    });
+    .filter((pet) => matchesGalleryFilters(pet, normalizedFilters));
   const metricsBySlug = await getMetricsBySlugs(rows.map((row) => row.slug));
   const profilesByUserId = await getOwnerProfilesByRows(rows);
 
@@ -884,19 +879,11 @@ function listMockPets(
   filters: PetFilters,
   status: ApprovalStatus,
 ): PublicPet[] {
-  const q = filters.q?.trim().toLowerCase();
+  const normalizedFilters = normalizeGalleryFilters(filters);
 
   return listMockPetRecords().filter((pet) => {
     if (pet.status !== status) return false;
-    if (filters.kind && filters.kind !== "all" && pet.kind !== filters.kind) {
-      return false;
-    }
-    if (!q) return true;
-    return (
-      pet.displayName.toLowerCase().includes(q) ||
-      pet.description.toLowerCase().includes(q) ||
-      pet.tags.some((tag) => tag.includes(q))
-    );
+    return matchesGalleryFilters(pet, normalizedFilters);
   }).map((pet) => toPublicPet(pet, pet.metrics, mockOwnerReference(pet)));
 }
 
