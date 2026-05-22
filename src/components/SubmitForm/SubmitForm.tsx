@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { ChangeEvent, FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import JSZip from "jszip";
 import {
@@ -19,6 +19,12 @@ import {
 import { withBasePath } from "@/lib/base-path";
 import { trackGoal } from "@/lib/metrics/yandex";
 import { PET_SHEET } from "@/lib/pets/types";
+import {
+  parseEditablePetJson,
+  readOriginalPetJsonId,
+  type SubmitPetJson,
+  type SubmitSpriteExt,
+} from "./pet-json-editor";
 import "./SubmitForm.scss";
 
 type PreparedPackage = {
@@ -27,7 +33,7 @@ type PreparedPackage = {
   zipBlob: Blob;
   petId: string;
   displayName: string;
-  spritesheetExt: "webp" | "png";
+  spritesheetExt: SubmitSpriteExt;
 };
 
 type SubmitFormProps = {
@@ -47,15 +53,76 @@ export function SubmitForm({
 }: SubmitFormProps) {
   const router = useRouter();
   const { add } = useToaster();
+  const zipInputRef = useRef<HTMLInputElement>(null);
+  const petJsonInputRef = useRef<HTMLInputElement>(null);
+  const spriteInputRef = useRef<HTMLInputElement>(null);
+  const petJsonLoadIdRef = useRef(0);
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [petJsonFile, setPetJsonFile] = useState<File | null>(null);
   const [spriteFile, setSpriteFile] = useState<File | null>(null);
+  const [petJsonText, setPetJsonText] = useState("");
+  const [originalPetId, setOriginalPetId] = useState<string | null>(null);
   const [contactEmail, setContactEmail] = useState(defaultContactEmail ?? "");
   const [kind, setKind] = useState("creature");
   const [tags, setTags] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  async function onZipFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    setZipFile(file);
+    setPetJsonFile(null);
+    setSpriteFile(null);
+    clearFileInput(petJsonInputRef);
+    clearFileInput(spriteInputRef);
+    await loadPetJsonText(file ? () => readPetJsonTextFromZip(file) : null);
+  }
+
+  async function onPetJsonFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    setPetJsonFile(file);
+    setZipFile(null);
+    clearFileInput(zipInputRef);
+    await loadPetJsonText(file ? () => file.text() : null);
+  }
+
+  function onSpriteFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    setSpriteFile(file);
+    setZipFile(null);
+    clearFileInput(zipInputRef);
+    setError(null);
+    setProgress(null);
+  }
+
+  async function loadPetJsonText(readText: (() => Promise<string>) | null) {
+    const loadId = ++petJsonLoadIdRef.current;
+
+    setError(null);
+    setProgress(null);
+    setPetJsonText("");
+    setOriginalPetId(null);
+
+    if (!readText) {
+      return;
+    }
+
+    try {
+      const text = await readText();
+      if (loadId !== petJsonLoadIdRef.current) return;
+
+      setPetJsonText(text);
+      setOriginalPetId(readOriginalPetJsonId(text));
+    } catch (err) {
+      if (loadId !== petJsonLoadIdRef.current) return;
+
+      const msg = err instanceof Error ? err.message : String(err);
+      setPetJsonText("");
+      setOriginalPetId(null);
+      setError(msg);
+    }
+  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -65,8 +132,13 @@ export function SubmitForm({
 
     try {
       const prepared = zipFile
-        ? await prepareFromZip(zipFile)
-        : await prepareFromSeparateFiles(petJsonFile, spriteFile);
+        ? await prepareFromZip(zipFile, petJsonText, originalPetId)
+        : await prepareFromSeparateFiles(
+            petJsonFile,
+            spriteFile,
+            petJsonText,
+            originalPetId,
+          );
 
       setProgress("Uploading package...");
       await submitPetPackage({
@@ -128,10 +200,11 @@ export function SubmitForm({
             <FieldRow label="ZIP package" htmlFor="submit-zip">
               <input
                 id="submit-zip"
+                ref={zipInputRef}
                 className="submit-form__file"
                 type="file"
                 accept=".zip,application/zip"
-                onChange={(event) => setZipFile(event.target.files?.[0] ?? null)}
+                onChange={(event) => void onZipFileChange(event)}
               />
             </FieldRow>
 
@@ -150,23 +223,36 @@ export function SubmitForm({
             <FieldRow label="pet.json" htmlFor="submit-petjson">
               <input
                 id="submit-petjson"
+                ref={petJsonInputRef}
                 className="submit-form__file"
                 type="file"
                 accept="application/json,.json"
-                onChange={(event) =>
-                  setPetJsonFile(event.target.files?.[0] ?? null)
-                }
+                onChange={(event) => void onPetJsonFileChange(event)}
               />
             </FieldRow>
             <FieldRow label="spritesheet" htmlFor="submit-sprite">
               <input
                 id="submit-sprite"
+                ref={spriteInputRef}
                 className="submit-form__file"
                 type="file"
                 accept="image/webp,image/png,.webp,.png"
-                onChange={(event) =>
-                  setSpriteFile(event.target.files?.[0] ?? null)
-                }
+                onChange={onSpriteFileChange}
+              />
+            </FieldRow>
+            <FieldRow
+              label="pet.json editor"
+              htmlFor="submit-petjson-editor"
+              note="Edit the uploaded pet.json before review. If it already has an id, keep it unchanged."
+            >
+              <TextArea
+                id="submit-petjson-editor"
+                value={petJsonText}
+                onUpdate={setPetJsonText}
+                placeholder='{"id":"demo","displayName":"Demo","description":"Demo pet","spritesheetPath":"spritesheet.webp"}'
+                size="l"
+                minRows={10}
+                className="submit-form__json-editor"
               />
             </FieldRow>
           </Flex>
@@ -255,14 +341,17 @@ function FieldRow({ label, htmlFor, note, children }: FieldRowProps) {
   );
 }
 
-async function prepareFromZip(file: File): Promise<PreparedPackage> {
+async function prepareFromZip(
+  file: File,
+  petJsonText: string,
+  originalPetId: string | null,
+): Promise<PreparedPackage> {
   const zip = await JSZip.loadAsync(file);
   const petJsonEntry = zip.file("pet.json");
   if (!petJsonEntry) throw new Error("ZIP must contain pet.json at the root.");
 
-  const petJsonText = await petJsonEntry.async("string");
-  const petJson = parseClientPetJson(petJsonText);
-  const ext = spriteExtFromPath(petJson.spritesheetPath);
+  const editedPetJson = parseEditedPetJson(petJsonText, originalPetId);
+  const ext = editedPetJson.spritesheetExt;
   const spriteEntry = zip.file(`spritesheet.${ext}`);
   if (!spriteEntry) {
     throw new Error(`ZIP must contain spritesheet.${ext} at the root.`);
@@ -270,13 +359,18 @@ async function prepareFromZip(file: File): Promise<PreparedPackage> {
 
   const spriteBlob = await spriteEntry.async("blob");
   await validateImageDimensions(spriteBlob);
+  zip.file("pet.json", petJsonText);
+  const zipBlob = await zip.generateAsync({
+    type: "blob",
+    compression: "DEFLATE",
+  });
 
   return {
     petJsonBlob: new Blob([petJsonText], { type: "application/json" }),
     spritesheetBlob: spriteBlob,
-    zipBlob: file,
-    petId: petJson.id,
-    displayName: petJson.displayName,
+    zipBlob,
+    petId: editedPetJson.petJson.id,
+    displayName: editedPetJson.petJson.displayName,
     spritesheetExt: ext,
   };
 }
@@ -284,16 +378,17 @@ async function prepareFromZip(file: File): Promise<PreparedPackage> {
 async function prepareFromSeparateFiles(
   petJsonFile: File | null,
   spriteFile: File | null,
+  petJsonText: string,
+  originalPetId: string | null,
 ): Promise<PreparedPackage> {
   if (!petJsonFile || !spriteFile) {
     throw new Error("Choose a ZIP or both pet.json and spritesheet.");
   }
 
-  const petJsonText = await petJsonFile.text();
-  const petJson = parseClientPetJson(petJsonText);
-  const ext = spriteExtFromPath(petJson.spritesheetPath);
-  if (!spriteFile.name.endsWith(`.${ext}`)) {
-    throw new Error(`Sprite file must match ${petJson.spritesheetPath}.`);
+  const editedPetJson = parseEditedPetJson(petJsonText, originalPetId);
+  const ext = editedPetJson.spritesheetExt;
+  if (!spriteFile.name.toLowerCase().endsWith(`.${ext}`)) {
+    throw new Error(`Sprite file must match ${editedPetJson.petJson.spritesheetPath}.`);
   }
   await validateImageDimensions(spriteFile);
 
@@ -309,36 +404,33 @@ async function prepareFromSeparateFiles(
     petJsonBlob: new Blob([petJsonText], { type: "application/json" }),
     spritesheetBlob: spriteFile,
     zipBlob,
-    petId: petJson.id,
-    displayName: petJson.displayName,
+    petId: editedPetJson.petJson.id,
+    displayName: editedPetJson.petJson.displayName,
     spritesheetExt: ext,
   };
 }
 
-function parseClientPetJson(text: string): {
-  id: string;
-  displayName: string;
-  description: string;
-  spritesheetPath: string;
+function parseEditedPetJson(
+  text: string,
+  originalId: string | null,
+): {
+  petJson: SubmitPetJson;
+  spritesheetExt: SubmitSpriteExt;
 } {
-  const value = JSON.parse(text) as Record<string, unknown>;
-  for (const key of ["id", "displayName", "description", "spritesheetPath"]) {
-    if (typeof value[key] !== "string" || !value[key]) {
-      throw new Error(`pet.json is missing ${key}.`);
-    }
-  }
-  return value as {
-    id: string;
-    displayName: string;
-    description: string;
-    spritesheetPath: string;
-  };
+  const result = parseEditablePetJson({ text, originalId });
+  if (!result.ok) throw new Error(result.message);
+  return result.value;
 }
 
-function spriteExtFromPath(path: string): "webp" | "png" {
-  if (path === "spritesheet.webp") return "webp";
-  if (path === "spritesheet.png") return "png";
-  throw new Error("spritesheetPath must be spritesheet.webp or spritesheet.png.");
+async function readPetJsonTextFromZip(file: File): Promise<string> {
+  const zip = await JSZip.loadAsync(file);
+  const petJsonEntry = zip.file("pet.json");
+  if (!petJsonEntry) throw new Error("ZIP must contain pet.json at the root.");
+  return petJsonEntry.async("string");
+}
+
+function clearFileInput(ref: React.RefObject<HTMLInputElement | null>) {
+  if (ref.current) ref.current.value = "";
 }
 
 function validateImageDimensions(blob: Blob): Promise<void> {

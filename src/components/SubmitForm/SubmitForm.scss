@@ -37,4 +37,8 @@
   &__divider-line {
     flex: 1;
   }
+
+  &__json-editor textarea {
+    font-family: var(--g-font-family-monospace, monospace);
+  }
 }
