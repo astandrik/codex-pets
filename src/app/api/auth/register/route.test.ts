@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/ydb/client", () => ({
   isYdbConfigured: vi.fn(() => true),
@@ -35,9 +35,35 @@ vi.mock("@/lib/auth/password", () => ({
   validatePasswordStrength: vi.fn(() => null),
 }));
 
+vi.mock("@/lib/sitemap-cache", () => ({
+  revalidateSitemapCache: vi.fn(),
+}));
+
 import { POST } from "@/app/api/auth/register/route";
+import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 describe("POST /api/auth/register", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("does not revalidate sitemap cache for invalid JSON", async () => {
+    vi.stubEnv("AUTH_MODE", "app-session");
+
+    const response = await POST(
+      new Request("http://localhost/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{",
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(revalidateSitemapCache).not.toHaveBeenCalled();
+
+    vi.unstubAllEnvs();
+  });
+
   it("creates an account and returns a session cookie", async () => {
     vi.stubEnv("AUTH_MODE", "app-session");
     vi.stubEnv("SESSION_COOKIE_SECRET", "cookie-secret");
@@ -57,6 +83,7 @@ describe("POST /api/auth/register", () => {
 
     expect(response.status).toBe(201);
     expect(response.headers.get("set-cookie")).toContain("codex_pets_session=");
+    expect(revalidateSitemapCache).toHaveBeenCalledTimes(1);
 
     vi.unstubAllEnvs();
   });

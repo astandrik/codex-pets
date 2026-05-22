@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { clearUserAvatar } from "@/lib/auth/avatar-repository";
 import { getUserById } from "@/lib/auth/repository";
 import { getCurrentPrincipal } from "@/lib/auth/session";
+import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 import { isYdbConfigured } from "@/lib/ydb/client";
 
 export const runtime = "nodejs";
@@ -30,6 +31,7 @@ export async function DELETE(): Promise<Response> {
   }
 
   await clearUserAvatar(existing.userId);
+  revalidateSitemapCache();
 
   return NextResponse.json({
     ok: true,

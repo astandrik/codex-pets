@@ -40,7 +40,12 @@ vi.mock("@/lib/ydb/client", () => ({
   isYdbConfigured: vi.fn(() => true),
 }));
 
+vi.mock("@/lib/sitemap-cache", () => ({
+  revalidateSitemapCache: vi.fn(),
+}));
+
 import { PATCH } from "@/app/api/auth/profile/route";
+import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 describe("PATCH /api/auth/profile", () => {
   beforeEach(() => {
@@ -58,6 +63,7 @@ describe("PATCH /api/auth/profile", () => {
     );
 
     expect(response.status).toBe(401);
+    expect(revalidateSitemapCache).not.toHaveBeenCalled();
   });
 
   it("updates public profile fields for the current user", async () => {
@@ -134,6 +140,7 @@ describe("PATCH /api/auth/profile", () => {
         avatarUrl: null,
       },
     });
+    expect(revalidateSitemapCache).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a GitHub URL on a different host", async () => {
@@ -162,6 +169,7 @@ describe("PATCH /api/auth/profile", () => {
     expect(response.status).toBe(400);
     expect(body).toMatchObject({ error: "invalid_github_url" });
     expect(repositoryMocks.updateUserProfile).not.toHaveBeenCalled();
+    expect(revalidateSitemapCache).not.toHaveBeenCalled();
   });
 
   it("rejects a LinkedIn URL on a different host", async () => {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { moderatePet } from "@/lib/pets/repository";
+import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +33,8 @@ export async function POST(
   if (!pet) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
+
+  revalidateSitemapCache();
 
   return NextResponse.json({ ok: true, pet });
 }

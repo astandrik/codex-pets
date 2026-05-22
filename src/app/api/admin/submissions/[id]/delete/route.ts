@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { softDeletePetById } from "@/lib/pets/repository";
+import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +26,8 @@ export async function POST(
   if (!deleted) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
+
+  revalidateSitemapCache();
 
   return NextResponse.json({ ok: true });
 }

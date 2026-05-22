@@ -13,10 +13,15 @@ vi.mock("@/lib/indexnow", () => ({
   notifyIndexNowOfApprovedPet: vi.fn(),
 }));
 
+vi.mock("@/lib/sitemap-cache", () => ({
+  revalidateSitemapCache: vi.fn(),
+}));
+
 import { POST } from "@/app/api/admin/submissions/[id]/approve/route";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
 import { moderatePet } from "@/lib/pets/repository";
+import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 describe("POST /api/admin/submissions/[id]/approve", () => {
   beforeEach(() => {
@@ -42,6 +47,26 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     });
 
     expect(response.status).toBe(403);
+    expect(notifyIndexNowOfApprovedPet).not.toHaveBeenCalled();
+    expect(revalidateSitemapCache).not.toHaveBeenCalled();
+  });
+
+  it("does not revalidate sitemap cache when the pet is missing", async () => {
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce(null);
+
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ id: "pet_1" }),
+    });
+
+    expect(response.status).toBe(404);
+    expect(revalidateSitemapCache).not.toHaveBeenCalled();
     expect(notifyIndexNowOfApprovedPet).not.toHaveBeenCalled();
   });
 
@@ -79,6 +104,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     });
 
     expect(response.status).toBe(200);
+    expect(revalidateSitemapCache).toHaveBeenCalledTimes(1);
     expect(notifyIndexNowOfApprovedPet).toHaveBeenCalledWith("boba");
   });
 

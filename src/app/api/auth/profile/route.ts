@@ -14,6 +14,7 @@ import {
   USER_AVATAR_CONTENT_TYPES,
 } from "@/lib/auth/avatar-repository";
 import { getCurrentPrincipal } from "@/lib/auth/session";
+import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 import { isYdbConfigured } from "@/lib/ydb/client";
 
 export const runtime = "nodejs";
@@ -173,6 +174,10 @@ export async function PATCH(req: Request): Promise<Response> {
             })
           ).avatarUrl
         : avatarUrlFromId(user?.avatarId ?? null);
+
+    if (user) {
+      revalidateSitemapCache();
+    }
 
     return NextResponse.json({
       ok: true,

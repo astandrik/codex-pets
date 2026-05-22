@@ -28,7 +28,12 @@ vi.mock("@/lib/ydb/client", () => ({
   isYdbConfigured: vi.fn(() => true),
 }));
 
+vi.mock("@/lib/sitemap-cache", () => ({
+  revalidateSitemapCache: vi.fn(),
+}));
+
 import { DELETE } from "@/app/api/auth/profile/avatar/route";
+import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 describe("DELETE /api/auth/profile/avatar", () => {
   beforeEach(() => {
@@ -42,6 +47,24 @@ describe("DELETE /api/auth/profile/avatar", () => {
 
     expect(response.status).toBe(401);
     expect(avatarMocks.clearUserAvatar).not.toHaveBeenCalled();
+    expect(revalidateSitemapCache).not.toHaveBeenCalled();
+  });
+
+  it("does not revalidate sitemap cache when the profile is not editable", async () => {
+    authMocks.getCurrentPrincipal.mockResolvedValueOnce({
+      userId: "user@example.com",
+      email: "user@example.com",
+      name: "User",
+      profileSlug: "user",
+      role: "user",
+    });
+    repositoryMocks.getUserById.mockResolvedValueOnce(null);
+
+    const response = await DELETE();
+
+    expect(response.status).toBe(403);
+    expect(avatarMocks.clearUserAvatar).not.toHaveBeenCalled();
+    expect(revalidateSitemapCache).not.toHaveBeenCalled();
   });
 
   it("clears the current user's avatar", async () => {
@@ -61,6 +84,7 @@ describe("DELETE /api/auth/profile/avatar", () => {
 
     expect(response.status).toBe(200);
     expect(avatarMocks.clearUserAvatar).toHaveBeenCalledWith("user@example.com");
+    expect(revalidateSitemapCache).toHaveBeenCalledTimes(1);
     expect(body).toEqual({
       ok: true,
       profile: {

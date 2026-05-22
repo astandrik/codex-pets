@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createUser, createSessionForUser, getUserByEmail, normalizeEmail } from "@/lib/auth/repository";
 import { hashPassword, validatePasswordStrength } from "@/lib/auth/password";
 import { applySessionCookie } from "@/lib/auth/session-cookie";
+import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 import { isYdbConfigured } from "@/lib/ydb/client";
 
 export const runtime = "nodejs";
@@ -69,5 +70,6 @@ export async function POST(req: Request): Promise<Response> {
     sessionId: session.sessionId,
     expiresAt: new Date(session.expiresAt),
   });
+  revalidateSitemapCache();
   return response;
 }

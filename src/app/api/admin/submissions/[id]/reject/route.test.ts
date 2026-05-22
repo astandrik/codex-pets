@@ -6,19 +6,19 @@ vi.mock("@/lib/auth/session", () => ({
 }));
 
 vi.mock("@/lib/pets/repository", () => ({
-  softDeletePetById: vi.fn(),
+  moderatePet: vi.fn(),
 }));
 
 vi.mock("@/lib/sitemap-cache", () => ({
   revalidateSitemapCache: vi.fn(),
 }));
 
-import { POST } from "@/app/api/admin/submissions/[id]/delete/route";
+import { POST } from "@/app/api/admin/submissions/[id]/reject/route";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
-import { softDeletePetById } from "@/lib/pets/repository";
+import { moderatePet } from "@/lib/pets/repository";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
-describe("POST /api/admin/submissions/[id]/delete", () => {
+describe("POST /api/admin/submissions/[id]/reject", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -40,29 +40,6 @@ describe("POST /api/admin/submissions/[id]/delete", () => {
     expect(revalidateSitemapCache).not.toHaveBeenCalled();
   });
 
-  it("allows admins to delete any pet", async () => {
-    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
-      userId: "admin_1",
-      email: null,
-      name: null,
-      role: "admin",
-    });
-    vi.mocked(isAdminUser).mockReturnValueOnce(true);
-    vi.mocked(softDeletePetById).mockResolvedValueOnce(true);
-
-    const response = await POST(new Request("http://localhost"), {
-      params: Promise.resolve({ id: "pet_1" }),
-    });
-
-    expect(response.status).toBe(200);
-    expect(softDeletePetById).toHaveBeenCalledWith({
-      petId: "pet_1",
-      actorUserId: "admin_1",
-      actorRole: "admin",
-    });
-    expect(revalidateSitemapCache).toHaveBeenCalledTimes(1);
-  });
-
   it("does not revalidate sitemap cache when the pet is missing", async () => {
     vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
       userId: "admin_1",
@@ -71,7 +48,7 @@ describe("POST /api/admin/submissions/[id]/delete", () => {
       role: "admin",
     });
     vi.mocked(isAdminUser).mockReturnValueOnce(true);
-    vi.mocked(softDeletePetById).mockResolvedValueOnce(false);
+    vi.mocked(moderatePet).mockResolvedValueOnce(null);
 
     const response = await POST(new Request("http://localhost"), {
       params: Promise.resolve({ id: "pet_1" }),
@@ -79,5 +56,48 @@ describe("POST /api/admin/submissions/[id]/delete", () => {
 
     expect(response.status).toBe(404);
     expect(revalidateSitemapCache).not.toHaveBeenCalled();
+  });
+
+  it("revalidates sitemap cache after a successful rejection", async () => {
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce({
+      id: "pet_1",
+      slug: "boba",
+      displayName: "Boba",
+      description: "desc",
+      spritesheetUrl: "https://assets/pets/boba.webp",
+      petJsonUrl: "https://assets/pets/boba.json",
+      zipUrl: "https://assets/pets/boba.zip",
+      spritesheetExt: "webp",
+      kind: "creature",
+      tags: [],
+      status: "rejected",
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: new Date().toISOString(),
+      approvedAt: null,
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    });
+
+    const response = await POST(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ reason: "not ready" }),
+      }),
+      {
+        params: Promise.resolve({ id: "pet_1" }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(revalidateSitemapCache).toHaveBeenCalledTimes(1);
   });
 });
