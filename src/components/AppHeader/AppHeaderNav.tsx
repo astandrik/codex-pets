@@ -13,6 +13,7 @@ type HeaderNavResponse = {
     userId: string;
     email: string | null;
     name: string | null;
+    profileSlug: string | null;
     role: "user" | "admin";
   } | null;
   pendingReviewCount: number;
@@ -89,6 +90,15 @@ export function AppHeaderNav() {
           <>
             <li>
               <Link
+                href="/profile"
+                prefetch={false}
+                {...linkProps("/profile")}
+              >
+                Profile
+              </Link>
+            </li>
+            <li>
+              <Link
                 href="/my-pets"
                 prefetch={false}
                 {...linkProps("/my-pets")}
@@ -148,7 +158,12 @@ export function AppHeaderNav() {
       <div className="app-header__actions">
         {principal ? (
           <>
-            <span className="app-header__user" title={principal.email ?? undefined}>
+            <Link
+              href={principal.profileSlug ? `/users/${principal.profileSlug}` : "/profile"}
+              prefetch={false}
+              className="app-header__user"
+              title={principal.email ?? undefined}
+            >
               <span className="app-header__user-avatar" aria-hidden="true">
                 {(principal.name ?? principal.email ?? "?")
                   .trim()
@@ -158,7 +173,7 @@ export function AppHeaderNav() {
               <span className="app-header__user-name">
                 {principal.name ?? principal.email ?? "Account"}
               </span>
-            </span>
+            </Link>
             <a href={withBasePath("/logout")} className="app-header__link">
               Logout
             </a>

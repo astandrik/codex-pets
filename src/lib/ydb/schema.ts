@@ -2,6 +2,8 @@ export const TABLES = {
   pets: "codex_pets",
   assets: "codex_pet_assets",
   users: "codex_users",
+  userProfileSlugs: "codex_user_profile_slugs",
+  userAvatars: "codex_user_avatars",
   sessions: "codex_sessions",
   emailVerificationTokens: "codex_email_verification_tokens",
   passwordResetTokens: "codex_password_reset_tokens",

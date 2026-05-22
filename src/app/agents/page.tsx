@@ -9,6 +9,7 @@ import {
 } from "@/components/GravityUI/GravityUI";
 
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
+import { serializeJsonLd } from "@/lib/json-ld";
 import {
   getAgentResourceAlternateTypes,
   getOpenGraphImages,
@@ -67,7 +68,7 @@ export default function AgentsPage() {
     <Container as="main" maxWidth="xl" gutters={5} className="page-shell">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
       />
       <section className="page-section">
         <Flex direction="column" gap={4}>

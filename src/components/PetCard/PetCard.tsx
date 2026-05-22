@@ -32,6 +32,7 @@ const PREVIEW_STRIP_WIDTH = PREVIEW_FRAME_WIDTH * PREVIEW_STATE.frames;
 
 export function PetCard({ pet, showStatus = false }: PetCardProps) {
   const authorName = pet.ownerName ?? "Anonymous";
+  const authorInitial = authorName.trim().charAt(0).toUpperCase() || "U";
   const idleStripUrl = getPetIdleStripUrl(pet.spritesheetUrl);
   const stripStyle: StripStyle = {
     "--pet-card-frame-count": PREVIEW_STATE.frames,
@@ -89,7 +90,27 @@ export function PetCard({ pet, showStatus = false }: PetCardProps) {
           className="pet-card__author"
           ellipsis
         >
-          By {authorName}
+          <span className="pet-card__author-label">By</span>
+          {pet.ownerProfileSlug ? (
+            <Link
+              href={`/users/${pet.ownerProfileSlug}`}
+              className="pet-card__author-link"
+            >
+              <AuthorAvatar
+                avatarUrl={pet.ownerAvatarUrl ?? null}
+                initial={authorInitial}
+              />
+              <span className="pet-card__author-name">{authorName}</span>
+            </Link>
+          ) : (
+            <span className="pet-card__author-static">
+              <AuthorAvatar
+                avatarUrl={pet.ownerAvatarUrl ?? null}
+                initial={authorInitial}
+              />
+              <span className="pet-card__author-name">{authorName}</span>
+            </span>
+          )}
         </Text>
         <Text variant="body-2" color="secondary" className="pet-card__description">
           {pet.description}
@@ -120,5 +141,28 @@ export function PetCard({ pet, showStatus = false }: PetCardProps) {
         <ArrowRight width={16} height={16} />
       </span>
     </Card>
+  );
+}
+
+function AuthorAvatar({
+  avatarUrl,
+  initial,
+}: {
+  avatarUrl: string | null;
+  initial: string;
+}) {
+  return avatarUrl ? (
+    <Image
+      className="pet-card__author-avatar"
+      src={avatarUrl}
+      alt=""
+      width={22}
+      height={22}
+      unoptimized
+    />
+  ) : (
+    <span className="pet-card__author-avatar pet-card__author-avatar_fallback">
+      {initial}
+    </span>
   );
 }

@@ -47,6 +47,16 @@ export default async function MyPetsPage() {
           Track pending, approved, and rejected packages submitted from your
           account.
         </Text>
+        {principal?.profileSlug ? (
+          <Flex>
+            <Button
+              view="outlined"
+              href={withBasePath(`/users/${principal.profileSlug}`)}
+            >
+              View public profile
+            </Button>
+          </Flex>
+        ) : null}
       </Flex>
 
       <section className="page-section">

@@ -21,6 +21,7 @@ export type WebMCPPetInput = Omit<
     | "tags"
     | "status"
     | "ownerName"
+    | "ownerProfileSlug"
     | "createdAt"
     | "approvedAt"
   >,
@@ -114,6 +115,11 @@ export function isWebMCPPetInput(value: unknown): value is WebMCPPetInput {
     value.tags.every((tag) => typeof tag === "string") &&
     value.status === "approved" &&
     (value.ownerName === null || typeof value.ownerName === "string") &&
+    (
+      value.ownerProfileSlug === undefined ||
+      value.ownerProfileSlug === null ||
+      typeof value.ownerProfileSlug === "string"
+    ) &&
     typeof value.createdAt === "string" &&
     (value.approvedAt === null || typeof value.approvedAt === "string")
   );
@@ -128,6 +134,7 @@ export function createAgentPet(pet: WebMCPPetInput, origin: string): AgentPet {
     tags: pet.tags,
     status: pet.status,
     ownerName: pet.ownerName,
+    ownerProfileSlug: pet.ownerProfileSlug ?? null,
     createdAt: pet.createdAt,
     approvedAt: pet.approvedAt,
     pageUrl: absoluteSiteUrl(`/pets/${pet.slug}`, origin),

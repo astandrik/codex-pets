@@ -46,6 +46,7 @@ export default async function AdminRequestsPage() {
     prompt: request.prompt,
     contactEmail: request.contactEmail,
     requesterName: request.requesterName,
+    requesterProfileSlug: request.requesterProfileSlug ?? null,
     linkedPetSlug: request.linkedPetSlug,
     referenceImage: request.referenceImage,
     adminNote: request.adminNote,

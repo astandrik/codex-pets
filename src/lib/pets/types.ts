@@ -102,6 +102,8 @@ export type PublicPet = {
   tags: string[];
   status: ApprovalStatus;
   ownerName: string | null;
+  ownerProfileSlug?: string | null;
+  ownerAvatarUrl?: string | null;
   contactEmail: string | null;
   createdAt: string;
   approvedAt: string | null;
@@ -121,6 +123,7 @@ export type PetGenerationRequest = {
   contactEmail: string;
   requesterName: string | null;
   requesterUserId: string | null;
+  requesterProfileSlug?: string | null;
   linkedPetId: string | null;
   linkedPetSlug: string | null;
   referenceImage: PetGenerationRequestReferenceImage | null;

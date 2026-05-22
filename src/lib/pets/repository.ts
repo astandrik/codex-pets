@@ -1,6 +1,15 @@
 import { TABLES } from "@/lib/ydb/schema";
 import { TypedValues, withSession, isYdbConfigured } from "@/lib/ydb/client";
 import { rowsFromResult, textAt, uintAt } from "@/lib/ydb/result";
+import {
+  listPublicUserProfilesByIds,
+  normalizeProfileSlug,
+} from "@/lib/auth/repository";
+import {
+  MOCK_LOCAL_ADMIN_AVATAR_ID,
+  avatarUrlFromId,
+} from "@/lib/auth/avatar-repository";
+import type { PublicUserReference } from "@/lib/auth/repository";
 import type { ApprovalStatus, PetKind, PublicPet } from "@/lib/pets/types";
 import { withBasePath } from "@/lib/base-path";
 import { slugify, type PetJson } from "@/lib/pets/validation";
@@ -112,9 +121,14 @@ LIMIT 200;
       );
     });
   const metricsBySlug = await getMetricsBySlugs(rows.map((row) => row.slug));
+  const profilesByUserId = await getOwnerProfilesByRows(rows);
 
   return rows.map((row) =>
-    toPublicPet(row, metricsBySlug.get(row.slug) ?? EMPTY_METRICS),
+    toPublicPet(
+      row,
+      metricsBySlug.get(row.slug) ?? EMPTY_METRICS,
+      profilesByUserId.get(row.ownerId),
+    ),
   );
 }
 
@@ -124,13 +138,14 @@ export async function getApprovedPetBySlug(
   if (isMockPetsDataSource()) {
     const pet = getMockPetBySlug(slug);
     if (!pet || pet.status !== "approved") return null;
-    return toPublicPet(pet, pet.metrics);
+    return toPublicPet(pet, pet.metrics, mockOwnerReference(pet));
   }
 
   const pet = await getPetBySlug(slug);
   if (!pet || pet.status !== "approved") return null;
   const metrics = await getMetrics(slug);
-  return toPublicPet(pet, metrics);
+  const profile = await getOwnerProfileByRow(pet);
+  return toPublicPet(pet, metrics, profile);
 }
 
 export async function getPetBySlug(slug: string): Promise<PetRow | null> {
@@ -160,7 +175,7 @@ export async function listPetsForOwner(ownerId: string): Promise<PublicPet[]> {
   if (isMockPetsDataSource()) {
     return listMockPetRecords().filter(
       (pet) => pet.ownerId === ownerId && pet.status !== "deleted",
-    ).map((pet) => toPublicPet(pet, pet.metrics));
+    ).map((pet) => toPublicPet(pet, pet.metrics, mockOwnerReference(pet)));
   }
 
   if (!isYdbConfigured()) return [];
@@ -185,9 +200,56 @@ LIMIT 200;
 
   const rows = rowsFromResult(result).map(parsePetRow);
   const metricsBySlug = await getMetricsBySlugs(rows.map((row) => row.slug));
+  const profilesByUserId = await getOwnerProfilesByRows(rows);
 
   return rows.map((row) =>
-    toPublicPet(row, metricsBySlug.get(row.slug) ?? EMPTY_METRICS),
+    toPublicPet(
+      row,
+      metricsBySlug.get(row.slug) ?? EMPTY_METRICS,
+      profilesByUserId.get(row.ownerId),
+    ),
+  );
+}
+
+export async function listApprovedPetsForOwner(
+  ownerId: string,
+): Promise<PublicPet[]> {
+  if (isMockPetsDataSource()) {
+    return listMockPetRecords()
+      .filter((pet) => pet.ownerId === ownerId && pet.status === "approved")
+      .map((pet) => toPublicPet(pet, pet.metrics, mockOwnerReference(pet)));
+  }
+
+  if (!isYdbConfigured()) return [];
+
+  const result = await withSession((session) =>
+    session.executeQuery(
+      `
+DECLARE $owner_id AS Utf8;
+DECLARE $status AS Utf8;
+SELECT ${petColumns()}
+FROM ${TABLES.pets}
+WHERE owner_id = $owner_id AND status = $status
+ORDER BY approved_at DESC, created_at DESC
+LIMIT 200;
+      `,
+      {
+        $owner_id: TypedValues.utf8(ownerId),
+        $status: TypedValues.utf8("approved"),
+      },
+    ),
+  );
+
+  const rows = rowsFromResult(result).map(parsePetRow);
+  const metricsBySlug = await getMetricsBySlugs(rows.map((row) => row.slug));
+  const profilesByUserId = await getOwnerProfilesByRows(rows);
+
+  return rows.map((row) =>
+    toPublicPet(
+      row,
+      metricsBySlug.get(row.slug) ?? EMPTY_METRICS,
+      profilesByUserId.get(row.ownerId),
+    ),
   );
 }
 
@@ -214,9 +276,14 @@ LIMIT 200;
 
   const rows = rowsFromResult(result).map(parsePetRow);
   const metricsBySlug = await getMetricsBySlugs(rows.map((row) => row.slug));
+  const profilesByUserId = await getOwnerProfilesByRows(rows);
 
   return rows.map((row) =>
-    toPublicPet(row, metricsBySlug.get(row.slug) ?? EMPTY_METRICS),
+    toPublicPet(
+      row,
+      metricsBySlug.get(row.slug) ?? EMPTY_METRICS,
+      profilesByUserId.get(row.ownerId),
+    ),
   );
 }
 
@@ -268,7 +335,7 @@ export async function createPendingPet(
       contactEmail: input.contactEmail,
     });
 
-    return toPublicPet(pet, pet.metrics);
+    return toPublicPet(pet, pet.metrics, mockOwnerReference(pet));
   }
 
   const requestedSlug = slugify(input.petJson.id || input.petJson.displayName);
@@ -333,31 +400,29 @@ VALUES ($slug, $id, $display_name, $description, $spritesheet_url, $pet_json_url
     ),
   );
 
-  return toPublicPet(
-    {
-      slug,
-      id,
-      displayName: input.petJson.displayName,
-      description: input.petJson.description,
-      spritesheetUrl: input.spritesheetUrl,
-      petJsonUrl: input.petJsonUrl,
-      zipUrl: input.zipUrl,
-      spritesheetExt: input.spritesheetExt,
-      kind: input.kind,
-      tags: input.tags,
-      status: "pending",
-      ownerId: input.ownerId,
-      ownerEmail: input.ownerEmail,
-      ownerName: input.ownerName,
-      contactEmail: input.contactEmail,
-      rejectionReason: null,
-      createdAt: now,
-      updatedAt: now,
-      approvedAt: null,
-      rejectedAt: null,
-    },
-    EMPTY_METRICS,
-  );
+  const row: PetRow = {
+    slug,
+    id,
+    displayName: input.petJson.displayName,
+    description: input.petJson.description,
+    spritesheetUrl: input.spritesheetUrl,
+    petJsonUrl: input.petJsonUrl,
+    zipUrl: input.zipUrl,
+    spritesheetExt: input.spritesheetExt,
+    kind: input.kind,
+    tags: input.tags,
+    status: "pending",
+    ownerId: input.ownerId,
+    ownerEmail: input.ownerEmail,
+    ownerName: input.ownerName,
+    contactEmail: input.contactEmail,
+    rejectionReason: null,
+    createdAt: now,
+    updatedAt: now,
+    approvedAt: null,
+    rejectedAt: null,
+  };
+  return toPublicPet(row, EMPTY_METRICS, await getOwnerProfileByRow(row));
 }
 
 export async function moderatePet(input: {
@@ -368,7 +433,9 @@ export async function moderatePet(input: {
 }): Promise<PublicPet | null> {
   if (isMockPetsDataSource()) {
     const pet = moderateMockPet(input);
-    return pet ? toPublicPet(pet, pet.metrics) : null;
+    return pet
+      ? toPublicPet(pet, pet.metrics, mockOwnerReference(pet))
+      : null;
   }
 
   const pet = await getPetById(input.petId);
@@ -416,16 +483,18 @@ WHERE slug = $slug;
     reason,
   });
 
+  const updatedPet = {
+    ...pet,
+    status: nextStatus,
+    updatedAt: now,
+    approvedAt: approvedAt || null,
+    rejectedAt: rejectedAt || null,
+    rejectionReason: reason || null,
+  };
   return toPublicPet(
-    {
-      ...pet,
-      status: nextStatus,
-      updatedAt: now,
-      approvedAt: approvedAt || null,
-      rejectedAt: rejectedAt || null,
-      rejectionReason: reason || null,
-    },
+    updatedPet,
     EMPTY_METRICS,
+    await getOwnerProfileByRow(updatedPet),
   );
 }
 
@@ -715,6 +784,19 @@ VALUES ($id, $pet_id, $reviewer_id, $decision, $reason, $created_at);
   );
 }
 
+async function getOwnerProfileByRow(
+  row: PetRow,
+): Promise<PublicUserReference | undefined> {
+  if (!row.ownerId) return undefined;
+  return (await listPublicUserProfilesByIds([row.ownerId])).get(row.ownerId);
+}
+
+async function getOwnerProfilesByRows(
+  rows: PetRow[],
+): Promise<Map<string, PublicUserReference>> {
+  return listPublicUserProfilesByIds(rows.map((row) => row.ownerId));
+}
+
 function petColumns(): string {
   return [
     "slug",
@@ -768,6 +850,7 @@ function parsePetRow(row: Parameters<typeof textAt>[0]): PetRow {
 function toPublicPet(
   row: PetRow,
   metrics: PublicPetMetrics,
+  ownerProfile?: PublicUserReference,
 ): PublicPet {
   return {
     id: row.id,
@@ -781,7 +864,9 @@ function toPublicPet(
     kind: row.kind,
     tags: row.tags,
     status: row.status,
-    ownerName: row.ownerName,
+    ownerName: ownerProfile?.displayName ?? row.ownerName,
+    ownerProfileSlug: ownerProfile?.profileSlug ?? null,
+    ownerAvatarUrl: ownerProfile?.avatarUrl ?? null,
     contactEmail: row.contactEmail,
     createdAt: row.createdAt,
     approvedAt: row.approvedAt,
@@ -812,7 +897,25 @@ function listMockPets(
       pet.description.toLowerCase().includes(q) ||
       pet.tags.some((tag) => tag.includes(q))
     );
-  }).map((pet) => toPublicPet(pet, pet.metrics));
+  }).map((pet) => toPublicPet(pet, pet.metrics, mockOwnerReference(pet)));
+}
+
+function mockOwnerReference(row: PetRow): PublicUserReference | undefined {
+  if (!row.ownerId || !row.ownerName) return undefined;
+  const profileSlug =
+    normalizeProfileSlug(row.ownerId) ??
+    normalizeProfileSlug(row.ownerName);
+  if (!profileSlug) return undefined;
+
+  return {
+    userId: row.ownerId,
+    displayName: row.ownerName,
+    profileSlug,
+    avatarUrl:
+      profileSlug === "local-admin"
+        ? avatarUrlFromId(MOCK_LOCAL_ADMIN_AVATAR_ID)
+        : null,
+  };
 }
 
 function parseTags(value: string): string[] {

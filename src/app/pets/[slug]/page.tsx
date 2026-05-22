@@ -26,7 +26,9 @@ import { PetLikeButton } from "@/components/PetLikeButton/PetLikeButton";
 import { PetSharePanel } from "@/components/PetSharePanel/PetSharePanel";
 import { StatePreview } from "@/components/StatePreview/StatePreview";
 import { CurrentPetWebMCPTool } from "@/components/WebMCP/CurrentPetWebMCPTool";
+import { listPublicUserProfilesByIds } from "@/lib/auth/repository";
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
+import { serializeJsonLd } from "@/lib/json-ld";
 import { createAgentPet } from "@/lib/pets/agent-dto";
 import { getPetBySlug, getPetMetrics } from "@/lib/pets/repository";
 import type { ApprovalStatus } from "@/lib/pets/types";
@@ -134,6 +136,11 @@ export default async function PetPage({ params }: PetPageProps) {
   if (pet.status === "deleted") notFound();
 
   const metrics = await getCachedPetMetrics(slug);
+  const ownerProfile = pet.ownerId
+    ? (await listPublicUserProfilesByIds([pet.ownerId])).get(pet.ownerId)
+    : undefined;
+  const ownerName = ownerProfile?.displayName ?? pet.ownerName;
+  const ownerProfileSlug = ownerProfile?.profileSlug ?? null;
   const statusSummary = getStatusSummary(pet.status);
   const petJsonUrl = toPublicAssetUrl(pet.petJsonUrl);
   const spritesheetUrl = toPublicAssetUrl(pet.spritesheetUrl);
@@ -142,6 +149,8 @@ export default async function PetPage({ params }: PetPageProps) {
     pet.status === "approved"
       ? createAgentPet({
           ...pet,
+          ownerName,
+          ownerProfileSlug,
           downloadCount: metrics.downloadCount,
           installCount: metrics.installCount,
           likeCount: metrics.likeCount,
@@ -154,6 +163,8 @@ export default async function PetPage({ params }: PetPageProps) {
           zipUrl,
           petJsonUrl,
           spritesheetUrl,
+          ownerName,
+          ownerProfileSlug,
         })
       : null;
   const breadcrumbJsonLd = getBreadcrumbJsonLd([
@@ -167,12 +178,12 @@ export default async function PetPage({ params }: PetPageProps) {
       {petJsonLd ? (
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(petJsonLd) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(petJsonLd) }}
         />
       ) : null}
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbJsonLd) }}
       />
       {pet.status === "approved" ? (
         <CurrentPetWebMCPTool
@@ -186,7 +197,8 @@ export default async function PetPage({ params }: PetPageProps) {
             kind: pet.kind,
             tags: pet.tags,
             status: pet.status,
-            ownerName: pet.ownerName,
+            ownerName,
+            ownerProfileSlug,
             createdAt: pet.createdAt,
             approvedAt: pet.approvedAt,
           }}
@@ -273,7 +285,8 @@ export default async function PetPage({ params }: PetPageProps) {
             <PetMetaList
               slug={pet.slug}
               kind={pet.kind}
-              ownerName={pet.ownerName}
+              ownerName={ownerName}
+              ownerProfileSlug={ownerProfileSlug}
               createdAt={pet.createdAt}
               approvedAt={pet.approvedAt}
               tags={pet.tags}

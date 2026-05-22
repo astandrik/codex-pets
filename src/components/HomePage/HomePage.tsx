@@ -174,6 +174,7 @@ function toHomeHeroPet(pet: PublicPetSummary): HomeHeroPet {
     description: pet.description,
     kind: pet.kind,
     ownerName: pet.ownerName,
+    ownerProfileSlug: pet.ownerProfileSlug,
     spritesheetUrl: pet.spritesheetUrl,
   };
 }

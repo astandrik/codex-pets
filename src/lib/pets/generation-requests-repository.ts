@@ -1,6 +1,7 @@
 import type { Session } from "ydb-sdk";
 
 import { withBasePath } from "@/lib/base-path";
+import { listPublicUserProfilesByIds } from "@/lib/auth/repository";
 import { TABLES } from "@/lib/ydb/schema";
 import { TypedValues, isYdbConfigured, withSession } from "@/lib/ydb/client";
 import { bytesAt, rowsFromResult, textAt, uintAt } from "@/lib/ydb/result";
@@ -76,6 +77,7 @@ export async function createGenerationRequest(
     contactEmail: input.contactEmail,
     requesterName: input.requesterName,
     requesterUserId: input.requesterUserId,
+    requesterProfileSlug: null,
     linkedPetId: null,
     linkedPetSlug: null,
     referenceImage: input.referenceImage
@@ -169,7 +171,7 @@ LIMIT 200;
     ),
   );
 
-  return rowsFromResult(result).map(parseGenerationRequestRow);
+  return withRequesterProfiles(rowsFromResult(result).map(parseGenerationRequestRow));
 }
 
 export async function listGenerationRequestsForUser(
@@ -208,7 +210,7 @@ LIMIT 200;
     ),
   );
 
-  return rowsFromResult(result).map(parseGenerationRequestRow);
+  return withRequesterProfiles(rowsFromResult(result).map(parseGenerationRequestRow));
 }
 
 export async function countOpenGenerationRequests(): Promise<number> {
@@ -391,7 +393,9 @@ LIMIT 1;
     ),
   );
 
-  return rowsFromResult(result).map(parseGenerationRequestRow)[0] ?? null;
+  const request = rowsFromResult(result).map(parseGenerationRequestRow)[0] ?? null;
+  if (!request) return null;
+  return (await withRequesterProfiles([request]))[0] ?? null;
 }
 
 async function updateGenerationRequest(
@@ -548,6 +552,7 @@ function parseGenerationRequestRow(
     contactEmail: textAt(row, 5),
     requesterName: textAt(row, 6) || null,
     requesterUserId: textAt(row, 7) || null,
+    requesterProfileSlug: null,
     linkedPetId: textAt(row, 8) || null,
     linkedPetSlug: textAt(row, 9) || null,
     referenceImage: parseReferenceImage(textAt(row, 0), row, 15),
@@ -557,6 +562,30 @@ function parseGenerationRequestRow(
     fulfilledAt: textAt(row, 13) || null,
     rejectedAt: textAt(row, 14) || null,
   };
+}
+
+async function withRequesterProfiles(
+  requests: PetGenerationRequest[],
+): Promise<PetGenerationRequest[]> {
+  const profiles = await listPublicUserProfilesByIds(
+    requests
+      .map((request) => request.requesterUserId ?? "")
+      .filter(Boolean),
+  );
+
+  return requests.map((request) => {
+    const profile = request.requesterUserId
+      ? profiles.get(request.requesterUserId)
+      : undefined;
+
+    return profile
+      ? {
+          ...request,
+          requesterName: profile.displayName,
+          requesterProfileSlug: profile.profileSlug,
+        }
+      : request;
+  });
 }
 
 function parseReferenceImage(

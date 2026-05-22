@@ -2,7 +2,9 @@ import { toPublicUrl } from "@/lib/base-path";
 import { buildPetInstallCommand } from "@/lib/pets/install-command";
 import type { PublicPet } from "@/lib/pets/types";
 
-export type PublicPetPayload = Omit<PublicPet, "contactEmail">;
+export type PublicPetPayload = Omit<PublicPet, "contactEmail"> & {
+  ownerProfileUrl: string | null;
+};
 
 export function buildManifestPayload(
   pets: PublicPet[],
@@ -18,6 +20,12 @@ export function buildManifestPayload(
       kind: pet.kind,
       tags: pet.tags,
       submittedBy: pet.ownerName,
+      submittedByUrl: pet.ownerProfileSlug
+        ? toPublicUrl(`/users/${pet.ownerProfileSlug}`)
+        : null,
+      submittedByAvatarUrl: pet.ownerAvatarUrl
+        ? toPublicUrl(pet.ownerAvatarUrl)
+        : null,
       pageUrl: toPublicUrl(`/pets/${pet.slug}`),
       spritesheetUrl: pet.spritesheetUrl,
       petJsonUrl: pet.petJsonUrl,
@@ -54,6 +62,11 @@ export function createPublicPetPayload(pet: PublicPet): PublicPetPayload {
     tags: pet.tags,
     status: pet.status,
     ownerName: pet.ownerName,
+    ownerProfileSlug: pet.ownerProfileSlug ?? null,
+    ownerProfileUrl: pet.ownerProfileSlug
+      ? toPublicUrl(`/users/${pet.ownerProfileSlug}`)
+      : null,
+    ownerAvatarUrl: pet.ownerAvatarUrl ? toPublicUrl(pet.ownerAvatarUrl) : null,
     createdAt: pet.createdAt,
     approvedAt: pet.approvedAt,
     downloadCount: pet.downloadCount,

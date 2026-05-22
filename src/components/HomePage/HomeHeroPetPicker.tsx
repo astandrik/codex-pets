@@ -15,7 +15,13 @@ import { pickRandomHeroPetIndex } from "@/components/HomePage/home-hero-random";
 
 export type HomeHeroPet = Pick<
   PublicPetSummary,
-  "slug" | "displayName" | "description" | "kind" | "ownerName" | "spritesheetUrl"
+  | "slug"
+  | "displayName"
+  | "description"
+  | "kind"
+  | "ownerName"
+  | "ownerProfileSlug"
+  | "spritesheetUrl"
 >;
 
 type HomeHeroPetPickerProps = {
@@ -151,7 +157,17 @@ export function HomeHeroPetPicker({
             color="secondary"
             className="home-hero-pet__author"
           >
-            By {pet.ownerName}
+            By{" "}
+            {pet.ownerProfileSlug ? (
+              <a
+                href={withBasePath(`/users/${pet.ownerProfileSlug}`)}
+                className="home-hero-pet__author-link"
+              >
+                {pet.ownerName}
+              </a>
+            ) : (
+              pet.ownerName
+            )}
           </Text>
         ) : null}
         <Text

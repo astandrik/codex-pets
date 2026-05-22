@@ -48,6 +48,7 @@ export default async function AdminSubmissionsPage() {
     status: pet.status,
     createdAt: pet.createdAt,
     ownerName: pet.ownerName,
+    ownerProfileSlug: pet.ownerProfileSlug ?? null,
     contactEmail: pet.contactEmail,
   }));
 

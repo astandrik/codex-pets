@@ -22,6 +22,8 @@ const TABLES = {
   pets: "codex_pets",
   assets: "codex_pet_assets",
   users: "codex_users",
+  userProfileSlugs: "codex_user_profile_slugs",
+  userAvatars: "codex_user_avatars",
   reviews: "codex_pet_reviews",
   metrics: "codex_pet_metrics",
 };
@@ -58,12 +60,22 @@ const users = [
     userId: "dev-admin@example.com",
     email: "dev-admin@example.com",
     displayName: "Dev Admin",
+    profileSlug: "dev-admin",
+    bio: "Maintains the local Codex Pets development registry.",
+    websiteUrl: "https://tech.ydb-qdrant.pets/",
+    githubUrl: "https://github.com/astandrik/codex-pets",
+    linkedinUrl: "https://www.linkedin.com/company/ydb/",
     role: "admin",
   },
   {
     userId: "dev-owner@example.com",
     email: "dev-owner@example.com",
     displayName: "Dev Owner",
+    profileSlug: "dev-owner",
+    bio: "Submits sample Codex pet packs for local testing.",
+    websiteUrl: "https://example.com/",
+    githubUrl: "https://github.com/astandrik",
+    linkedinUrl: "",
     role: "user",
   },
 ];
@@ -280,6 +292,12 @@ async function resetSeedData(driver) {
   }
 
   for (const user of users) {
+    await deleteByKey(
+      driver,
+      TABLES.userProfileSlugs,
+      "profile_slug",
+      user.profileSlug,
+    );
     await deleteByKey(driver, TABLES.users, "user_id", user.userId);
   }
 }
@@ -306,6 +324,12 @@ DECLARE $email AS Utf8;
 DECLARE $email_lower AS Utf8;
 DECLARE $password_hash AS Utf8;
 DECLARE $display_name AS Utf8;
+DECLARE $profile_slug AS Utf8;
+DECLARE $bio AS Utf8;
+DECLARE $website_url AS Utf8;
+DECLARE $github_url AS Utf8;
+DECLARE $linkedin_url AS Utf8;
+DECLARE $avatar_id AS Utf8;
 DECLARE $role AS Utf8;
 DECLARE $status AS Utf8;
 DECLARE $email_verified_at AS Utf8;
@@ -313,8 +337,8 @@ DECLARE $created_at AS Utf8;
 DECLARE $updated_at AS Utf8;
 
 UPSERT INTO ${TABLES.users}
-(user_id, email, email_lower, password_hash, display_name, role, status, email_verified_at, created_at, updated_at)
-VALUES ($user_id, $email, $email_lower, $password_hash, $display_name, $role, $status, $email_verified_at, $created_at, $updated_at);
+(user_id, email, email_lower, password_hash, display_name, profile_slug, bio, website_url, github_url, linkedin_url, avatar_id, role, status, email_verified_at, created_at, updated_at)
+VALUES ($user_id, $email, $email_lower, $password_hash, $display_name, $profile_slug, $bio, $website_url, $github_url, $linkedin_url, $avatar_id, $role, $status, $email_verified_at, $created_at, $updated_at);
     `,
     {
       $user_id: TypedValues.utf8(user.userId),
@@ -322,9 +346,35 @@ VALUES ($user_id, $email, $email_lower, $password_hash, $display_name, $role, $s
       $email_lower: TypedValues.utf8(user.email.toLowerCase()),
       $password_hash: TypedValues.utf8(await hashPassword("password123")),
       $display_name: TypedValues.utf8(user.displayName),
+      $profile_slug: TypedValues.utf8(user.profileSlug),
+      $bio: TypedValues.utf8(user.bio),
+      $website_url: TypedValues.utf8(user.websiteUrl),
+      $github_url: TypedValues.utf8(user.githubUrl),
+      $linkedin_url: TypedValues.utf8(user.linkedinUrl),
+      $avatar_id: TypedValues.utf8(""),
       $role: TypedValues.utf8(user.role),
       $status: TypedValues.utf8("active"),
       $email_verified_at: TypedValues.utf8(timestamp),
+      $created_at: TypedValues.utf8(timestamp),
+      $updated_at: TypedValues.utf8(timestamp),
+    },
+  );
+
+  await execute(
+    driver,
+    `
+DECLARE $profile_slug AS Utf8;
+DECLARE $user_id AS Utf8;
+DECLARE $created_at AS Utf8;
+DECLARE $updated_at AS Utf8;
+
+UPSERT INTO ${TABLES.userProfileSlugs}
+(profile_slug, user_id, created_at, updated_at)
+VALUES ($profile_slug, $user_id, $created_at, $updated_at);
+    `,
+    {
+      $profile_slug: TypedValues.utf8(user.profileSlug),
+      $user_id: TypedValues.utf8(user.userId),
       $created_at: TypedValues.utf8(timestamp),
       $updated_at: TypedValues.utf8(timestamp),
     },

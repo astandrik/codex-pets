@@ -220,6 +220,7 @@ export function getPetJsonLd(
     | "kind"
     | "tags"
     | "ownerName"
+    | "ownerProfileSlug"
     | "createdAt"
     | "approvedAt"
     | "zipUrl"
@@ -239,6 +240,9 @@ export function getPetJsonLd(
     creator: {
       "@type": "Person",
       name: pet.ownerName ?? "Anonymous",
+      ...(pet.ownerProfileSlug
+        ? { url: toPublicUrl(`/users/${pet.ownerProfileSlug}`) }
+        : {}),
     },
     dateCreated: pet.createdAt,
     datePublished: pet.approvedAt ?? pet.createdAt,

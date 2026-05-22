@@ -91,6 +91,8 @@ function toPublicPetSummary(pet: PublicPet): PublicPetSummary {
     tags: pet.tags,
     status: pet.status,
     ownerName: pet.ownerName,
+    ownerProfileSlug: pet.ownerProfileSlug,
+    ownerAvatarUrl: pet.ownerAvatarUrl,
     createdAt: pet.createdAt,
     approvedAt: pet.approvedAt,
     downloadCount: pet.downloadCount,

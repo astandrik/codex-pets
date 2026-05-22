@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { DefinitionList, Flex, Label } from "@gravity-ui/uikit";
 
 import type { PublicPet } from "@/lib/pets/types";
@@ -10,6 +11,7 @@ type PetMetaListProps = Pick<
   | "slug"
   | "kind"
   | "ownerName"
+  | "ownerProfileSlug"
   | "createdAt"
   | "approvedAt"
   | "tags"
@@ -19,6 +21,7 @@ export function PetMetaList({
   slug,
   kind,
   ownerName,
+  ownerProfileSlug,
   createdAt,
   approvedAt,
   tags,
@@ -30,7 +33,11 @@ export function PetMetaList({
       </DefinitionList.Item>
       <DefinitionList.Item name="Kind">{kind}</DefinitionList.Item>
       <DefinitionList.Item name="Author">
-        {ownerName ?? "Anonymous"}
+        {ownerProfileSlug ? (
+          <Link href={`/users/${ownerProfileSlug}`}>{ownerName ?? "Anonymous"}</Link>
+        ) : (
+          ownerName ?? "Anonymous"
+        )}
       </DefinitionList.Item>
       <DefinitionList.Item name="Submitted">
         {formatUtcDateTime(createdAt)}

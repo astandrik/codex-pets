@@ -10,6 +10,7 @@ import { WebMCPRegistrar } from "@/components/WebMCP/WebMCPRegistrar";
 import { Providers } from "@/app/Providers";
 import YandexMetrika from "@/app/YandexMetrika";
 import { getPublicOrigin, toPublicUrl, withBasePath } from "@/lib/base-path";
+import { serializeJsonLd } from "@/lib/json-ld";
 import {
   getAgentResourceAlternateTypes,
   getSiteSocialImagePath,
@@ -100,7 +101,7 @@ export default function RootLayout({
       <body className={rootClassName}>
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(websiteJsonLd) }}
         />
         <Providers>
           <WebMCPRegistrar />

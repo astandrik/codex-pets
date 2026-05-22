@@ -35,6 +35,7 @@ export type AgentPet = {
   status: "approved";
   author: {
     name: string;
+    profileUrl: string | null;
   };
   pageUrl: string;
   petJsonUrl: string;
@@ -108,6 +109,9 @@ export function createAgentPet(pet: PublicPet): AgentPet {
     status: "approved",
     author: {
       name: pet.ownerName ?? "Anonymous",
+      profileUrl: pet.ownerProfileSlug
+        ? toPublicUrl(`/users/${encodeURIComponent(pet.ownerProfileSlug)}`)
+        : null,
     },
     pageUrl,
     petJsonUrl,

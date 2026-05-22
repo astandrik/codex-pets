@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 
+import { listPublicUserProfiles } from "@/lib/auth/repository";
 import { toPublicUrl } from "@/lib/base-path";
 import { listApprovedPets } from "@/lib/pets/repository";
 
@@ -7,7 +8,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const pets = await listApprovedPets();
+  const [pets, profiles] = await Promise.all([
+    listApprovedPets(),
+    listPublicUserProfiles(),
+  ]);
   const generatedAt = new Date();
 
   const staticEntries: MetadataRoute.Sitemap = [
@@ -50,5 +54,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.8,
   }));
 
-  return [...staticEntries, ...petEntries];
+  const profileEntries: MetadataRoute.Sitemap = profiles.map((profile) => ({
+    url: toPublicUrl(`/users/${profile.profileSlug}`),
+    lastModified: new Date(profile.updatedAt || profile.createdAt),
+    changeFrequency: "weekly",
+    priority: 0.6,
+  }));
+
+  return [...staticEntries, ...petEntries, ...profileEntries];
 }

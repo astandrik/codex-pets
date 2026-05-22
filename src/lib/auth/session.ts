@@ -10,6 +10,7 @@ export type AppPrincipal = {
   userId: string;
   email: string | null;
   name: string | null;
+  profileSlug?: string | null;
   role: "user" | "admin";
 };
 
@@ -39,7 +40,7 @@ export async function getCurrentPrincipal(): Promise<AppPrincipal | null> {
     const email = process.env.AUTH_SINGLE_USER_EMAIL?.trim() || null;
     const name =
       process.env.AUTH_SINGLE_USER_NAME?.trim() || email?.split("@")[0] || userId;
-    return { userId, email, name, role: "admin" };
+    return { userId, email, name, profileSlug: null, role: "admin" };
   }
 
   if (mode === "app-session") {
@@ -65,6 +66,7 @@ export async function getCurrentPrincipal(): Promise<AppPrincipal | null> {
       userId: user.userId,
       email: user.email,
       name: user.displayName || user.email.split("@")[0] || user.userId,
+      profileSlug: user.profileSlug || null,
       role: user.role,
     };
   }
@@ -80,7 +82,7 @@ export async function getCurrentPrincipal(): Promise<AppPrincipal | null> {
     requestHeaders.get("x-remote-name")?.trim() || email?.split("@")[0] || userId;
   const role =
     email && getRoleForEmail(email.toLowerCase()) === "admin" ? "admin" : "user";
-  return { userId, email, name, role };
+  return { userId, email, name, profileSlug: null, role };
 }
 
 export function isAdminUser(

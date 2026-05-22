@@ -32,6 +32,7 @@ export type GenerationRequestRow = {
   prompt: string;
   contactEmail: string;
   requesterName: string | null;
+  requesterProfileSlug: string | null;
   linkedPetSlug: string | null;
   referenceImage: PetGenerationRequestReferenceImage | null;
   adminNote: string | null;
@@ -112,7 +113,13 @@ export function GenerationRequestsTable({ rows }: GenerationRequestsTableProps) 
             <Text variant="body-2">{row.contactEmail}</Text>
             {row.requesterName ? (
               <Text variant="caption-2" color="secondary">
-                {row.requesterName}
+                {row.requesterProfileSlug ? (
+                  <Link href={`/users/${row.requesterProfileSlug}`}>
+                    {row.requesterName}
+                  </Link>
+                ) : (
+                  row.requesterName
+                )}
               </Text>
             ) : null}
           </Flex>

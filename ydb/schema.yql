@@ -38,12 +38,37 @@ CREATE TABLE codex_users (
   email_lower Utf8 NOT NULL,
   password_hash Utf8 NOT NULL,
   display_name Utf8 NOT NULL,
+  profile_slug Utf8 NOT NULL,
+  bio Utf8 NOT NULL,
+  website_url Utf8 NOT NULL,
+  github_url Utf8 NOT NULL,
+  linkedin_url Utf8 NOT NULL,
+  avatar_id Utf8 NOT NULL,
   role Utf8 NOT NULL,
   status Utf8 NOT NULL,
   email_verified_at Utf8 NOT NULL,
   created_at Utf8 NOT NULL,
   updated_at Utf8 NOT NULL,
   PRIMARY KEY (user_id)
+);
+
+CREATE TABLE codex_user_avatars (
+  avatar_id Utf8 NOT NULL,
+  user_id Utf8 NOT NULL,
+  content_type Utf8 NOT NULL,
+  size_bytes Uint32 NOT NULL,
+  image_bytes String NOT NULL,
+  created_at Utf8 NOT NULL,
+  updated_at Utf8 NOT NULL,
+  PRIMARY KEY (avatar_id)
+);
+
+CREATE TABLE codex_user_profile_slugs (
+  profile_slug Utf8 NOT NULL,
+  user_id Utf8 NOT NULL,
+  created_at Utf8 NOT NULL,
+  updated_at Utf8 NOT NULL,
+  PRIMARY KEY (profile_slug)
 );
 
 CREATE TABLE codex_sessions (

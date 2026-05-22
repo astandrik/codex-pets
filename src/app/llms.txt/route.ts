@@ -17,8 +17,12 @@ export async function GET(): Promise<Response> {
       pet.tags.length > 0
         ? ` Tags: ${pet.tags.map(formatInlineText).join(", ")}.`
         : "";
+    const author =
+      pet.ownerProfileSlug && pet.ownerName
+        ? ` By [${formatLinkText(pet.ownerName)}](${toPublicUrl(`/users/${pet.ownerProfileSlug}`)}).`
+        : "";
 
-    return `- [${formatLinkText(pet.displayName)}](${toPublicUrl(`/pets/${pet.slug}`)}): Approved ${pet.kind} Codex pet pack.${tags}`;
+    return `- [${formatLinkText(pet.displayName)}](${toPublicUrl(`/pets/${pet.slug}`)}): Approved ${pet.kind} Codex pet pack.${author}${tags}`;
   });
   const omittedNote =
     pets.length > listedPets.length
@@ -40,6 +44,7 @@ export async function GET(): Promise<Response> {
       "- Public gallery and approved pet pages are intended for search and AI retrieval.",
       "- Admin, account, and API mutation routes are not intended as retrieval sources.",
       "- User-submitted pet pages are moderated before they appear in the public gallery.",
+      "- Public user pages list approved pet packs for a creator handle.",
       `- Generated at ${generatedAt}.`,
       "",
       "## Core pages",
@@ -49,6 +54,7 @@ export async function GET(): Promise<Response> {
       `- [Agents](${toPublicUrl("/agents")}): Connect coding agents through MCP or the HTTP contract.`,
       `- [Request a pet](${toPublicUrl("/request")}): Send a private text brief and optional PNG, JPEG, or WebP reference image up to 5 MB for admins to review and fulfill manually.`,
       `- [Submit a pet](${toPublicUrl("/submit")}): Upload a ZIP or pet.json plus spritesheet for moderation.`,
+      `- Public user profile pages: ${toPublicUrl("/users/{handle}")}. Replace {handle} with a profile handle linked from approved pets.`,
       "",
       "## Machine-readable resources",
       "",

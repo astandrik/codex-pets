@@ -25,6 +25,7 @@ export type SubmissionRow = {
   status: ApprovalStatus;
   createdAt: string;
   ownerName: string | null;
+  ownerProfileSlug: string | null;
   contactEmail: string | null;
 };
 
@@ -72,10 +73,18 @@ export function SubmissionsTable({ rows }: SubmissionsTableProps) {
       {
         id: "owner",
         name: "Submitted by",
-        template: (row) =>
-          row.ownerName ?? row.contactEmail ?? (
+        template: (row) => {
+          if (row.ownerProfileSlug) {
+            return (
+              <Link href={`/users/${row.ownerProfileSlug}`}>
+                {row.ownerName ?? row.ownerProfileSlug}
+              </Link>
+            );
+          }
+          return row.ownerName ?? row.contactEmail ?? (
             <Text color="secondary">anonymous</Text>
-          ),
+          );
+        },
         width: 200,
       },
       {
