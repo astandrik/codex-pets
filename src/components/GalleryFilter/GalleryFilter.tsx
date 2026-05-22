@@ -17,6 +17,7 @@ import {
   normalizeGalleryTags,
   parseGalleryKind,
 } from "@/lib/pets/gallery-filters";
+import { trackGoal } from "@/lib/metrics/yandex";
 import type { PetKind } from "@/lib/pets/types";
 import "./GalleryFilter.scss";
 
@@ -64,10 +65,19 @@ export function GalleryFilter({
   }
 
   function onToggleTag(tag: string) {
-    const nextTags = activeTags.has(tag)
+    const wasSelected = activeTags.has(tag);
+    const nextTags = wasSelected
       ? tags.filter((value) => value !== tag)
       : normalizeGalleryTags([...tags, tag]);
     setTags(nextTags);
+    trackGoal("gallery_tag_filter_toggle", {
+      action: wasSelected ? "remove" : "add",
+      tag,
+      tags: nextTags,
+      tagCount: nextTags.length,
+      kind,
+      hasQuery: Boolean(query.trim()),
+    });
     router.push(buildGalleryHref({ query, kind, tags: nextTags }), {
       scroll: false,
     });
