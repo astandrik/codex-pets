@@ -26,12 +26,19 @@ const GITHUB_REPOSITORY_URL = "https://github.com/astandrik/codex-pets";
 const NPM_PACKAGE_URL = "https://www.npmjs.com/package/@astandrik/codex-pets";
 const LOCAL_YDB_TOOLKIT_URL = "https://github.com/astandrik/local-ydb-toolkit";
 const YDB_URL = "https://ydb.tech/";
+const YDB_QDRANT_URL = "https://ydb-qdrant.tech/";
+const GRAVITY_AI_URL = "https://gravity-ai.ydb-qdrant.tech/";
 
 const packFacts = [
   "pet.json metadata",
   "spritesheet.webp or spritesheet.png",
   "8x9 atlas at 1536x1872",
   "reviewed before public listing",
+];
+
+const localYdbProjects = [
+  { href: YDB_QDRANT_URL, label: "YDB Qdrant" },
+  { href: GRAVITY_AI_URL, label: "Gravity AI" },
 ];
 
 const faqs = [
@@ -218,6 +225,29 @@ export default function AboutPage() {
             captures the reusable local YDB workflow used around these
             projects.
           </Text>
+        </article>
+
+        <article className="about-section about-local-ydb-projects">
+          <Text variant="display-1" as="h2">
+            Other projects that use local-ydb
+          </Text>
+          <Text variant="body-2" color="secondary">
+            The same reusable local YDB workflow also supports these sibling
+            projects:
+          </Text>
+          <ul className="about-local-ydb-projects__list">
+            {localYdbProjects.map((project) => (
+              <li key={project.href}>
+                <a
+                  href={project.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {project.label}
+                </a>
+              </li>
+            ))}
+          </ul>
         </article>
 
         <article className="about-section about-agent">

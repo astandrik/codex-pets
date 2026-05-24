@@ -145,6 +145,29 @@
   }
 }
 
+.about-local-ydb-projects {
+  &__list {
+    display: grid;
+    gap: var(--spacing-sm);
+    max-width: 760px;
+    padding: 0;
+    margin: var(--spacing-lg) 0 0;
+    list-style: none;
+  }
+
+  &__list li {
+    min-width: 0;
+    padding: var(--spacing-sm) 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--muted-strong);
+  }
+
+  &__list a {
+    overflow-wrap: anywhere;
+    font-weight: 500;
+  }
+}
+
 .about-agent {
   &__list {
     display: grid;
