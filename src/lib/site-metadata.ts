@@ -129,6 +129,10 @@ export function getAgentResourceAlternateTypes(): AlternateTypes {
   return {
     "application/json": [
       {
+        title: "OpenAPI JSON",
+        url: withBasePath("/openapi.json"),
+      },
+      {
         title: "Public manifest JSON",
         url: withBasePath("/api/manifest"),
       },
@@ -145,6 +149,12 @@ export function getAgentResourceAlternateTypes(): AlternateTypes {
       {
         title: "Approved pet search TOON",
         url: withBasePath("/api/pets.toon"),
+      },
+    ],
+    "text/plain": [
+      {
+        title: "Full LLM context",
+        url: withBasePath("/llms-full.txt"),
       },
     ],
   };

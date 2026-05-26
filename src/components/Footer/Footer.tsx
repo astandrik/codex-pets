@@ -59,6 +59,18 @@ export function Footer() {
           <Link href="/about" className="footer__link">
             About
           </Link>
+          <Link href="/developers" className="footer__link">
+            Developers
+          </Link>
+          <Link href="/docs/api" className="footer__link">
+            API docs
+          </Link>
+          <Link href="/openapi.json" className="footer__link">
+            OpenAPI
+          </Link>
+          <Link href="/llms-full.txt" className="footer__link">
+            llms-full.txt
+          </Link>
           <Link href="/api/manifest" className="footer__link">
             Manifest
           </Link>

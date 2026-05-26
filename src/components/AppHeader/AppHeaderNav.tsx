@@ -86,6 +86,16 @@ export function AppHeaderNav() {
             About
           </Link>
         </li>
+        <li>
+          <Link href="/agents" prefetch={false} {...linkProps("/agents")}>
+            Agents
+          </Link>
+        </li>
+        <li>
+          <Link href="/developers" prefetch={false} {...linkProps("/developers")}>
+            Developers
+          </Link>
+        </li>
         {principal ? (
           <>
             <li>
