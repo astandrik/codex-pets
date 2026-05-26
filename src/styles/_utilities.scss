@@ -254,6 +254,60 @@
   }
 }
 
+.home-ask-ai {
+  margin-top: var(--spacing-3xl);
+}
+
+.home-recommendations {
+  margin-top: var(--spacing-3xl);
+
+  &__groups {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--spacing-md);
+
+    @include md {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  &__group {
+    display: grid;
+    min-width: 0;
+    gap: var(--spacing-md);
+    padding: var(--spacing-lg);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-lg);
+    background: rgba(255, 255, 255, 0.035);
+  }
+
+  &__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+  }
+
+  &__link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    max-width: 100%;
+    padding: 0 var(--spacing-md);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.035);
+    color: var(--g-color-text-primary);
+    font-size: 14px;
+    font-weight: 650;
+    text-decoration: none;
+
+    &:hover {
+      border-color: var(--g-color-line-brand);
+      background: rgba(59, 130, 246, 0.14);
+    }
+  }
+}
+
 .pet-strip-section {
   margin-bottom: var(--spacing-2xl);
 }
