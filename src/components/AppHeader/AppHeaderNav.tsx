@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button, Flex, Label } from "@/components/GravityUI/GravityUI";
@@ -71,6 +71,14 @@ export function AppHeaderNav() {
     } as const;
   };
 
+  const menuItemProps = (href: string) => {
+    const active = isActive(href);
+    return {
+      className: `app-header__menu-item${active ? " app-header__menu-item_active" : ""}`,
+      "aria-current": active ? "page" : undefined,
+    } as const;
+  };
+
   return (
     <Flex
       as="nav"
@@ -97,43 +105,56 @@ export function AppHeaderNav() {
           </Link>
         </li>
         {principal ? (
-          <>
-            <li>
+          <li>
+            <HeaderMenu
+              label="My"
+              isActive={
+                isActive("/profile") ||
+                isActive("/my-pets") ||
+                isActive("/my-requests")
+              }
+            >
               <Link
                 href="/profile"
                 prefetch={false}
-                {...linkProps("/profile")}
+                {...menuItemProps("/profile")}
               >
                 Profile
               </Link>
-            </li>
-            <li>
               <Link
                 href="/my-pets"
                 prefetch={false}
-                {...linkProps("/my-pets")}
+                {...menuItemProps("/my-pets")}
               >
                 My pets
               </Link>
-            </li>
-            <li>
               <Link
                 href="/my-requests"
                 prefetch={false}
-                {...linkProps("/my-requests")}
+                {...menuItemProps("/my-requests")}
               >
                 My requests
               </Link>
-            </li>
-          </>
+            </HeaderMenu>
+          </li>
         ) : null}
         {principal && isAdmin ? (
-          <>
-            <li>
+          <li>
+            <HeaderMenu
+              label="Admin"
+              isActive={
+                isActive("/admin/submissions") || isActive("/admin/requests")
+              }
+              badge={
+                pendingReviewCount + openRequestCount > 0
+                  ? pendingReviewCount + openRequestCount
+                  : null
+              }
+            >
               <Link
                 href="/admin/submissions"
                 prefetch={false}
-                {...linkProps("/admin/submissions", "app-header__review-link")}
+                {...menuItemProps("/admin/submissions")}
               >
                 <span>Review</span>
                 <Label
@@ -143,12 +164,10 @@ export function AppHeaderNav() {
                   {pendingReviewCount}
                 </Label>
               </Link>
-            </li>
-            <li>
               <Link
                 href="/admin/requests"
                 prefetch={false}
-                {...linkProps("/admin/requests", "app-header__review-link")}
+                {...menuItemProps("/admin/requests")}
               >
                 <span>Requests</span>
                 <Label
@@ -158,8 +177,8 @@ export function AppHeaderNav() {
                   {openRequestCount}
                 </Label>
               </Link>
-            </li>
-          </>
+            </HeaderMenu>
+          </li>
         ) : null}
       </ul>
 
@@ -217,5 +236,72 @@ export function AppHeaderNav() {
         </Button>
       </div>
     </Flex>
+  );
+}
+
+type HeaderMenuProps = {
+  label: string;
+  isActive: boolean;
+  badge?: number | null;
+  children: ReactNode;
+};
+
+function HeaderMenu({ label, isActive, badge, children }: HeaderMenuProps) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointer = (event: MouseEvent) => {
+      if (!wrapperRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    document.addEventListener("mousedown", handlePointer);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handlePointer);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  const triggerClass = `app-header__link app-header__menu-trigger${
+    isActive ? " app-header__link_active" : ""
+  }${open ? " app-header__menu-trigger_open" : ""}`;
+
+  return (
+    <div className="app-header__menu" ref={wrapperRef}>
+      <button
+        type="button"
+        className={triggerClass}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span>{label}</span>
+        {badge != null ? (
+          <Label theme="warning" size="s">
+            {badge}
+          </Label>
+        ) : null}
+        <span className="app-header__menu-caret" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+      {open ? (
+        <div
+          className="app-header__menu-popover"
+          role="menu"
+          onClick={() => setOpen(false)}
+        >
+          {children}
+        </div>
+      ) : null}
+    </div>
   );
 }
