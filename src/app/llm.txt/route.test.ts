@@ -75,6 +75,11 @@ describe("GET /llm.txt", () => {
       expect(body).toContain("Public pet search JSON");
       expect(body).toContain("Public pet search TOON");
       expect(body).toContain("MCP endpoint");
+      expect(body).toContain("Full LLM context");
+      expect(body).toContain("OpenAPI JSON");
+      expect(body).toContain("Developer portal");
+      expect(body).toContain("API docs");
+      expect(body).toContain("MCP Registry metadata");
       expect(body).toContain("Pet request page");
       expect(body).toContain("Submit a pet");
       expect(body).toContain(

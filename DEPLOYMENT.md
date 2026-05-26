@@ -252,6 +252,10 @@ Current app behavior:
 - `robots.txt` served by the app
 - dynamic `sitemap.xml`
 - dynamic `llms.txt` with `/llm.txt` alias
+- dynamic `llms-full.txt`
+- OpenAPI JSON at `/openapi.json` and `/api/openapi.json`
+- indexed developer resources at `/developers`, `/docs/api`, and selected
+  guide pages
 - MCP Registry metadata at `/server.json` and `/.well-known/mcp/server.json`
 - MCP Registry HTTP domain auth at `/.well-known/mcp-registry-auth`
 - approved pets automatically appear in `sitemap.xml` without cron or rebuild
@@ -278,6 +282,13 @@ curl -I https://example.com/codex-pets/robots.txt
 curl -I https://example.com/codex-pets/sitemap.xml
 curl -I https://example.com/codex-pets/llms.txt
 curl -I https://example.com/codex-pets/llm.txt
+curl -I https://example.com/codex-pets/llms-full.txt
+curl -I https://example.com/codex-pets/openapi.json
+curl -I https://example.com/codex-pets/api/openapi.json
+curl -I https://example.com/codex-pets/developers
+curl -I https://example.com/codex-pets/docs/api
+curl -I https://example.com/codex-pets/guides/best-codex-pets-for-ai-coding-agents
+curl -I https://example.com/codex-pets/guides/codex-pets-vs-vscode-pets
 curl -I https://example.com/codex-pets/server.json
 curl -I https://example.com/codex-pets/.well-known/mcp/server.json
 curl -I https://example.com/codex-pets/.well-known/mcp-registry-auth

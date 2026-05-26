@@ -15,9 +15,10 @@ Public site: https://pets.ydb-qdrant.tech/.
 - local-ydb / YDB native gRPC via `ydb-sdk`
 - App-owned email+password auth with YDB-backed users and sessions
 - Pet assets stored in YDB as binary blobs
-- Dynamic `robots.txt`, `sitemap.xml`, and `llms.txt` with `/llm.txt` alias
-- Agent-facing HTTP access through `llms.txt` / `llm.txt`, `/mcp`, JSON routes,
-  and TOON mirrors for core registry data
+- Dynamic `robots.txt`, `sitemap.xml`, `llms.txt`, `llms-full.txt`, and
+  OpenAPI JSON
+- Agent-facing HTTP access through `llms.txt` / `llm.txt`, `/llms-full.txt`,
+  `/mcp`, JSON routes, and TOON mirrors for core registry data
 - Optional read-only browser WebMCP tools in supported browser runtimes
 - Yandex Metrika using the same counter as `ydb-qdrant-ui` (`104844437`),
   with optional server-side aggregate MCP metrics
@@ -66,6 +67,9 @@ Available MCP tools:
 
 HTTP fallback routes are public too:
 
+- `/openapi.json`
+- `/api/openapi.json`
+- `/llms-full.txt`
 - `/api/manifest`
 - `/api/manifest.toon`
 - `/api/pets`
@@ -269,6 +273,14 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - `llms.txt` is dynamic and provides a curated AI-readable map of the gallery,
   manifest, and approved pet pages. `/llm.txt` is a direct plain-text alias for
   fetchers that request the singular filename.
+- `llms-full.txt` is dynamic and provides expanded AI-readable docs with API
+  reference links, auth notes, examples, and webhooks status.
+- `/openapi.json` is the canonical OpenAPI 3.1 specification for the public
+  agent/developer contract subset. It intentionally omits public metric
+  mutation and download redirect routes. `/api/openapi.json` is an alias for
+  scanners that probe predictable API paths.
+- `/developers` and `/docs/api` are indexed developer-resource pages for API,
+  OpenAPI, MCP, auth, and webhooks discoverability.
 - `/mcp` is a public read-only Streamable HTTP MCP server for coding agents.
   Codex can connect with:
   `codex mcp add codexPets --url https://pets.ydb-qdrant.tech/mcp`.
@@ -282,6 +294,11 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
   - `/mcp` — Streamable HTTP MCP endpoint with read-only tools:
     `search_pets`, `get_pet`, `get_install_instructions`, `get_badge_code`,
     `get_embed_code`, `get_card_code`, and `get_pet_request_info`
+  - `/openapi.json` and `/api/openapi.json` — OpenAPI 3.1 public
+    agent/developer contract subset
+  - `/llms-full.txt` — expanded LLM-readable API, auth, MCP, package, and
+    webhooks documentation
+  - `/developers` and `/docs/api` — developer portal and API docs pages
   - `/server.json` and `/.well-known/mcp/server.json` — MCP Registry metadata
     pointing to the public Streamable HTTP remote
   - `/.well-known/mcp-registry-auth` — public MCP Registry HTTP auth record
@@ -346,7 +363,14 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - `/admin/requests` — admin pet generation request queue
 - `/pets/[slug]` — pet detail page
 - `/agents` — agent and MCP connection guide
+- `/developers` — Codex Pets Developer Portal
+- `/docs/api` — Codex Pets API docs
+- `/guides/best-codex-pets-for-ai-coding-agents` — category guide for Codex
+  pet selection
+- `/guides/codex-pets-vs-vscode-pets` — comparison guide for editor pet use
+  cases
 - `/mcp` — public read-only Streamable HTTP MCP endpoint
+- `/openapi.json`, `/api/openapi.json` — public OpenAPI specification
 - `/server.json`, `/.well-known/mcp/server.json` — MCP Registry metadata
 - `/api/manifest` — public agent/CLI manifest
 - `/api/manifest.toon` — TOON mirror of the public manifest
@@ -358,8 +382,8 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
   read-only agent/share JSON
 - `/api/tags.toon` — TOON mirror of approved tag counts
 - `/badge/[slug].svg`, `/card/[slug].gif`, `/embed/[slug]` — share surfaces
-- `/robots.txt`, `/sitemap.xml`, `/llms.txt`, `/llm.txt` — SEO and
-  AI-readable outputs
+- `/robots.txt`, `/sitemap.xml`, `/llms.txt`, `/llm.txt`, `/llms-full.txt` —
+  SEO and AI-readable outputs
 
 ## Agent-facing checks
 
@@ -372,10 +396,17 @@ curl -I http://localhost:3000/api/pets
 curl -I http://localhost:3000/api/pets.toon
 curl -I http://localhost:3000/api/manifest
 curl -I http://localhost:3000/api/manifest.toon
+curl -I http://localhost:3000/openapi.json
+curl -I http://localhost:3000/api/openapi.json
 curl -I http://localhost:3000/api/tags
 curl -I http://localhost:3000/api/tags.toon
 curl -I http://localhost:3000/llms.txt
 curl -I http://localhost:3000/llm.txt
+curl -I http://localhost:3000/llms-full.txt
+curl -I http://localhost:3000/developers
+curl -I http://localhost:3000/docs/api
+curl -I http://localhost:3000/guides/best-codex-pets-for-ai-coding-agents
+curl -I http://localhost:3000/guides/codex-pets-vs-vscode-pets
 curl -i http://localhost:3000/mcp
 ```
 
