@@ -14,7 +14,14 @@ import {
   Plus,
   Star,
 } from "@gravity-ui/icons";
+import Link from "next/link";
+import type { ReactNode } from "react";
 
+import { AskAIPanel } from "@/components/AskAI/AskAIPanel";
+import {
+  ASK_AI_HOME,
+  ASK_AI_PRODUCT_NAME,
+} from "@/components/AskAI/ask-ai-content";
 import { GalleryFilter } from "@/components/GalleryFilter/GalleryFilter";
 import {
   HomeHeroPetPicker,
@@ -23,6 +30,7 @@ import {
 import { PetCard } from "@/components/PetCard/PetCard";
 import { withBasePath } from "@/lib/base-path";
 import { pickRandomHeroPetIndex } from "@/components/HomePage/home-hero-random";
+import { buildHomeRecommendationEntryPoints } from "@/components/HomePage/recommendation-entry-points";
 import type { PetKind, PublicPetSummary } from "@/lib/pets/types";
 
 type HomePageProps = {
@@ -50,6 +58,11 @@ export function HomePage({
   const initialHeroPetIndex = pickRandomHeroPetIndex(heroPets.length) ?? 0;
   const hasActiveFilters =
     Boolean(query) || kind !== "all" || selectedTags.length > 0;
+  const recommendationEntryPoints = buildHomeRecommendationEntryPoints(pets);
+  const hasRecommendationEntryPoints =
+    recommendationEntryPoints.styleTags.length > 0 ||
+    recommendationEntryPoints.popularPets.length > 0 ||
+    recommendationEntryPoints.recentPets.length > 0;
 
   return (
     <Container as="main" maxWidth="xl" gutters={5} className="page-shell">
@@ -128,6 +141,74 @@ export function HomePage({
         </Flex>
       </Card>
 
+      <section className="page-section home-ask-ai">
+        <AskAIPanel
+          productName={ASK_AI_PRODUCT_NAME}
+          label={ASK_AI_HOME.label}
+          helperText={ASK_AI_HOME.helperText}
+          prompt={ASK_AI_HOME.prompt}
+          page={ASK_AI_HOME.page}
+          promptVariant={ASK_AI_HOME.promptVariant}
+        />
+      </section>
+
+      {hasRecommendationEntryPoints ? (
+        <section className="page-section home-recommendations">
+          <Flex
+            as="header"
+            className="section-heading"
+            alignItems="center"
+            gap={3}
+            wrap
+          >
+            <Text variant="display-1" as="h2">
+              Find by style
+            </Text>
+          </Flex>
+          <div className="home-recommendations__groups">
+            {recommendationEntryPoints.styleTags.length > 0 ? (
+              <RecommendationGroup title="Styles">
+                {recommendationEntryPoints.styleTags.map((entry) => (
+                  <Link
+                    key={entry.tag}
+                    href={entry.href}
+                    className="home-recommendations__link"
+                  >
+                    #{entry.tag}
+                  </Link>
+                ))}
+              </RecommendationGroup>
+            ) : null}
+            {recommendationEntryPoints.popularPets.length > 0 ? (
+              <RecommendationGroup title="Popular">
+                {recommendationEntryPoints.popularPets.map((pet) => (
+                  <Link
+                    key={pet.slug}
+                    href={pet.href}
+                    className="home-recommendations__link"
+                  >
+                    {pet.displayName}
+                  </Link>
+                ))}
+              </RecommendationGroup>
+            ) : null}
+            {recommendationEntryPoints.recentPets.length > 0 ? (
+              <RecommendationGroup title="Recently added">
+                {recommendationEntryPoints.recentPets.map((pet) => (
+                  <Link
+                    key={pet.slug}
+                    href={pet.href}
+                    className="home-recommendations__link"
+                  >
+                    {pet.displayName}
+                  </Link>
+                ))}
+              </RecommendationGroup>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
       <section id="gallery" className="page-section">
         <Flex
           as="header"
@@ -185,6 +266,23 @@ export function HomePage({
         )}
       </section>
     </Container>
+  );
+}
+
+function RecommendationGroup({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="home-recommendations__group">
+      <Text variant="subheader-2" as="h3">
+        {title}
+      </Text>
+      <div className="home-recommendations__links">{children}</div>
+    </div>
   );
 }
 

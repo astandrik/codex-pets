@@ -18,6 +18,12 @@ import {
 } from "@gravity-ui/icons";
 import { unstable_cache } from "next/cache";
 
+import { AskAIPanel } from "@/components/AskAI/AskAIPanel";
+import {
+  ASK_AI_PET_DETAIL,
+  ASK_AI_PRODUCT_NAME,
+  buildPetDetailAskAIPrompt,
+} from "@/components/AskAI/ask-ai-content";
 import { PetDeleteGate } from "@/components/PetDeleteAction/PetDeleteGate";
 import { PetBreadcrumbs } from "@/components/PetDetails/PetBreadcrumbs";
 import { InstallCommandButton } from "@/components/InstallCommand/InstallCommandButton";
@@ -145,6 +151,7 @@ export default async function PetPage({ params }: PetPageProps) {
   const petJsonUrl = toPublicAssetUrl(pet.petJsonUrl);
   const spritesheetUrl = toPublicAssetUrl(pet.spritesheetUrl);
   const zipUrl = toPublicAssetUrl(pet.zipUrl);
+  const petPageUrl = toPublicUrl(`/pets/${encodeURIComponent(pet.slug)}`);
   const agentPet =
     pet.status === "approved"
       ? createAgentPet({
@@ -292,6 +299,17 @@ export default async function PetPage({ params }: PetPageProps) {
               tags={pet.tags}
             />
           </Card>
+          {agentPet ? (
+            <AskAIPanel
+              productName={ASK_AI_PRODUCT_NAME}
+              label={ASK_AI_PET_DETAIL.label}
+              helperText={ASK_AI_PET_DETAIL.helperText}
+              prompt={buildPetDetailAskAIPrompt(petPageUrl)}
+              page={ASK_AI_PET_DETAIL.page}
+              promptVariant={ASK_AI_PET_DETAIL.promptVariant}
+              petSlug={pet.slug}
+            />
+          ) : null}
           {agentPet ? (
             <PetSharePanel
               slug={pet.slug}

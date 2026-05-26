@@ -8,6 +8,11 @@ import {
   Text,
 } from "@/components/GravityUI/GravityUI";
 
+import { AskAIPanel } from "@/components/AskAI/AskAIPanel";
+import {
+  ASK_AI_AGENTS,
+  ASK_AI_PRODUCT_NAME,
+} from "@/components/AskAI/ask-ai-content";
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import { serializeJsonLd } from "@/lib/json-ld";
 import {
@@ -112,6 +117,14 @@ export default function AgentsPage() {
         <pre>
           <code>{configToml}</code>
         </pre>
+        <AskAIPanel
+          productName={ASK_AI_PRODUCT_NAME}
+          label={ASK_AI_AGENTS.label}
+          helperText={ASK_AI_AGENTS.helperText}
+          prompt={ASK_AI_AGENTS.prompt}
+          page={ASK_AI_AGENTS.page}
+          promptVariant={ASK_AI_AGENTS.promptVariant}
+        />
       </section>
 
       <section className="page-section">

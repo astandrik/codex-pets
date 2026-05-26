@@ -1,5 +1,10 @@
 import type { Metadata } from "next";
 
+import { AskAIPanel } from "@/components/AskAI/AskAIPanel";
+import {
+  ASK_AI_PRODUCT_NAME,
+  ASK_AI_REQUEST,
+} from "@/components/AskAI/ask-ai-content";
 import { Container, Flex, Label, Text } from "@/components/GravityUI/GravityUI";
 import { PetRequestForm } from "@/components/PetRequestForm/PetRequestForm";
 import { getCurrentPrincipal } from "@/lib/auth/session";
@@ -53,6 +58,16 @@ export default async function RequestPage() {
           linked from the admin queue after they are uploaded.
         </Text>
       </Flex>
+      <section className="page-section">
+        <AskAIPanel
+          productName={ASK_AI_PRODUCT_NAME}
+          label={ASK_AI_REQUEST.label}
+          helperText={ASK_AI_REQUEST.helperText}
+          prompt={ASK_AI_REQUEST.prompt}
+          page={ASK_AI_REQUEST.page}
+          promptVariant={ASK_AI_REQUEST.promptVariant}
+        />
+      </section>
       <section className="page-section">
         <PetRequestForm
           defaultContactEmail={principal?.email ?? null}

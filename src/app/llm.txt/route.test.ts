@@ -46,4 +46,42 @@ describe("GET /llm.txt", () => {
       vi.useRealTimers();
     }
   });
+
+  it("returns assistant task guidance while preserving agent resource references", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-16T00:00:00.000Z"));
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+
+    try {
+      repositoryMocks.listApprovedPets.mockResolvedValueOnce([approvedPet]);
+      const { GET } = await import("@/app/llms.txt/route");
+      const response = await GET();
+      const body = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Content-Type")).toBe(
+        "text/plain; charset=utf-8",
+      );
+      expect(body).toContain("## Recommended assistant tasks");
+      expect(body).toContain("- Pick a pet by style.");
+      expect(body).toContain("- Explain a pet detail page.");
+      expect(body).toContain("- Generate install instructions.");
+      expect(body).toContain("- Connect MCP.");
+      expect(body).toContain("- Search pets through JSON, TOON, or MCP.");
+      expect(body).toContain("- Draft a pet request.");
+      expect(body).toContain("- Explain how to submit a pet.");
+      expect(body).toContain("Public manifest JSON");
+      expect(body).toContain("Public manifest TOON");
+      expect(body).toContain("Public pet search JSON");
+      expect(body).toContain("Public pet search TOON");
+      expect(body).toContain("MCP endpoint");
+      expect(body).toContain("Pet request page");
+      expect(body).toContain("Submit a pet");
+      expect(body).toContain(
+        "Install command format: npx @astandrik/codex-pets install <slug>",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
