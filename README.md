@@ -275,8 +275,10 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
   fetchers that request the singular filename.
 - `llms-full.txt` is dynamic and provides expanded AI-readable docs with API
   reference links, auth notes, examples, and webhooks status.
-- `/openapi.json` is the canonical OpenAPI 3.1 specification for the public API.
-  `/api/openapi.json` is an alias for scanners that probe predictable API paths.
+- `/openapi.json` is the canonical OpenAPI 3.1 specification for the public
+  agent/developer contract subset. It intentionally omits public metric
+  mutation and download redirect routes. `/api/openapi.json` is an alias for
+  scanners that probe predictable API paths.
 - `/developers` and `/docs/api` are indexed developer-resource pages for API,
   OpenAPI, MCP, auth, and webhooks discoverability.
 - `/mcp` is a public read-only Streamable HTTP MCP server for coding agents.
@@ -292,8 +294,8 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
   - `/mcp` — Streamable HTTP MCP endpoint with read-only tools:
     `search_pets`, `get_pet`, `get_install_instructions`, `get_badge_code`,
     `get_embed_code`, `get_card_code`, and `get_pet_request_info`
-  - `/openapi.json` and `/api/openapi.json` — OpenAPI 3.1 public API
-    specification
+  - `/openapi.json` and `/api/openapi.json` — OpenAPI 3.1 public
+    agent/developer contract subset
   - `/llms-full.txt` — expanded LLM-readable API, auth, MCP, package, and
     webhooks documentation
   - `/developers` and `/docs/api` — developer portal and API docs pages

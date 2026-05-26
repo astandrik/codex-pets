@@ -20,6 +20,8 @@ describe("GET /openapi.json", () => {
     );
     expect(body.openapi).toBe("3.1.0");
     expect(body.info.title).toBe("Codex Pets API");
+    expect(body.info.description).toContain("agent/developer contract subset");
+    expect(body.servers).toEqual([{ url: "https://pets.example" }]);
     expect(body.paths).toHaveProperty("/api/manifest");
   });
 

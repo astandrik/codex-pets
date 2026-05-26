@@ -87,9 +87,9 @@ export default function ApiDocsPage() {
             Codex Pets API docs
           </Text>
           <Text variant="body-2" color="secondary" className="page-section-header__lead">
-            Public endpoints for approved pet discovery, install instructions,
-            share snippets, MCP tools, pet generation requests, and moderated
-            pet submissions.
+            Public agent/developer contract endpoints for approved pet
+            discovery, install instructions, share snippets, MCP tools, pet
+            generation requests, and moderated pet submissions.
           </Text>
           <Flex gap={2} wrap>
             <Button view="action" size="l" href={withBasePath("/openapi.json")}>
@@ -141,7 +141,8 @@ export default function ApiDocsPage() {
           Public read endpoints are unauthenticated. AppSessionCookie and
           ProxyBasic are documented in the OpenAPI security schemes for browser
           account flows and trusted proxy deployments. OAuth 2.0 and webhooks
-          are not currently available.
+          are not currently available. Public metric mutation and download
+          redirect routes are outside this OpenAPI contract.
         </Text>
       </section>
     </Container>

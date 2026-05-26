@@ -33,7 +33,7 @@ export function buildOpenApiSpec() {
       title: "Codex Pets API",
       version: "1.0.0",
       description:
-        `${SITE_DESCRIPTION} Public endpoints expose approved Codex pet registry data, MCP discovery, and public submission workflows for agents and developers.`,
+        `${SITE_DESCRIPTION} This OpenAPI document describes the public agent/developer contract subset: approved registry data, MCP discovery, and public submission workflows. Public metric mutation and download redirect routes are intentionally outside this contract.`,
       contact: {
         name: "Codex Pets",
         url: toPublicUrl("/about"),
@@ -41,7 +41,7 @@ export function buildOpenApiSpec() {
     },
     servers: [
       {
-        url: `${getPublicOrigin()}${withBasePath("/")}`,
+        url: getOpenApiServerUrl(),
       },
     ],
     tags: [
@@ -551,6 +551,11 @@ export function buildOpenApiSpec() {
   };
 
   return spec;
+}
+
+function getOpenApiServerUrl(): string {
+  const basePath = withBasePath("/");
+  return `${getPublicOrigin()}${basePath === "/" ? "" : basePath}`;
 }
 
 const slugSchema = {
