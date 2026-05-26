@@ -152,64 +152,7 @@ export function HomePage({
         />
       </section>
 
-      {hasRecommendationEntryPoints ? (
-        <section className="page-section home-recommendations">
-          <Flex
-            as="header"
-            className="section-heading"
-            alignItems="center"
-            gap={3}
-            wrap
-          >
-            <Text variant="display-1" as="h2">
-              Find by style
-            </Text>
-          </Flex>
-          <div className="home-recommendations__groups">
-            {recommendationEntryPoints.styleTags.length > 0 ? (
-              <RecommendationGroup title="Styles">
-                {recommendationEntryPoints.styleTags.map((entry) => (
-                  <Link
-                    key={entry.tag}
-                    href={entry.href}
-                    className="home-recommendations__link"
-                  >
-                    #{entry.tag}
-                  </Link>
-                ))}
-              </RecommendationGroup>
-            ) : null}
-            {recommendationEntryPoints.popularPets.length > 0 ? (
-              <RecommendationGroup title="Popular">
-                {recommendationEntryPoints.popularPets.map((pet) => (
-                  <Link
-                    key={pet.slug}
-                    href={pet.href}
-                    className="home-recommendations__link"
-                  >
-                    {pet.displayName}
-                  </Link>
-                ))}
-              </RecommendationGroup>
-            ) : null}
-            {recommendationEntryPoints.recentPets.length > 0 ? (
-              <RecommendationGroup title="Recently added">
-                {recommendationEntryPoints.recentPets.map((pet) => (
-                  <Link
-                    key={pet.slug}
-                    href={pet.href}
-                    className="home-recommendations__link"
-                  >
-                    {pet.displayName}
-                  </Link>
-                ))}
-              </RecommendationGroup>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
-
-      <section id="gallery" className="page-section">
+      <section id="gallery" className="page-section home-gallery">
         <Flex
           as="header"
           className="section-heading"
@@ -224,6 +167,64 @@ export function HomePage({
             {filteredPets.length} approved pets
           </span>
         </Flex>
+
+        {hasRecommendationEntryPoints ? (
+          <div className="home-recommendations">
+            <Flex
+              as="header"
+              className="section-heading"
+              alignItems="center"
+              gap={3}
+              wrap
+            >
+              <Text variant="subheader-2" as="h2" className="home-recommendations__title">
+                Find by style
+              </Text>
+            </Flex>
+            <div className="home-recommendations__groups">
+              {recommendationEntryPoints.styleTags.length > 0 ? (
+                <RecommendationGroup title="Styles">
+                  {recommendationEntryPoints.styleTags.map((entry) => (
+                    <Link
+                      key={entry.tag}
+                      href={entry.href}
+                      className="home-recommendations__link"
+                    >
+                      #{entry.tag}
+                    </Link>
+                  ))}
+                </RecommendationGroup>
+              ) : null}
+              {recommendationEntryPoints.popularPets.length > 0 ? (
+                <RecommendationGroup title="Popular">
+                  {recommendationEntryPoints.popularPets.map((pet) => (
+                    <Link
+                      key={pet.slug}
+                      href={pet.href}
+                      className="home-recommendations__link"
+                    >
+                      {pet.displayName}
+                    </Link>
+                  ))}
+                </RecommendationGroup>
+              ) : null}
+              {recommendationEntryPoints.recentPets.length > 0 ? (
+                <RecommendationGroup title="Recently added">
+                  {recommendationEntryPoints.recentPets.map((pet) => (
+                    <Link
+                      key={pet.slug}
+                      href={pet.href}
+                      className="home-recommendations__link"
+                    >
+                      {pet.displayName}
+                    </Link>
+                  ))}
+                </RecommendationGroup>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
         <GalleryFilter
           key={`${query}:${kind}:${selectedTags.join(",")}`}
           defaultQuery={query}
@@ -278,7 +279,7 @@ function RecommendationGroup({
 }) {
   return (
     <div className="home-recommendations__group">
-      <Text variant="subheader-2" as="h3">
+      <Text variant="body-2" as="h3" className="home-recommendations__group-title">
         {title}
       </Text>
       <div className="home-recommendations__links">{children}</div>

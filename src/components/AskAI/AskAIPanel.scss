@@ -1,28 +1,33 @@
 .ask-ai-panel {
-  padding: var(--spacing-xl);
+  padding: var(--spacing-md) var(--spacing-lg);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, 0.045);
 
-  &__header {
+  &__content {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-md);
     min-width: 0;
   }
 
-  &__icon {
-    display: inline-grid;
-    width: 36px;
-    height: 36px;
-    flex: 0 0 36px;
-    place-items: center;
-    border-radius: var(--radius-md);
-    background: rgba(255, 189, 74, 0.12);
-    color: var(--acc);
-  }
-
-  &__copy {
+  &__body {
     display: grid;
+    flex: 1 1 300px;
     min-width: 0;
     gap: var(--spacing-xs);
+  }
+
+  &__title {
+    margin: 0;
+    line-height: 1.25;
+  }
+
+  &__help {
+    margin: 0;
+    max-width: 68ch;
   }
 
   &__links {
@@ -32,23 +37,104 @@
   }
 
   &__link {
-    display: inline-flex;
+    position: relative;
+    display: inline-grid;
     align-items: center;
-    min-height: 36px;
-    max-width: 100%;
-    gap: var(--spacing-xs);
-    padding: 0 var(--spacing-md);
-    border: 1px solid var(--line-strong);
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: var(--radius-md);
-    background: rgba(255, 255, 255, 0.035);
-    color: var(--g-color-text-primary);
-    font-size: 14px;
-    font-weight: 650;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      0 4px 12px rgba(0, 0, 0, 0.12);
     text-decoration: none;
+    transition:
+      border-color 0.18s ease,
+      box-shadow 0.18s ease,
+      transform 0.18s ease;
 
-    &:hover {
-      border-color: var(--g-color-line-brand);
-      background: rgba(59, 130, 246, 0.14);
+    svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    &:hover,
+    &:focus-visible {
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.42);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        0 6px 16px rgba(0, 0, 0, 0.2);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--g-color-line-focus);
+      outline-offset: 3px;
+    }
+
+    &_mint {
+      background: #7fbab0;
+      color: #f8fffc;
+    }
+
+    &_teal {
+      background: #063e52;
+      color: #22d3ee;
+    }
+
+    &_coral {
+      background: #dc8061;
+      color: #fff7ed;
+    }
+
+    &_white {
+      background: #f8fafc;
+      color: #08090b;
+    }
+  }
+
+  &__link-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    border: 0;
+    margin: -1px;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 640px) {
+  .ask-ai-panel {
+    &__content {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    &__body {
+      flex-basis: auto;
+    }
+
+    &__links {
+      gap: var(--spacing-sm);
+      width: 100%;
+      justify-content: flex-start;
+    }
+
+    &__link {
+      width: 40px;
+      height: 40px;
+      flex-basis: 40px;
+
+      svg {
+        width: 20px;
+        height: 20px;
+      }
     }
   }
 }

@@ -1,5 +1,5 @@
 .gallery-filter-card {
-  padding: var(--spacing-2xl);
+  padding: var(--spacing-xl);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-xl);
   background: rgba(255, 255, 255, 0.045);
@@ -22,13 +22,19 @@
 
   &__actions {
     margin-left: auto;
+
+    .g-button__text {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
   }
 
   &__tags {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--spacing-sm);
-    margin-top: var(--spacing-lg);
+    gap: var(--spacing-xs);
+    margin-top: var(--spacing-md);
   }
 
   &__tag {

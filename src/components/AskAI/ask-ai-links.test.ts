@@ -44,4 +44,46 @@ describe("Ask AI provider links", () => {
       },
     ]);
   });
+
+  it("defines compact brand metadata for icon buttons", () => {
+    expect(
+      ASK_AI_PROVIDERS.map((provider) => ({
+        id: provider.id,
+        iconLabel: provider.iconLabel,
+        lobeIconSlug: provider.lobeIconSlug,
+        tone: provider.tone,
+      })),
+    ).toEqual([
+      {
+        id: "chatgpt",
+        iconLabel: "ChatGPT",
+        lobeIconSlug: "openai",
+        tone: "mint",
+      },
+      {
+        id: "perplexity",
+        iconLabel: "Perplexity",
+        lobeIconSlug: "perplexity",
+        tone: "teal",
+      },
+      {
+        id: "claude",
+        iconLabel: "Claude",
+        lobeIconSlug: "claude",
+        tone: "coral",
+      },
+      {
+        id: "google-ai-mode",
+        iconLabel: "Google AI Mode",
+        lobeIconSlug: "gemini",
+        tone: "white",
+      },
+      {
+        id: "grok",
+        iconLabel: "Grok",
+        lobeIconSlug: "grok",
+        tone: "white",
+      },
+    ]);
+  });
 });
