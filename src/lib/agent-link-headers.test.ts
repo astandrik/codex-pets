@@ -1,0 +1,41 @@
+import { describe, expect, it, vi } from "vitest";
+
+import {
+  appendAgentLinkHeaders,
+  getAgentLinkHeaderForPath,
+} from "@/lib/agent-link-headers";
+
+describe("agent link headers", () => {
+  it("builds sitemap, describedby, service-desc, and MCP service links for HTML pages", () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+
+    const header = getAgentLinkHeaderForPath("/");
+
+    expect(header).toContain('<https://pets.example/sitemap.xml>; rel="sitemap"');
+    expect(header).toContain('<https://pets.example/llms.txt>; rel="describedby"');
+    expect(header).toContain('<https://pets.example/openapi.json>; rel="service-desc"');
+    expect(header).toContain('<https://pets.example/mcp>; rel="service"');
+
+    vi.unstubAllEnvs();
+  });
+
+  it("appends agent discovery links to an existing response", () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    const response = new Response("ok", {
+      headers: {
+        Link: '<https://assets.example/feed>; rel="alternate"',
+      },
+    });
+
+    appendAgentLinkHeaders(response.headers, "/docs/api");
+
+    expect(response.headers.get("Link")).toContain(
+      '<https://assets.example/feed>; rel="alternate"',
+    );
+    expect(response.headers.get("Link")).toContain(
+      '<https://pets.example/openapi.json>; rel="service-desc"',
+    );
+
+    vi.unstubAllEnvs();
+  });
+});

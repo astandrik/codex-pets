@@ -18,6 +18,12 @@ describe("robots", () => {
         "/codex-pets/guides/",
         "/codex-pets/llms-full.txt",
         "/codex-pets/openapi.json",
+        "/codex-pets/index.md",
+        "/codex-pets/developers.md",
+        "/codex-pets/docs/api.md",
+        "/codex-pets/auth.md",
+        "/codex-pets/.well-known/mcp",
+        "/codex-pets/.well-known/mcp/server-card.json",
       ]),
     );
     expect(firstRule.disallow).toEqual(

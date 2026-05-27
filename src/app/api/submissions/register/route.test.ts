@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/auth/session", () => ({
   getCurrentPrincipal: vi.fn(),
@@ -27,6 +27,10 @@ import { createPendingPet } from "@/lib/pets/repository";
 import { validateUploadedPackage } from "@/lib/pets/package";
 
 describe("POST /api/submissions/register", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("allows anonymous submissions", async () => {
     vi.mocked(getCurrentPrincipal).mockResolvedValueOnce(null);
     vi.mocked(validateUploadedPackage).mockResolvedValueOnce({
@@ -196,5 +200,38 @@ describe("POST /api/submissions/register", () => {
         contactEmail: "user@example.com",
       }),
     );
+  });
+
+  it("returns structured JSON for package validation failures", async () => {
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce(null);
+    vi.mocked(validateUploadedPackage).mockResolvedValueOnce({
+      ok: false,
+      error: "invalid_zip_contents",
+      message: "ZIP must contain pet.json and spritesheet.webp at the root.",
+    });
+
+    const formData = new FormData();
+    formData.set("zip", new File(["zip"], "pet.zip", { type: "application/zip" }));
+    formData.set("petjson", new File(["{}"], "pet.json", { type: "application/json" }));
+    formData.set(
+      "sprite",
+      new File(["sprite"], "spritesheet.webp", { type: "image/webp" }),
+    );
+
+    const response = await POST(
+      new Request("http://localhost:3000/api/submissions/register", {
+        method: "POST",
+        body: formData,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "invalid_zip_contents",
+      code: "invalid_zip_contents",
+      message: "ZIP must contain pet.json and spritesheet.webp at the root.",
+    });
+    expect(storePetAssetsInYdb).not.toHaveBeenCalled();
+    expect(createPendingPet).not.toHaveBeenCalled();
   });
 });

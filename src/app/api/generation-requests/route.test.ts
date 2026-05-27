@@ -144,6 +144,12 @@ describe("POST /api/generation-requests", () => {
     );
     const invalidTypeResponse = await POST(formRequest(invalidType));
     expect(invalidTypeResponse.status).toBe(400);
+    await expect(invalidTypeResponse.json()).resolves.toMatchObject({
+      error: "invalid_reference_image_type",
+      code: "invalid_reference_image_type",
+      message: "Reference image must be PNG, JPEG, or WebP.",
+      field: "referenceImage",
+    });
 
     const unreadable = baseFormData();
     unreadable.set(
@@ -171,6 +177,12 @@ describe("POST /api/generation-requests", () => {
     const response = await POST(jsonRequest({ prompt: "Missing email" }));
 
     expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "missing_field",
+      code: "missing_field",
+      message: "contactEmail is required.",
+      field: "contactEmail",
+    });
     expect(createGenerationRequest).not.toHaveBeenCalled();
   });
 

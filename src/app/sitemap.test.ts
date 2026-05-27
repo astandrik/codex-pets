@@ -144,6 +144,30 @@ describe("sitemap", () => {
           priority: 0.6,
         },
         {
+          url: "https://pets.example/codex-pets/index.md",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "weekly",
+          priority: 0.6,
+        },
+        {
+          url: "https://pets.example/codex-pets/developers.md",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "weekly",
+          priority: 0.5,
+        },
+        {
+          url: "https://pets.example/codex-pets/docs/api.md",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "weekly",
+          priority: 0.5,
+        },
+        {
+          url: "https://pets.example/codex-pets/auth.md",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "weekly",
+          priority: 0.4,
+        },
+        {
           url: "https://pets.example/codex-pets/llms-full.txt",
           lastModified: "2026-05-22T10:00:00.000Z",
           changeFrequency: "weekly",
@@ -169,6 +193,18 @@ describe("sitemap", () => {
         },
         {
           url: "https://pets.example/codex-pets/.well-known/mcp/server.json",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "weekly",
+          priority: 0.4,
+        },
+        {
+          url: "https://pets.example/codex-pets/.well-known/mcp",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "weekly",
+          priority: 0.4,
+        },
+        {
+          url: "https://pets.example/codex-pets/.well-known/mcp/server-card.json",
           lastModified: "2026-05-22T10:00:00.000Z",
           changeFrequency: "weekly",
           priority: 0.4,

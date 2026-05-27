@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { jsonApiError } from "@/lib/api-error";
 import { createAgentPet, readSafeAgentSlug } from "@/lib/pets/agent-dto";
 import { getApprovedPetBySlug, incrementInstall } from "@/lib/pets/repository";
 
@@ -13,12 +14,22 @@ export async function GET(
   const { slug: rawSlug } = await params;
   const slug = readSafeAgentSlug(rawSlug);
   if (!slug) {
-    return NextResponse.json({ error: "invalid_slug" }, { status: 400 });
+    return jsonApiError("invalid_slug", {
+      status: 400,
+      message: "Pet slug is invalid.",
+      hint: "Use a slug from /api/pets.",
+      field: "slug",
+    });
   }
 
   const pet = await getApprovedPetBySlug(slug);
   if (!pet) {
-    return NextResponse.json({ error: "not_found" }, { status: 404 });
+    return jsonApiError("not_found", {
+      status: 404,
+      message: "Approved pet not found.",
+      hint: "Use /api/pets to list approved pet slugs.",
+      field: "slug",
+    });
   }
 
   const agentPet = createAgentPet(pet);
@@ -41,10 +52,25 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ slug: string }> },
 ): Promise<Response> {
-  const { slug } = await params;
+  const { slug: rawSlug } = await params;
+  const slug = readSafeAgentSlug(rawSlug);
+  if (!slug) {
+    return jsonApiError("invalid_slug", {
+      status: 400,
+      message: "Pet slug is invalid.",
+      hint: "Use a slug from /api/pets.",
+      field: "slug",
+    });
+  }
+
   const pet = await getApprovedPetBySlug(slug);
   if (!pet) {
-    return NextResponse.json({ error: "not_found" }, { status: 404 });
+    return jsonApiError("not_found", {
+      status: 404,
+      message: "Approved pet not found.",
+      hint: "Use /api/pets to list approved pet slugs.",
+      field: "slug",
+    });
   }
 
   await incrementInstall(slug);

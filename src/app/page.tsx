@@ -2,12 +2,21 @@ import type { Metadata } from "next";
 import { HomePage } from "@/components/HomePage/HomePage";
 import { unstable_cache } from "next/cache";
 import {
+  hasGalleryFilters,
   matchesGalleryFilters,
   parseGalleryFilters,
   pickSuggestedGalleryTags,
 } from "@/lib/pets/gallery-filters";
 import { listApprovedPets } from "@/lib/pets/repository";
-import { buildGalleryPageMetadata } from "@/lib/site-metadata";
+import {
+  buildGalleryPageMetadata,
+  getHomepageJsonLdGraph,
+} from "@/lib/site-metadata";
+import { serializeJsonLd } from "@/lib/json-ld";
+import {
+  HOME_GALLERY_LIMIT,
+  sliceHomeGalleryPets,
+} from "@/components/HomePage/recommendation-entry-points";
 import type { PublicPet, PublicPetSummary } from "@/lib/pets/types";
 
 export const runtime = "nodejs";
@@ -39,17 +48,31 @@ export default async function Home({ searchParams }: HomeProps) {
   const filters = parseGalleryFilters(await searchParams);
   const pets = (await getApprovedPetsSnapshot()).map(toPublicPetSummary);
   const filteredPets = pets.filter((pet) => matchesGalleryFilters(pet, filters));
+  const visiblePets = sliceHomeGalleryPets(
+    filteredPets,
+    hasGalleryFilters(filters),
+  );
   const suggestedTags = pickSuggestedGalleryTags(pets, filters.tags);
+  const homepageJsonLd = getHomepageJsonLdGraph(
+    visiblePets.slice(0, HOME_GALLERY_LIMIT),
+  );
 
   return (
-    <HomePage
-      pets={pets}
-      filteredPets={filteredPets}
-      query={filters.query}
-      kind={filters.kind}
-      selectedTags={filters.tags}
-      suggestedTags={suggestedTags}
-    />
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(homepageJsonLd) }}
+      />
+      <HomePage
+        pets={pets}
+        filteredPets={visiblePets}
+        filteredTotal={filteredPets.length}
+        query={filters.query}
+        kind={filters.kind}
+        selectedTags={filters.tags}
+        suggestedTags={suggestedTags}
+      />
+    </>
   );
 }
 

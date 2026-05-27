@@ -41,7 +41,7 @@ describe("GET /llm.txt", () => {
       expect(alias.status).toBe(200);
       expect(alias.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
       expect(aliasBody).toBe(canonicalBody);
-      expect(aliasBody).toContain("# Companion Gallery");
+      expect(aliasBody).toContain("# Codex Pets");
     } finally {
       vi.useRealTimers();
     }

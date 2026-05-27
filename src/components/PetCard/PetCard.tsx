@@ -81,7 +81,7 @@ export function PetCard({ pet, showStatus = false }: PetCardProps) {
             </Label>
           ) : null}
         </Flex>
-        <Text variant="subheader-2" as="h3" ellipsis>
+        <Text variant="subheader-2" as="p" ellipsis>
           {pet.displayName}
         </Text>
         <Text

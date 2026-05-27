@@ -34,6 +34,21 @@ export type GlamaConnectorClaimMetadata = {
   }>;
 };
 
+export type McpServerCard = {
+  name: string;
+  endpoint: string;
+  instructions: string;
+  tools: Array<{
+    name: string;
+    description: string;
+  }>;
+  resources: Array<{
+    title: string;
+    url: string;
+    type: string;
+  }>;
+};
+
 export function buildMcpRegistryServerMetadata(): McpRegistryServerMetadata {
   return {
     $schema: MCP_REGISTRY_SCHEMA_URL,
@@ -57,6 +72,67 @@ export function buildGlamaConnectorClaimMetadata(): GlamaConnectorClaimMetadata 
     maintainers: [
       {
         email: GLAMA_CONNECTOR_MAINTAINER_EMAIL,
+      },
+    ],
+  };
+}
+
+export function buildMcpServerCard(): McpServerCard {
+  return {
+    name: MCP_REGISTRY_SERVER_TITLE,
+    endpoint: toPublicUrl("/mcp"),
+    instructions:
+      "Use this read-only MCP server to search approved Codex pet packs, fetch one approved pet, and generate install, badge, card, or embed snippets. Do not use it for private requests, account actions, moderation, deletes, downloads, or metrics mutations.",
+    tools: [
+      {
+        name: "search_pets",
+        description: "Search approved public Codex pet packs.",
+      },
+      {
+        name: "get_pet",
+        description: "Fetch one sanitized approved pet card.",
+      },
+      {
+        name: "get_install_instructions",
+        description: "Return CLI and manual install instructions.",
+      },
+      {
+        name: "get_badge_code",
+        description: "Return README badge snippets.",
+      },
+      {
+        name: "get_embed_code",
+        description: "Return iframe embed snippets.",
+      },
+      {
+        name: "get_card_code",
+        description: "Return animated README card snippets.",
+      },
+      {
+        name: "get_pet_request_info",
+        description: "Describe the public new-pet request workflow.",
+      },
+    ],
+    resources: [
+      {
+        title: "llms.txt",
+        url: toPublicUrl("/llms.txt"),
+        type: "text/plain",
+      },
+      {
+        title: "OpenAPI JSON",
+        url: toPublicUrl("/openapi.json"),
+        type: "application/json",
+      },
+      {
+        title: "MCP Registry metadata",
+        url: toPublicUrl("/server.json"),
+        type: "application/json",
+      },
+      {
+        title: "MCP App pet browser",
+        url: "ui://codex-pets/pet-browser.html",
+        type: "text/html;profile=mcp-app",
       },
     ],
   };

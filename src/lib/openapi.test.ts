@@ -30,8 +30,14 @@ describe("buildOpenApiSpec", () => {
     expect(spec.paths).toHaveProperty("/api/generation-requests");
     expect(spec.paths).toHaveProperty("/api/submissions/register");
     expect(spec.paths).toHaveProperty("/mcp");
+    expect(spec.paths).toHaveProperty("/.well-known/mcp");
+    expect(spec.paths).toHaveProperty("/.well-known/mcp/server-card.json");
     expect(spec.paths).toHaveProperty("/server.json");
     expect(spec.paths).toHaveProperty("/.well-known/mcp/server.json");
+    expect(spec.paths).toHaveProperty("/index.md");
+    expect(spec.paths).toHaveProperty("/developers.md");
+    expect(spec.paths).toHaveProperty("/docs/api.md");
+    expect(spec.paths).toHaveProperty("/auth.md");
     expect(spec.paths).not.toHaveProperty("/api/pets/{slug}/download");
     expect(spec.paths["/api/pets/{slug}/install"]).not.toHaveProperty("post");
     expect(spec.paths["/api/pets/{slug}"]).not.toHaveProperty("post");
@@ -50,7 +56,45 @@ describe("buildOpenApiSpec", () => {
       },
     });
     expect(spec.paths["/mcp"].post.summary).toContain("MCP");
+    expect(spec.paths["/.well-known/mcp"].post.summary).toContain("MCP");
+    expect(spec.paths["/mcp"].post.responses["403"].content["application/json"].schema).toEqual({
+      $ref: "#/components/schemas/JsonRpcErrorResponse",
+    });
+    expect(spec.paths["/mcp"].post.responses["500"].content["application/json"].schema).toEqual({
+      $ref: "#/components/schemas/JsonRpcErrorResponse",
+    });
+    expect(spec.paths["/mcp"].post.responses).not.toHaveProperty("405");
+    expect(
+      spec.paths["/.well-known/mcp"].post.responses["403"].content["application/json"].schema,
+    ).toEqual({
+      $ref: "#/components/schemas/JsonRpcErrorResponse",
+    });
+    expect(
+      spec.paths["/.well-known/mcp"].post.responses["500"].content["application/json"].schema,
+    ).toEqual({
+      $ref: "#/components/schemas/JsonRpcErrorResponse",
+    });
+    expect(spec.paths["/.well-known/mcp"].post.responses).not.toHaveProperty("405");
     expect(spec.paths["/api/generation-requests"].post.security).toEqual([]);
+    expect(spec.components.schemas.ErrorResponse).toMatchObject({
+      required: ["error", "code", "message"],
+      properties: {
+        error: { type: "string" },
+        code: { type: "string" },
+        message: { type: "string" },
+        hint: { type: "string" },
+      },
+    });
+    expect(spec.components.schemas.JsonRpcErrorResponse).toMatchObject({
+      required: ["jsonrpc", "error", "id"],
+      properties: {
+        jsonrpc: { type: "string", const: "2.0" },
+        error: {
+          type: "object",
+          required: ["code", "message"],
+        },
+      },
+    });
   });
 
   it("omits the root slash from server URL when no base path is configured", async () => {

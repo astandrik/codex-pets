@@ -102,6 +102,45 @@ describe("POST /mcp", () => {
     ).toContain("no MCP tool exposes those operations");
   });
 
+  it("exposes MCP Apps UI metadata on compatible read tools", async () => {
+    const body = await callMcp({
+      id: 20,
+      method: "tools/list",
+    });
+    const tools = body.result.tools as Array<{
+      name: string;
+      _meta?: { ui?: { resourceUri?: string } };
+    }>;
+
+    expect(tools.find((tool) => tool.name === "search_pets")?._meta).toMatchObject({
+      ui: {
+        resourceUri: "ui://codex-pets/pet-browser.html",
+      },
+    });
+    expect(tools.find((tool) => tool.name === "get_pet")?._meta).toMatchObject({
+      ui: {
+        resourceUri: "ui://codex-pets/pet-browser.html",
+      },
+    });
+  });
+
+  it("serves the Codex Pets MCP App resource", async () => {
+    const body = await callMcp({
+      id: 21,
+      method: "resources/read",
+      params: {
+        uri: "ui://codex-pets/pet-browser.html",
+      },
+    });
+
+    expect(body.result.contents[0]).toMatchObject({
+      uri: "ui://codex-pets/pet-browser.html",
+      mimeType: "text/html;profile=mcp-app",
+    });
+    expect(body.result.contents[0].text).toContain("Codex Pets");
+    expect(body.result.contents[0]._meta.ui.prefersBorder).toBe(true);
+  });
+
   it("returns pet request workflow discovery", async () => {
     const body = await callMcp({
       id: 9,
