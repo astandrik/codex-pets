@@ -81,4 +81,21 @@ describe("middleware markdown content negotiation", () => {
       '<http://localhost:3000/llms.txt>; rel="describedby"',
     );
   });
+
+  it("preserves the configured base path for preview rewrites", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example/codex-pets");
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/codex-pets");
+    const { middleware } = await import("@/middleware");
+    const request = new NextRequest("https://pets.example/codex-pets/", {
+      headers: {
+        "User-Agent": "TelegramBot",
+      },
+    });
+
+    const response = middleware(request);
+
+    expect(response.headers.get("x-middleware-rewrite")).toBe(
+      "https://pets.example/codex-pets/api/preview/site",
+    );
+  });
 });

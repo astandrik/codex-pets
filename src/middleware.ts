@@ -31,8 +31,8 @@ export function middleware(request: NextRequest): Response {
     return response;
   }
 
-  const rewriteUrl = request.nextUrl.clone();
-  rewriteUrl.pathname = rewritePath;
+  const rewriteUrl = new URL(request.url);
+  rewriteUrl.pathname = withBasePath(rewritePath, basePath);
 
   const response = NextResponse.rewrite(rewriteUrl);
   appendVaryForMarkdownNegotiation(response.headers, pathname);

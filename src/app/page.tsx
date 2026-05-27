@@ -13,7 +13,10 @@ import {
   getHomepageJsonLdGraph,
 } from "@/lib/site-metadata";
 import { serializeJsonLd } from "@/lib/json-ld";
-import { sliceHomeGalleryPets } from "@/components/HomePage/recommendation-entry-points";
+import {
+  HOME_GALLERY_LIMIT,
+  sliceHomeGalleryPets,
+} from "@/components/HomePage/recommendation-entry-points";
 import type { PublicPet, PublicPetSummary } from "@/lib/pets/types";
 
 export const runtime = "nodejs";
@@ -50,7 +53,9 @@ export default async function Home({ searchParams }: HomeProps) {
     hasGalleryFilters(filters),
   );
   const suggestedTags = pickSuggestedGalleryTags(pets, filters.tags);
-  const homepageJsonLd = getHomepageJsonLdGraph(visiblePets.slice(0, 12));
+  const homepageJsonLd = getHomepageJsonLdGraph(
+    visiblePets.slice(0, HOME_GALLERY_LIMIT),
+  );
 
   return (
     <>
