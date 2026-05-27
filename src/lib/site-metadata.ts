@@ -163,11 +163,27 @@ export function getAgentResourceAlternateTypes(): AlternateTypes {
         title: "Full LLM context",
         url: withBasePath("/llms-full.txt"),
       },
+      {
+        title: "Codex Pets developer llms.txt",
+        url: withBasePath("/developers/llms.txt"),
+      },
+      {
+        title: "Codex Pets API llms.txt",
+        url: withBasePath("/docs/llms.txt"),
+      },
     ],
     "text/markdown": [
       {
         title: "Codex Pets markdown homepage",
         url: withBasePath("/index.md"),
+      },
+      {
+        title: "Codex Pets about markdown",
+        url: withBasePath("/about.md"),
+      },
+      {
+        title: "Codex Pets agent markdown",
+        url: withBasePath("/agents.md"),
       },
       {
         title: "Codex Pets developer markdown",
@@ -176,6 +192,10 @@ export function getAgentResourceAlternateTypes(): AlternateTypes {
       {
         title: "Codex Pets API markdown",
         url: withBasePath("/docs/api.md"),
+      },
+      {
+        title: "Codex Pets MCP markdown",
+        url: withBasePath("/mcp.md"),
       },
       {
         title: "Codex Pets auth markdown",

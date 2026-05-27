@@ -54,6 +54,8 @@ function getMarkdownRewritePath(
 
   const normalizedPathname = pathname.replace(/\/$/, "") || "/";
   if (normalizedPathname === "/") return "/index.md";
+  if (normalizedPathname === "/about") return "/about.md";
+  if (normalizedPathname === "/agents") return "/agents.md";
   if (normalizedPathname === "/developers") return "/developers.md";
   if (normalizedPathname === "/docs/api") return "/docs/api.md";
   return null;
@@ -72,6 +74,8 @@ function isMarkdownNegotiablePath(pathname: string): boolean {
   const normalizedPathname = pathname.replace(/\/$/, "") || "/";
   return (
     normalizedPathname === "/" ||
+    normalizedPathname === "/about" ||
+    normalizedPathname === "/agents" ||
     normalizedPathname === "/developers" ||
     normalizedPathname === "/docs/api"
   );

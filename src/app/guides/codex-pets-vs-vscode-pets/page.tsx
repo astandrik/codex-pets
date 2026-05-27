@@ -108,6 +108,39 @@ export default function CodexPetsVsVsCodePetsPage() {
           visual gallery.
         </Text>
       </section>
+
+      <section className="page-section">
+        <Text variant="display-1" as="h2">
+          Integration surface
+        </Text>
+        <ul>
+          <li>
+            Codex Pets packages are portable directories with pet.json and
+            spritesheet assets.
+          </li>
+          <li>
+            Agents can call MCP tools for search, install instructions, badges,
+            cards, embeds, and request workflow discovery.
+          </li>
+          <li>
+            Developers can use OpenAPI, JSON, TOON, markdown, sitemap, and
+            scoped llms.txt routes without requiring browser automation.
+          </li>
+        </ul>
+      </section>
+
+      <section className="page-section">
+        <Text variant="display-1" as="h2">
+          Next comparison
+        </Text>
+        <Text variant="body-2" color="secondary">
+          For desktop-app and MCP-status workflows, see{" "}
+          <a href={withBasePath("/guides/codex-pets-vs-openpets")}>
+            Codex Pets vs OpenPets
+          </a>
+          .
+        </Text>
+      </section>
     </Container>
   );
 }

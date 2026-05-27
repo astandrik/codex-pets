@@ -1,4 +1,5 @@
 import { toPublicUrl } from "@/lib/base-path";
+import { AGENT_WHEN_TO_USE_GUIDANCE } from "@/lib/agent-markdown";
 import { listApprovedPets } from "@/lib/pets/repository";
 import { PET_SHEET } from "@/lib/pets/types";
 import { SITE_DESCRIPTION, SITE_NAME } from "@/lib/site-metadata";
@@ -65,8 +66,11 @@ export async function GET(): Promise<Response> {
       `- [Developer portal](${toPublicUrl("/developers")}): Find Codex Pets API docs, OpenAPI, MCP, authentication notes, and webhooks status.`,
       `- [API docs](${toPublicUrl("/docs/api")}): Developer-facing Codex Pets HTTP API reference.`,
       `- [Markdown homepage](${toPublicUrl("/index.md")}): Canonical markdown fallback for the site root.`,
+      `- [Markdown about page](${toPublicUrl("/about.md")}): Product description, authority notes, and off-site Wikipedia/Wikidata follow-up guidance.`,
+      `- [Markdown agent access](${toPublicUrl("/agents.md")}): Agent connection quickstart and when-to-use guidance.`,
       `- [Markdown developer portal](${toPublicUrl("/developers.md")}): Developer resources in markdown.`,
       `- [Markdown API docs](${toPublicUrl("/docs/api.md")}): API docs in markdown.`,
+      `- [Markdown MCP docs](${toPublicUrl("/mcp.md")}): MCP server and MCP App security notes.`,
       `- [Auth markdown](${toPublicUrl("/auth.md")}): Public auth and access notes for agents.`,
       `- [Request a pet](${toPublicUrl("/request")}): Send a private text brief and optional PNG, JPEG, or WebP reference image up to 5 MB for admins to review and fulfill manually.`,
       `- [Submit a pet](${toPublicUrl("/submit")}): Upload a ZIP or pet.json plus spritesheet for moderation.`,
@@ -75,6 +79,8 @@ export async function GET(): Promise<Response> {
       "## Machine-readable resources",
       "",
       `- [Full LLM context](${toPublicUrl("/llms-full.txt")}): Expanded agent-readable documentation with API reference, authentication notes, examples, and webhooks status.`,
+      `- [Developer scoped llms.txt](${toPublicUrl("/developers/llms.txt")}): Scoped developer resource map for API, OpenAPI, MCP, and auth discovery.`,
+      `- [API scoped llms.txt](${toPublicUrl("/docs/llms.txt")}): Scoped API and MCP route map for agent callers.`,
       `- [OpenAPI JSON](${toPublicUrl("/openapi.json")}): Canonical OpenAPI 3.1 specification for the public Codex Pets API.`,
       `- [OpenAPI JSON alias](${toPublicUrl("/api/openapi.json")}): API-prefixed OpenAPI URL for scanners that probe predictable resource names.`,
       `- [Sitemap](${toPublicUrl("/sitemap.xml")}): Dynamic XML sitemap with public pages and approved pet pages.`,
@@ -112,6 +118,8 @@ export async function GET(): Promise<Response> {
       "- Install command format: npx @astandrik/codex-pets install <slug>",
       "- Browser WebMCP is optional and browser-only. It requires a runtime that exposes navigator.modelContext after the page loads.",
       "- Browser WebMCP tools: search_codex_pets, get_codex_pet, get_codex_pets_manifest, get_codex_pet_request_info, get_current_codex_pet.",
+      "",
+      AGENT_WHEN_TO_USE_GUIDANCE.trim(),
       "",
       "## Approved pet packs",
       "",

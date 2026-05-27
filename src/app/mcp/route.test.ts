@@ -125,6 +125,7 @@ describe("POST /mcp", () => {
   });
 
   it("serves the Codex Pets MCP App resource", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
     const body = await callMcp({
       id: 21,
       method: "resources/read",
@@ -138,6 +139,15 @@ describe("POST /mcp", () => {
       mimeType: "text/html;profile=mcp-app",
     });
     expect(body.result.contents[0].text).toContain("Codex Pets");
+    expect(body.result.contents[0].text).toContain(
+      '<meta name="color-scheme" content="light dark">',
+    );
+    expect(body.result.contents[0].text).not.toContain("frame-ancestors");
+    expect(body.result.contents[0]._meta.ui.csp).toEqual({
+      connectDomains: ["https://pets.example"],
+      resourceDomains: ["https://pets.example"],
+      baseUriDomains: ["https://pets.example"],
+    });
     expect(body.result.contents[0]._meta.ui.prefersBorder).toBe(true);
   });
 

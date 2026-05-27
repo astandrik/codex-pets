@@ -100,6 +100,10 @@ export default function ApiDocsPage() {
               Developer portal
               <ArrowRight />
             </Button>
+            <Button view="flat" size="l" href={withBasePath("/docs/llms.txt")}>
+              API llms.txt
+              <ArrowRight />
+            </Button>
           </Flex>
         </Flex>
       </section>
@@ -144,6 +148,27 @@ export default function ApiDocsPage() {
           are not currently available. Public metric mutation and download
           redirect routes are outside this OpenAPI contract.
         </Text>
+      </section>
+
+      <section className="page-section">
+        <Text variant="display-1" as="h2">
+          Agent discovery
+        </Text>
+        <ul>
+          <li>
+            <a href={withBasePath("/docs/llms.txt")}>API llms.txt</a> gives
+            agents a scoped route map for API and MCP calls.
+          </li>
+          <li>
+            <a href={withBasePath("/developers/llms.txt")}>Developer llms.txt</a>{" "}
+            lists OpenAPI, MCP, auth, and developer-resource entry points by
+            product name.
+          </li>
+          <li>
+            <a href={withBasePath("/mcp.md")}>MCP markdown</a> documents the
+            Streamable HTTP endpoint, server card, MCP App view, and CSP notes.
+          </li>
+        </ul>
       </section>
     </Container>
   );

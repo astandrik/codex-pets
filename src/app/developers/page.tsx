@@ -41,6 +41,16 @@ const resources = [
     href: "/server.json",
     text: "MCP Registry metadata for the public Streamable HTTP server.",
   },
+  {
+    label: "Developer llms.txt",
+    href: "/developers/llms.txt",
+    text: "Scoped developer-resource index for API, OpenAPI, MCP, auth, and agent guidance.",
+  },
+  {
+    label: "MCP markdown",
+    href: "/mcp.md",
+    text: "Markdown MCP server guide with MCP App resource and CSP notes.",
+  },
 ];
 
 export const metadata: Metadata = {
