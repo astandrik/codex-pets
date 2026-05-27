@@ -63,9 +63,12 @@ describe("middleware markdown content negotiation", () => {
     );
   });
 
-  it("rewrites agent-facing pages to markdown twins", async () => {
+  it.each([
+    ["/agents", "/agents.md"],
+    ["/about", "/about.md"],
+  ])("rewrites %s to its markdown twin", async (pathname, markdownPath) => {
     const { middleware } = await import("@/middleware");
-    const request = new NextRequest("https://pets.example/agents", {
+    const request = new NextRequest(`https://pets.example${pathname}`, {
       headers: {
         Accept: "text/markdown",
       },
@@ -74,23 +77,7 @@ describe("middleware markdown content negotiation", () => {
     const response = middleware(request);
 
     expect(response.headers.get("x-middleware-rewrite")).toBe(
-      "https://pets.example/agents.md",
-    );
-    expect(response.headers.get("Vary")).toBe("Accept");
-  });
-
-  it("rewrites the about page to its markdown twin", async () => {
-    const { middleware } = await import("@/middleware");
-    const request = new NextRequest("https://pets.example/about", {
-      headers: {
-        Accept: "text/markdown",
-      },
-    });
-
-    const response = middleware(request);
-
-    expect(response.headers.get("x-middleware-rewrite")).toBe(
-      "https://pets.example/about.md",
+      `https://pets.example${markdownPath}`,
     );
     expect(response.headers.get("Vary")).toBe("Accept");
   });
