@@ -2,7 +2,7 @@ import { buildGalleryHref } from "@/lib/pets/gallery-filters";
 
 const STYLE_TAGS = ["cute", "pixel", "anime", "fantasy", "minimal"] as const;
 const DEFAULT_LINK_LIMIT = 3;
-export const HOME_GALLERY_LIMIT = 12;
+export const HOME_FEATURED_PET_LIMIT = 12;
 export const HOME_HERO_PET_LIMIT = 12;
 
 type RecommendationPet = {
@@ -56,8 +56,8 @@ export function buildHomeRecommendationEntryPoints(
   };
 }
 
-export function sliceHomeGalleryPets<T>(pets: T[], hasActiveFilters: boolean): T[] {
-  return hasActiveFilters ? pets : pets.slice(0, HOME_GALLERY_LIMIT);
+export function sliceHomeGalleryPets<T>(pets: T[]): T[] {
+  return pets;
 }
 
 function popularityScore(pet: RecommendationPet): number {

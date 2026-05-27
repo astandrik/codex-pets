@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { HomePage } from "@/components/HomePage/HomePage";
 import { unstable_cache } from "next/cache";
 import {
-  hasGalleryFilters,
   matchesGalleryFilters,
   parseGalleryFilters,
   pickSuggestedGalleryTags,
@@ -14,7 +13,7 @@ import {
 } from "@/lib/site-metadata";
 import { serializeJsonLd } from "@/lib/json-ld";
 import {
-  HOME_GALLERY_LIMIT,
+  HOME_FEATURED_PET_LIMIT,
   sliceHomeGalleryPets,
 } from "@/components/HomePage/recommendation-entry-points";
 import type { PublicPet, PublicPetSummary } from "@/lib/pets/types";
@@ -48,13 +47,10 @@ export default async function Home({ searchParams }: HomeProps) {
   const filters = parseGalleryFilters(await searchParams);
   const pets = (await getApprovedPetsSnapshot()).map(toPublicPetSummary);
   const filteredPets = pets.filter((pet) => matchesGalleryFilters(pet, filters));
-  const visiblePets = sliceHomeGalleryPets(
-    filteredPets,
-    hasGalleryFilters(filters),
-  );
+  const visiblePets = sliceHomeGalleryPets(filteredPets);
   const suggestedTags = pickSuggestedGalleryTags(pets, filters.tags);
   const homepageJsonLd = getHomepageJsonLdGraph(
-    visiblePets.slice(0, HOME_GALLERY_LIMIT),
+    visiblePets.slice(0, HOME_FEATURED_PET_LIMIT),
   );
 
   return (

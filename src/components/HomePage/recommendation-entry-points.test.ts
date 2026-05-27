@@ -81,14 +81,13 @@ describe("home recommendation entry points", () => {
 });
 
 describe("sliceHomeGalleryPets", () => {
-  it("limits the unfiltered homepage gallery but preserves filtered result pages", () => {
+  it("keeps all approved pets visible on the homepage", () => {
     const pets = Array.from({ length: 50 }, (_, index) => ({
       ...basePet,
       slug: `pet-${index}`,
       displayName: `Pet ${index}`,
     }));
 
-    expect(sliceHomeGalleryPets(pets, false)).toHaveLength(12);
-    expect(sliceHomeGalleryPets(pets, true)).toHaveLength(50);
+    expect(sliceHomeGalleryPets(pets)).toHaveLength(50);
   });
 });
