@@ -1,12 +1,8 @@
 import { toPublicUrl } from "@/lib/base-path";
-
-const AGENT_LINK_PATHS = new Set([
-  "/",
-  "/about",
-  "/agents",
-  "/developers",
-  "/docs/api",
-]);
+import {
+  getMarkdownTwinPath,
+  isMarkdownTwinSourcePath,
+} from "@/lib/markdown-twins";
 
 export function getAgentLinkHeaderForPath(pathname: string): string | null {
   const normalizedPath = normalizePathname(pathname);
@@ -35,7 +31,7 @@ export function appendAgentLinkHeaders(
 }
 
 function shouldExposeAgentLinks(pathname: string): boolean {
-  return AGENT_LINK_PATHS.has(pathname) || pathname.startsWith("/guides/");
+  return isMarkdownTwinSourcePath(pathname) || pathname.startsWith("/guides/");
 }
 
 function getPathSpecificLinks(pathname: string): string[] {
@@ -60,15 +56,6 @@ function getPathSpecificLinks(pathname: string): string[] {
   }
 
   return links;
-}
-
-function getMarkdownTwinPath(pathname: string): string | null {
-  if (pathname === "/") return "/index.md";
-  if (pathname === "/about") return "/about.md";
-  if (pathname === "/agents") return "/agents.md";
-  if (pathname === "/developers") return "/developers.md";
-  if (pathname === "/docs/api") return "/docs/api.md";
-  return null;
 }
 
 function normalizePathname(pathname: string): string {
