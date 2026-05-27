@@ -45,6 +45,34 @@ describe("POST /api/pets/[slug]/install", () => {
     expect(incrementInstall).not.toHaveBeenCalled();
   });
 
+  it("rejects invalid slugs before repository access", async () => {
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ slug: "../admin" }),
+    });
+
+    await expect(response.json()).resolves.toMatchObject({
+      error: "invalid_slug",
+      code: "invalid_slug",
+      message: "Pet slug is invalid.",
+      field: "slug",
+    });
+    expect(response.status).toBe(400);
+    expect(getApprovedPetBySlug).not.toHaveBeenCalled();
+    expect(incrementInstall).not.toHaveBeenCalled();
+  });
+
+  it("uses the sanitized slug for lookup and install metrics", async () => {
+    vi.mocked(getApprovedPetBySlug).mockResolvedValueOnce(approvedPet);
+
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ slug: " boba " }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(getApprovedPetBySlug).toHaveBeenCalledWith("boba");
+    expect(incrementInstall).toHaveBeenCalledWith("boba");
+  });
+
   it("increments install metrics for approved pets", async () => {
     vi.mocked(getApprovedPetBySlug).mockResolvedValueOnce(approvedPet);
 

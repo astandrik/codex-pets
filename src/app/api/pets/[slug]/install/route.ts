@@ -52,7 +52,17 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ slug: string }> },
 ): Promise<Response> {
-  const { slug } = await params;
+  const { slug: rawSlug } = await params;
+  const slug = readSafeAgentSlug(rawSlug);
+  if (!slug) {
+    return jsonApiError("invalid_slug", {
+      status: 400,
+      message: "Pet slug is invalid.",
+      hint: "Use a slug from /api/pets.",
+      field: "slug",
+    });
+  }
+
   const pet = await getApprovedPetBySlug(slug);
   if (!pet) {
     return jsonApiError("not_found", {
