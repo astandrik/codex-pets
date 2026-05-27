@@ -5,7 +5,13 @@ describe("markdown agent discovery routes", () => {
     {
       modulePath: "@/app/index.md/route",
       heading: "# Codex Pets",
-      expected: ["OpenAPI JSON", "MCP endpoint", "Developer portal"],
+      expected: [
+        "OpenAPI JSON",
+        "MCP endpoint",
+        "Developer portal",
+        "Codex Pets retrieval brief",
+        "MCP tools are read-only",
+      ],
     },
     {
       modulePath: "@/app/developers.md/route",
