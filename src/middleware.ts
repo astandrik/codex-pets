@@ -13,7 +13,7 @@ export function middleware(request: NextRequest): Response {
     rewriteUrl.pathname = withBasePath(markdownPath, basePath);
     const response = NextResponse.rewrite(rewriteUrl);
     appendVary(response.headers, "Accept");
-    appendAgentLinkHeaders(response.headers, markdownPath);
+    appendAgentLinkHeaders(response.headers, pathname);
     return response;
   }
 
@@ -26,6 +26,7 @@ export function middleware(request: NextRequest): Response {
 
   if (!rewritePath) {
     const response = NextResponse.next();
+    appendVaryForMarkdownNegotiation(response.headers, pathname);
     appendAgentLinkHeaders(response.headers, pathname);
     return response;
   }
@@ -34,7 +35,8 @@ export function middleware(request: NextRequest): Response {
   rewriteUrl.pathname = rewritePath;
 
   const response = NextResponse.rewrite(rewriteUrl);
-  appendAgentLinkHeaders(response.headers, rewritePath);
+  appendVaryForMarkdownNegotiation(response.headers, pathname);
+  appendAgentLinkHeaders(response.headers, pathname);
   return response;
 }
 
@@ -56,6 +58,24 @@ function getMarkdownRewritePath(
   if (normalizedPathname === "/developers") return "/developers.md";
   if (normalizedPathname === "/docs/api") return "/docs/api.md";
   return null;
+}
+
+function appendVaryForMarkdownNegotiation(
+  headers: Headers,
+  pathname: string,
+): void {
+  if (isMarkdownNegotiablePath(pathname)) {
+    appendVary(headers, "Accept");
+  }
+}
+
+function isMarkdownNegotiablePath(pathname: string): boolean {
+  const normalizedPathname = pathname.replace(/\/$/, "") || "/";
+  return (
+    normalizedPathname === "/" ||
+    normalizedPathname === "/developers" ||
+    normalizedPathname === "/docs/api"
+  );
 }
 
 function stripBasePath(pathname: string, basePath?: string): string {
