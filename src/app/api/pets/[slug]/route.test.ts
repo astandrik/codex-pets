@@ -128,6 +128,10 @@ describe("GET /api/pets/[slug]", () => {
     expect(response.headers.get("Content-Type")).toBe(
       "text/toon; charset=utf-8",
     );
-    expect(decode(await response.text())).toEqual({ error: "not_found" });
+    expect(decode(await response.text())).toMatchObject({
+      error: "not_found",
+      code: "not_found",
+      message: "Approved pet not found.",
+    });
   });
 });

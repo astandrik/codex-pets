@@ -19,6 +19,7 @@
   "dependencies": {
     "@gravity-ui/icons": "^2.16.0",
     "@gravity-ui/uikit": "^7.26.1",
+    "@modelcontextprotocol/ext-apps": "^1.7.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@toon-format/toon": "^2.2.0",
     "@yandex-cloud/nodejs-sdk": "^2.9.0",

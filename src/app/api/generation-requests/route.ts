@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
+import { jsonApiError, jsonValidationError } from "@/lib/api-error";
 import { getCurrentPrincipal } from "@/lib/auth/session";
 import {
   validateCreatePetGenerationRequest,
@@ -36,10 +37,11 @@ type ParsedRequestBody =
 export async function POST(req: Request): Promise<Response> {
   const principal = await getCurrentPrincipal();
   if (!isYdbConfigured() && !isMockPetsDataSource()) {
-    return NextResponse.json(
-      { error: "service_not_configured" },
-      { status: 503 },
-    );
+    return jsonApiError("service_not_configured", {
+      status: 503,
+      message: "Codex Pets persistence is not configured.",
+      hint: "Try again later or contact the site operator.",
+    });
   }
 
   const parsed = await readRequestBody(req);
@@ -47,7 +49,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const validation = validateCreatePetGenerationRequest(parsed.body);
   if (!validation.ok) {
-    return NextResponse.json(validation, { status: 400 });
+    return jsonValidationError(validation);
   }
 
   const request = await createGenerationRequest({
@@ -84,7 +86,11 @@ async function readRequestBody(req: Request): Promise<ParsedRequestBody> {
   } catch {
     return {
       ok: false,
-      response: NextResponse.json({ error: "invalid_json" }, { status: 400 }),
+      response: jsonApiError("invalid_json", {
+        status: 400,
+        message: "Request body must be valid JSON.",
+        hint: "Send application/json or multipart/form-data.",
+      }),
     };
   }
 }
@@ -96,10 +102,11 @@ async function readMultipartRequest(req: Request): Promise<ParsedRequestBody> {
   } catch {
     return {
       ok: false,
-      response: NextResponse.json(
-        { error: "invalid_form_data" },
-        { status: 400 },
-      ),
+      response: jsonApiError("invalid_form_data", {
+        status: 400,
+        message: "Multipart form data could not be read.",
+        hint: "Send contactEmail and prompt fields with an optional referenceImage file.",
+      }),
     };
   }
 
@@ -110,7 +117,7 @@ async function readMultipartRequest(req: Request): Promise<ParsedRequestBody> {
   if (!referenceImage.ok) {
     return {
       ok: false,
-      response: NextResponse.json(referenceImage.error, { status: 400 }),
+      response: jsonValidationError(referenceImage.error),
     };
   }
 

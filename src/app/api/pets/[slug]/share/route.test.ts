@@ -80,7 +80,11 @@ describe("GET /api/pets/[slug]/share", () => {
       params: Promise.resolve({ slug: "../admin" }),
     });
 
-    await expect(response.json()).resolves.toEqual({ error: "invalid_slug" });
+    await expect(response.json()).resolves.toMatchObject({
+      error: "invalid_slug",
+      code: "invalid_slug",
+      message: "Pet slug is invalid.",
+    });
     expect(response.status).toBe(400);
     expect(repositoryMocks.getApprovedPetBySlug).not.toHaveBeenCalled();
   });

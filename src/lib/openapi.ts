@@ -15,6 +15,15 @@ const errorResponse = {
   },
 } as const;
 
+const jsonRpcErrorResponse = {
+  description: "MCP JSON-RPC error response.",
+  content: {
+    "application/json": {
+      schema: { $ref: "#/components/schemas/JsonRpcErrorResponse" },
+    },
+  },
+} as const;
+
 const notFoundResponse = {
   description: "Resource not found.",
   content: {
@@ -33,7 +42,7 @@ export function buildOpenApiSpec() {
       title: "Codex Pets API",
       version: "1.0.0",
       description:
-        `${SITE_DESCRIPTION} This OpenAPI document describes the public agent/developer contract subset: approved registry data, MCP discovery, and public submission workflows. Public metric mutation and download redirect routes are intentionally outside this contract.`,
+        `${SITE_DESCRIPTION} This OpenAPI document describes version 1 of the public agent/developer contract subset: approved registry data, MCP discovery, markdown discovery docs, and public submission workflows. Existing unversioned URLs are stable v1 endpoints. Public metric mutation and download redirect routes are intentionally outside this contract.`,
       contact: {
         name: "Codex Pets",
         url: toPublicUrl("/about"),
@@ -100,6 +109,50 @@ export function buildOpenApiSpec() {
           },
         },
       },
+      "/index.md": {
+        get: {
+          operationId: "getIndexMarkdown",
+          tags: ["Discovery"],
+          summary: "Get markdown homepage fallback",
+          security: publicReadSecurity,
+          responses: {
+            "200": textResponse("text/markdown"),
+          },
+        },
+      },
+      "/developers.md": {
+        get: {
+          operationId: "getDevelopersMarkdown",
+          tags: ["Discovery"],
+          summary: "Get markdown developer portal",
+          security: publicReadSecurity,
+          responses: {
+            "200": textResponse("text/markdown"),
+          },
+        },
+      },
+      "/docs/api.md": {
+        get: {
+          operationId: "getApiDocsMarkdown",
+          tags: ["Discovery"],
+          summary: "Get markdown API docs",
+          security: publicReadSecurity,
+          responses: {
+            "200": textResponse("text/markdown"),
+          },
+        },
+      },
+      "/auth.md": {
+        get: {
+          operationId: "getAuthMarkdown",
+          tags: ["Discovery"],
+          summary: "Get markdown auth notes",
+          security: publicReadSecurity,
+          responses: {
+            "200": textResponse("text/markdown"),
+          },
+        },
+      },
       "/server.json": {
         get: {
           operationId: "getMcpRegistryServer",
@@ -122,6 +175,47 @@ export function buildOpenApiSpec() {
           },
         },
       },
+      "/.well-known/mcp": {
+        get: {
+          operationId: "getWellKnownMcp",
+          tags: ["MCP"],
+          summary: "Get well-known MCP server metadata",
+          security: publicReadSecurity,
+          responses: {
+            "200": jsonResponse("#/components/schemas/McpRegistryServer"),
+          },
+        },
+        post: {
+          operationId: "callWellKnownMcp",
+          tags: ["MCP"],
+          summary: "Call the Codex Pets MCP server at the well-known endpoint",
+          security: publicReadSecurity,
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/JsonRpcRequest" },
+              },
+            },
+          },
+          responses: {
+            "200": jsonResponse("#/components/schemas/JsonRpcResponse"),
+            "403": jsonRpcErrorResponse,
+            "500": jsonRpcErrorResponse,
+          },
+        },
+      },
+      "/.well-known/mcp/server-card.json": {
+        get: {
+          operationId: "getMcpServerCard",
+          tags: ["MCP"],
+          summary: "Get Codex Pets MCP server card",
+          security: publicReadSecurity,
+          responses: {
+            "200": jsonResponse("#/components/schemas/McpServerCard"),
+          },
+        },
+      },
       "/mcp": {
         post: {
           operationId: "callMcp",
@@ -140,9 +234,8 @@ export function buildOpenApiSpec() {
           },
           responses: {
             "200": jsonResponse("#/components/schemas/JsonRpcResponse"),
-            "403": errorResponse,
-            "405": errorResponse,
-            "500": errorResponse,
+            "403": jsonRpcErrorResponse,
+            "500": jsonRpcErrorResponse,
           },
         },
       },
@@ -344,15 +437,42 @@ export function buildOpenApiSpec() {
           type: "object",
           properties: {
             error: { type: "string" },
+            code: { type: "string" },
             message: { type: "string" },
+            hint: { type: "string" },
             field: { type: "string" },
           },
-          required: ["error"],
+          required: ["error", "code", "message"],
           additionalProperties: true,
         },
         JsonRpcRequest: jsonObject,
         JsonRpcResponse: jsonObject,
+        JsonRpcErrorResponse: {
+          type: "object",
+          required: ["jsonrpc", "error", "id"],
+          properties: {
+            jsonrpc: { type: "string", const: "2.0" },
+            error: {
+              type: "object",
+              required: ["code", "message"],
+              properties: {
+                code: { type: "integer" },
+                message: { type: "string" },
+              },
+              additionalProperties: true,
+            },
+            id: {
+              oneOf: [
+                { type: "string" },
+                { type: "number" },
+                { type: "null" },
+              ],
+            },
+          },
+          additionalProperties: true,
+        },
         McpRegistryServer: jsonObject,
+        McpServerCard: jsonObject,
         ManifestResponse: {
           type: "object",
           required: ["generatedAt", "total", "pets"],
@@ -626,7 +746,7 @@ function jsonResponse(schemaRef: string) {
   } as const;
 }
 
-function textResponse(mediaType: "text/plain" | "text/toon") {
+function textResponse(mediaType: "text/plain" | "text/toon" | "text/markdown") {
   return {
     description: "Successful text response.",
     content: {

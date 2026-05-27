@@ -46,6 +46,39 @@ describe("GET /server.json", () => {
 
     expect(await getWellKnown().json()).toEqual(await getRoot().json());
   });
+
+  it("serves MCP metadata directly from /.well-known/mcp", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "");
+    const { GET: getRoot } = await import("@/app/server.json/route");
+    const { GET: getWellKnownMcp } = await import("@/app/.well-known/mcp/route");
+
+    expect(await getWellKnownMcp().json()).toEqual(await getRoot().json());
+  });
+
+  it("returns a server card with instructions and agent resources", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "");
+    const { GET } = await import("@/app/.well-known/mcp/server-card.json/route");
+
+    const response = GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      name: "Codex Pets Registry",
+      endpoint: "https://pets.example/mcp",
+      instructions: expect.stringContaining("read-only"),
+      tools: expect.arrayContaining([
+        expect.objectContaining({ name: "search_pets" }),
+        expect.objectContaining({ name: "get_pet" }),
+      ]),
+      resources: expect.arrayContaining([
+        expect.objectContaining({ url: "https://pets.example/llms.txt" }),
+        expect.objectContaining({ url: "https://pets.example/openapi.json" }),
+      ]),
+    });
+  });
 });
 
 describe("GET /.well-known/mcp-registry-auth", () => {

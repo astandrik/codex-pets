@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { buildHomeRecommendationEntryPoints } from "@/components/HomePage/recommendation-entry-points";
+import {
+  buildHomeRecommendationEntryPoints,
+  sliceHomeGalleryPets,
+} from "@/components/HomePage/recommendation-entry-points";
 
 const basePet = {
   slug: "boba",
@@ -74,5 +77,18 @@ describe("home recommendation entry points", () => {
       { slug: "newer", displayName: "Newer", href: "/pets/newer" },
       { slug: "popular", displayName: "Popular", href: "/pets/popular" },
     ]);
+  });
+});
+
+describe("sliceHomeGalleryPets", () => {
+  it("limits the unfiltered homepage gallery but preserves filtered result pages", () => {
+    const pets = Array.from({ length: 50 }, (_, index) => ({
+      ...basePet,
+      slug: `pet-${index}`,
+      displayName: `Pet ${index}`,
+    }));
+
+    expect(sliceHomeGalleryPets(pets, false)).toHaveLength(12);
+    expect(sliceHomeGalleryPets(pets, true)).toHaveLength(50);
   });
 });

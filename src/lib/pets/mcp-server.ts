@@ -1,4 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  registerAppResource,
+  registerAppTool,
+  RESOURCE_MIME_TYPE,
+} from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod/v4";
 
 import { toPublicUrl } from "@/lib/base-path";
@@ -47,6 +52,13 @@ const READ_ONLY_TOOL = {
   openWorldHint: false,
 } as const;
 
+const MCP_APP_RESOURCE_URI = "ui://codex-pets/pet-browser.html";
+const MCP_APP_META = {
+  ui: {
+    resourceUri: MCP_APP_RESOURCE_URI,
+  },
+} as const;
+
 const slugInputSchema = {
   slug: z.string().describe("Exact slug of an approved public Codex pet."),
 };
@@ -78,7 +90,10 @@ export function createCodexPetsMcpServer(): McpServer {
     version: MCP_REGISTRY_SERVER_VERSION,
   });
 
-  server.registerTool(
+  registerCodexPetsAppResource(server);
+
+  registerAppTool(
+    server,
     "search_pets",
     {
       title: "Search Codex pets",
@@ -86,6 +101,7 @@ export function createCodexPetsMcpServer(): McpServer {
         "Use to discover one or more approved public Codex pet packs by query, kind, tags, author, or Codex compatibility. Prefer this over get_pet when you do not already have an exact slug or need multiple candidates. Do not use for private generation requests or known-slug install/share snippets; use get_pet_request_info or a slug-specific get_* tool instead.",
       inputSchema: searchInputSchema,
       annotations: READ_ONLY_TOOL,
+      _meta: MCP_APP_META,
     },
     async (args) => {
       try {
@@ -121,7 +137,8 @@ export function createCodexPetsMcpServer(): McpServer {
     },
   );
 
-  server.registerTool(
+  registerAppTool(
+    server,
     "get_pet",
     {
       title: "Get Codex pet",
@@ -129,6 +146,7 @@ export function createCodexPetsMcpServer(): McpServer {
         "Use when you already have an exact approved pet slug and need the sanitized public pet card, asset URLs, page URL, and install command for that one pet. Use search_pets first when you only have a name/query or need multiple results. Do not use for focused install, badge, embed, card, or request workflow details; use the matching get_* tool instead.",
       inputSchema: slugInputSchema,
       annotations: READ_ONLY_TOOL,
+      _meta: MCP_APP_META,
     },
     async (args) => {
       return handleApprovedPetTool("get_pet", args.slug, (pet) => ({
@@ -232,6 +250,67 @@ export function createCodexPetsMcpServer(): McpServer {
   );
 
   return server;
+}
+
+function registerCodexPetsAppResource(server: McpServer): void {
+  registerAppResource(
+    server,
+    "Codex Pets browser",
+    MCP_APP_RESOURCE_URI,
+    {
+      description: "Interactive Codex Pets search and detail result view.",
+      _meta: {
+        ui: {
+          prefersBorder: true,
+        },
+      },
+    },
+    async () => ({
+      contents: [
+        {
+          uri: MCP_APP_RESOURCE_URI,
+          mimeType: RESOURCE_MIME_TYPE,
+          text: buildCodexPetsAppHtml(),
+          _meta: {
+            ui: {
+              prefersBorder: true,
+            },
+          },
+        },
+      ],
+    }),
+  );
+}
+
+function buildCodexPetsAppHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Codex Pets</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; padding: 16px; background: Canvas; color: CanvasText; }
+    main { display: grid; gap: 12px; }
+    h1 { margin: 0; font-size: 18px; }
+    p { margin: 0; color: color-mix(in srgb, CanvasText 74%, transparent); line-height: 1.5; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    a { color: LinkText; font-weight: 650; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Codex Pets</h1>
+    <p>Search approved Codex pet packs, inspect one pet, and hand users install, badge, card, or embed snippets from the read-only MCP server.</p>
+    <div class="actions">
+      <a href="${toPublicUrl("/")}">Browse gallery</a>
+      <a href="${toPublicUrl("/developers")}">Developer resources</a>
+      <a href="${toPublicUrl("/llms.txt")}">llms.txt</a>
+    </div>
+  </main>
+</body>
+</html>`;
 }
 
 function buildPetRequestInfo(): Record<string, unknown> {

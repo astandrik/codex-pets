@@ -61,7 +61,7 @@ describe("social metadata images", () => {
       {
         url: "https://example.test/codex-pets/opengraph-image",
         secureUrl: "https://example.test/codex-pets/opengraph-image",
-        alt: "Companion Gallery for animated Codex companions",
+        alt: "Codex Pets gallery for animated Codex companions",
         type: "image/png",
         width: 1200,
         height: 630,
@@ -139,7 +139,7 @@ describe("gallery page metadata", () => {
       ],
     });
     expect(metadata.openGraph).toMatchObject({
-      title: "Codex pets tagged #space - Companion Gallery",
+      title: "Codex pets tagged #space - Codex Pets",
       url: "/codex-pets/?tags=space",
     });
 
@@ -178,7 +178,109 @@ describe("gallery page metadata", () => {
     });
     expect(metadata.twitter).toMatchObject({
       title:
-        'Object Codex pets matching "green" tagged #space and #terminal - Companion Gallery',
+        'Object Codex pets matching "green" tagged #space and #terminal - Codex Pets',
+    });
+
+    vi.unstubAllEnvs();
+  });
+});
+
+describe("site identity metadata", () => {
+  it("keeps global JSON-LD free of homepage-only entities", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "");
+
+    const { getWebsiteJsonLd } = await import("@/lib/site-metadata");
+    const graph = getWebsiteJsonLd();
+    const nodes = graph["@graph"] as Array<Record<string, unknown>>;
+
+    expect(nodes.map((node) => node["@type"])).toEqual([
+      "Organization",
+      "SoftwareApplication",
+      "Product",
+      "WebSite",
+    ]);
+    expect(nodes.find((node) => node["@type"] === "WebSite")).toMatchObject({
+      name: "Codex Pets",
+      url: "https://pets.example/",
+    });
+
+    vi.unstubAllEnvs();
+  });
+
+  it("uses Codex Pets as the canonical product name and keeps homepage JSON-LD page-specific", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "");
+
+    const {
+      SITE_NAME,
+      SITE_TITLE,
+      SITE_IMAGE_ALT,
+      getWebsiteJsonLd,
+      getHomepageJsonLdGraph,
+    } = await import("@/lib/site-metadata");
+    const websiteGraph = getWebsiteJsonLd();
+    const websiteNodes = websiteGraph["@graph"] as Array<
+      Record<string, unknown>
+    >;
+    const homepageGraph = getHomepageJsonLdGraph([
+      {
+        slug: "boba",
+        displayName: "Boba",
+        description: "Round coding companion.",
+        kind: "creature",
+        tags: ["round"],
+        ownerName: "Creator",
+        ownerProfileSlug: "creator",
+        createdAt: "2026-05-01T00:00:00.000Z",
+        approvedAt: "2026-05-02T00:00:00.000Z",
+        zipUrl: "/api/assets/a/package.zip",
+        spritesheetUrl: "/api/assets/a/spritesheet.webp",
+        petJsonUrl: "/api/assets/a/pet.json",
+      },
+    ]);
+    const homepageNodes = homepageGraph["@graph"] as Array<
+      Record<string, unknown>
+    >;
+
+    expect(SITE_NAME).toBe("Codex Pets");
+    expect(SITE_TITLE).toContain("Codex Pets");
+    expect(SITE_IMAGE_ALT).toContain("Codex Pets");
+    expect(websiteNodes.map((node) => node["@type"])).toEqual([
+      "Organization",
+      "SoftwareApplication",
+      "Product",
+      "WebSite",
+    ]);
+    expect(homepageNodes.map((node) => node["@type"])).toEqual([
+      "WebPage",
+      "FAQPage",
+      "ItemList",
+    ]);
+    expect(
+      websiteNodes.find((node) => node["@type"] === "SoftwareApplication"),
+    ).toMatchObject({
+      name: "Codex Pets",
+      applicationCategory: "DeveloperApplication",
+      operatingSystem: "Web",
+    });
+    expect(
+      websiteNodes.find((node) => node["@type"] === "Organization"),
+    ).toMatchObject({
+      name: "Codex Pets",
+      sameAs: expect.arrayContaining([
+        "https://github.com/astandrik/codex-pets",
+        "https://www.npmjs.com/package/@astandrik/codex-pets",
+        "https://glama.ai/mcp/connectors/tech.ydb-qdrant.pets/codex-pets-ydb-qdrant",
+      ]),
+    });
+    expect(
+      homepageNodes.find((node) => node["@type"] === "ItemList"),
+    ).toMatchObject({
+      name: "Featured Codex pet packs",
+      numberOfItems: 1,
     });
 
     vi.unstubAllEnvs();

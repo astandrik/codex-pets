@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { jsonApiError, jsonValidationError } from "@/lib/api-error";
 import { getCurrentPrincipal } from "@/lib/auth/session";
 import { normalizeEmail } from "@/lib/auth/repository";
 import { storePetAssetsInYdb } from "@/lib/pets/assets-repository";
@@ -14,17 +15,22 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request): Promise<Response> {
   const principal = await getCurrentPrincipal();
   if (!isYdbConfigured()) {
-    return NextResponse.json(
-      { error: "service_not_configured" },
-      { status: 503 },
-    );
+    return jsonApiError("service_not_configured", {
+      status: 503,
+      message: "Codex Pets persistence is not configured.",
+      hint: "Try again later or contact the site operator.",
+    });
   }
 
   let formData: FormData;
   try {
     formData = await req.formData();
   } catch {
-    return NextResponse.json({ error: "invalid_form_data" }, { status: 400 });
+    return jsonApiError("invalid_form_data", {
+      status: 400,
+      message: "Multipart form data could not be read.",
+      hint: "Submit zip, petjson, and sprite files as multipart/form-data.",
+    });
   }
 
   const zip = formData.get("zip");
@@ -36,26 +42,23 @@ export async function POST(req: Request): Promise<Response> {
       : "";
   const ext = formData.get("spritesheetExt");
   if (!(zip instanceof File) || !(petjson instanceof File) || !(sprite instanceof File)) {
-    return NextResponse.json(
-      {
-        error: "missing_files",
-        message: "zip, petjson, and sprite files are required.",
-      },
-      { status: 400 },
-    );
+    return jsonApiError("missing_files", {
+      status: 400,
+      message: "zip, petjson, and sprite files are required.",
+      hint: "Upload a ZIP package, pet.json file, and spritesheet file.",
+    });
   }
   const spritesheetExt = ext === "png" ? "png" : "webp";
   const normalizedContactEmail = contactEmailRaw
     ? normalizeEmail(contactEmailRaw)
     : null;
   if (contactEmailRaw && !normalizedContactEmail) {
-    return NextResponse.json(
-      {
-        error: "invalid_contact_email",
-        message: "Contact email must be a valid email address.",
-      },
-      { status: 400 },
-    );
+    return jsonApiError("invalid_contact_email", {
+      status: 400,
+      message: "Contact email must be a valid email address.",
+      hint: "Provide a reachable email address or sign in before submitting.",
+      field: "contactEmail",
+    });
   }
 
   const [petJsonBuffer, spritesheetBuffer, zipBuffer] = await Promise.all([
@@ -71,7 +74,7 @@ export async function POST(req: Request): Promise<Response> {
     spritesheetExt,
   });
   if (!validation.ok) {
-    return NextResponse.json(validation, { status: 400 });
+    return jsonValidationError(validation);
   }
 
   const assetId = `asset_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;

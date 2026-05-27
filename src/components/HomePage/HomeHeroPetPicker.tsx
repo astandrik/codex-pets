@@ -142,7 +142,7 @@ export function HomeHeroPetPicker({
         </span>
       </a>
       <Flex direction="column" gap={2} className="home-hero-pet__meta">
-        <Text variant="subheader-2" as="h2" className="home-hero-pet__name">
+        <Text variant="subheader-2" as="p" className="home-hero-pet__name">
           <a
             href={petHref}
             className="home-hero-pet__name-link"

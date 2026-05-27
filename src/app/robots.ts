@@ -13,13 +13,19 @@ const PUBLIC_ALLOW_PATHS = [
   "/users/",
   "/request",
   "/submit",
+  "/index.md",
+  "/developers.md",
+  "/docs/api.md",
+  "/auth.md",
   "/llm.txt",
   "/llms.txt",
   "/llms-full.txt",
   "/openapi.json",
   "/api/openapi.json",
+  "/.well-known/mcp",
   "/server.json",
   "/.well-known/mcp/server.json",
+  "/.well-known/mcp/server-card.json",
 ];
 
 const PUBLIC_DISALLOW_PATHS = ["/admin", "/api/admin"];

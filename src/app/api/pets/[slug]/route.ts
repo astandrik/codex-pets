@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { buildApiErrorBody } from "@/lib/api-error";
 import { toPublicUrl } from "@/lib/base-path";
 import { buildPetDetailPayload } from "@/lib/pets/api-payloads";
 import { getApprovedPetBySlug } from "@/lib/pets/repository";
@@ -22,7 +23,11 @@ export async function GET(
   const slug = isToon ? rawSlug.slice(0, -".toon".length) : rawSlug;
   const pet = await getApprovedPetBySlug(slug);
   if (!pet) {
-    const body = { error: "not_found" };
+    const body = buildApiErrorBody("not_found", {
+      message: "Approved pet not found.",
+      hint: "Use /api/pets to list approved pet slugs.",
+      field: "slug",
+    });
     return isToon
       ? toonResponse(body, {
           status: 404,

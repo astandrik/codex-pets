@@ -8,15 +8,16 @@ import {
 } from "@/lib/pets/gallery-filters";
 import type { PublicPet } from "@/lib/pets/types";
 
-export const SITE_NAME = "Companion Gallery";
-export const SITE_TAGLINE = "Animated pets for Codex";
+export const SITE_NAME = "Codex Pets";
+export const SITE_TAGLINE = "Animated pet packs for AI coding agents";
 export const SITE_TITLE = `${SITE_NAME} - ${SITE_TAGLINE}`;
 export const SITE_DESCRIPTION =
   "Browse, preview, upload, and download community-made animated pet packs for Codex.";
 export const SITE_IMAGE_ALT =
-  "Companion Gallery for animated Codex companions";
+  "Codex Pets gallery for animated Codex companions";
 
 export const SITE_KEYWORDS = [
+  "Codex Pets",
   "Companion Gallery",
   "Codex",
   "animated pets",
@@ -25,6 +26,12 @@ export const SITE_KEYWORDS = [
   "community gallery",
   "TOON",
 ];
+
+const SAME_AS_URLS = [
+  "https://github.com/astandrik/codex-pets",
+  "https://www.npmjs.com/package/@astandrik/codex-pets",
+  "https://glama.ai/mcp/connectors/tech.ydb-qdrant.pets/codex-pets-ydb-qdrant",
+] as const;
 
 export const SOCIAL_IMAGE = {
   path: "/opengraph-image",
@@ -157,6 +164,24 @@ export function getAgentResourceAlternateTypes(): AlternateTypes {
         url: withBasePath("/llms-full.txt"),
       },
     ],
+    "text/markdown": [
+      {
+        title: "Codex Pets markdown homepage",
+        url: withBasePath("/index.md"),
+      },
+      {
+        title: "Codex Pets developer markdown",
+        url: withBasePath("/developers.md"),
+      },
+      {
+        title: "Codex Pets API markdown",
+        url: withBasePath("/docs/api.md"),
+      },
+      {
+        title: "Codex Pets auth markdown",
+        url: withBasePath("/auth.md"),
+      },
+    ],
   };
 }
 
@@ -251,16 +276,141 @@ export function getPetMetadataDescription(
 export function getWebsiteJsonLd() {
   return {
     "@context": "https://schema.org",
-    "@type": "WebSite",
-    name: SITE_NAME,
-    url: toPublicUrl("/"),
-    description: SITE_DESCRIPTION,
-    potentialAction: {
-      "@type": "SearchAction",
-      target: `${toPublicUrl("/")}?q={search_term_string}`,
-      "query-input": "required name=search_term_string",
-    },
+    "@graph": getSiteIdentityJsonLdNodes(),
   };
+}
+
+export function getHomepageJsonLdGraph(
+  featuredPets: Array<
+    Pick<
+      PublicPet,
+      | "slug"
+      | "displayName"
+      | "description"
+      | "kind"
+      | "tags"
+      | "ownerName"
+      | "ownerProfileSlug"
+      | "createdAt"
+      | "approvedAt"
+      | "zipUrl"
+      | "spritesheetUrl"
+      | "petJsonUrl"
+    >
+  > = [],
+) {
+  const homeUrl = toPublicUrl("/");
+  const productId = `${homeUrl}#product`;
+  const softwareId = `${homeUrl}#software`;
+  const websiteId = `${homeUrl}#website`;
+
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebPage",
+        "@id": `${homeUrl}#webpage`,
+        name: SITE_TITLE,
+        url: homeUrl,
+        description: SITE_DESCRIPTION,
+        isPartOf: { "@id": websiteId },
+        about: [{ "@id": productId }, { "@id": softwareId }],
+        speakable: {
+          "@type": "SpeakableSpecification",
+          cssSelector: [".home-hero__lead", ".home-agent-summary"],
+        },
+      },
+      {
+        "@type": "FAQPage",
+        "@id": `${homeUrl}#faq`,
+        mainEntity: [
+          {
+            "@type": "Question",
+            name: "What is Codex Pets?",
+            acceptedAnswer: {
+              "@type": "Answer",
+              text:
+                "Codex Pets is a moderated community gallery for downloadable Codex-compatible animated pet packs.",
+            },
+          },
+          {
+            "@type": "Question",
+            name: "How do agents access Codex Pets?",
+            acceptedAnswer: {
+              "@type": "Answer",
+              text:
+                "Agents can use the public OpenAPI spec, llms.txt, JSON and TOON routes, or the read-only MCP endpoint.",
+            },
+          },
+        ],
+      },
+      {
+        "@type": "ItemList",
+        "@id": `${homeUrl}#featured-pets`,
+        name: "Featured Codex pet packs",
+        numberOfItems: featuredPets.length,
+        itemListElement: featuredPets.map((pet, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          item: getPetJsonLd(pet),
+        })),
+      },
+    ],
+  };
+}
+
+function getSiteIdentityJsonLdNodes() {
+  const homeUrl = toPublicUrl("/");
+  const organizationId = `${homeUrl}#organization`;
+  const softwareId = `${homeUrl}#software`;
+  const productId = `${homeUrl}#product`;
+  const websiteId = `${homeUrl}#website`;
+
+  return [
+    {
+      "@type": "Organization",
+      "@id": organizationId,
+      name: SITE_NAME,
+      url: homeUrl,
+      sameAs: SAME_AS_URLS,
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": softwareId,
+      name: SITE_NAME,
+      applicationCategory: "DeveloperApplication",
+      operatingSystem: "Web",
+      url: homeUrl,
+      description: SITE_DESCRIPTION,
+      isAccessibleForFree: true,
+      publisher: { "@id": organizationId },
+      sameAs: SAME_AS_URLS,
+    },
+    {
+      "@type": "Product",
+      "@id": productId,
+      name: SITE_NAME,
+      category: "AI coding agent companion registry",
+      description: SITE_DESCRIPTION,
+      url: homeUrl,
+      brand: { "@id": organizationId },
+      isRelatedTo: { "@id": softwareId },
+      sameAs: SAME_AS_URLS,
+    },
+    {
+      "@type": "WebSite",
+      "@id": websiteId,
+      name: SITE_NAME,
+      url: homeUrl,
+      description: SITE_DESCRIPTION,
+      publisher: { "@id": organizationId },
+      potentialAction: {
+        "@type": "SearchAction",
+        target: `${toPublicUrl("/")}?q={search_term_string}`,
+        "query-input": "required name=search_term_string",
+      },
+    },
+  ];
 }
 
 export function getBreadcrumbJsonLd(
