@@ -1,4 +1,4 @@
-import { toPublicUrl } from "@/lib/base-path";
+import { BASE_PATH, getPublicOrigin, toPublicUrl } from "@/lib/base-path";
 
 export function markdownResponse(body: string): Response {
   return new Response(`${body.trim()}\n`, {
@@ -321,6 +321,10 @@ ${AGENT_WHEN_TO_USE_GUIDANCE.trim()}
 }
 
 export function buildMcpMarkdown(): string {
+  const basePathNote = BASE_PATH
+    ? ` CSP source expressions cannot scope those directives to ${BASE_PATH}.`
+    : " CSP source expressions cannot scope those directives to URL paths.";
+
   return `
 # Codex Pets MCP server
 
@@ -335,7 +339,7 @@ The Codex Pets MCP server is a public read-only Streamable HTTP endpoint at ${to
 
 ## MCP App view security
 
-The inline MCP App view declares Content-Security-Policy metadata for host sandboxes. Its policy scopes connect-src, static resources, and base-uri to ${toPublicUrl("/")} and does not require secrets. Browser-enforced frame embedding restrictions require an HTTP Content-Security-Policy header on a normal HTTP response, not a meta CSP tag inside an inline MCP resource.
+The inline MCP App view declares Content-Security-Policy metadata for host sandboxes. Its policy scopes connect-src, static resources, and base-uri to the public origin ${getPublicOrigin()} and does not require secrets.${basePathNote} Browser-enforced frame embedding restrictions require an HTTP Content-Security-Policy header on a normal HTTP response, not a meta CSP tag inside an inline MCP resource.
 
 ${AGENT_WHEN_TO_USE_GUIDANCE.trim()}
 `;

@@ -18,6 +18,7 @@ import {
 
 const GUIDE_DESCRIPTION =
   "Integrate AI coding agents with Codex Pets through the read-only MCP server, OpenAPI spec, public manifest, markdown docs, and package install commands.";
+const MCP_GUIDE_PRIMARY_CTA_PATH = "/mcp.md";
 
 export const metadata: Metadata = {
   title: "Codex Pets MCP integration guide",
@@ -73,12 +74,20 @@ export default function CodexPetsMcpIntegrationGuidePage() {
             share snippets without changing site data.
           </Text>
           <Flex gap={2} wrap>
-            <Button view="action" size="l" href={withBasePath("/mcp")}>
-              MCP endpoint
+            <Button
+              view="action"
+              size="l"
+              href={withBasePath(MCP_GUIDE_PRIMARY_CTA_PATH)}
+            >
+              MCP markdown
               <ArrowRight />
             </Button>
-            <Button view="outlined" size="l" href={withBasePath("/mcp.md")}>
-              MCP markdown
+            <Button
+              view="outlined"
+              size="l"
+              href={withBasePath("/.well-known/mcp/server-card.json")}
+            >
+              Server card
               <ArrowRight />
             </Button>
           </Flex>

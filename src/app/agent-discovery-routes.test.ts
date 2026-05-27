@@ -139,4 +139,27 @@ describe("MCP markdown security notes", () => {
 
     vi.unstubAllEnvs();
   });
+
+  it("describes MCP App CSP as origin-scoped when basePath is configured", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example/codex-pets");
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/codex-pets");
+
+    const { GET } = await import("@/app/mcp.md/route");
+    const response = await GET();
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain(
+      "scopes connect-src, static resources, and base-uri to the public origin https://pets.example",
+    );
+    expect(body).toContain(
+      "CSP source expressions cannot scope those directives to /codex-pets",
+    );
+    expect(body).not.toContain(
+      "scopes connect-src, static resources, and base-uri to https://pets.example/codex-pets",
+    );
+
+    vi.unstubAllEnvs();
+  });
 });
