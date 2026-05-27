@@ -282,6 +282,13 @@ describe("site identity metadata", () => {
       name: "Featured Codex pet packs",
       numberOfItems: 1,
     });
+    expect(
+      homepageNodes.find((node) => node["@type"] === "WebPage"),
+    ).toMatchObject({
+      speakable: {
+        cssSelector: [".home-hero__lead"],
+      },
+    });
 
     vi.unstubAllEnvs();
   });

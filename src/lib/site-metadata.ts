@@ -337,7 +337,7 @@ export function getHomepageJsonLdGraph(
         about: [{ "@id": productId }, { "@id": softwareId }],
         speakable: {
           "@type": "SpeakableSpecification",
-          cssSelector: [".home-hero__lead", ".home-agent-summary"],
+          cssSelector: [".home-hero__lead"],
         },
       },
       {
