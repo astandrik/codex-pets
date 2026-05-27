@@ -48,8 +48,7 @@ function getMarkdownRewritePath(
     return null;
   }
 
-  const accept = request.headers.get("accept")?.toLowerCase() ?? "";
-  if (!accept.includes("text/markdown")) {
+  if (!prefersMarkdown(request.headers.get("accept"))) {
     return null;
   }
 
@@ -76,6 +75,57 @@ function isMarkdownNegotiablePath(pathname: string): boolean {
     normalizedPathname === "/developers" ||
     normalizedPathname === "/docs/api"
   );
+}
+
+function prefersMarkdown(acceptHeader: string | null): boolean {
+  const markdown = getAcceptedMediaQuality(acceptHeader, "text/markdown");
+  if (markdown <= 0) {
+    return false;
+  }
+
+  const html = getAcceptedMediaQuality(acceptHeader, "text/html");
+  return markdown > html;
+}
+
+function getAcceptedMediaQuality(
+  acceptHeader: string | null,
+  mediaType: string,
+): number {
+  if (!acceptHeader) {
+    return 0;
+  }
+
+  let bestQuality = 0;
+  for (const range of acceptHeader.split(",")) {
+    const [rawType, ...rawParameters] = range.split(";");
+    const type = rawType?.trim().toLowerCase();
+    if (!type || !mediaRangeMatches(type, mediaType)) {
+      continue;
+    }
+
+    const quality = rawParameters.reduce((currentQuality, parameter) => {
+      const [rawName, rawValue] = parameter.split("=");
+      if (rawName?.trim().toLowerCase() !== "q") {
+        return currentQuality;
+      }
+
+      const parsed = Number.parseFloat(rawValue?.trim() ?? "");
+      return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), 1) : 0;
+    }, 1);
+    bestQuality = Math.max(bestQuality, quality);
+  }
+
+  return bestQuality;
+}
+
+function mediaRangeMatches(range: string, mediaType: string): boolean {
+  if (range === mediaType || range === "*/*") {
+    return true;
+  }
+
+  const [rangeType, rangeSubtype] = range.split("/");
+  const [mediaTypeType] = mediaType.split("/");
+  return rangeSubtype === "*" && rangeType === mediaTypeType;
 }
 
 function stripBasePath(pathname: string, basePath?: string): string {

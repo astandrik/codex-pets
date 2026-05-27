@@ -20,6 +20,49 @@ describe("middleware markdown content negotiation", () => {
     expect(response.headers.get("Vary")).toBe("Accept");
   });
 
+  it("does not rewrite to markdown when markdown is explicitly unacceptable", async () => {
+    const { middleware } = await import("@/middleware");
+    const request = new NextRequest("https://pets.example/", {
+      headers: {
+        Accept: "text/html, text/markdown;q=0",
+      },
+    });
+
+    const response = middleware(request);
+
+    expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+    expect(response.headers.get("Vary")).toBe("Accept");
+  });
+
+  it("does not rewrite to markdown when html has higher Accept priority", async () => {
+    const { middleware } = await import("@/middleware");
+    const request = new NextRequest("https://pets.example/docs/api", {
+      headers: {
+        Accept: "text/html;q=1, text/markdown;q=0.1",
+      },
+    });
+
+    const response = middleware(request);
+
+    expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+    expect(response.headers.get("Vary")).toBe("Accept");
+  });
+
+  it("rewrites to markdown when markdown has higher Accept priority", async () => {
+    const { middleware } = await import("@/middleware");
+    const request = new NextRequest("https://pets.example/docs/api", {
+      headers: {
+        Accept: "text/html;q=0.1, text/markdown;q=1",
+      },
+    });
+
+    const response = middleware(request);
+
+    expect(response.headers.get("x-middleware-rewrite")).toBe(
+      "https://pets.example/docs/api.md",
+    );
+  });
+
   it("sets Vary: Accept on HTML responses for markdown-negotiated URLs", async () => {
     const { middleware } = await import("@/middleware");
     const request = new NextRequest("https://pets.example/developers", {
