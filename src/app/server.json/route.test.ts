@@ -68,6 +68,10 @@ describe("GET /server.json", () => {
     expect(body).toMatchObject({
       name: "Codex Pets Registry",
       endpoint: "https://pets.example/mcp",
+      serverUrl: "https://pets.example/mcp",
+      description:
+        "Search, preview, install community Codex pet packs, and discover the pet request flow.",
+      version: "1.0.0",
       instructions: expect.stringContaining("read-only"),
       tools: expect.arrayContaining([
         expect.objectContaining({ name: "search_pets" }),

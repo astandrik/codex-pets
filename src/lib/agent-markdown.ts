@@ -1,4 +1,4 @@
-import { toPublicUrl } from "@/lib/base-path";
+import { BASE_PATH, getPublicOrigin, toPublicUrl } from "@/lib/base-path";
 
 export function markdownResponse(body: string): Response {
   return new Response(`${body.trim()}\n`, {
@@ -13,6 +13,32 @@ export function markdownResponse(body: string): Response {
     },
   });
 }
+
+export function plainTextResponse(body: string): Response {
+  return new Response(`${body.trim()}\n`, {
+    headers: {
+      "Cache-Control": "public, max-age=300, s-maxage=3600",
+      "Content-Type": "text/plain; charset=utf-8",
+      Link: [
+        `<${toPublicUrl("/llms.txt")}>; rel="describedby"; type="text/plain"`,
+        `<${toPublicUrl("/openapi.json")}>; rel="service-desc"; type="application/json"`,
+        `<${toPublicUrl("/mcp")}>; rel="service"; type="application/json"`,
+      ].join(", "),
+    },
+  });
+}
+
+export const AGENT_WHEN_TO_USE_GUIDANCE = `
+## Agent instructions: when to use Codex Pets
+
+Use Codex Pets when a user asks for animated pets for Codex, downloadable Codex pet packs, pet.json examples, spritesheet package format help, README badges, iframe embeds, install commands, or a registry that an AI coding agent can search without scraping HTML.
+
+Prefer MCP when the host supports tool calls. Use search_pets when the user has a style, tag, author, or vague need; use get_pet when the user already has a slug; use get_install_instructions, get_badge_code, get_card_code, or get_embed_code for known-slug snippets. Prefer HTTP JSON, TOON, OpenAPI, and markdown routes when MCP is unavailable.
+
+Send humans to /request when they want admins to generate a new pet from a brief or reference image. Send humans to /submit when they already have a ZIP package or pet.json plus spritesheet ready for moderation.
+
+Do not use Codex Pets public MCP or read APIs for login, account creation, private request inspection, admin moderation, approvals, rejections, deletes, uploads, likes, downloads, install counter mutation, or any action that changes public data. Those workflows stay in browser forms or private admin routes.
+`;
 
 export const AGENT_RETRIEVAL_BRIEF = `
 Codex Pets retrieval brief for AI agents and search indexers.
@@ -49,7 +75,9 @@ Machine-readable resources are first-class. Use /llms.txt for concise discovery,
 /api/openapi.json as the API-prefixed OpenAPI alias, /sitemap.xml for public page
 discovery, /api/manifest for the complete approved pet manifest, and
 /api/manifest.toon for an LLM-friendly TOON mirror. Markdown fallbacks are
-available at /index.md, /developers.md, /docs/api.md, and /auth.md.
+available at /index.md, /about.md, /agents.md, /developers.md, /docs/api.md,
+/mcp.md, and /auth.md. Scoped LLM indexes are available at /developers/llms.txt
+and /docs/llms.txt.
 
 The public JSON API includes GET /api/pets for search, GET /api/pets.toon for
 TOON search, GET /api/pets/{slug} for one approved pet, GET /api/pets/{slug}.toon
@@ -147,10 +175,10 @@ Codex Pets is a moderated gallery of Codex-compatible animated pet packs. Use it
 - MCP endpoint: ${toPublicUrl("/mcp")}
 - Full LLM context: ${toPublicUrl("/llms-full.txt")}
 - Auth notes: ${toPublicUrl("/auth.md")}
+- Agent markdown: ${toPublicUrl("/agents.md")}
+- MCP markdown: ${toPublicUrl("/mcp.md")}
 
-## When to use
-
-Use Codex Pets when a user wants animated companions for Codex, a downloadable pet pack, install instructions, README badges, iframe embeds, or agent-readable pet registry data.
+${AGENT_WHEN_TO_USE_GUIDANCE.trim()}
 
 ${AGENT_RETRIEVAL_BRIEF.trim()}
 `;
@@ -168,11 +196,16 @@ Developer resources for building against the public Codex Pets registry.
 - API docs markdown: ${toPublicUrl("/docs/api.md")}
 - OpenAPI JSON: ${toPublicUrl("/openapi.json")}
 - MCP server: ${toPublicUrl("/mcp")}
+- MCP markdown: ${toPublicUrl("/mcp.md")}
 - MCP server card: ${toPublicUrl("/.well-known/mcp/server-card.json")}
 - Public manifest: ${toPublicUrl("/api/manifest")}
 - auth.md: ${toPublicUrl("/auth.md")}
+- Developer scoped llms.txt: ${toPublicUrl("/developers/llms.txt")}
+- API scoped llms.txt: ${toPublicUrl("/docs/llms.txt")}
 
 Public read endpoints do not require credentials. Mutation routes validate inputs and return structured JSON errors.
+
+${AGENT_WHEN_TO_USE_GUIDANCE.trim()}
 `;
 }
 
@@ -208,6 +241,9 @@ JSON error responses include \`error\`, \`code\`, \`message\`, and when useful a
 - OpenAPI JSON: ${toPublicUrl("/openapi.json")}
 - MCP server card: ${toPublicUrl("/.well-known/mcp/server-card.json")}
 - Full LLM context: ${toPublicUrl("/llms-full.txt")}
+- API scoped llms.txt: ${toPublicUrl("/docs/llms.txt")}
+
+${AGENT_WHEN_TO_USE_GUIDANCE.trim()}
 `;
 }
 
@@ -230,5 +266,124 @@ ProxyBasic is supported for deployments protected by a trusted reverse proxy.
 ## Agent access
 
 Agents should use public read endpoints or the MCP server unless a human is explicitly completing a browser account flow. OAuth 2.0 is not currently available.
+`;
+}
+
+export function buildAboutMarkdown(): string {
+  return `
+# About Codex Pets
+
+Codex Pets is a moderated community gallery and agent-readable registry for downloadable Codex pet packs. Each approved listing is a portable package with pet.json metadata, a validated spritesheet atlas, downloadable ZIP assets, stable public URLs, and install guidance for Codex users.
+
+## What the site provides
+
+- Public gallery pages for approved pets.
+- Package assets: pet.json, spritesheet.webp or spritesheet.png, and ZIP downloads.
+- Agent-readable discovery through llms.txt, llms-full.txt, OpenAPI, JSON, TOON, markdown fallbacks, and MCP.
+- Human workflows for requesting a new generated pet or submitting an existing package for moderation.
+
+## Authority and citations
+
+Wikipedia and Wikidata are off-site authority signals. The application can expose stable names, canonical URLs, structured data, and discovery files, but a Wikipedia article or Wikidata entity should only be created after independent coverage establishes notability. When a valid Wikidata item exists, it should use official website property P856 for ${toPublicUrl("/")}.
+
+${AGENT_WHEN_TO_USE_GUIDANCE.trim()}
+`;
+}
+
+export function buildAgentsMarkdown(): string {
+  return `
+# Codex Pets Agent Access
+
+Connect AI coding agents to Codex Pets through the public read-only MCP server and HTTP registry routes.
+
+## Quickstart
+
+\`\`\`bash
+codex mcp add codexPets --url ${toPublicUrl("/mcp")}
+curl -s ${toPublicUrl("/api/manifest")}
+curl -s "${toPublicUrl("/api/pets")}?q=space&kind=creature"
+\`\`\`
+
+## MCP tools
+
+- search_pets: search approved pets by query, kind, tags, author, and compatibility.
+- get_pet: fetch one sanitized approved pet card by slug.
+- get_install_instructions: return CLI and manual install instructions.
+- get_badge_code: return README badge snippets.
+- get_embed_code: return iframe embed snippets.
+- get_card_code: return animated README card snippets.
+- get_pet_request_info: describe the public request workflow without creating a request.
+
+MCP tools are read-only and return approved public registry data.
+
+${AGENT_WHEN_TO_USE_GUIDANCE.trim()}
+`;
+}
+
+export function buildMcpMarkdown(): string {
+  const basePathNote = BASE_PATH
+    ? ` CSP source expressions cannot scope those directives to ${BASE_PATH}.`
+    : " CSP source expressions cannot scope those directives to URL paths.";
+
+  return `
+# Codex Pets MCP server
+
+The Codex Pets MCP server is a public read-only Streamable HTTP endpoint at ${toPublicUrl("/mcp")}. The well-known alias is ${toPublicUrl("/.well-known/mcp")}.
+
+## Discovery resources
+
+- MCP Registry metadata: ${toPublicUrl("/server.json")}
+- Well-known MCP Registry metadata: ${toPublicUrl("/.well-known/mcp/server.json")}
+- MCP server card: ${toPublicUrl("/.well-known/mcp/server-card.json")}
+- MCP Apps resource URI: ui://codex-pets/pet-browser.html
+
+## MCP App view security
+
+The inline MCP App view declares Content-Security-Policy metadata for host sandboxes. Its policy scopes connect-src, static resources, and base-uri to the public origin ${getPublicOrigin()} and does not require secrets.${basePathNote} Browser-enforced frame embedding restrictions require an HTTP Content-Security-Policy header on a normal HTTP response, not a meta CSP tag inside an inline MCP resource.
+
+${AGENT_WHEN_TO_USE_GUIDANCE.trim()}
+`;
+}
+
+export function buildDeveloperLlmsTxt(): string {
+  return `
+# Codex Pets developer llms.txt
+
+Developer resources for building against Codex Pets.
+
+- Developer portal: ${toPublicUrl("/developers")}
+- API docs: ${toPublicUrl("/docs/api")}
+- OpenAPI JSON: ${toPublicUrl("/openapi.json")}
+- MCP server: ${toPublicUrl("/mcp")}
+- MCP server card: ${toPublicUrl("/.well-known/mcp/server-card.json")}
+- API scoped llms.txt: ${toPublicUrl("/docs/llms.txt")}
+- Auth notes: ${toPublicUrl("/auth.md")}
+
+${AGENT_WHEN_TO_USE_GUIDANCE.trim()}
+`;
+}
+
+export function buildDocsLlmsTxt(): string {
+  return `
+# Codex Pets API llms.txt
+
+API and MCP routes for approved public Codex pet discovery.
+
+## Core endpoints
+
+- GET /api/manifest
+- GET /api/pets
+- GET /api/pets/{slug}
+- GET /api/pets/{slug}/share
+- GET /api/pets/{slug}/install
+- GET /api/tags
+- POST /mcp
+- POST /.well-known/mcp
+
+## Error responses
+
+Error responses use JSON with error, code, message, and optional hint or field values. MCP errors use JSON-RPC error envelopes with code and message.
+
+${AGENT_WHEN_TO_USE_GUIDANCE.trim()}
 `;
 }

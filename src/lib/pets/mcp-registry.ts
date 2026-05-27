@@ -36,6 +36,9 @@ export type GlamaConnectorClaimMetadata = {
 
 export type McpServerCard = {
   name: string;
+  description: string;
+  version: string;
+  serverUrl: string;
   endpoint: string;
   instructions: string;
   tools: Array<{
@@ -78,9 +81,13 @@ export function buildGlamaConnectorClaimMetadata(): GlamaConnectorClaimMetadata 
 }
 
 export function buildMcpServerCard(): McpServerCard {
+  const serverUrl = toPublicUrl("/mcp");
   return {
     name: MCP_REGISTRY_SERVER_TITLE,
-    endpoint: toPublicUrl("/mcp"),
+    description: MCP_REGISTRY_SERVER_DESCRIPTION,
+    version: MCP_REGISTRY_SERVER_VERSION,
+    serverUrl,
+    endpoint: serverUrl,
     instructions:
       "Use this read-only MCP server to search approved Codex pet packs, fetch one approved pet, and generate install, badge, card, or embed snippets. Do not use it for private requests, account actions, moderation, deletes, downloads, or metrics mutations.",
     tools: [

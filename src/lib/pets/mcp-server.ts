@@ -6,7 +6,7 @@ import {
 } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod/v4";
 
-import { toPublicUrl } from "@/lib/base-path";
+import { getPublicOrigin, toPublicUrl } from "@/lib/base-path";
 import {
   type AgentPet,
   createAgentPet,
@@ -32,6 +32,12 @@ type McpToolResult = {
   structuredContent: Record<string, unknown>;
   content: Array<{ type: "text"; text: string }>;
   isError?: true;
+};
+
+type McpAppCsp = {
+  connectDomains: string[];
+  resourceDomains: string[];
+  baseUriDomains: string[];
 };
 
 type ReadAgentPetResult = {
@@ -253,6 +259,8 @@ export function createCodexPetsMcpServer(): McpServer {
 }
 
 function registerCodexPetsAppResource(server: McpServer): void {
+  const csp = buildMcpAppCsp();
+
   registerAppResource(
     server,
     "Codex Pets browser",
@@ -262,6 +270,7 @@ function registerCodexPetsAppResource(server: McpServer): void {
       _meta: {
         ui: {
           prefersBorder: true,
+          csp,
         },
       },
     },
@@ -274,6 +283,7 @@ function registerCodexPetsAppResource(server: McpServer): void {
           _meta: {
             ui: {
               prefersBorder: true,
+              csp,
             },
           },
         },
@@ -282,12 +292,34 @@ function registerCodexPetsAppResource(server: McpServer): void {
   );
 }
 
+function buildMcpAppCsp(): McpAppCsp {
+  const origin = getPublicOrigin();
+  return {
+    connectDomains: [origin],
+    resourceDomains: [origin],
+    baseUriDomains: [origin],
+  };
+}
+
 function buildCodexPetsAppHtml(): string {
+  const origin = getPublicOrigin();
+  const csp = [
+    "default-src 'none'",
+    `base-uri ${origin}`,
+    `connect-src ${origin}`,
+    `form-action ${origin}`,
+    `img-src ${origin} data:`,
+    `script-src ${origin}`,
+    `style-src ${origin} 'unsafe-inline'`,
+  ].join("; ");
+
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta http-equiv="Content-Security-Policy" content="${csp}">
   <title>Codex Pets</title>
   <style>
     :root { color-scheme: light dark; font-family: system-ui, sans-serif; }

@@ -53,10 +53,22 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.7,
     },
     {
+      url: toPublicUrl("/about.md"),
+      lastModified: generatedAt,
+      changeFrequency: "weekly",
+      priority: 0.5,
+    },
+    {
       url: toPublicUrl("/agents"),
       lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.7,
+    },
+    {
+      url: toPublicUrl("/agents.md"),
+      lastModified: generatedAt,
+      changeFrequency: "weekly",
+      priority: 0.5,
     },
     {
       url: toPublicUrl("/developers"),
@@ -65,10 +77,22 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.7,
     },
     {
+      url: toPublicUrl("/developers/llms.txt"),
+      lastModified: generatedAt,
+      changeFrequency: "weekly",
+      priority: 0.5,
+    },
+    {
       url: toPublicUrl("/docs/api"),
       lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.7,
+    },
+    {
+      url: toPublicUrl("/docs/llms.txt"),
+      lastModified: generatedAt,
+      changeFrequency: "weekly",
+      priority: 0.5,
     },
     {
       url: toPublicUrl("/guides/best-codex-pets-for-ai-coding-agents"),
@@ -78,6 +102,18 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
     },
     {
       url: toPublicUrl("/guides/codex-pets-vs-vscode-pets"),
+      lastModified: generatedAt,
+      changeFrequency: "monthly",
+      priority: 0.6,
+    },
+    {
+      url: toPublicUrl("/guides/codex-pets-vs-openpets"),
+      lastModified: generatedAt,
+      changeFrequency: "monthly",
+      priority: 0.6,
+    },
+    {
+      url: toPublicUrl("/guides/codex-pets-mcp-integration-guide"),
       lastModified: generatedAt,
       changeFrequency: "monthly",
       priority: 0.6,
@@ -102,6 +138,12 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
     },
     {
       url: toPublicUrl("/auth.md"),
+      lastModified: generatedAt,
+      changeFrequency: "weekly",
+      priority: 0.4,
+    },
+    {
+      url: toPublicUrl("/mcp.md"),
       lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.4,

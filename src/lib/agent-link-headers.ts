@@ -1,12 +1,8 @@
 import { toPublicUrl } from "@/lib/base-path";
-
-const AGENT_LINK_PATHS = new Set([
-  "/",
-  "/about",
-  "/agents",
-  "/developers",
-  "/docs/api",
-]);
+import {
+  getMarkdownTwinPath,
+  isMarkdownTwinSourcePath,
+} from "@/lib/markdown-twins";
 
 export function getAgentLinkHeaderForPath(pathname: string): string | null {
   const normalizedPath = normalizePathname(pathname);
@@ -19,6 +15,7 @@ export function getAgentLinkHeaderForPath(pathname: string): string | null {
     `<${toPublicUrl("/llms.txt")}>; rel="describedby"; type="text/plain"`,
     `<${toPublicUrl("/openapi.json")}>; rel="service-desc"; type="application/json"`,
     `<${toPublicUrl("/mcp")}>; rel="service"; type="application/json"`,
+    ...getPathSpecificLinks(normalizedPath),
   ].join(", ");
 }
 
@@ -34,7 +31,31 @@ export function appendAgentLinkHeaders(
 }
 
 function shouldExposeAgentLinks(pathname: string): boolean {
-  return AGENT_LINK_PATHS.has(pathname) || pathname.startsWith("/guides/");
+  return isMarkdownTwinSourcePath(pathname) || pathname.startsWith("/guides/");
+}
+
+function getPathSpecificLinks(pathname: string): string[] {
+  const links: string[] = [];
+  const markdownPath = getMarkdownTwinPath(pathname);
+  if (markdownPath) {
+    links.push(
+      `<${toPublicUrl(markdownPath)}>; rel="alternate"; type="text/markdown"`,
+    );
+  }
+
+  if (pathname === "/developers") {
+    links.push(
+      `<${toPublicUrl("/developers/llms.txt")}>; rel="describedby"; type="text/plain"`,
+    );
+  }
+
+  if (pathname === "/docs/api") {
+    links.push(
+      `<${toPublicUrl("/docs/llms.txt")}>; rel="describedby"; type="text/plain"`,
+    );
+  }
+
+  return links;
 }
 
 function normalizePathname(pathname: string): string {

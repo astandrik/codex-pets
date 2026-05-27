@@ -63,6 +63,25 @@ describe("middleware markdown content negotiation", () => {
     );
   });
 
+  it.each([
+    ["/agents", "/agents.md"],
+    ["/about", "/about.md"],
+  ])("rewrites %s to its markdown twin", async (pathname, markdownPath) => {
+    const { middleware } = await import("@/middleware");
+    const request = new NextRequest(`https://pets.example${pathname}`, {
+      headers: {
+        Accept: "text/markdown",
+      },
+    });
+
+    const response = middleware(request);
+
+    expect(response.headers.get("x-middleware-rewrite")).toBe(
+      `https://pets.example${markdownPath}`,
+    );
+    expect(response.headers.get("Vary")).toBe("Accept");
+  });
+
   it("sets Vary: Accept on HTML responses for markdown-negotiated URLs", async () => {
     const { middleware } = await import("@/middleware");
     const request = new NextRequest("https://pets.example/developers", {

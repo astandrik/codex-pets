@@ -1,4 +1,5 @@
 import { toPublicUrl } from "@/lib/base-path";
+import { AGENT_WHEN_TO_USE_GUIDANCE } from "@/lib/agent-markdown";
 import { listApprovedPets } from "@/lib/pets/repository";
 import { PET_SHEET } from "@/lib/pets/types";
 import { SITE_DESCRIPTION, SITE_NAME } from "@/lib/site-metadata";
@@ -49,12 +50,17 @@ export async function GET(): Promise<Response> {
       `- [Developer portal](${toPublicUrl("/developers")}): Codex Pets Developer Portal with links to API docs, OpenAPI, MCP, and auth notes.`,
       `- [API docs](${toPublicUrl("/docs/api")}): Codex Pets API docs for public JSON, TOON, MCP, request, and submission routes.`,
       `- [Markdown homepage](${toPublicUrl("/index.md")}): Canonical markdown fallback for the site root.`,
+      `- [Markdown about page](${toPublicUrl("/about.md")}): Product description, authority notes, and Wikipedia/Wikidata follow-up guidance.`,
+      `- [Markdown agent access](${toPublicUrl("/agents.md")}): Agent connection quickstart and when-to-use guidance.`,
       `- [Markdown developer portal](${toPublicUrl("/developers.md")}): Developer resources in markdown.`,
       `- [Markdown API docs](${toPublicUrl("/docs/api.md")}): API docs in markdown.`,
+      `- [Markdown MCP docs](${toPublicUrl("/mcp.md")}): MCP server and MCP App security notes.`,
       `- [Auth markdown](${toPublicUrl("/auth.md")}): Public auth and access notes for agents.`,
       `- [OpenAPI JSON](${toPublicUrl("/openapi.json")}): Canonical OpenAPI 3.1 specification.`,
       `- [OpenAPI JSON alias](${toPublicUrl("/api/openapi.json")}): Predictable API-prefixed OpenAPI URL.`,
       `- [Concise llms.txt](${toPublicUrl("/llms.txt")}): Short AI-readable map of the gallery and machine resources.`,
+      `- [Developer scoped llms.txt](${toPublicUrl("/developers/llms.txt")}): Scoped developer resource map for API, OpenAPI, MCP, and auth discovery.`,
+      `- [API scoped llms.txt](${toPublicUrl("/docs/llms.txt")}): Scoped API and MCP route map for agent callers.`,
       `- [Sitemap](${toPublicUrl("/sitemap.xml")}): Dynamic sitemap with public pages and approved pet pages.`,
       `- [MCP Registry metadata](${toPublicUrl("/server.json")}): Public MCP Registry server metadata.`,
       `- [Well-known MCP metadata](${toPublicUrl("/.well-known/mcp/server.json")}): Well-known MCP Registry metadata mirror.`,
@@ -87,6 +93,8 @@ export async function GET(): Promise<Response> {
       "- Admin, account, moderation, delete, and private owner routes are not part of the public agent contract.",
       "- Public JSON and MCP outputs are sanitized to avoid private contact email fields.",
       "- JSON error responses include error, code, message, and when useful hint or field.",
+      "",
+      AGENT_WHEN_TO_USE_GUIDANCE.trim(),
       "",
       "## Quickstart examples",
       "",

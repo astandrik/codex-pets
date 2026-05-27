@@ -19,6 +19,26 @@ describe("agent link headers", () => {
     vi.unstubAllEnvs();
   });
 
+  it("advertises markdown and scoped llms alternates for agent pages", () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+
+    const agentsHeader = getAgentLinkHeaderForPath("/agents");
+    const developersHeader = getAgentLinkHeaderForPath("/developers");
+    const docsHeader = getAgentLinkHeaderForPath("/docs/api");
+
+    expect(agentsHeader).toContain(
+      '<https://pets.example/agents.md>; rel="alternate"; type="text/markdown"',
+    );
+    expect(developersHeader).toContain(
+      '<https://pets.example/developers/llms.txt>; rel="describedby"; type="text/plain"',
+    );
+    expect(docsHeader).toContain(
+      '<https://pets.example/docs/llms.txt>; rel="describedby"; type="text/plain"',
+    );
+
+    vi.unstubAllEnvs();
+  });
+
   it("appends agent discovery links to an existing response", () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
     const response = new Response("ok", {

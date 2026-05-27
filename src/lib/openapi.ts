@@ -120,6 +120,28 @@ export function buildOpenApiSpec() {
           },
         },
       },
+      "/about.md": {
+        get: {
+          operationId: "getAboutMarkdown",
+          tags: ["Discovery"],
+          summary: "Get markdown about page",
+          security: publicReadSecurity,
+          responses: {
+            "200": textResponse("text/markdown"),
+          },
+        },
+      },
+      "/agents.md": {
+        get: {
+          operationId: "getAgentsMarkdown",
+          tags: ["Discovery"],
+          summary: "Get markdown agent access guide",
+          security: publicReadSecurity,
+          responses: {
+            "200": textResponse("text/markdown"),
+          },
+        },
+      },
       "/developers.md": {
         get: {
           operationId: "getDevelopersMarkdown",
@@ -131,11 +153,44 @@ export function buildOpenApiSpec() {
           },
         },
       },
+      "/developers/llms.txt": {
+        get: {
+          operationId: "getDevelopersLlmsTxt",
+          tags: ["Discovery"],
+          summary: "Get scoped developer LLM discovery context",
+          security: publicReadSecurity,
+          responses: {
+            "200": textResponse("text/plain"),
+          },
+        },
+      },
       "/docs/api.md": {
         get: {
           operationId: "getApiDocsMarkdown",
           tags: ["Discovery"],
           summary: "Get markdown API docs",
+          security: publicReadSecurity,
+          responses: {
+            "200": textResponse("text/markdown"),
+          },
+        },
+      },
+      "/docs/llms.txt": {
+        get: {
+          operationId: "getDocsLlmsTxt",
+          tags: ["Discovery"],
+          summary: "Get scoped API LLM discovery context",
+          security: publicReadSecurity,
+          responses: {
+            "200": textResponse("text/plain"),
+          },
+        },
+      },
+      "/mcp.md": {
+        get: {
+          operationId: "getMcpMarkdown",
+          tags: ["Discovery", "MCP"],
+          summary: "Get markdown MCP server guide",
           security: publicReadSecurity,
           responses: {
             "200": textResponse("text/markdown"),

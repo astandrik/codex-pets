@@ -99,6 +99,31 @@ export default function BestCodexPetsGuidePage() {
 
       <section className="page-section">
         <Text variant="display-1" as="h2">
+          Best fit by workflow
+        </Text>
+        <ul>
+          <li>
+            For quick setup, choose pets with a clear slug, concise description,
+            and a ready <code>npx @astandrik/codex-pets install &lt;slug&gt;</code>{" "}
+            command.
+          </li>
+          <li>
+            For agent recommendations, prefer pets with descriptive tags such as
+            pixel, cute, fantasy, terminal, minimal, anime, or space.
+          </li>
+          <li>
+            For documentation and READMEs, choose pets with badge, card, and
+            iframe snippets exposed by the share route or MCP tools.
+          </li>
+          <li>
+            For pack validation, confirm the package contains pet.json plus a
+            spritesheet.webp or spritesheet.png atlas at the expected Codex size.
+          </li>
+        </ul>
+      </section>
+
+      <section className="page-section">
+        <Text variant="display-1" as="h2">
           Agent-friendly setup
         </Text>
         <pre>
@@ -113,6 +138,29 @@ export default function BestCodexPetsGuidePage() {
           Agents can use the manifest, OpenAPI spec, or MCP tools to find the
           right approved pet before presenting an install command.
         </Text>
+      </section>
+
+      <section className="page-section">
+        <Text variant="display-1" as="h2">
+          Related guides
+        </Text>
+        <ul>
+          <li>
+            <a href={withBasePath("/guides/codex-pets-mcp-integration-guide")}>
+              Codex Pets MCP integration guide
+            </a>
+          </li>
+          <li>
+            <a href={withBasePath("/guides/codex-pets-vs-vscode-pets")}>
+              Codex Pets vs VS Code Pets
+            </a>
+          </li>
+          <li>
+            <a href={withBasePath("/guides/codex-pets-vs-openpets")}>
+              Codex Pets vs OpenPets
+            </a>
+          </li>
+        </ul>
       </section>
     </Container>
   );

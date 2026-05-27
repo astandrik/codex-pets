@@ -114,10 +114,22 @@ describe("sitemap", () => {
           priority: 0.7,
         },
         {
+          url: "https://pets.example/codex-pets/about.md",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "weekly",
+          priority: 0.5,
+        },
+        {
           url: "https://pets.example/codex-pets/agents",
           lastModified: "2026-05-22T10:00:00.000Z",
           changeFrequency: "weekly",
           priority: 0.7,
+        },
+        {
+          url: "https://pets.example/codex-pets/agents.md",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "weekly",
+          priority: 0.5,
         },
         {
           url: "https://pets.example/codex-pets/developers",
@@ -126,10 +138,22 @@ describe("sitemap", () => {
           priority: 0.7,
         },
         {
+          url: "https://pets.example/codex-pets/developers/llms.txt",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "weekly",
+          priority: 0.5,
+        },
+        {
           url: "https://pets.example/codex-pets/docs/api",
           lastModified: "2026-05-22T10:00:00.000Z",
           changeFrequency: "weekly",
           priority: 0.7,
+        },
+        {
+          url: "https://pets.example/codex-pets/docs/llms.txt",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "weekly",
+          priority: 0.5,
         },
         {
           url: "https://pets.example/codex-pets/guides/best-codex-pets-for-ai-coding-agents",
@@ -139,6 +163,18 @@ describe("sitemap", () => {
         },
         {
           url: "https://pets.example/codex-pets/guides/codex-pets-vs-vscode-pets",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "monthly",
+          priority: 0.6,
+        },
+        {
+          url: "https://pets.example/codex-pets/guides/codex-pets-vs-openpets",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "monthly",
+          priority: 0.6,
+        },
+        {
+          url: "https://pets.example/codex-pets/guides/codex-pets-mcp-integration-guide",
           lastModified: "2026-05-22T10:00:00.000Z",
           changeFrequency: "monthly",
           priority: 0.6,
@@ -163,6 +199,12 @@ describe("sitemap", () => {
         },
         {
           url: "https://pets.example/codex-pets/auth.md",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "weekly",
+          priority: 0.4,
+        },
+        {
+          url: "https://pets.example/codex-pets/mcp.md",
           lastModified: "2026-05-22T10:00:00.000Z",
           changeFrequency: "weekly",
           priority: 0.4,

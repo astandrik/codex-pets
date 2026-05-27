@@ -2,6 +2,10 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { BASE_PATH } from "@/lib/base-path";
 import { appendAgentLinkHeaders } from "@/lib/agent-link-headers";
+import {
+  getMarkdownTwinPath,
+  isMarkdownTwinSourcePath,
+} from "@/lib/markdown-twins";
 import { getPreviewRewritePath } from "@/lib/preview/request";
 
 export function middleware(request: NextRequest): Response {
@@ -52,11 +56,7 @@ function getMarkdownRewritePath(
     return null;
   }
 
-  const normalizedPathname = pathname.replace(/\/$/, "") || "/";
-  if (normalizedPathname === "/") return "/index.md";
-  if (normalizedPathname === "/developers") return "/developers.md";
-  if (normalizedPathname === "/docs/api") return "/docs/api.md";
-  return null;
+  return getMarkdownTwinPath(pathname);
 }
 
 function appendVaryForMarkdownNegotiation(
@@ -69,12 +69,7 @@ function appendVaryForMarkdownNegotiation(
 }
 
 function isMarkdownNegotiablePath(pathname: string): boolean {
-  const normalizedPathname = pathname.replace(/\/$/, "") || "/";
-  return (
-    normalizedPathname === "/" ||
-    normalizedPathname === "/developers" ||
-    normalizedPathname === "/docs/api"
-  );
+  return isMarkdownTwinSourcePath(pathname);
 }
 
 function prefersMarkdown(acceptHeader: string | null): boolean {
