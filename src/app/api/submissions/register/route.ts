@@ -4,12 +4,12 @@ import { jsonApiError, jsonValidationError } from "@/lib/api-error";
 import { getCurrentPrincipal } from "@/lib/auth/session";
 import { normalizeEmail } from "@/lib/auth/repository";
 import {
+  claimIdempotencyKey,
   hashBuffer,
   hashIdempotencyPayload,
   idempotencyStorageUnavailableResponse,
   isIdempotencyStorageAvailable,
   readIdempotencyKey,
-  resolveIdempotencyReplay,
   storeIdempotencyResult,
 } from "@/lib/idempotency";
 import { storePetAssetsInYdb } from "@/lib/pets/assets-repository";
@@ -84,6 +84,24 @@ export async function POST(req: Request): Promise<Response> {
     Buffer.from(await zip.arrayBuffer()),
   ]);
 
+  const validation = await validateUploadedPackage({
+    petJsonBuffer,
+    spritesheetBuffer,
+    zipBuffer,
+    spritesheetExt,
+  });
+  if (!validation.ok) {
+    return jsonValidationError(validation);
+  }
+
+  const normalizedKind = normalizeKind(formData.get("kind"));
+  const normalizedTags = readTags(
+    String(formData.get("tags") ?? "")
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean),
+  );
+  const routeScope = idempotencyRouteScope(ROUTE_ID, principal);
   const requestHash = idempotency.key
     ? hashSubmissionRequest({
         zip,
@@ -93,28 +111,21 @@ export async function POST(req: Request): Promise<Response> {
         petJsonBuffer,
         spritesheetBuffer,
         spritesheetExt,
-        contactEmailRaw,
-        kind: formData.get("kind"),
-        tags: formData.get("tags"),
+        effectiveContactEmail:
+          principal?.email?.toLowerCase() ??
+          normalizedContactEmail?.emailLower ??
+          null,
+        normalizedKind,
+        normalizedTags,
       })
     : null;
   if (idempotency.key && requestHash) {
-    const replay = await resolveIdempotencyReplay({
-      route: ROUTE_ID,
+    const replay = await claimIdempotencyKey({
+      route: routeScope,
       key: idempotency.key,
       requestHash,
     });
     if (replay.kind !== "fresh") return replay.response;
-  }
-
-  const validation = await validateUploadedPackage({
-    petJsonBuffer,
-    spritesheetBuffer,
-    zipBuffer,
-    spritesheetExt,
-  });
-  if (!validation.ok) {
-    return jsonValidationError(validation);
   }
 
   const assetId = `asset_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
@@ -132,13 +143,8 @@ export async function POST(req: Request): Promise<Response> {
     ownerEmail: principal?.email ?? null,
     ownerName: principal?.name ?? null,
     contactEmail: principal?.email ?? normalizedContactEmail?.email ?? null,
-    kind: normalizeKind(formData.get("kind")),
-    tags: readTags(
-      String(formData.get("tags") ?? "")
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean),
-    ),
+    kind: normalizedKind,
+    tags: normalizedTags,
     zipUrl: assetUrls.zipUrl,
     petJsonUrl: assetUrls.petJsonUrl,
     spritesheetUrl: assetUrls.spritesheetUrl,
@@ -148,7 +154,7 @@ export async function POST(req: Request): Promise<Response> {
   const responseBody = { ok: true, pet };
   if (idempotency.key && requestHash) {
     const stored = await storeIdempotencyResult({
-      route: ROUTE_ID,
+      route: routeScope,
       key: idempotency.key,
       requestHash,
       statusCode: 201,
@@ -168,15 +174,15 @@ function hashSubmissionRequest(input: {
   petJsonBuffer: Buffer;
   spritesheetBuffer: Buffer;
   spritesheetExt: "webp" | "png";
-  contactEmailRaw: string;
-  kind: FormDataEntryValue | null;
-  tags: FormDataEntryValue | null;
+  effectiveContactEmail: string | null;
+  normalizedKind: "creature" | "object" | "character";
+  normalizedTags: string[];
 }): string {
   return hashIdempotencyPayload({
     fields: {
-      contactEmail: input.contactEmailRaw,
-      kind: typeof input.kind === "string" ? input.kind : "",
-      tags: typeof input.tags === "string" ? input.tags : "",
+      contactEmail: input.effectiveContactEmail,
+      kind: input.normalizedKind,
+      tags: input.normalizedTags,
       spritesheetExt: input.spritesheetExt,
     },
     files: {
@@ -194,4 +200,11 @@ function fileHash(file: File, buffer: Buffer) {
     size: file.size,
     sha256: hashBuffer(buffer),
   };
+}
+
+function idempotencyRouteScope(
+  route: string,
+  principal: { userId: string } | null,
+): string {
+  return `${route}#${principal ? `user:${principal.userId}` : "anonymous"}`;
 }

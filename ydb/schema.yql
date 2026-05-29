@@ -166,9 +166,11 @@ CREATE TABLE codex_idempotency_keys (
   route Utf8 NOT NULL,
   idempotency_key Utf8 NOT NULL,
   request_hash Utf8 NOT NULL,
+  status Utf8 NOT NULL,
   status_code Uint32 NOT NULL,
   response_json Utf8 NOT NULL,
   created_at Utf8 NOT NULL,
+  updated_at Utf8 NOT NULL,
   PRIMARY KEY (route, idempotency_key)
 );
 

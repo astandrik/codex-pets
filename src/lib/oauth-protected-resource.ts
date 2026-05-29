@@ -5,9 +5,9 @@ type ProtectedResourceKind = "site" | "mcp";
 export type OAuthProtectedResourceMetadata = {
   resource: string;
   resource_name: string;
-  service_documentation: string;
-  policy_uri: string;
-  terms_of_service: string;
+  resource_documentation: string;
+  resource_policy_uri: string;
+  resource_tos_uri: string;
   oauth_unsupported: true;
   scopes_supported: string[];
   bearer_methods_supported: string[];
@@ -19,10 +19,10 @@ export function buildOAuthProtectedResourceMetadata(
   return {
     resource: kind === "mcp" ? toPublicUrl("/mcp") : toPublicUrl("/"),
     resource_name: "Codex Pets",
-    service_documentation:
+    resource_documentation:
       kind === "mcp" ? toPublicUrl("/mcp.md") : toPublicUrl("/developers"),
-    policy_uri: toPublicUrl("/terms"),
-    terms_of_service: toPublicUrl("/terms"),
+    resource_policy_uri: toPublicUrl("/terms"),
+    resource_tos_uri: toPublicUrl("/terms"),
     oauth_unsupported: true,
     scopes_supported: [],
     bearer_methods_supported: [],

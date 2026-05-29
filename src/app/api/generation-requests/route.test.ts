@@ -20,6 +20,7 @@ import { isYdbConfigured } from "@/lib/ydb/client";
 
 describe("POST /api/generation-requests", () => {
   beforeEach(() => {
+    vi.unstubAllEnvs();
     vi.clearAllMocks();
     vi.stubEnv("CODEX_PETS_DATA_SOURCE", "mock");
     vi.mocked(isYdbConfigured).mockReturnValue(true);
@@ -111,6 +112,90 @@ describe("POST /api/generation-requests", () => {
     expect(second.status).toBe(201);
     await expect(second.json()).resolves.toEqual(await first.json());
     expect(createGenerationRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("replays semantically matching requests after validation normalization", async () => {
+    vi.mocked(getCurrentPrincipal)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    vi.mocked(createGenerationRequest).mockResolvedValue({
+      id: "req_normalized",
+      status: "pending",
+      kind: "creature",
+      displayNameHint: "Patch Pilot",
+      prompt: "Make a careful code review companion.",
+      contactEmail: "anon@example.com",
+      requesterName: "Anon",
+      requesterUserId: null,
+      linkedPetId: null,
+      linkedPetSlug: null,
+      referenceImage: null,
+      adminNote: null,
+      createdAt: "2026-05-16T10:00:00.000Z",
+      updatedAt: "2026-05-16T10:00:00.000Z",
+      fulfilledAt: null,
+      rejectedAt: null,
+    });
+
+    const first = await POST(jsonRequest({
+      contactEmail: " ANON@EXAMPLE.COM ",
+      requesterName: " Anon ",
+      displayNameHint: " Patch Pilot ",
+      prompt: " Make a careful code review companion. ",
+      kind: "not-a-kind",
+    }, "request-normalized-1"));
+    const second = await POST(jsonRequest({
+      contactEmail: "anon@example.com",
+      requesterName: "Anon",
+      displayNameHint: "Patch Pilot",
+      prompt: "Make a careful code review companion.",
+      kind: "creature",
+    }, "request-normalized-1"));
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    await expect(second.json()).resolves.toEqual(await first.json());
+    expect(createGenerationRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("scopes idempotency keys to signed-in users", async () => {
+    vi.mocked(getCurrentPrincipal)
+      .mockResolvedValueOnce({
+        userId: "user_1",
+        email: "one@example.com",
+        name: "One",
+        role: "user",
+      })
+      .mockResolvedValueOnce({
+        userId: "user_2",
+        email: "two@example.com",
+        name: "Two",
+        role: "user",
+      });
+    vi.mocked(createGenerationRequest)
+      .mockResolvedValueOnce(generationRequestRecord("req_user_1", "user_1"))
+      .mockResolvedValueOnce(generationRequestRecord("req_user_2", "user_2"));
+
+    const body = {
+      contactEmail: "anon@example.com",
+      requesterName: "Anon",
+      displayNameHint: "Patch Pilot",
+      prompt: "Make a careful code review companion.",
+      kind: "character",
+    };
+
+    const first = await POST(jsonRequest(body, "request-user-scope-1"));
+    const second = await POST(jsonRequest(body, "request-user-scope-1"));
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    await expect(first.json()).resolves.toMatchObject({
+      request: { id: "req_user_1" },
+    });
+    await expect(second.json()).resolves.toMatchObject({
+      request: { id: "req_user_2" },
+    });
+    expect(createGenerationRequest).toHaveBeenCalledTimes(2);
   });
 
   it("rejects reused Idempotency-Key values with a different body", async () => {
@@ -329,6 +414,27 @@ function formRequest(formData: FormData): Request {
     method: "POST",
     body: formData,
   });
+}
+
+function generationRequestRecord(id: string, requesterUserId: string | null) {
+  return {
+    id,
+    status: "pending" as const,
+    kind: "character" as const,
+    displayNameHint: "Patch Pilot",
+    prompt: "Make a careful code review companion.",
+    contactEmail: "anon@example.com",
+    requesterName: "Anon",
+    requesterUserId,
+    linkedPetId: null,
+    linkedPetSlug: null,
+    referenceImage: null,
+    adminNote: null,
+    createdAt: "2026-05-16T10:00:00.000Z",
+    updatedAt: "2026-05-16T10:00:00.000Z",
+    fulfilledAt: null,
+    rejectedAt: null,
+  };
 }
 
 function baseFormData(): FormData {

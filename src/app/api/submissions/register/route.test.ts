@@ -28,6 +28,7 @@ import { validateUploadedPackage } from "@/lib/pets/package";
 
 describe("POST /api/submissions/register", () => {
   beforeEach(() => {
+    vi.unstubAllEnvs();
     vi.clearAllMocks();
     vi.stubEnv("CODEX_PETS_DATA_SOURCE", "mock");
   });
@@ -131,6 +132,67 @@ describe("POST /api/submissions/register", () => {
     await expect(second.json()).resolves.toEqual(await first.json());
     expect(storePetAssetsInYdb).toHaveBeenCalledTimes(1);
     expect(createPendingPet).toHaveBeenCalledTimes(1);
+  });
+
+  it("replays semantically matching submissions after field normalization", async () => {
+    vi.mocked(getCurrentPrincipal)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    mockSuccessfulSubmission("pet_normalized");
+
+    const firstForm = validSubmissionForm();
+    firstForm.set("contactEmail", " ANON@EXAMPLE.COM ");
+    firstForm.set("tags", " Cozy ,ROBOT ");
+    const secondForm = validSubmissionForm();
+    secondForm.set("contactEmail", "anon@example.com");
+    secondForm.set("tags", "cozy,robot");
+
+    const first = await POST(submissionRequest(firstForm, "submit-normalized-1"));
+    const second = await POST(submissionRequest(secondForm, "submit-normalized-1"));
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    await expect(second.json()).resolves.toEqual(await first.json());
+    expect(storePetAssetsInYdb).toHaveBeenCalledTimes(1);
+    expect(createPendingPet).toHaveBeenCalledTimes(1);
+  });
+
+  it("scopes submission idempotency keys to signed-in users", async () => {
+    vi.mocked(getCurrentPrincipal)
+      .mockResolvedValueOnce({
+        userId: "user_1",
+        email: "one@example.com",
+        name: "One",
+        role: "user",
+      })
+      .mockResolvedValueOnce({
+        userId: "user_2",
+        email: "two@example.com",
+        name: "Two",
+        role: "user",
+      });
+    mockSuccessfulSubmission("pet_user_1");
+    vi.mocked(createPendingPet).mockResolvedValueOnce(
+      submissionPet("pet_user_1"),
+    ).mockResolvedValueOnce(submissionPet("pet_user_2"));
+
+    const first = await POST(
+      submissionRequest(validSubmissionForm(), "submit-user-scope-1"),
+    );
+    const second = await POST(
+      submissionRequest(validSubmissionForm(), "submit-user-scope-1"),
+    );
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    await expect(first.json()).resolves.toMatchObject({
+      pet: { id: "pet_user_1" },
+    });
+    await expect(second.json()).resolves.toMatchObject({
+      pet: { id: "pet_user_2" },
+    });
+    expect(storePetAssetsInYdb).toHaveBeenCalledTimes(2);
+    expect(createPendingPet).toHaveBeenCalledTimes(2);
   });
 
   it("rejects reused Idempotency-Key values with different submission bytes", async () => {
@@ -362,7 +424,11 @@ function mockSuccessfulSubmission(id: string): void {
     spritesheetUrl: "/api/assets/a/spritesheet.webp",
     zipUrl: "/api/assets/a/pet.zip",
   });
-  vi.mocked(createPendingPet).mockResolvedValue({
+  vi.mocked(createPendingPet).mockResolvedValue(submissionPet(id));
+}
+
+function submissionPet(id: string) {
+  return {
     id,
     slug: "demo",
     displayName: "Demo",
@@ -370,10 +436,10 @@ function mockSuccessfulSubmission(id: string): void {
     spritesheetUrl: "/api/assets/a/spritesheet.webp",
     petJsonUrl: "/api/assets/a/pet.json",
     zipUrl: "/api/assets/a/pet.zip",
-    spritesheetExt: "webp",
-    kind: "creature",
+    spritesheetExt: "webp" as const,
+    kind: "creature" as const,
     tags: [],
-    status: "pending",
+    status: "pending" as const,
     ownerName: null,
     contactEmail: "anon@example.com",
     createdAt: "2026-05-16T10:00:00.000Z",
@@ -381,5 +447,5 @@ function mockSuccessfulSubmission(id: string): void {
     downloadCount: 0,
     installCount: 0,
     likeCount: 0,
-  });
+  };
 }

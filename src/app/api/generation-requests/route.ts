@@ -4,15 +4,16 @@ import sharp from "sharp";
 import { jsonApiError, jsonValidationError } from "@/lib/api-error";
 import { getCurrentPrincipal } from "@/lib/auth/session";
 import {
+  claimIdempotencyKey,
   hashBuffer,
   hashIdempotencyPayload,
   idempotencyStorageUnavailableResponse,
   isIdempotencyStorageAvailable,
   readIdempotencyKey,
-  resolveIdempotencyReplay,
   storeIdempotencyResult,
 } from "@/lib/idempotency";
 import {
+  type CreatePetGenerationRequestInput,
   validateCreatePetGenerationRequest,
 } from "@/lib/pets/generation-requests";
 import {
@@ -63,21 +64,22 @@ export async function POST(req: Request): Promise<Response> {
   const parsed = await readRequestBody(req);
   if (!parsed.ok) return parsed.response;
 
-  const requestHash = parsed.ok && idempotency.key
-    ? hashGenerationRequest(parsed.body, parsed.referenceImage)
+  const validation = validateCreatePetGenerationRequest(parsed.body);
+  if (!validation.ok) {
+    return jsonValidationError(validation);
+  }
+
+  const routeScope = idempotencyRouteScope(ROUTE_ID, principal);
+  const requestHash = idempotency.key
+    ? hashGenerationRequest(validation.value, parsed.referenceImage)
     : null;
   if (idempotency.key && requestHash) {
-    const replay = await resolveIdempotencyReplay({
-      route: ROUTE_ID,
+    const replay = await claimIdempotencyKey({
+      route: routeScope,
       key: idempotency.key,
       requestHash,
     });
     if (replay.kind !== "fresh") return replay.response;
-  }
-
-  const validation = validateCreatePetGenerationRequest(parsed.body);
-  if (!validation.ok) {
-    return jsonValidationError(validation);
   }
 
   const request = await createGenerationRequest({
@@ -97,7 +99,7 @@ export async function POST(req: Request): Promise<Response> {
 
   if (idempotency.key && requestHash) {
     const stored = await storeIdempotencyResult({
-      route: ROUTE_ID,
+      route: routeScope,
       key: idempotency.key,
       requestHash,
       statusCode: 201,
@@ -255,11 +257,14 @@ function sanitizeFileName(value: string): string {
 }
 
 function hashGenerationRequest(
-  body: unknown,
+  body: CreatePetGenerationRequestInput,
   referenceImage: CreateGenerationRequestImageInput | null,
 ): string {
   return hashIdempotencyPayload({
-    body,
+    body: {
+      ...body,
+      contactEmail: body.contactEmail.toLowerCase(),
+    },
     referenceImage: referenceImage
       ? {
           fileName: referenceImage.fileName,
@@ -269,4 +274,11 @@ function hashGenerationRequest(
         }
       : null,
   });
+}
+
+function idempotencyRouteScope(
+  route: string,
+  principal: { userId: string } | null,
+): string {
+  return `${route}#${principal ? `user:${principal.userId}` : "anonymous"}`;
 }

@@ -33,9 +33,9 @@ describe("OAuth protected resource metadata routes", () => {
     expect(body).toMatchObject({
       resource,
       resource_name: "Codex Pets",
-      service_documentation: serviceDocumentation,
-      policy_uri: "https://pets.example/codex-pets/terms",
-      terms_of_service: "https://pets.example/codex-pets/terms",
+      resource_documentation: serviceDocumentation,
+      resource_policy_uri: "https://pets.example/codex-pets/terms",
+      resource_tos_uri: "https://pets.example/codex-pets/terms",
     });
     expect(body.authorization_servers).toBeUndefined();
     expect(body.oauth_unsupported).toBe(true);

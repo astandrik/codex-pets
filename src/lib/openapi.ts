@@ -611,9 +611,9 @@ export function buildOpenApiSpec() {
           required: [
             "resource",
             "resource_name",
-            "service_documentation",
-            "policy_uri",
-            "terms_of_service",
+            "resource_documentation",
+            "resource_policy_uri",
+            "resource_tos_uri",
             "oauth_unsupported",
             "scopes_supported",
             "bearer_methods_supported",
@@ -621,9 +621,9 @@ export function buildOpenApiSpec() {
           properties: {
             resource: { type: "string", format: "uri" },
             resource_name: { type: "string" },
-            service_documentation: { type: "string", format: "uri" },
-            policy_uri: { type: "string", format: "uri" },
-            terms_of_service: { type: "string", format: "uri" },
+            resource_documentation: { type: "string", format: "uri" },
+            resource_policy_uri: { type: "string", format: "uri" },
+            resource_tos_uri: { type: "string", format: "uri" },
             oauth_unsupported: { type: "boolean", const: true },
             scopes_supported: {
               type: "array",
