@@ -38,7 +38,15 @@ describe("buildOpenApiSpec", () => {
     expect(spec.paths).toHaveProperty("/developers.md");
     expect(spec.paths).toHaveProperty("/docs/api.md");
     expect(spec.paths).toHaveProperty("/auth.md");
+    expect(spec.paths).toHaveProperty("/pricing");
+    expect(spec.paths).toHaveProperty("/pricing.md");
+    expect(spec.paths).toHaveProperty("/terms");
+    expect(spec.paths).toHaveProperty("/terms.md");
+    expect(spec.paths).toHaveProperty("/.well-known/oauth-protected-resource");
+    expect(spec.paths).toHaveProperty("/.well-known/oauth-protected-resource/mcp");
     expect(spec.paths).not.toHaveProperty("/api/pets/{slug}/download");
+    expect(spec.info.description).toContain("stable v1 endpoints");
+    expect(spec.info.description).toContain("deprecation notice");
     expect(spec.paths["/api/pets/{slug}/install"]).not.toHaveProperty("post");
     expect(spec.paths["/api/pets/{slug}"]).not.toHaveProperty("post");
     expect(Object.keys(spec.paths).some((path) => path.includes("/admin"))).toBe(
@@ -76,6 +84,28 @@ describe("buildOpenApiSpec", () => {
     });
     expect(spec.paths["/.well-known/mcp"].post.responses).not.toHaveProperty("405");
     expect(spec.paths["/api/generation-requests"].post.security).toEqual([]);
+    expect(spec.paths["/api/generation-requests"].post.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "Idempotency-Key",
+          in: "header",
+          required: false,
+        }),
+      ]),
+    );
+    expect(spec.paths["/api/generation-requests"].post.responses).toHaveProperty("409");
+    expect(spec.paths["/api/generation-requests"].post.responses).toHaveProperty("503");
+    expect(spec.paths["/api/submissions/register"].post.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "Idempotency-Key",
+          in: "header",
+          required: false,
+        }),
+      ]),
+    );
+    expect(spec.paths["/api/submissions/register"].post.responses).toHaveProperty("409");
+    expect(spec.paths["/api/submissions/register"].post.responses).toHaveProperty("503");
     expect(spec.components.schemas.ErrorResponse).toMatchObject({
       required: ["error", "code", "message"],
       properties: {

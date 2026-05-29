@@ -19,6 +19,10 @@ describe("robots", () => {
         "/codex-pets/docs/api",
         "/codex-pets/docs/llms.txt",
         "/codex-pets/guides/",
+        "/codex-pets/pricing",
+        "/codex-pets/pricing.md",
+        "/codex-pets/terms",
+        "/codex-pets/terms.md",
         "/codex-pets/llms-full.txt",
         "/codex-pets/openapi.json",
         "/codex-pets/index.md",
@@ -29,6 +33,8 @@ describe("robots", () => {
         "/codex-pets/auth.md",
         "/codex-pets/.well-known/mcp",
         "/codex-pets/.well-known/mcp/server-card.json",
+        "/codex-pets/.well-known/oauth-protected-resource",
+        "/codex-pets/.well-known/oauth-protected-resource/mcp",
       ]),
     );
     expect(firstRule.disallow).toEqual(

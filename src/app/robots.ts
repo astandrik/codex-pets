@@ -16,6 +16,10 @@ const PUBLIC_ALLOW_PATHS = [
   "/users/",
   "/request",
   "/submit",
+  "/pricing",
+  "/pricing.md",
+  "/terms",
+  "/terms.md",
   "/index.md",
   "/about.md",
   "/developers.md",
@@ -31,6 +35,8 @@ const PUBLIC_ALLOW_PATHS = [
   "/server.json",
   "/.well-known/mcp/server.json",
   "/.well-known/mcp/server-card.json",
+  "/.well-known/oauth-protected-resource",
+  "/.well-known/oauth-protected-resource/mcp",
 ];
 
 const PUBLIC_DISALLOW_PATHS = ["/admin", "/api/admin"];

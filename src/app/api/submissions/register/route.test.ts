@@ -29,6 +29,7 @@ import { validateUploadedPackage } from "@/lib/pets/package";
 describe("POST /api/submissions/register", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "mock");
   });
 
   it("allows anonymous submissions", async () => {
@@ -114,6 +115,74 @@ describe("POST /api/submissions/register", () => {
         contactEmail: "anon@example.com",
       }),
     );
+  });
+
+  it("replays successful submissions when Idempotency-Key and files match", async () => {
+    vi.mocked(getCurrentPrincipal)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    mockSuccessfulSubmission("pet_idempotent");
+
+    const first = await POST(submissionRequest(validSubmissionForm(), "submit-replay-1"));
+    const second = await POST(submissionRequest(validSubmissionForm(), "submit-replay-1"));
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    await expect(second.json()).resolves.toEqual(await first.json());
+    expect(storePetAssetsInYdb).toHaveBeenCalledTimes(1);
+    expect(createPendingPet).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects reused Idempotency-Key values with different submission bytes", async () => {
+    vi.mocked(getCurrentPrincipal)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    mockSuccessfulSubmission("pet_conflict");
+
+    const first = await POST(submissionRequest(validSubmissionForm(), "submit-conflict-1"));
+    const changed = validSubmissionForm();
+    changed.set("tags", "cozy,robot,space");
+    const second = await POST(submissionRequest(changed, "submit-conflict-1"));
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(409);
+    await expect(second.json()).resolves.toMatchObject({
+      error: "idempotency_key_conflict",
+      code: "idempotency_key_conflict",
+    });
+    expect(storePetAssetsInYdb).toHaveBeenCalledTimes(1);
+    expect(createPendingPet).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects invalid Idempotency-Key values before storing assets", async () => {
+    const response = await POST(submissionRequest(validSubmissionForm(), "bad key"));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "invalid_idempotency_key",
+      code: "invalid_idempotency_key",
+    });
+    expect(storePetAssetsInYdb).not.toHaveBeenCalled();
+    expect(createPendingPet).not.toHaveBeenCalled();
+  });
+
+  it("returns idempotency_unavailable when a key is supplied without storage", async () => {
+    const { isYdbConfigured } = await import("@/lib/ydb/client");
+    vi.mocked(isYdbConfigured).mockReturnValueOnce(false);
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "");
+
+    const response = await POST(
+      submissionRequest(validSubmissionForm(), "submit-no-storage-1"),
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "idempotency_unavailable",
+      code: "idempotency_unavailable",
+    });
+    expect(getCurrentPrincipal).not.toHaveBeenCalled();
+    expect(storePetAssetsInYdb).not.toHaveBeenCalled();
+    expect(createPendingPet).not.toHaveBeenCalled();
   });
 
   it("binds submit to the logged-in owner when a session exists", async () => {
@@ -235,3 +304,82 @@ describe("POST /api/submissions/register", () => {
     expect(createPendingPet).not.toHaveBeenCalled();
   });
 });
+
+function submissionRequest(formData: FormData, idempotencyKey?: string): Request {
+  const headers = new Headers();
+  if (idempotencyKey) headers.set("Idempotency-Key", idempotencyKey);
+  return new Request("http://localhost:3000/api/submissions/register", {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+}
+
+function validSubmissionForm(): FormData {
+  const formData = new FormData();
+  formData.set("zip", new File(["zip"], "pet.zip", { type: "application/zip" }));
+  formData.set(
+    "petjson",
+    new File(
+      [
+        JSON.stringify({
+          id: "demo",
+          displayName: "Demo",
+          description: "Demo",
+          spritesheetPath: "spritesheet.webp",
+        }),
+      ],
+      "pet.json",
+      { type: "application/json" },
+    ),
+  );
+  formData.set(
+    "sprite",
+    new File(["sprite"], "spritesheet.webp", { type: "image/webp" }),
+  );
+  formData.set("contactEmail", "anon@example.com");
+  formData.set("kind", "creature");
+  formData.set("tags", "cozy,robot");
+  return formData;
+}
+
+function mockSuccessfulSubmission(id: string): void {
+  vi.mocked(validateUploadedPackage).mockResolvedValue({
+    ok: true,
+    value: {
+      petJson: {
+        id: "demo",
+        displayName: "Demo",
+        description: "Demo pet",
+        spritesheetPath: "spritesheet.webp",
+      },
+      spritesheetBytes: 10,
+      zipBytes: 10,
+    },
+  });
+  vi.mocked(storePetAssetsInYdb).mockResolvedValue({
+    petJsonUrl: "/api/assets/a/pet.json",
+    spritesheetUrl: "/api/assets/a/spritesheet.webp",
+    zipUrl: "/api/assets/a/pet.zip",
+  });
+  vi.mocked(createPendingPet).mockResolvedValue({
+    id,
+    slug: "demo",
+    displayName: "Demo",
+    description: "Demo pet",
+    spritesheetUrl: "/api/assets/a/spritesheet.webp",
+    petJsonUrl: "/api/assets/a/pet.json",
+    zipUrl: "/api/assets/a/pet.zip",
+    spritesheetExt: "webp",
+    kind: "creature",
+    tags: [],
+    status: "pending",
+    ownerName: null,
+    contactEmail: "anon@example.com",
+    createdAt: "2026-05-16T10:00:00.000Z",
+    approvedAt: null,
+    downloadCount: 0,
+    installCount: 0,
+    likeCount: 0,
+  });
+}

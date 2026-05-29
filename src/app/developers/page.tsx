@@ -37,6 +37,21 @@ const resources = [
     text: "Expanded markdown context with API reference, auth notes, examples, and webhooks status.",
   },
   {
+    label: "OAuth resource metadata",
+    href: "/.well-known/oauth-protected-resource",
+    text: "Machine-readable public access metadata that states OAuth is not currently supported.",
+  },
+  {
+    label: "Pricing",
+    href: "/pricing",
+    text: "Free community registry terms: no paid plans, no invoices, and best-effort public APIs.",
+  },
+  {
+    label: "Terms",
+    href: "/terms",
+    text: "Public agent access, moderation, and versioning policy for stable v1 endpoints.",
+  },
+  {
     label: "MCP metadata",
     href: "/server.json",
     text: "MCP Registry metadata for the public Streamable HTTP server.",
@@ -167,8 +182,24 @@ export default function DevelopersPage() {
             trusted reverse proxy.
           </li>
           <li>OAuth 2.0 is not currently supported.</li>
+          <li>
+            OAuth Protected Resource metadata is published for agents, but it
+            intentionally does not advertise authorization servers.
+          </li>
           <li>Webhooks are not currently available.</li>
         </ul>
+      </section>
+
+      <section className="page-section">
+        <Text variant="display-1" as="h2">
+          Versioning and deprecation
+        </Text>
+        <Text variant="body-2" color="secondary">
+          Current unversioned public endpoints are stable v1. Additive response
+          fields and new routes may be added without notice. Breaking
+          public-agent contract changes require a new path or a published
+          deprecation notice.
+        </Text>
       </section>
     </Container>
   );

@@ -132,6 +132,30 @@ describe("sitemap", () => {
           priority: 0.5,
         },
         {
+          url: "https://pets.example/codex-pets/pricing",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "weekly",
+          priority: 0.6,
+        },
+        {
+          url: "https://pets.example/codex-pets/pricing.md",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "weekly",
+          priority: 0.5,
+        },
+        {
+          url: "https://pets.example/codex-pets/terms",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "weekly",
+          priority: 0.6,
+        },
+        {
+          url: "https://pets.example/codex-pets/terms.md",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "weekly",
+          priority: 0.5,
+        },
+        {
           url: "https://pets.example/codex-pets/developers",
           lastModified: "2026-05-22T10:00:00.000Z",
           changeFrequency: "weekly",
@@ -247,6 +271,18 @@ describe("sitemap", () => {
         },
         {
           url: "https://pets.example/codex-pets/.well-known/mcp/server-card.json",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "weekly",
+          priority: 0.4,
+        },
+        {
+          url: "https://pets.example/codex-pets/.well-known/oauth-protected-resource",
+          lastModified: "2026-05-22T10:00:00.000Z",
+          changeFrequency: "weekly",
+          priority: 0.4,
+        },
+        {
+          url: "https://pets.example/codex-pets/.well-known/oauth-protected-resource/mcp",
           lastModified: "2026-05-22T10:00:00.000Z",
           changeFrequency: "weekly",
           priority: 0.4,

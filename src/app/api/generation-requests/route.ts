@@ -4,6 +4,15 @@ import sharp from "sharp";
 import { jsonApiError, jsonValidationError } from "@/lib/api-error";
 import { getCurrentPrincipal } from "@/lib/auth/session";
 import {
+  hashBuffer,
+  hashIdempotencyPayload,
+  idempotencyStorageUnavailableResponse,
+  isIdempotencyStorageAvailable,
+  readIdempotencyKey,
+  resolveIdempotencyReplay,
+  storeIdempotencyResult,
+} from "@/lib/idempotency";
+import {
   validateCreatePetGenerationRequest,
 } from "@/lib/pets/generation-requests";
 import {
@@ -17,6 +26,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_REFERENCE_IMAGE_BYTES = 5 * 1024 * 1024;
+const ROUTE_ID = "POST /api/generation-requests";
 const REFERENCE_IMAGE_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -35,6 +45,12 @@ type ParsedRequestBody =
     };
 
 export async function POST(req: Request): Promise<Response> {
+  const idempotency = readIdempotencyKey(req);
+  if (!idempotency.ok) return idempotency.response;
+  if (idempotency.key && !isIdempotencyStorageAvailable()) {
+    return idempotencyStorageUnavailableResponse();
+  }
+
   const principal = await getCurrentPrincipal();
   if (!isYdbConfigured() && !isMockPetsDataSource()) {
     return jsonApiError("service_not_configured", {
@@ -47,6 +63,18 @@ export async function POST(req: Request): Promise<Response> {
   const parsed = await readRequestBody(req);
   if (!parsed.ok) return parsed.response;
 
+  const requestHash = parsed.ok && idempotency.key
+    ? hashGenerationRequest(parsed.body, parsed.referenceImage)
+    : null;
+  if (idempotency.key && requestHash) {
+    const replay = await resolveIdempotencyReplay({
+      route: ROUTE_ID,
+      key: idempotency.key,
+      requestHash,
+    });
+    if (replay.kind !== "fresh") return replay.response;
+  }
+
   const validation = validateCreatePetGenerationRequest(parsed.body);
   if (!validation.ok) {
     return jsonValidationError(validation);
@@ -58,17 +86,27 @@ export async function POST(req: Request): Promise<Response> {
     referenceImage: parsed.referenceImage,
   });
 
-  return NextResponse.json(
-    {
-      ok: true,
-      request: {
-        id: request.id,
-        status: request.status,
-        createdAt: request.createdAt,
-      },
+  const responseBody = {
+    ok: true,
+    request: {
+      id: request.id,
+      status: request.status,
+      createdAt: request.createdAt,
     },
-    { status: 201 },
-  );
+  };
+
+  if (idempotency.key && requestHash) {
+    const stored = await storeIdempotencyResult({
+      route: ROUTE_ID,
+      key: idempotency.key,
+      requestHash,
+      statusCode: 201,
+      responseBody,
+    });
+    if (!stored) return idempotencyStorageUnavailableResponse();
+  }
+
+  return NextResponse.json(responseBody, { status: 201 });
 }
 
 async function readRequestBody(req: Request): Promise<ParsedRequestBody> {
@@ -214,4 +252,21 @@ function stringField(formData: FormData, field: string): string {
 function sanitizeFileName(value: string): string {
   const name = value.trim().replace(/[\\/]+/g, "-");
   return name.slice(0, 120) || "reference-image";
+}
+
+function hashGenerationRequest(
+  body: unknown,
+  referenceImage: CreateGenerationRequestImageInput | null,
+): string {
+  return hashIdempotencyPayload({
+    body,
+    referenceImage: referenceImage
+      ? {
+          fileName: referenceImage.fileName,
+          contentType: referenceImage.contentType,
+          sizeBytes: referenceImage.sizeBytes,
+          sha256: hashBuffer(referenceImage.buffer),
+        }
+      : null,
+  });
 }

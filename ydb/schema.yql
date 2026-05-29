@@ -162,6 +162,16 @@ CREATE TABLE codex_pet_generation_request_images (
   PRIMARY KEY (request_id)
 );
 
+CREATE TABLE codex_idempotency_keys (
+  route Utf8 NOT NULL,
+  idempotency_key Utf8 NOT NULL,
+  request_hash Utf8 NOT NULL,
+  status_code Uint32 NOT NULL,
+  response_json Utf8 NOT NULL,
+  created_at Utf8 NOT NULL,
+  PRIMARY KEY (route, idempotency_key)
+);
+
 CREATE TABLE codex_schema_migrations (
   id Utf8 NOT NULL,
   applied_at Utf8 NOT NULL,

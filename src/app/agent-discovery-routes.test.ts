@@ -66,6 +66,16 @@ describe("markdown agent discovery routes", () => {
       heading: "# Codex Pets auth",
       expected: ["Public read endpoints", "AppSessionCookie", "ProxyBasic"],
     },
+    {
+      modulePath: "@/app/pricing.md/route",
+      heading: "# Codex Pets pricing",
+      expected: ["Free community registry", "no paid plans", "best-effort"],
+    },
+    {
+      modulePath: "@/app/terms.md/route",
+      heading: "# Codex Pets terms",
+      expected: ["Free community registry", "moderated", "no SLA"],
+    },
   ])("serves $modulePath as markdown", async ({ modulePath, heading, expected }) => {
     vi.resetModules();
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");

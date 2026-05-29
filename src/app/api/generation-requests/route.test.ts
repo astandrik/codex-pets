@@ -21,6 +21,7 @@ import { isYdbConfigured } from "@/lib/ydb/client";
 describe("POST /api/generation-requests", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "mock");
     vi.mocked(isYdbConfigured).mockReturnValue(true);
   });
 
@@ -71,6 +72,118 @@ describe("POST /api/generation-requests", () => {
       requesterUserId: null,
       referenceImage: null,
     });
+  });
+
+  it("replays successful requests when Idempotency-Key and body match", async () => {
+    vi.mocked(getCurrentPrincipal)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    vi.mocked(createGenerationRequest).mockResolvedValue({
+      id: "req_idempotent",
+      status: "pending",
+      kind: "character",
+      displayNameHint: "Patch Pilot",
+      prompt: "Make a careful code review companion.",
+      contactEmail: "anon@example.com",
+      requesterName: "Anon",
+      requesterUserId: null,
+      linkedPetId: null,
+      linkedPetSlug: null,
+      referenceImage: null,
+      adminNote: null,
+      createdAt: "2026-05-16T10:00:00.000Z",
+      updatedAt: "2026-05-16T10:00:00.000Z",
+      fulfilledAt: null,
+      rejectedAt: null,
+    });
+    const body = {
+      contactEmail: "anon@example.com",
+      requesterName: "Anon",
+      displayNameHint: "Patch Pilot",
+      prompt: "Make a careful code review companion.",
+      kind: "character",
+    };
+
+    const first = await POST(jsonRequest(body, "request-replay-1"));
+    const second = await POST(jsonRequest(body, "request-replay-1"));
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    await expect(second.json()).resolves.toEqual(await first.json());
+    expect(createGenerationRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects reused Idempotency-Key values with a different body", async () => {
+    vi.mocked(getCurrentPrincipal)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    vi.mocked(createGenerationRequest).mockResolvedValue({
+      id: "req_conflict",
+      status: "pending",
+      kind: "character",
+      displayNameHint: "Patch Pilot",
+      prompt: "Make a careful code review companion.",
+      contactEmail: "anon@example.com",
+      requesterName: "Anon",
+      requesterUserId: null,
+      linkedPetId: null,
+      linkedPetSlug: null,
+      referenceImage: null,
+      adminNote: null,
+      createdAt: "2026-05-16T10:00:00.000Z",
+      updatedAt: "2026-05-16T10:00:00.000Z",
+      fulfilledAt: null,
+      rejectedAt: null,
+    });
+
+    const first = await POST(jsonRequest({
+      contactEmail: "anon@example.com",
+      prompt: "Make a helper.",
+    }, "request-conflict-1"));
+    const second = await POST(jsonRequest({
+      contactEmail: "anon@example.com",
+      prompt: "Make a different helper.",
+    }, "request-conflict-1"));
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(409);
+    await expect(second.json()).resolves.toMatchObject({
+      error: "idempotency_key_conflict",
+      code: "idempotency_key_conflict",
+    });
+    expect(createGenerationRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects invalid Idempotency-Key values before creating a request", async () => {
+    const response = await POST(jsonRequest({
+      contactEmail: "anon@example.com",
+      prompt: "Make a helper.",
+    }, "bad key"));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "invalid_idempotency_key",
+      code: "invalid_idempotency_key",
+    });
+    expect(createGenerationRequest).not.toHaveBeenCalled();
+  });
+
+  it("returns idempotency_unavailable when a key is supplied without storage", async () => {
+    vi.mocked(isYdbConfigured).mockReturnValueOnce(false);
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "");
+
+    const response = await POST(jsonRequest({
+      contactEmail: "anon@example.com",
+      prompt: "Make a helper.",
+    }, "request-no-storage-1"));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "idempotency_unavailable",
+      code: "idempotency_unavailable",
+    });
+    expect(getCurrentPrincipal).not.toHaveBeenCalled();
+    expect(createGenerationRequest).not.toHaveBeenCalled();
   });
 
   it("creates a request with a reference image from multipart form data", async () => {
@@ -189,6 +302,7 @@ describe("POST /api/generation-requests", () => {
   it("returns 503 when YDB is not configured", async () => {
     vi.mocked(getCurrentPrincipal).mockResolvedValueOnce(null);
     vi.mocked(isYdbConfigured).mockReturnValueOnce(false);
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "");
 
     const response = await POST(jsonRequest({
       contactEmail: "anon@example.com",
@@ -200,10 +314,12 @@ describe("POST /api/generation-requests", () => {
   });
 });
 
-function jsonRequest(body: unknown): Request {
+function jsonRequest(body: unknown, idempotencyKey?: string): Request {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  if (idempotencyKey) headers.set("Idempotency-Key", idempotencyKey);
   return new Request("http://localhost/api/generation-requests", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
   });
 }

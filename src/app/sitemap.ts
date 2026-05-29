@@ -71,6 +71,30 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.5,
     },
     {
+      url: toPublicUrl("/pricing"),
+      lastModified: generatedAt,
+      changeFrequency: "weekly",
+      priority: 0.6,
+    },
+    {
+      url: toPublicUrl("/pricing.md"),
+      lastModified: generatedAt,
+      changeFrequency: "weekly",
+      priority: 0.5,
+    },
+    {
+      url: toPublicUrl("/terms"),
+      lastModified: generatedAt,
+      changeFrequency: "weekly",
+      priority: 0.6,
+    },
+    {
+      url: toPublicUrl("/terms.md"),
+      lastModified: generatedAt,
+      changeFrequency: "weekly",
+      priority: 0.5,
+    },
+    {
       url: toPublicUrl("/developers"),
       lastModified: generatedAt,
       changeFrequency: "weekly",
@@ -186,6 +210,18 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
     },
     {
       url: toPublicUrl("/.well-known/mcp/server-card.json"),
+      lastModified: generatedAt,
+      changeFrequency: "weekly",
+      priority: 0.4,
+    },
+    {
+      url: toPublicUrl("/.well-known/oauth-protected-resource"),
+      lastModified: generatedAt,
+      changeFrequency: "weekly",
+      priority: 0.4,
+    },
+    {
+      url: toPublicUrl("/.well-known/oauth-protected-resource/mcp"),
       lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.4,

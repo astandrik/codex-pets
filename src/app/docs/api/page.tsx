@@ -34,6 +34,8 @@ const endpoints = [
   "POST /api/generation-requests",
   "POST /api/submissions/register",
   "POST /mcp",
+  "GET /.well-known/oauth-protected-resource",
+  "GET /.well-known/oauth-protected-resource/mcp",
 ];
 
 export const metadata: Metadata = {
@@ -152,6 +154,31 @@ export default function ApiDocsPage() {
 
       <section className="page-section">
         <Text variant="display-1" as="h2">
+          Idempotency
+        </Text>
+        <Text variant="body-2" color="secondary">
+          POST /api/generation-requests and POST /api/submissions/register
+          accept an optional Idempotency-Key header for safe retries. Reusing
+          the same key with the same normalized request body returns the first
+          successful 201 response. Reusing it with a different body returns
+          409 idempotency_key_conflict.
+        </Text>
+      </section>
+
+      <section className="page-section">
+        <Text variant="display-1" as="h2">
+          Versioning and deprecation
+        </Text>
+        <Text variant="body-2" color="secondary">
+          Current unversioned public endpoints are stable v1. Additive response
+          fields and new routes may be added without notice. Breaking
+          public-agent contract changes require a new path or a published
+          deprecation notice.
+        </Text>
+      </section>
+
+      <section className="page-section">
+        <Text variant="display-1" as="h2">
           Agent discovery
         </Text>
         <ul>
@@ -167,6 +194,12 @@ export default function ApiDocsPage() {
           <li>
             <a href={withBasePath("/mcp.md")}>MCP markdown</a> documents the
             Streamable HTTP endpoint, server card, MCP App view, and CSP notes.
+          </li>
+          <li>
+            <a href={withBasePath("/.well-known/oauth-protected-resource")}>
+              OAuth Protected Resource metadata
+            </a>{" "}
+            makes the unauthenticated public access model machine-readable.
           </li>
         </ul>
       </section>

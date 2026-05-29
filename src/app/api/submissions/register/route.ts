@@ -3,6 +3,15 @@ import { NextResponse } from "next/server";
 import { jsonApiError, jsonValidationError } from "@/lib/api-error";
 import { getCurrentPrincipal } from "@/lib/auth/session";
 import { normalizeEmail } from "@/lib/auth/repository";
+import {
+  hashBuffer,
+  hashIdempotencyPayload,
+  idempotencyStorageUnavailableResponse,
+  isIdempotencyStorageAvailable,
+  readIdempotencyKey,
+  resolveIdempotencyReplay,
+  storeIdempotencyResult,
+} from "@/lib/idempotency";
 import { storePetAssetsInYdb } from "@/lib/pets/assets-repository";
 import { createPendingPet } from "@/lib/pets/repository";
 import { validateUploadedPackage } from "@/lib/pets/package";
@@ -12,7 +21,15 @@ import { isYdbConfigured } from "@/lib/ydb/client";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const ROUTE_ID = "POST /api/submissions/register";
+
 export async function POST(req: Request): Promise<Response> {
+  const idempotency = readIdempotencyKey(req);
+  if (!idempotency.ok) return idempotency.response;
+  if (idempotency.key && !isIdempotencyStorageAvailable()) {
+    return idempotencyStorageUnavailableResponse();
+  }
+
   const principal = await getCurrentPrincipal();
   if (!isYdbConfigured()) {
     return jsonApiError("service_not_configured", {
@@ -67,6 +84,29 @@ export async function POST(req: Request): Promise<Response> {
     Buffer.from(await zip.arrayBuffer()),
   ]);
 
+  const requestHash = idempotency.key
+    ? hashSubmissionRequest({
+        zip,
+        petjson,
+        sprite,
+        zipBuffer,
+        petJsonBuffer,
+        spritesheetBuffer,
+        spritesheetExt,
+        contactEmailRaw,
+        kind: formData.get("kind"),
+        tags: formData.get("tags"),
+      })
+    : null;
+  if (idempotency.key && requestHash) {
+    const replay = await resolveIdempotencyReplay({
+      route: ROUTE_ID,
+      key: idempotency.key,
+      requestHash,
+    });
+    if (replay.kind !== "fresh") return replay.response;
+  }
+
   const validation = await validateUploadedPackage({
     petJsonBuffer,
     spritesheetBuffer,
@@ -105,5 +145,53 @@ export async function POST(req: Request): Promise<Response> {
     spritesheetExt,
   });
 
-  return NextResponse.json({ ok: true, pet }, { status: 201 });
+  const responseBody = { ok: true, pet };
+  if (idempotency.key && requestHash) {
+    const stored = await storeIdempotencyResult({
+      route: ROUTE_ID,
+      key: idempotency.key,
+      requestHash,
+      statusCode: 201,
+      responseBody,
+    });
+    if (!stored) return idempotencyStorageUnavailableResponse();
+  }
+
+  return NextResponse.json(responseBody, { status: 201 });
+}
+
+function hashSubmissionRequest(input: {
+  zip: File;
+  petjson: File;
+  sprite: File;
+  zipBuffer: Buffer;
+  petJsonBuffer: Buffer;
+  spritesheetBuffer: Buffer;
+  spritesheetExt: "webp" | "png";
+  contactEmailRaw: string;
+  kind: FormDataEntryValue | null;
+  tags: FormDataEntryValue | null;
+}): string {
+  return hashIdempotencyPayload({
+    fields: {
+      contactEmail: input.contactEmailRaw,
+      kind: typeof input.kind === "string" ? input.kind : "",
+      tags: typeof input.tags === "string" ? input.tags : "",
+      spritesheetExt: input.spritesheetExt,
+    },
+    files: {
+      zip: fileHash(input.zip, input.zipBuffer),
+      petjson: fileHash(input.petjson, input.petJsonBuffer),
+      sprite: fileHash(input.sprite, input.spritesheetBuffer),
+    },
+  });
+}
+
+function fileHash(file: File, buffer: Buffer) {
+  return {
+    name: file.name,
+    type: file.type,
+    size: file.size,
+    sha256: hashBuffer(buffer),
+  };
 }

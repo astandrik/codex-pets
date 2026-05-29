@@ -12,4 +12,5 @@ export const TABLES = {
   metrics: "codex_pet_metrics",
   generationRequests: "codex_pet_generation_requests",
   generationRequestImages: "codex_pet_generation_request_images",
+  idempotencyKeys: "codex_idempotency_keys",
 } as const;

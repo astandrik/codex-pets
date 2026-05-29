@@ -42,7 +42,7 @@ export function buildOpenApiSpec() {
       title: "Codex Pets API",
       version: "1.0.0",
       description:
-        `${SITE_DESCRIPTION} This OpenAPI document describes version 1 of the public agent/developer contract subset: approved registry data, MCP discovery, markdown discovery docs, and public submission workflows. Existing unversioned URLs are stable v1 endpoints. Public metric mutation and download redirect routes are intentionally outside this contract.`,
+        `${SITE_DESCRIPTION} This OpenAPI document describes version 1 of the public agent/developer contract subset: approved registry data, MCP discovery, markdown discovery docs, pricing and terms discovery, and public submission workflows. Existing unversioned URLs are stable v1 endpoints. Additive changes may appear without notice; breaking public-agent contract changes require a new path or a published deprecation notice. Public metric mutation and download redirect routes are intentionally outside this contract.`,
       contact: {
         name: "Codex Pets",
         url: toPublicUrl("/about"),
@@ -205,6 +205,80 @@ export function buildOpenApiSpec() {
           security: publicReadSecurity,
           responses: {
             "200": textResponse("text/markdown"),
+          },
+        },
+      },
+      "/pricing": {
+        get: {
+          operationId: "getPricingPage",
+          tags: ["Discovery"],
+          summary: "Get Codex Pets pricing page",
+          description:
+            "Human-readable pricing page. Codex Pets public registry access is free and best-effort with no paid plans or SLA.",
+          security: publicReadSecurity,
+          responses: {
+            "200": textResponse("text/html"),
+          },
+        },
+      },
+      "/pricing.md": {
+        get: {
+          operationId: "getPricingMarkdown",
+          tags: ["Discovery"],
+          summary: "Get markdown pricing notes",
+          security: publicReadSecurity,
+          responses: {
+            "200": textResponse("text/markdown"),
+          },
+        },
+      },
+      "/terms": {
+        get: {
+          operationId: "getTermsPage",
+          tags: ["Discovery"],
+          summary: "Get Codex Pets terms page",
+          description:
+            "Human-readable public use terms, moderation notes, and versioning policy.",
+          security: publicReadSecurity,
+          responses: {
+            "200": textResponse("text/html"),
+          },
+        },
+      },
+      "/terms.md": {
+        get: {
+          operationId: "getTermsMarkdown",
+          tags: ["Discovery"],
+          summary: "Get markdown public use terms",
+          security: publicReadSecurity,
+          responses: {
+            "200": textResponse("text/markdown"),
+          },
+        },
+      },
+      "/.well-known/oauth-protected-resource": {
+        get: {
+          operationId: "getOAuthProtectedResourceMetadata",
+          tags: ["Discovery"],
+          summary: "Get OAuth Protected Resource metadata for Codex Pets",
+          description:
+            "Machine-readable public access metadata. OAuth 2.0 is not supported and authorization_servers is intentionally omitted.",
+          security: publicReadSecurity,
+          responses: {
+            "200": jsonResponse("#/components/schemas/OAuthProtectedResourceMetadata"),
+          },
+        },
+      },
+      "/.well-known/oauth-protected-resource/mcp": {
+        get: {
+          operationId: "getMcpOAuthProtectedResourceMetadata",
+          tags: ["Discovery", "MCP"],
+          summary: "Get OAuth Protected Resource metadata for the MCP endpoint",
+          description:
+            "Machine-readable public access metadata for /mcp. OAuth 2.0 is not supported and authorization_servers is intentionally omitted.",
+          security: publicReadSecurity,
+          responses: {
+            "200": jsonResponse("#/components/schemas/OAuthProtectedResourceMetadata"),
           },
         },
       },
@@ -428,6 +502,7 @@ export function buildOpenApiSpec() {
           description:
             "Accepts anonymous requests. If an app session is present, the request is associated with the signed-in user.",
           security: publicReadSecurity,
+          parameters: [idempotencyKeyHeader],
           requestBody: {
             required: true,
             content: {
@@ -442,6 +517,7 @@ export function buildOpenApiSpec() {
           responses: {
             "201": jsonResponse("#/components/schemas/CreateGenerationRequestResponse"),
             "400": errorResponse,
+            "409": errorResponse,
             "503": errorResponse,
           },
         },
@@ -454,6 +530,7 @@ export function buildOpenApiSpec() {
           description:
             "Uploads pet.json, spritesheet.webp or spritesheet.png, and a ZIP containing both files at the root. Approved pets appear in the public registry after moderation.",
           security: publicReadSecurity,
+          parameters: [idempotencyKeyHeader],
           requestBody: {
             required: true,
             content: {
@@ -465,6 +542,7 @@ export function buildOpenApiSpec() {
           responses: {
             "201": jsonResponse("#/components/schemas/RegisterSubmissionResponse"),
             "400": errorResponse,
+            "409": errorResponse,
             "503": errorResponse,
           },
         },
@@ -528,6 +606,38 @@ export function buildOpenApiSpec() {
         },
         McpRegistryServer: jsonObject,
         McpServerCard: jsonObject,
+        OAuthProtectedResourceMetadata: {
+          type: "object",
+          required: [
+            "resource",
+            "resource_name",
+            "service_documentation",
+            "policy_uri",
+            "terms_of_service",
+            "oauth_unsupported",
+            "scopes_supported",
+            "bearer_methods_supported",
+          ],
+          properties: {
+            resource: { type: "string", format: "uri" },
+            resource_name: { type: "string" },
+            service_documentation: { type: "string", format: "uri" },
+            policy_uri: { type: "string", format: "uri" },
+            terms_of_service: { type: "string", format: "uri" },
+            oauth_unsupported: { type: "boolean", const: true },
+            scopes_supported: {
+              type: "array",
+              items: { type: "string" },
+              maxItems: 0,
+            },
+            bearer_methods_supported: {
+              type: "array",
+              items: { type: "string" },
+              maxItems: 0,
+            },
+          },
+          additionalProperties: true,
+        },
         ManifestResponse: {
           type: "object",
           required: ["generatedAt", "total", "pets"],
@@ -790,6 +900,20 @@ const petSearchParameters = [
   },
 ] as const;
 
+const idempotencyKeyHeader = {
+  name: "Idempotency-Key",
+  in: "header",
+  required: false,
+  schema: {
+    type: "string",
+    minLength: 1,
+    maxLength: 128,
+    pattern: "^[A-Za-z0-9._~-]{1,128}$",
+  },
+  description:
+    "Optional retry key for public create operations. Reusing the same key with the same normalized request body returns the first successful 201 response; reusing it with a different body returns 409.",
+} as const;
+
 function jsonResponse(schemaRef: string) {
   return {
     description: "Successful JSON response.",
@@ -801,7 +925,9 @@ function jsonResponse(schemaRef: string) {
   } as const;
 }
 
-function textResponse(mediaType: "text/plain" | "text/toon" | "text/markdown") {
+function textResponse(
+  mediaType: "text/plain" | "text/toon" | "text/markdown" | "text/html",
+) {
   return {
     description: "Successful text response.",
     content: {
