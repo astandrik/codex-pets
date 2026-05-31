@@ -126,6 +126,28 @@ describe("middleware markdown content negotiation", () => {
     );
   });
 
+  it.each([
+    [
+      "/.well-known/oauth-protected-resource/codex-pets",
+      "/codex-pets/.well-known/oauth-protected-resource",
+    ],
+    [
+      "/.well-known/oauth-protected-resource/codex-pets/mcp",
+      "/codex-pets/.well-known/oauth-protected-resource/mcp",
+    ],
+  ])("rewrites RFC-derived OAuth metadata URL %s", async (source, target) => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example/codex-pets");
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/codex-pets");
+    const { middleware } = await import("@/middleware");
+    const request = new NextRequest(`https://pets.example${source}`);
+
+    const response = middleware(request);
+
+    expect(response.headers.get("x-middleware-rewrite")).toBe(
+      `https://pets.example${target}`,
+    );
+  });
+
   it("adds agent Link headers to preview rewrites using the public pathname", async () => {
     const { middleware } = await import("@/middleware");
     const request = new NextRequest("https://pets.example/", {

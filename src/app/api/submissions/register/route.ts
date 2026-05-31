@@ -216,10 +216,20 @@ function hashSubmissionRequest(input: {
 function fileHash(file: File, buffer: Buffer) {
   return {
     name: file.name,
-    type: file.type,
+    type: normalizedFileType(file),
     size: file.size,
     sha256: hashBuffer(buffer),
   };
+}
+
+function normalizedFileType(file: File): string {
+  const type = file.type.trim().toLowerCase();
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".zip")) return "application/zip";
+  if (name.endsWith(".json")) return "application/json";
+  if (name.endsWith(".webp")) return "image/webp";
+  if (name.endsWith(".png")) return "image/png";
+  return type === "application/octet-stream" ? "" : type;
 }
 
 function idempotencyRouteScope(

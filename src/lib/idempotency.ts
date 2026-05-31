@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { jsonApiError } from "@/lib/api-error";
 import { isMockPetsDataSource } from "@/lib/pets/mock-data";
@@ -352,7 +352,9 @@ async function claimStoredRecord(
     return { kind: "existing", record: "unavailable" };
   }
 
-  const now = new Date().toISOString();
+  const now = new Date();
+  const claimUpdatedAt = createClaimUpdatedAt(now);
+  const createdAt = now.toISOString();
   try {
     await withSession((session) =>
       session.executeQuery(
@@ -377,12 +379,12 @@ VALUES ($route, $idempotency_key, $request_hash, $status, $status_code, $respons
           $status: TypedValues.utf8("in_progress"),
           $status_code: TypedValues.uint32(0),
           $response_json: TypedValues.utf8(""),
-          $created_at: TypedValues.utf8(now),
-          $updated_at: TypedValues.utf8(now),
+          $created_at: TypedValues.utf8(createdAt),
+          $updated_at: TypedValues.utf8(claimUpdatedAt),
         },
       ),
     );
-    return { kind: "claimed", updatedAt: now };
+    return { kind: "claimed", updatedAt: claimUpdatedAt };
   } catch (error) {
     if (isDuplicateKeyError(error)) {
       const existing = await readStoredRecord(route, key);
@@ -413,7 +415,7 @@ async function reclaimExpiredRecord(
   | { kind: "claimed"; updatedAt: string }
   | { kind: "existing"; record: StoredIdempotencyRecord | "unavailable" }
 > {
-  const now = new Date().toISOString();
+  const claimUpdatedAt = createClaimUpdatedAt();
   try {
     await withSession((session) =>
       session.executeQuery(
@@ -446,7 +448,7 @@ WHERE route = $route
           $status_code: TypedValues.uint32(0),
           $response_json: TypedValues.utf8(""),
           $previous_updated_at: TypedValues.utf8(existing.updatedAt),
-          $updated_at: TypedValues.utf8(now),
+          $updated_at: TypedValues.utf8(claimUpdatedAt),
         },
       ),
     );
@@ -463,9 +465,9 @@ WHERE route = $route
     current !== "unavailable" &&
     current.status === "in_progress" &&
     current.requestHash === requestHash &&
-    current.updatedAt === now
+    current.updatedAt === claimUpdatedAt
   ) {
-    return { kind: "claimed", updatedAt: now };
+    return { kind: "claimed", updatedAt: claimUpdatedAt };
   }
   return { kind: "existing", record: current ?? "unavailable" };
 }
@@ -476,15 +478,19 @@ function inProgressRecord(requestHash: string): StoredIdempotencyRecord {
     requestHash,
     statusCode: 0,
     responseJson: "",
-    updatedAt: new Date().toISOString(),
+    updatedAt: createClaimUpdatedAt(),
   };
 }
 
 function isExpiredInProgressRecord(record: StoredIdempotencyRecord): boolean {
   if (record.status !== "in_progress") return false;
-  const updatedAt = Date.parse(record.updatedAt);
+  const updatedAt = Date.parse(record.updatedAt.split("#", 1)[0]);
   if (!Number.isFinite(updatedAt)) return true;
   return Date.now() - updatedAt > IN_PROGRESS_TTL_MS;
+}
+
+function createClaimUpdatedAt(now = new Date()): string {
+  return `${now.toISOString()}#${randomUUID()}`;
 }
 
 function stableStringify(value: unknown): string {

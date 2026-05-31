@@ -11,6 +11,13 @@ import { getPreviewRewritePath } from "@/lib/preview/request";
 export function middleware(request: NextRequest): Response {
   const basePath = request.nextUrl.basePath || BASE_PATH || undefined;
   const pathname = stripBasePath(request.nextUrl.pathname, basePath);
+  const oauthMetadataPath = getOAuthProtectedResourceRewritePath(pathname, basePath);
+  if (oauthMetadataPath) {
+    const rewriteUrl = new URL(request.url);
+    rewriteUrl.pathname = withBasePath(oauthMetadataPath, basePath);
+    return NextResponse.rewrite(rewriteUrl);
+  }
+
   const markdownPath = getMarkdownRewritePath(request, pathname);
   if (markdownPath) {
     const rewriteUrl = new URL(request.url);
@@ -57,6 +64,25 @@ function getMarkdownRewritePath(
   }
 
   return getMarkdownTwinPath(pathname);
+}
+
+function getOAuthProtectedResourceRewritePath(
+  pathname: string,
+  basePath?: string,
+): string | null {
+  if (!basePath) return null;
+
+  const wellKnownPath = "/.well-known/oauth-protected-resource";
+  const derivedBasePath = `${wellKnownPath}${basePath}`;
+  if (pathname === derivedBasePath || pathname === `${derivedBasePath}/`) {
+    return wellKnownPath;
+  }
+
+  if (pathname === `${derivedBasePath}/mcp`) {
+    return `${wellKnownPath}/mcp`;
+  }
+
+  return null;
 }
 
 function appendVaryForMarkdownNegotiation(

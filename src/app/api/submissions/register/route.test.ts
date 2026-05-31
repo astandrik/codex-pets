@@ -163,6 +163,24 @@ describe("POST /api/submissions/register", () => {
     expect(createPendingPet).toHaveBeenCalledTimes(1);
   });
 
+  it("replays matching submissions when uploaded MIME types are omitted", async () => {
+    vi.mocked(getCurrentPrincipal)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    mockSuccessfulSubmission("pet_mime_normalized");
+
+    const first = await POST(submissionRequest(validSubmissionForm(), "submit-mime-1"));
+    const second = await POST(
+      submissionRequest(validSubmissionFormWithoutMimeTypes(), "submit-mime-1"),
+    );
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    await expect(second.json()).resolves.toEqual(await first.json());
+    expect(storePetAssetsInYdb).toHaveBeenCalledTimes(1);
+    expect(createPendingPet).toHaveBeenCalledTimes(1);
+  });
+
   it("scopes submission idempotency keys to signed-in users", async () => {
     vi.mocked(getCurrentPrincipal)
       .mockResolvedValueOnce({
@@ -469,6 +487,30 @@ function validSubmissionForm(): FormData {
     "sprite",
     new File(["sprite"], "spritesheet.webp", { type: "image/webp" }),
   );
+  formData.set("contactEmail", "anon@example.com");
+  formData.set("kind", "creature");
+  formData.set("tags", "cozy,robot");
+  return formData;
+}
+
+function validSubmissionFormWithoutMimeTypes(): FormData {
+  const formData = new FormData();
+  formData.set("zip", new File(["zip"], "pet.zip"));
+  formData.set(
+    "petjson",
+    new File(
+      [
+        JSON.stringify({
+          id: "demo",
+          displayName: "Demo",
+          description: "Demo",
+          spritesheetPath: "spritesheet.webp",
+        }),
+      ],
+      "pet.json",
+    ),
+  );
+  formData.set("sprite", new File(["sprite"], "spritesheet.webp"));
   formData.set("contactEmail", "anon@example.com");
   formData.set("kind", "creature");
   formData.set("tags", "cozy,robot");

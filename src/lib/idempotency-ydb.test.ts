@@ -43,7 +43,7 @@ describe("YDB idempotency helpers", () => {
       .mockResolvedValueOnce(ydbRecord({
         status: "in_progress",
         requestHash,
-        updatedAt: "2026-05-29T10:00:00.000Z",
+        updatedAt: "2026-05-29T10:10:01.000Z#winner",
       }));
     vi.mocked(withSession).mockImplementation(async (callback) =>
       callback({ executeQuery } as never),
@@ -61,20 +61,28 @@ describe("YDB idempotency helpers", () => {
 
   it("claims a stale row after the conditional refresh is visible", async () => {
     const requestHash = hashIdempotencyPayload({ prompt: "same" });
-    const refreshedAt = "2026-05-29T10:10:01.000Z";
-    const executeQuery = vi.fn()
-      .mockRejectedValueOnce(new Error("duplicate primary key"))
-      .mockResolvedValueOnce(ydbRecord({
-        status: "in_progress",
-        requestHash,
-        updatedAt: "2026-05-29T10:00:00.000Z",
-      }))
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce(ydbRecord({
+    let call = 0;
+    let refreshedAt = "";
+    const executeQuery = vi.fn(async (_query: string, params?: Record<string, string>) => {
+      call += 1;
+      if (call === 1) throw new Error("duplicate primary key");
+      if (call === 2) {
+        return ydbRecord({
+          status: "in_progress",
+          requestHash,
+          updatedAt: "2026-05-29T10:00:00.000Z",
+        });
+      }
+      if (call === 3) {
+        refreshedAt = String(params?.$updated_at ?? "");
+        return {};
+      }
+      return ydbRecord({
         status: "in_progress",
         requestHash,
         updatedAt: refreshedAt,
-      }));
+      });
+    });
     vi.mocked(withSession).mockImplementation(async (callback) =>
       callback({ executeQuery } as never),
     );
@@ -89,6 +97,9 @@ describe("YDB idempotency helpers", () => {
       kind: "fresh",
       claim: { updatedAt: refreshedAt },
     });
+    expect(refreshedAt).toMatch(
+      /^2026-05-29T10:10:01\.000Z#[0-9a-f-]{36}$/,
+    );
     expect(executeQuery).toHaveBeenCalledTimes(4);
   });
 });
