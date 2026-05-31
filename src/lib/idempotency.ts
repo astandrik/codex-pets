@@ -11,11 +11,15 @@ export type IdempotencyKeyResult =
   | { ok: false; response: Response };
 
 export type IdempotencyReplayResult =
-  | { kind: "fresh" }
+  | { kind: "fresh"; claim: IdempotencyClaim }
   | { kind: "replay"; response: Response }
   | { kind: "conflict"; response: Response }
   | { kind: "in_progress"; response: Response }
   | { kind: "unavailable"; response: Response };
+
+export type IdempotencyClaim = {
+  updatedAt: string;
+};
 
 type StoredIdempotencyRecord = {
   status: "in_progress" | "completed";
@@ -29,6 +33,7 @@ type StoreIdempotencyInput = {
   route: string;
   key: string;
   requestHash: string;
+  claim: IdempotencyClaim;
   statusCode: number;
   responseBody: unknown;
 };
@@ -75,9 +80,11 @@ export async function claimIdempotencyKey(input: {
   requestHash: string;
 }): Promise<IdempotencyReplayResult> {
   const claim = await claimStoredRecord(input.route, input.key, input.requestHash);
-  if (claim === "claimed") return { kind: "fresh" };
+  if (claim.kind === "claimed") {
+    return { kind: "fresh", claim: { updatedAt: claim.updatedAt } };
+  }
 
-  const record = claim;
+  const record = claim.record;
   if (record === "unavailable") {
     return { kind: "unavailable", response: idempotencyStorageUnavailableResponse() };
   }
@@ -134,7 +141,16 @@ export async function storeIdempotencyResult(
   };
 
   if (isMockPetsDataSource()) {
-    memoryRecords.set(memoryKey(input.route, input.key), record);
+    const mapKey = memoryKey(input.route, input.key);
+    const existing = memoryRecords.get(mapKey);
+    if (
+      existing?.status !== "in_progress" ||
+      existing.requestHash !== input.requestHash ||
+      existing.updatedAt !== input.claim.updatedAt
+    ) {
+      return false;
+    }
+    memoryRecords.set(mapKey, record);
     return true;
   }
 
@@ -147,49 +163,69 @@ export async function storeIdempotencyResult(
 DECLARE $route AS Utf8;
 DECLARE $idempotency_key AS Utf8;
 DECLARE $request_hash AS Utf8;
-DECLARE $status AS Utf8;
+DECLARE $claim_updated_at AS Utf8;
+DECLARE $completed_status AS Utf8;
+DECLARE $in_progress_status AS Utf8;
 DECLARE $status_code AS Uint32;
 DECLARE $response_json AS Utf8;
 DECLARE $updated_at AS Utf8;
 
 UPDATE ${TABLES.idempotencyKeys}
-SET status = $status,
+SET status = $completed_status,
     status_code = $status_code,
     response_json = $response_json,
     updated_at = $updated_at
 WHERE route = $route
   AND idempotency_key = $idempotency_key
-  AND request_hash = $request_hash;
+  AND request_hash = $request_hash
+  AND status = $in_progress_status
+  AND updated_at = $claim_updated_at;
       `,
         {
           $route: TypedValues.utf8(input.route),
           $idempotency_key: TypedValues.utf8(input.key),
           $request_hash: TypedValues.utf8(input.requestHash),
-          $status: TypedValues.utf8("completed"),
+          $claim_updated_at: TypedValues.utf8(input.claim.updatedAt),
+          $completed_status: TypedValues.utf8("completed"),
+          $in_progress_status: TypedValues.utf8("in_progress"),
           $status_code: TypedValues.uint32(input.statusCode),
           $response_json: TypedValues.utf8(responseJson),
           $updated_at: TypedValues.utf8(updatedAt),
         },
       ),
     );
-  } catch (error) {
-    if (isIdempotencyStorageError(error)) return false;
-    throw error;
+  } catch {
+    return false;
   }
-  return true;
+
+  try {
+    const stored = await readStoredRecord(input.route, input.key);
+    return Boolean(
+      stored &&
+        stored !== "unavailable" &&
+        stored.status === "completed" &&
+        stored.requestHash === input.requestHash &&
+        stored.responseJson === responseJson &&
+        stored.updatedAt === updatedAt,
+    );
+  } catch {
+    return false;
+  }
 }
 
 export async function releaseIdempotencyClaim(input: {
   route: string;
   key: string;
   requestHash: string;
+  claim: IdempotencyClaim;
 }): Promise<boolean> {
   if (isMockPetsDataSource()) {
     const mapKey = memoryKey(input.route, input.key);
     const existing = memoryRecords.get(mapKey);
     if (
       existing?.status === "in_progress" &&
-      existing.requestHash === input.requestHash
+      existing.requestHash === input.requestHash &&
+      existing.updatedAt === input.claim.updatedAt
     ) {
       memoryRecords.delete(mapKey);
     }
@@ -205,18 +241,21 @@ export async function releaseIdempotencyClaim(input: {
 DECLARE $route AS Utf8;
 DECLARE $idempotency_key AS Utf8;
 DECLARE $request_hash AS Utf8;
+DECLARE $claim_updated_at AS Utf8;
 DECLARE $status AS Utf8;
 
 DELETE FROM ${TABLES.idempotencyKeys}
 WHERE route = $route
   AND idempotency_key = $idempotency_key
   AND request_hash = $request_hash
-  AND status = $status;
+  AND status = $status
+  AND updated_at = $claim_updated_at;
       `,
         {
           $route: TypedValues.utf8(input.route),
           $idempotency_key: TypedValues.utf8(input.key),
           $request_hash: TypedValues.utf8(input.requestHash),
+          $claim_updated_at: TypedValues.utf8(input.claim.updatedAt),
           $status: TypedValues.utf8("in_progress"),
         },
       ),
@@ -285,7 +324,10 @@ async function claimStoredRecord(
   route: string,
   key: string,
   requestHash: string,
-): Promise<"claimed" | StoredIdempotencyRecord | "unavailable"> {
+): Promise<
+  | { kind: "claimed"; updatedAt: string }
+  | { kind: "existing"; record: StoredIdempotencyRecord | "unavailable" }
+> {
   if (isMockPetsDataSource()) {
     const mapKey = memoryKey(route, key);
     const existing = memoryRecords.get(mapKey);
@@ -295,16 +337,20 @@ async function claimStoredRecord(
         existing.requestHash === requestHash &&
         isExpiredInProgressRecord(existing)
       ) {
-        memoryRecords.set(mapKey, inProgressRecord(requestHash));
-        return "claimed";
+        const record = inProgressRecord(requestHash);
+        memoryRecords.set(mapKey, record);
+        return { kind: "claimed", updatedAt: record.updatedAt };
       }
-      return existing;
+      return { kind: "existing", record: existing };
     }
-    memoryRecords.set(mapKey, inProgressRecord(requestHash));
-    return "claimed";
+    const record = inProgressRecord(requestHash);
+    memoryRecords.set(mapKey, record);
+    return { kind: "claimed", updatedAt: record.updatedAt };
   }
 
-  if (!isYdbConfigured()) return "unavailable";
+  if (!isYdbConfigured()) {
+    return { kind: "existing", record: "unavailable" };
+  }
 
   const now = new Date().toISOString();
   try {
@@ -336,7 +382,7 @@ VALUES ($route, $idempotency_key, $request_hash, $status, $status_code, $respons
         },
       ),
     );
-    return "claimed";
+    return { kind: "claimed", updatedAt: now };
   } catch (error) {
     if (isDuplicateKeyError(error)) {
       const existing = await readStoredRecord(route, key);
@@ -349,9 +395,11 @@ VALUES ($route, $idempotency_key, $request_hash, $status, $status_code, $respons
       ) {
         return await reclaimExpiredRecord(route, key, requestHash, existing);
       }
-      return existing ?? "unavailable";
+      return { kind: "existing", record: existing ?? "unavailable" };
     }
-    if (isIdempotencyStorageError(error)) return "unavailable";
+    if (isIdempotencyStorageError(error)) {
+      return { kind: "existing", record: "unavailable" };
+    }
     throw error;
   }
 }
@@ -361,7 +409,10 @@ async function reclaimExpiredRecord(
   key: string,
   requestHash: string,
   existing: StoredIdempotencyRecord,
-): Promise<"claimed" | StoredIdempotencyRecord | "unavailable"> {
+): Promise<
+  | { kind: "claimed"; updatedAt: string }
+  | { kind: "existing"; record: StoredIdempotencyRecord | "unavailable" }
+> {
   const now = new Date().toISOString();
   try {
     await withSession((session) =>
@@ -399,11 +450,24 @@ WHERE route = $route
         },
       ),
     );
-    return "claimed";
   } catch (error) {
-    if (isIdempotencyStorageError(error)) return "unavailable";
+    if (isIdempotencyStorageError(error)) {
+      return { kind: "existing", record: "unavailable" };
+    }
     throw error;
   }
+
+  const current = await readStoredRecord(route, key);
+  if (
+    current &&
+    current !== "unavailable" &&
+    current.status === "in_progress" &&
+    current.requestHash === requestHash &&
+    current.updatedAt === now
+  ) {
+    return { kind: "claimed", updatedAt: now };
+  }
+  return { kind: "existing", record: current ?? "unavailable" };
 }
 
 function inProgressRecord(requestHash: string): StoredIdempotencyRecord {

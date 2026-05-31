@@ -7,6 +7,7 @@ import {
   claimIdempotencyKey,
   hashBuffer,
   hashIdempotencyPayload,
+  type IdempotencyClaim,
   idempotencyStorageUnavailableResponse,
   isIdempotencyStorageAvailable,
   readIdempotencyKey,
@@ -120,6 +121,7 @@ export async function POST(req: Request): Promise<Response> {
         normalizedTags,
       })
     : null;
+  let idempotencyClaim: IdempotencyClaim | null = null;
   if (idempotency.key && requestHash) {
     const replay = await claimIdempotencyKey({
       route: routeScope,
@@ -127,6 +129,7 @@ export async function POST(req: Request): Promise<Response> {
       requestHash,
     });
     if (replay.kind !== "fresh") return replay.response;
+    idempotencyClaim = replay.claim;
   }
 
   let pet: Awaited<ReturnType<typeof createPendingPet>>;
@@ -154,22 +157,24 @@ export async function POST(req: Request): Promise<Response> {
       spritesheetExt,
     });
   } catch (error) {
-    if (idempotency.key && requestHash) {
+    if (idempotency.key && requestHash && idempotencyClaim) {
       await releaseIdempotencyClaim({
         route: routeScope,
         key: idempotency.key,
         requestHash,
+        claim: idempotencyClaim,
       }).catch(() => false);
     }
     throw error;
   }
 
   const responseBody = { ok: true, pet };
-  if (idempotency.key && requestHash) {
+  if (idempotency.key && requestHash && idempotencyClaim) {
     const stored = await storeIdempotencyResult({
       route: routeScope,
       key: idempotency.key,
       requestHash,
+      claim: idempotencyClaim,
       statusCode: 201,
       responseBody,
     });

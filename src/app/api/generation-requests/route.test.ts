@@ -308,7 +308,7 @@ describe("POST /api/generation-requests", () => {
     );
     const executeQuery = vi.fn()
       .mockResolvedValueOnce({})
-      .mockRejectedValueOnce(new Error("path not found"));
+      .mockRejectedValueOnce(new Error("transient ydb unavailable"));
     vi.mocked(withSession).mockImplementation(async (callback) =>
       callback({ executeQuery } as never),
     );
