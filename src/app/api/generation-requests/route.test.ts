@@ -323,7 +323,10 @@ describe("POST /api/generation-requests", () => {
       request: { id: "req_store_failure" },
     });
     expect(createGenerationRequest).toHaveBeenCalledTimes(1);
-    expect(executeQuery).toHaveBeenCalledTimes(2);
+    expect(executeQuery).toHaveBeenCalledTimes(3);
+    expect(String(executeQuery.mock.calls[2]?.[0])).toContain(
+      "$committed_status",
+    );
   });
 
   it("creates a request with a reference image from multipart form data", async () => {

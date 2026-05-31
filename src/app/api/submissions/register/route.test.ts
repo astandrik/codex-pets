@@ -332,7 +332,10 @@ describe("POST /api/submissions/register", () => {
     });
     expect(storePetAssetsInYdb).toHaveBeenCalledTimes(1);
     expect(createPendingPet).toHaveBeenCalledTimes(1);
-    expect(executeQuery).toHaveBeenCalledTimes(2);
+    expect(executeQuery).toHaveBeenCalledTimes(3);
+    expect(String(executeQuery.mock.calls[2]?.[0])).toContain(
+      "$committed_status",
+    );
   });
 
   it("binds submit to the logged-in owner when a session exists", async () => {

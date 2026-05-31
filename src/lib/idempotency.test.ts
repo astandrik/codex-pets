@@ -167,6 +167,34 @@ describe("idempotency helpers", () => {
     expect(afterRetention.kind).toBe("fresh");
   });
 
+  it("does not replay an expired completed key while cleanup is throttled", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T10:00:00.000Z"));
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "mock");
+    const route = `POST /test/${crypto.randomUUID()}`;
+    const key = "expired-while-cleanup-throttled";
+    const requestHash = hashIdempotencyPayload({ prompt: "same" });
+
+    const first = await claimIdempotencyKey({ route, key, requestHash });
+    if (first.kind !== "fresh") return;
+    await storeIdempotencyResult({
+      route,
+      key,
+      requestHash,
+      claim: first.claim,
+      statusCode: 201,
+      responseBody: { ok: true },
+    });
+
+    vi.setSystemTime(new Date("2026-06-02T09:59:59.000Z"));
+    const beforeExpiry = await claimIdempotencyKey({ route, key, requestHash });
+    vi.setSystemTime(new Date("2026-06-02T10:00:01.000Z"));
+    const afterExpiry = await claimIdempotencyKey({ route, key, requestHash });
+
+    expect(beforeExpiry.kind).toBe("replay");
+    expect(afterExpiry.kind).toBe("fresh");
+  });
+
   it("hashes undefined values deterministically", () => {
     expect(() => hashIdempotencyPayload({ optional: undefined })).not.toThrow();
     expect(hashIdempotencyPayload({ optional: undefined })).toBe(
