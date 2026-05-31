@@ -103,7 +103,14 @@ describe("scoped llms.txt routes", () => {
     {
       modulePath: "@/app/developers/llms.txt/route",
       heading: "# Codex Pets developer llms.txt",
-      expected: ["OpenAPI JSON", "MCP server", "Agent instructions"],
+      expected: [
+        "OpenAPI JSON",
+        "MCP server",
+        "Pricing markdown",
+        "Terms markdown",
+        "OAuth Protected Resource metadata",
+        "Agent instructions",
+      ],
     },
     {
       modulePath: "@/app/docs/llms.txt/route",
@@ -146,6 +153,7 @@ describe("MCP markdown security notes", () => {
 
     expect(response.status).toBe(200);
     expect(body).toContain("Content-Security-Policy");
+    expect(body).toContain("/.well-known/oauth-protected-resource/mcp");
     expect(body).not.toContain("frame-ancestors");
 
     vi.unstubAllEnvs();

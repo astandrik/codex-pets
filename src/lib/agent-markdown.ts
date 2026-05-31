@@ -436,6 +436,7 @@ The Codex Pets MCP server is a public read-only Streamable HTTP endpoint at ${to
 - MCP Registry metadata: ${toPublicUrl("/server.json")}
 - Well-known MCP Registry metadata: ${toPublicUrl("/.well-known/mcp/server.json")}
 - MCP server card: ${toPublicUrl("/.well-known/mcp/server-card.json")}
+- OAuth Protected Resource MCP metadata: ${toPublicUrl("/.well-known/oauth-protected-resource/mcp")}
 - MCP Apps resource URI: ui://codex-pets/pet-browser.html
 
 ## MCP App view security
@@ -459,6 +460,10 @@ Developer resources for building against Codex Pets.
 - MCP server card: ${toPublicUrl("/.well-known/mcp/server-card.json")}
 - API scoped llms.txt: ${toPublicUrl("/docs/llms.txt")}
 - Auth notes: ${toPublicUrl("/auth.md")}
+- Pricing markdown: ${toPublicUrl("/pricing.md")}
+- Terms markdown: ${toPublicUrl("/terms.md")}
+- OAuth Protected Resource metadata: ${toPublicUrl("/.well-known/oauth-protected-resource")}
+- OAuth Protected Resource MCP metadata: ${toPublicUrl("/.well-known/oauth-protected-resource/mcp")}
 
 ${AGENT_WHEN_TO_USE_GUIDANCE.trim()}
 `;
