@@ -78,7 +78,7 @@ function getOAuthProtectedResourceRewritePath(
     return wellKnownPath;
   }
 
-  if (pathname === `${derivedBasePath}/mcp`) {
+  if (pathname === `${derivedBasePath}/mcp` || pathname === `${derivedBasePath}/mcp/`) {
     return `${wellKnownPath}/mcp`;
   }
 

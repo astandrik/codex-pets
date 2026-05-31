@@ -135,6 +135,10 @@ describe("middleware markdown content negotiation", () => {
       "/.well-known/oauth-protected-resource/codex-pets/mcp",
       "/codex-pets/.well-known/oauth-protected-resource/mcp",
     ],
+    [
+      "/.well-known/oauth-protected-resource/codex-pets/mcp/",
+      "/codex-pets/.well-known/oauth-protected-resource/mcp",
+    ],
   ])("rewrites RFC-derived OAuth metadata URL %s", async (source, target) => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example/codex-pets");
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/codex-pets");
