@@ -280,6 +280,73 @@ describe("YDB idempotency helpers", () => {
       claim: { claimToken: insertedClaimToken },
     });
   });
+
+  it("does not delete a fresh claim after losing an expired-row delete race", async () => {
+    vi.setSystemTime(new Date("2026-05-30T10:00:01.000Z"));
+    const requestHash = hashIdempotencyPayload({ prompt: "same" });
+    let stored: YdbRecordInput | null = {
+      status: "completed",
+      requestHash,
+      updatedAt: "2026-05-29T10:00:00.000Z",
+      claimToken: "",
+      expiresAt: "2026-05-30T10:00:00.000Z",
+    };
+    const winner: YdbRecordInput = {
+      status: "in_progress",
+      requestHash,
+      updatedAt: "2026-05-30T10:00:01.000Z",
+      claimToken: "winner-token",
+      expiresAt: "2026-05-31T10:00:01.000Z",
+    };
+    const executeQuery = vi.fn(
+      async (query: string, params?: Record<string, string>) => {
+        if (
+          query.includes("DELETE FROM codex_idempotency_keys") &&
+          query.includes("expires_at <")
+        ) {
+          return {};
+        }
+        if (query.includes("INSERT INTO codex_idempotency_keys")) {
+          if (stored) throw new Error("duplicate primary key");
+          stored = {
+            status: "in_progress",
+            requestHash,
+            updatedAt: String(params?.$updated_at ?? ""),
+            claimToken: String(params?.$claim_token ?? ""),
+            expiresAt: String(params?.$expires_at ?? ""),
+          };
+          return {};
+        }
+        if (query.includes("DELETE FROM codex_idempotency_keys")) {
+          stored = winner;
+          const deleteMatchesWinner =
+            query.includes("request_hash = $request_hash") &&
+            params?.$status === winner.status &&
+            params?.$request_hash === winner.requestHash &&
+            params?.$updated_at === winner.updatedAt &&
+            params?.$claim_token === winner.claimToken &&
+            params?.$expires_at === winner.expiresAt;
+          if (!query.includes("request_hash = $request_hash") || deleteMatchesWinner) {
+            stored = null;
+          }
+          return {};
+        }
+        return stored ? ydbRecord(stored) : emptyYdbRecord();
+      },
+    );
+    vi.mocked(withSession).mockImplementation(async (callback) =>
+      callback({ executeQuery } as never),
+    );
+
+    const claim = await claimIdempotencyKey({
+      route: "POST /test",
+      key: "expired-delete-race",
+      requestHash,
+    });
+
+    expect(claim.kind).toBe("in_progress");
+    expect(stored?.claimToken).toBe("winner-token");
+  });
 });
 
 type YdbRecordInput = {

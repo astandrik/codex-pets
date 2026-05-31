@@ -7,11 +7,11 @@ import {
   claimIdempotencyKey,
   hashBuffer,
   hashIdempotencyPayload,
+  holdIdempotencyClaim,
   type IdempotencyClaim,
   idempotencyStorageUnavailableResponse,
   isIdempotencyStorageAvailable,
   readIdempotencyKey,
-  releaseIdempotencyClaim,
   storeIdempotencyResult,
 } from "@/lib/idempotency";
 import {
@@ -95,7 +95,7 @@ export async function POST(req: Request): Promise<Response> {
     });
   } catch (error) {
     if (idempotency.key && requestHash && idempotencyClaim) {
-      await releaseIdempotencyClaim({
+      await holdIdempotencyClaim({
         route: routeScope,
         key: idempotency.key,
         requestHash,

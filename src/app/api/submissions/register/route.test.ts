@@ -311,6 +311,82 @@ describe("POST /api/submissions/register", () => {
     expect(createPendingPet).toHaveBeenCalledTimes(2);
   });
 
+  it("holds the idempotency claim when a YDB submission write error is ambiguous", async () => {
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "");
+    vi.mocked(getCurrentPrincipal).mockResolvedValue(null);
+    vi.mocked(validateUploadedPackage).mockResolvedValue({
+      ok: true,
+      value: {
+        petJson: {
+          id: "demo",
+          displayName: "Demo",
+          description: "Demo pet",
+          spritesheetPath: "spritesheet.webp",
+        },
+        spritesheetBytes: 10,
+        zipBytes: 10,
+      },
+    });
+    vi.mocked(storePetAssetsInYdb).mockResolvedValue({
+      petJsonUrl: "/api/assets/a/pet.json",
+      spritesheetUrl: "/api/assets/a/spritesheet.webp",
+      zipUrl: "/api/assets/a/pet.zip",
+    });
+    vi.mocked(createPendingPet).mockRejectedValueOnce(
+      new Error("ambiguous pet write"),
+    );
+    let stored: RouteIdempotencyRecord | null = null;
+    const executeQuery = vi.fn(
+      async (query: string, params?: Record<string, string>) => {
+        if (
+          query.includes("DELETE FROM codex_idempotency_keys") &&
+          query.includes("expires_at <")
+        ) {
+          return {};
+        }
+        if (query.includes("INSERT INTO codex_idempotency_keys")) {
+          if (stored) throw new Error("duplicate primary key");
+          stored = routeIdempotencyRecordFromParams(params);
+          return {};
+        }
+        if (query.includes("$committed_status")) {
+          stored = {
+            status: "committed",
+            requestHash: String(params?.$request_hash ?? ""),
+            updatedAt: String(params?.$updated_at ?? ""),
+            claimToken: "",
+            expiresAt: String(params?.$expires_at ?? ""),
+          };
+          return {};
+        }
+        if (query.includes("DELETE FROM codex_idempotency_keys")) {
+          stored = null;
+          return {};
+        }
+        return stored ? ydbIdempotencyRecord(stored) : emptyYdbIdempotencyRecord();
+      },
+    );
+    vi.mocked(withSession).mockImplementation(async (callback) =>
+      callback({ executeQuery } as never),
+    );
+
+    await expect(
+      POST(submissionRequest(validSubmissionForm(), "submit-ambiguous-write-1")),
+    ).rejects.toThrow("ambiguous pet write");
+    const retry = await POST(
+      submissionRequest(validSubmissionForm(), "submit-ambiguous-write-1"),
+    );
+
+    expect(retry.status).toBe(409);
+    await expect(retry.json()).resolves.toMatchObject({
+      error: "idempotency_key_in_progress",
+      code: "idempotency_key_in_progress",
+    });
+    expect(storePetAssetsInYdb).toHaveBeenCalledTimes(1);
+    expect(createPendingPet).toHaveBeenCalledTimes(1);
+    expect(stored).toEqual(expect.objectContaining({ status: "committed" }));
+  });
+
   it("returns the created submission when result idempotency storage fails", async () => {
     vi.stubEnv("CODEX_PETS_DATA_SOURCE", "");
     vi.mocked(getCurrentPrincipal).mockResolvedValueOnce(null);
@@ -563,4 +639,51 @@ function submissionPet(id: string) {
     installCount: 0,
     likeCount: 0,
   };
+}
+
+type RouteIdempotencyRecord = {
+  status: "in_progress" | "completed" | "committed";
+  requestHash: string;
+  updatedAt: string;
+  claimToken: string;
+  expiresAt: string;
+};
+
+function routeIdempotencyRecordFromParams(
+  params?: Record<string, string>,
+): RouteIdempotencyRecord {
+  return {
+    status: "in_progress",
+    requestHash: String(params?.$request_hash ?? ""),
+    updatedAt: String(params?.$updated_at ?? ""),
+    claimToken: String(params?.$claim_token ?? ""),
+    expiresAt: String(params?.$expires_at ?? ""),
+  };
+}
+
+function ydbIdempotencyRecord(record: RouteIdempotencyRecord) {
+  return {
+    resultSets: [
+      {
+        rows: [
+          {
+            items: [
+              { textValue: record.status },
+              { textValue: record.requestHash },
+              { uint32Value: 0 },
+              { textValue: "" },
+              { textValue: "2026-05-16T10:00:00.000Z" },
+              { textValue: record.updatedAt },
+              { textValue: record.claimToken },
+              { textValue: record.expiresAt },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function emptyYdbIdempotencyRecord() {
+  return { resultSets: [{ rows: [] }] };
 }

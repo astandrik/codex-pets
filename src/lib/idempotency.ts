@@ -32,11 +32,14 @@ type StoredIdempotencyRecord = {
   expiresAt: string;
 };
 
-type StoreIdempotencyInput = {
+type IdempotencyClaimInput = {
   route: string;
   key: string;
   requestHash: string;
   claim: IdempotencyClaim;
+};
+
+type StoreIdempotencyInput = IdempotencyClaimInput & {
   statusCode: number;
   responseBody: unknown;
 };
@@ -294,6 +297,17 @@ WHERE route = $route
   return true;
 }
 
+export async function holdIdempotencyClaim(
+  input: IdempotencyClaimInput,
+): Promise<boolean> {
+  if (isMockPetsDataSource()) {
+    return await releaseIdempotencyClaim(input);
+  }
+
+  const now = new Date();
+  return await holdCommittedClaim(input, now.toISOString(), createExpiresAt(now));
+}
+
 export function hashIdempotencyPayload(value: unknown): string {
   return sha256(stableStringify(value));
 }
@@ -439,7 +453,7 @@ VALUES ($route, $idempotency_key, $request_hash, $status, $status_code, $respons
         if (!allowExpiredDelete) {
           return { kind: "existing", record: "unavailable" };
         }
-        const deleted = await deleteStoredRecord(route, key);
+        const deleted = await deleteStoredRecord(route, key, existing);
         if (!deleted) {
           return { kind: "existing", record: "unavailable" };
         }
@@ -473,11 +487,11 @@ VALUES ($route, $idempotency_key, $request_hash, $status, $status_code, $respons
 }
 
 async function holdCommittedClaim(
-  input: StoreIdempotencyInput,
+  input: IdempotencyClaimInput,
   updatedAt: string,
   expiresAt: string,
-): Promise<void> {
-  if (!isYdbConfigured()) return;
+): Promise<boolean> {
+  if (!isYdbConfigured()) return false;
 
   try {
     await withSession((session) =>
@@ -523,8 +537,10 @@ WHERE route = $route
         },
       ),
     );
+    return true;
   } catch {
     // If storage is fully unavailable, the route still returns the committed 201 response.
+    return false;
   }
 }
 
@@ -629,9 +645,17 @@ function isExpiredInProgressRecord(record: StoredIdempotencyRecord): boolean {
   return Date.now() - updatedAt > IN_PROGRESS_TTL_MS;
 }
 
-async function deleteStoredRecord(route: string, key: string): Promise<boolean> {
+async function deleteStoredRecord(
+  route: string,
+  key: string,
+  record: StoredIdempotencyRecord,
+): Promise<boolean> {
   if (isMockPetsDataSource()) {
-    memoryRecords.delete(memoryKey(route, key));
+    const mapKey = memoryKey(route, key);
+    const current = memoryRecords.get(mapKey);
+    if (current && sameStoredRecordIdentity(current, record)) {
+      memoryRecords.delete(mapKey);
+    }
     return true;
   }
 
@@ -643,13 +667,29 @@ async function deleteStoredRecord(route: string, key: string): Promise<boolean> 
         `
 DECLARE $route AS Utf8;
 DECLARE $idempotency_key AS Utf8;
+DECLARE $request_hash AS Utf8;
+DECLARE $status AS Utf8;
+DECLARE $updated_at AS Utf8;
+DECLARE $claim_token AS Utf8;
+DECLARE $expires_at AS Utf8;
 
 DELETE FROM ${TABLES.idempotencyKeys}
-WHERE route = $route AND idempotency_key = $idempotency_key;
+WHERE route = $route
+  AND idempotency_key = $idempotency_key
+  AND request_hash = $request_hash
+  AND status = $status
+  AND updated_at = $updated_at
+  AND claim_token = $claim_token
+  AND expires_at = $expires_at;
         `,
         {
           $route: TypedValues.utf8(route),
           $idempotency_key: TypedValues.utf8(key),
+          $request_hash: TypedValues.utf8(record.requestHash),
+          $status: TypedValues.utf8(record.status),
+          $updated_at: TypedValues.utf8(record.updatedAt),
+          $claim_token: TypedValues.utf8(record.claimToken),
+          $expires_at: TypedValues.utf8(record.expiresAt),
         },
       ),
     );
@@ -658,6 +698,19 @@ WHERE route = $route AND idempotency_key = $idempotency_key;
     if (isIdempotencyStorageError(error)) return false;
     throw error;
   }
+}
+
+function sameStoredRecordIdentity(
+  left: StoredIdempotencyRecord,
+  right: StoredIdempotencyRecord,
+): boolean {
+  return (
+    left.status === right.status &&
+    left.requestHash === right.requestHash &&
+    left.updatedAt === right.updatedAt &&
+    left.claimToken === right.claimToken &&
+    left.expiresAt === right.expiresAt
+  );
 }
 
 function isExpiredRetentionRecord(record: StoredIdempotencyRecord): boolean {

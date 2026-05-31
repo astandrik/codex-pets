@@ -300,6 +300,65 @@ describe("POST /api/generation-requests", () => {
     expect(createGenerationRequest).toHaveBeenCalledTimes(2);
   });
 
+  it("holds the idempotency claim when a YDB request creation error is ambiguous", async () => {
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "");
+    vi.mocked(getCurrentPrincipal).mockResolvedValue(null);
+    vi.mocked(createGenerationRequest).mockRejectedValueOnce(
+      new Error("ambiguous generation write"),
+    );
+    let stored: RouteIdempotencyRecord | null = null;
+    const executeQuery = vi.fn(
+      async (query: string, params?: Record<string, string>) => {
+        if (
+          query.includes("DELETE FROM codex_idempotency_keys") &&
+          query.includes("expires_at <")
+        ) {
+          return {};
+        }
+        if (query.includes("INSERT INTO codex_idempotency_keys")) {
+          if (stored) throw new Error("duplicate primary key");
+          stored = routeIdempotencyRecordFromParams(params);
+          return {};
+        }
+        if (query.includes("$committed_status")) {
+          stored = {
+            status: "committed",
+            requestHash: String(params?.$request_hash ?? ""),
+            updatedAt: String(params?.$updated_at ?? ""),
+            claimToken: "",
+            expiresAt: String(params?.$expires_at ?? ""),
+          };
+          return {};
+        }
+        if (query.includes("DELETE FROM codex_idempotency_keys")) {
+          stored = null;
+          return {};
+        }
+        return stored ? ydbIdempotencyRecord(stored) : emptyYdbIdempotencyRecord();
+      },
+    );
+    vi.mocked(withSession).mockImplementation(async (callback) =>
+      callback({ executeQuery } as never),
+    );
+    const body = {
+      contactEmail: "anon@example.com",
+      prompt: "Make a helper.",
+    };
+
+    await expect(
+      POST(jsonRequest(body, "request-ambiguous-write-1")),
+    ).rejects.toThrow("ambiguous generation write");
+    const retry = await POST(jsonRequest(body, "request-ambiguous-write-1"));
+
+    expect(retry.status).toBe(409);
+    await expect(retry.json()).resolves.toMatchObject({
+      error: "idempotency_key_in_progress",
+      code: "idempotency_key_in_progress",
+    });
+    expect(createGenerationRequest).toHaveBeenCalledTimes(1);
+    expect(stored).toEqual(expect.objectContaining({ status: "committed" }));
+  });
+
   it("returns the created request when result idempotency storage fails", async () => {
     vi.stubEnv("CODEX_PETS_DATA_SOURCE", "");
     vi.mocked(getCurrentPrincipal).mockResolvedValueOnce(null);
@@ -511,4 +570,51 @@ async function makePng(): Promise<Buffer> {
       background: "#ffffff",
     },
   }).png().toBuffer();
+}
+
+type RouteIdempotencyRecord = {
+  status: "in_progress" | "completed" | "committed";
+  requestHash: string;
+  updatedAt: string;
+  claimToken: string;
+  expiresAt: string;
+};
+
+function routeIdempotencyRecordFromParams(
+  params?: Record<string, string>,
+): RouteIdempotencyRecord {
+  return {
+    status: "in_progress",
+    requestHash: String(params?.$request_hash ?? ""),
+    updatedAt: String(params?.$updated_at ?? ""),
+    claimToken: String(params?.$claim_token ?? ""),
+    expiresAt: String(params?.$expires_at ?? ""),
+  };
+}
+
+function ydbIdempotencyRecord(record: RouteIdempotencyRecord) {
+  return {
+    resultSets: [
+      {
+        rows: [
+          {
+            items: [
+              { textValue: record.status },
+              { textValue: record.requestHash },
+              { uint32Value: 0 },
+              { textValue: "" },
+              { textValue: "2026-05-16T10:00:00.000Z" },
+              { textValue: record.updatedAt },
+              { textValue: record.claimToken },
+              { textValue: record.expiresAt },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function emptyYdbIdempotencyRecord() {
+  return { resultSets: [{ rows: [] }] };
 }
