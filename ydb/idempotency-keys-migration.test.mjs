@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { up as addIdempotencyKeys } from "./20260529_001_add_idempotency_keys.mjs";
+import { up as addIdempotencyKeys } from "./migrations/20260529_001_add_idempotency_keys.mjs";
 
 class FakeTableDescription {
   columns = [];
@@ -55,7 +55,7 @@ describe("idempotency YDB migrations", () => {
 
   it("recreates an existing idempotency table when the primary key is incomplete", async () => {
     const { up: repairIdempotencyKeys } = await import(
-      "./20260531_002_recreate_idempotency_keys_primary_key.mjs"
+      "./migrations/20260531_002_recreate_idempotency_keys_primary_key.mjs"
     );
     const calls = [];
     let createdTable = null;
