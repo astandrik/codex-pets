@@ -32,19 +32,27 @@ describe("YDB idempotency helpers", () => {
 
   it("does not claim a stale row unless the refresh is visible", async () => {
     const requestHash = hashIdempotencyPayload({ prompt: "same" });
-    const executeQuery = vi.fn()
-      .mockRejectedValueOnce(new Error("duplicate primary key"))
-      .mockResolvedValueOnce(ydbRecord({
+    let mutationCall = 0;
+    const executeQuery = vi.fn(async (query: string) => {
+      if (query.includes("DELETE FROM codex_idempotency_keys")) return {};
+      mutationCall += 1;
+      if (mutationCall === 1) throw new Error("duplicate primary key");
+      if (mutationCall === 2) {
+        return ydbRecord({
+          status: "in_progress",
+          requestHash,
+          updatedAt: "2026-05-29T10:00:00.000Z",
+          claimToken: "stale-token",
+        });
+      }
+      if (mutationCall === 3) return {};
+      return ydbRecord({
         status: "in_progress",
         requestHash,
-        updatedAt: "2026-05-29T10:00:00.000Z",
-      }))
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce(ydbRecord({
-        status: "in_progress",
-        requestHash,
-        updatedAt: "2026-05-29T10:10:01.000Z#winner",
-      }));
+        updatedAt: "2026-05-29T10:10:01.000Z",
+        claimToken: "winner-token",
+      });
+    });
     vi.mocked(withSession).mockImplementation(async (callback) =>
       callback({ executeQuery } as never),
     );
@@ -56,33 +64,40 @@ describe("YDB idempotency helpers", () => {
     });
 
     expect(claim.kind).toBe("in_progress");
-    expect(executeQuery).toHaveBeenCalledTimes(4);
+    expect(mutationCall).toBe(4);
   });
 
   it("claims a stale row after the conditional refresh is visible", async () => {
     const requestHash = hashIdempotencyPayload({ prompt: "same" });
-    let call = 0;
+    let mutationCall = 0;
     let refreshedAt = "";
-    const executeQuery = vi.fn(async (_query: string, params?: Record<string, string>) => {
-      call += 1;
-      if (call === 1) throw new Error("duplicate primary key");
-      if (call === 2) {
+    let claimToken = "";
+    const executeQuery = vi.fn(
+      async (query: string, params?: Record<string, string>) => {
+        if (query.includes("DELETE FROM codex_idempotency_keys")) return {};
+        mutationCall += 1;
+        if (mutationCall === 1) throw new Error("duplicate primary key");
+        if (mutationCall === 2) {
+          return ydbRecord({
+            status: "in_progress",
+            requestHash,
+            updatedAt: "2026-05-29T10:00:00.000Z",
+            claimToken: "stale-token",
+          });
+        }
+        if (mutationCall === 3) {
+          refreshedAt = String(params?.$updated_at ?? "");
+          claimToken = String(params?.$claim_token ?? "");
+          return {};
+        }
         return ydbRecord({
           status: "in_progress",
           requestHash,
-          updatedAt: "2026-05-29T10:00:00.000Z",
+          updatedAt: refreshedAt,
+          claimToken,
         });
-      }
-      if (call === 3) {
-        refreshedAt = String(params?.$updated_at ?? "");
-        return {};
-      }
-      return ydbRecord({
-        status: "in_progress",
-        requestHash,
-        updatedAt: refreshedAt,
-      });
-    });
+      },
+    );
     vi.mocked(withSession).mockImplementation(async (callback) =>
       callback({ executeQuery } as never),
     );
@@ -95,12 +110,11 @@ describe("YDB idempotency helpers", () => {
 
     expect(claim).toEqual({
       kind: "fresh",
-      claim: { updatedAt: refreshedAt },
+      claim: { claimToken },
     });
-    expect(refreshedAt).toMatch(
-      /^2026-05-29T10:10:01\.000Z#[0-9a-f-]{36}$/,
-    );
-    expect(executeQuery).toHaveBeenCalledTimes(4);
+    expect(refreshedAt).toBe("2026-05-29T10:10:01.000Z");
+    expect(claimToken).toMatch(/^[0-9a-f-]{36}$/);
+    expect(mutationCall).toBe(4);
   });
 });
 
@@ -108,6 +122,7 @@ function ydbRecord(input: {
   status: "in_progress" | "completed";
   requestHash: string;
   updatedAt: string;
+  claimToken: string;
 }) {
   return {
     resultSets: [
@@ -119,7 +134,10 @@ function ydbRecord(input: {
               { textValue: input.requestHash },
               { uint32Value: 0 },
               { textValue: "" },
+              { textValue: "2026-05-29T10:00:00.000Z" },
               { textValue: input.updatedAt },
+              { textValue: input.claimToken },
+              { textValue: "2026-05-30T10:10:01.000Z" },
             ],
           },
         ],

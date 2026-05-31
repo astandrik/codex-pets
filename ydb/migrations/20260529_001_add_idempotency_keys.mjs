@@ -25,6 +25,8 @@ export async function up({ sdk, withSession }) {
         .withColumn(new Column("response_json", Types.UTF8))
         .withColumn(new Column("created_at", Types.UTF8))
         .withColumn(new Column("updated_at", Types.UTF8))
+        .withColumn(new Column("claim_token", Types.UTF8))
+        .withColumn(new Column("expires_at", Types.UTF8))
         .withPrimaryKey("route", "idempotency_key"),
     ),
   );

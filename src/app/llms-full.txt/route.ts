@@ -87,7 +87,7 @@ export async function GET(): Promise<Response> {
       `- GET ${toPublicUrl("/api/pets/{slug}/install")}: read-only install instructions; does not increment install counters.`,
       `- POST ${toPublicUrl("/api/generation-requests")}: create a public pet generation request from JSON or multipart form data.`,
       `- POST ${toPublicUrl("/api/submissions/register")}: submit a pet pack for moderation using multipart form data.`,
-      "- POST public create routes accept optional Idempotency-Key for safe retries. Same key plus same normalized request body replays the first 201 response; same key with a different body returns 409 idempotency_key_conflict.",
+      "- POST public create routes accept optional Idempotency-Key for safe retries. Same key plus same normalized request body replays the first 201 response; same key with a different body returns 409 idempotency_key_conflict. Completed records are retained for 24 hours.",
       `- POST ${toPublicUrl("/mcp")}: Streamable HTTP MCP JSON-RPC endpoint for read-only tools.`,
       `- POST ${toPublicUrl("/.well-known/mcp")}: Well-known Streamable HTTP MCP JSON-RPC alias.`,
       `- GET ${toPublicUrl("/.well-known/oauth-protected-resource")}: OAuth Protected Resource metadata for the public site.`,

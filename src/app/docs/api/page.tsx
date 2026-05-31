@@ -161,7 +161,9 @@ export default function ApiDocsPage() {
           accept an optional Idempotency-Key header for safe retries. Reusing
           the same key with the same normalized request body returns the first
           successful 201 response. Reusing it with a different body returns
-          409 idempotency_key_conflict.
+          409 idempotency_key_conflict. Completed idempotency records are kept
+          for 24 hours; after that retention window a key can be processed as a
+          new request.
         </Text>
       </section>
 

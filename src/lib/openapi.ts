@@ -911,7 +911,7 @@ const idempotencyKeyHeader = {
     pattern: "^[A-Za-z0-9._~-]{1,128}$",
   },
   description:
-    "Optional retry key for public create operations. Reusing the same key with the same normalized request body returns the first successful 201 response after it completes; while the first request is still processing it returns 409 idempotency_key_in_progress. Reusing the key with a different body returns 409 idempotency_key_conflict.",
+    "Optional retry key for public create operations. Reusing the same key with the same normalized request body returns the first successful 201 response after it completes; while the first request is still processing it returns 409 idempotency_key_in_progress. Reusing the key with a different body returns 409 idempotency_key_conflict. Completed idempotency records are retained for 24 hours.",
 } as const;
 
 function jsonResponse(schemaRef: string) {

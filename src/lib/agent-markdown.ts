@@ -264,7 +264,9 @@ POST /api/generation-requests and POST /api/submissions/register accept an optio
 body returns the first successful 201 response. Reusing the same key with a
 different body returns \`409 idempotency_key_conflict\`. Invalid keys return
 \`400 invalid_idempotency_key\`. If the same key/body is still being processed,
-the API returns \`409 idempotency_key_in_progress\`.
+the API returns \`409 idempotency_key_in_progress\`. Completed idempotency records
+are retained for 24 hours; after that window the key can be processed as a new
+request.
 
 ## Versioning and deprecation
 
@@ -485,7 +487,7 @@ Error responses use JSON with error, code, message, and optional hint or field v
 
 ## Idempotency
 
-Use Idempotency-Key on POST /api/generation-requests and POST /api/submissions/register when retrying public create requests.
+Use Idempotency-Key on POST /api/generation-requests and POST /api/submissions/register when retrying public create requests. Completed idempotency records are retained for 24 hours.
 
 ${AGENT_WHEN_TO_USE_GUIDANCE.trim()}
 `;

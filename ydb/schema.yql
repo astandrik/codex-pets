@@ -171,6 +171,8 @@ CREATE TABLE codex_idempotency_keys (
   response_json Utf8 NOT NULL,
   created_at Utf8 NOT NULL,
   updated_at Utf8 NOT NULL,
+  claim_token Utf8 NOT NULL,
+  expires_at Utf8 NOT NULL,
   PRIMARY KEY (route, idempotency_key)
 );
 

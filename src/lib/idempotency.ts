@@ -18,7 +18,7 @@ export type IdempotencyReplayResult =
   | { kind: "unavailable"; response: Response };
 
 export type IdempotencyClaim = {
-  updatedAt: string;
+  claimToken: string;
 };
 
 type StoredIdempotencyRecord = {
@@ -26,7 +26,10 @@ type StoredIdempotencyRecord = {
   requestHash: string;
   statusCode: number;
   responseJson: string;
+  createdAt: string;
   updatedAt: string;
+  claimToken: string;
+  expiresAt: string;
 };
 
 type StoreIdempotencyInput = {
@@ -40,7 +43,10 @@ type StoreIdempotencyInput = {
 
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._~-]{1,128}$/;
 const IN_PROGRESS_TTL_MS = 10 * 60 * 1000;
+const IDEMPOTENCY_RETENTION_MS = 24 * 60 * 60 * 1000;
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 const memoryRecords = new Map<string, StoredIdempotencyRecord>();
+let lastCleanupAttemptAt = 0;
 
 export function readIdempotencyKey(req: Request): IdempotencyKeyResult {
   const rawKey = req.headers.get("Idempotency-Key");
@@ -81,7 +87,7 @@ export async function claimIdempotencyKey(input: {
 }): Promise<IdempotencyReplayResult> {
   const claim = await claimStoredRecord(input.route, input.key, input.requestHash);
   if (claim.kind === "claimed") {
-    return { kind: "fresh", claim: { updatedAt: claim.updatedAt } };
+    return { kind: "fresh", claim: { claimToken: claim.claimToken } };
   }
 
   const record = claim.record;
@@ -131,14 +137,9 @@ export async function storeIdempotencyResult(
   input: StoreIdempotencyInput,
 ): Promise<boolean> {
   const responseJson = JSON.stringify(input.responseBody);
-  const updatedAt = new Date().toISOString();
-  const record = {
-    status: "completed" as const,
-    requestHash: input.requestHash,
-    statusCode: input.statusCode,
-    responseJson,
-    updatedAt,
-  };
+  const now = new Date();
+  const updatedAt = now.toISOString();
+  const expiresAt = createExpiresAt(now);
 
   if (isMockPetsDataSource()) {
     const mapKey = memoryKey(input.route, input.key);
@@ -146,11 +147,20 @@ export async function storeIdempotencyResult(
     if (
       existing?.status !== "in_progress" ||
       existing.requestHash !== input.requestHash ||
-      existing.updatedAt !== input.claim.updatedAt
+      existing.claimToken !== input.claim.claimToken
     ) {
       return false;
     }
-    memoryRecords.set(mapKey, record);
+    memoryRecords.set(mapKey, {
+      status: "completed",
+      requestHash: input.requestHash,
+      statusCode: input.statusCode,
+      responseJson,
+      createdAt: existing.createdAt,
+      updatedAt,
+      claimToken: "",
+      expiresAt,
+    });
     return true;
   }
 
@@ -163,34 +173,40 @@ export async function storeIdempotencyResult(
 DECLARE $route AS Utf8;
 DECLARE $idempotency_key AS Utf8;
 DECLARE $request_hash AS Utf8;
-DECLARE $claim_updated_at AS Utf8;
+DECLARE $claim_token AS Utf8;
 DECLARE $completed_status AS Utf8;
 DECLARE $in_progress_status AS Utf8;
 DECLARE $status_code AS Uint32;
 DECLARE $response_json AS Utf8;
 DECLARE $updated_at AS Utf8;
+DECLARE $completed_claim_token AS Utf8;
+DECLARE $expires_at AS Utf8;
 
 UPDATE ${TABLES.idempotencyKeys}
 SET status = $completed_status,
     status_code = $status_code,
     response_json = $response_json,
-    updated_at = $updated_at
+    updated_at = $updated_at,
+    claim_token = $completed_claim_token,
+    expires_at = $expires_at
 WHERE route = $route
   AND idempotency_key = $idempotency_key
   AND request_hash = $request_hash
   AND status = $in_progress_status
-  AND updated_at = $claim_updated_at;
+  AND claim_token = $claim_token;
       `,
         {
           $route: TypedValues.utf8(input.route),
           $idempotency_key: TypedValues.utf8(input.key),
           $request_hash: TypedValues.utf8(input.requestHash),
-          $claim_updated_at: TypedValues.utf8(input.claim.updatedAt),
+          $claim_token: TypedValues.utf8(input.claim.claimToken),
           $completed_status: TypedValues.utf8("completed"),
           $in_progress_status: TypedValues.utf8("in_progress"),
           $status_code: TypedValues.uint32(input.statusCode),
           $response_json: TypedValues.utf8(responseJson),
           $updated_at: TypedValues.utf8(updatedAt),
+          $completed_claim_token: TypedValues.utf8(""),
+          $expires_at: TypedValues.utf8(expiresAt),
         },
       ),
     );
@@ -206,7 +222,8 @@ WHERE route = $route
         stored.status === "completed" &&
         stored.requestHash === input.requestHash &&
         stored.responseJson === responseJson &&
-        stored.updatedAt === updatedAt,
+        stored.updatedAt === updatedAt &&
+        stored.expiresAt === expiresAt,
     );
   } catch {
     return false;
@@ -225,7 +242,7 @@ export async function releaseIdempotencyClaim(input: {
     if (
       existing?.status === "in_progress" &&
       existing.requestHash === input.requestHash &&
-      existing.updatedAt === input.claim.updatedAt
+      existing.claimToken === input.claim.claimToken
     ) {
       memoryRecords.delete(mapKey);
     }
@@ -241,7 +258,7 @@ export async function releaseIdempotencyClaim(input: {
 DECLARE $route AS Utf8;
 DECLARE $idempotency_key AS Utf8;
 DECLARE $request_hash AS Utf8;
-DECLARE $claim_updated_at AS Utf8;
+DECLARE $claim_token AS Utf8;
 DECLARE $status AS Utf8;
 
 DELETE FROM ${TABLES.idempotencyKeys}
@@ -249,13 +266,13 @@ WHERE route = $route
   AND idempotency_key = $idempotency_key
   AND request_hash = $request_hash
   AND status = $status
-  AND updated_at = $claim_updated_at;
+  AND claim_token = $claim_token;
       `,
         {
           $route: TypedValues.utf8(input.route),
           $idempotency_key: TypedValues.utf8(input.key),
           $request_hash: TypedValues.utf8(input.requestHash),
-          $claim_updated_at: TypedValues.utf8(input.claim.updatedAt),
+          $claim_token: TypedValues.utf8(input.claim.claimToken),
           $status: TypedValues.utf8("in_progress"),
         },
       ),
@@ -293,7 +310,7 @@ async function readStoredRecord(
 DECLARE $route AS Utf8;
 DECLARE $idempotency_key AS Utf8;
 
-SELECT status, request_hash, status_code, response_json, updated_at
+SELECT status, request_hash, status_code, response_json, created_at, updated_at, claim_token, expires_at
 FROM ${TABLES.idempotencyKeys}
 WHERE route = $route AND idempotency_key = $idempotency_key
 LIMIT 1;
@@ -311,12 +328,16 @@ LIMIT 1;
 
   const row = rowsFromResult(result)[0];
   if (!row) return null;
+  const updatedAt = textAt(row, 5);
   return {
     status: textAt(row, 0) === "completed" ? "completed" : "in_progress",
     requestHash: textAt(row, 1),
     statusCode: uintAt(row, 2),
     responseJson: textAt(row, 3),
-    updatedAt: textAt(row, 4),
+    createdAt: textAt(row, 4),
+    updatedAt,
+    claimToken: normalizeClaimToken(updatedAt, textAt(row, 6)),
+    expiresAt: textAt(row, 7),
   };
 }
 
@@ -325,9 +346,11 @@ async function claimStoredRecord(
   key: string,
   requestHash: string,
 ): Promise<
-  | { kind: "claimed"; updatedAt: string }
+  | { kind: "claimed"; claimToken: string }
   | { kind: "existing"; record: StoredIdempotencyRecord | "unavailable" }
 > {
+  await cleanupExpiredRecords();
+
   if (isMockPetsDataSource()) {
     const mapKey = memoryKey(route, key);
     const existing = memoryRecords.get(mapKey);
@@ -339,13 +362,13 @@ async function claimStoredRecord(
       ) {
         const record = inProgressRecord(requestHash);
         memoryRecords.set(mapKey, record);
-        return { kind: "claimed", updatedAt: record.updatedAt };
+        return { kind: "claimed", claimToken: record.claimToken };
       }
       return { kind: "existing", record: existing };
     }
     const record = inProgressRecord(requestHash);
     memoryRecords.set(mapKey, record);
-    return { kind: "claimed", updatedAt: record.updatedAt };
+    return { kind: "claimed", claimToken: record.claimToken };
   }
 
   if (!isYdbConfigured()) {
@@ -353,8 +376,9 @@ async function claimStoredRecord(
   }
 
   const now = new Date();
-  const claimUpdatedAt = createClaimUpdatedAt(now);
+  const claimToken = createClaimToken();
   const createdAt = now.toISOString();
+  const expiresAt = createExpiresAt(now);
   try {
     await withSession((session) =>
       session.executeQuery(
@@ -367,10 +391,12 @@ DECLARE $status_code AS Uint32;
 DECLARE $response_json AS Utf8;
 DECLARE $created_at AS Utf8;
 DECLARE $updated_at AS Utf8;
+DECLARE $claim_token AS Utf8;
+DECLARE $expires_at AS Utf8;
 
 INSERT INTO ${TABLES.idempotencyKeys}
-(route, idempotency_key, request_hash, status, status_code, response_json, created_at, updated_at)
-VALUES ($route, $idempotency_key, $request_hash, $status, $status_code, $response_json, $created_at, $updated_at);
+(route, idempotency_key, request_hash, status, status_code, response_json, created_at, updated_at, claim_token, expires_at)
+VALUES ($route, $idempotency_key, $request_hash, $status, $status_code, $response_json, $created_at, $updated_at, $claim_token, $expires_at);
         `,
         {
           $route: TypedValues.utf8(route),
@@ -380,11 +406,13 @@ VALUES ($route, $idempotency_key, $request_hash, $status, $status_code, $respons
           $status_code: TypedValues.uint32(0),
           $response_json: TypedValues.utf8(""),
           $created_at: TypedValues.utf8(createdAt),
-          $updated_at: TypedValues.utf8(claimUpdatedAt),
+          $updated_at: TypedValues.utf8(createdAt),
+          $claim_token: TypedValues.utf8(claimToken),
+          $expires_at: TypedValues.utf8(expiresAt),
         },
       ),
     );
-    return { kind: "claimed", updatedAt: claimUpdatedAt };
+    return { kind: "claimed", claimToken };
   } catch (error) {
     if (isDuplicateKeyError(error)) {
       const existing = await readStoredRecord(route, key);
@@ -412,10 +440,13 @@ async function reclaimExpiredRecord(
   requestHash: string,
   existing: StoredIdempotencyRecord,
 ): Promise<
-  | { kind: "claimed"; updatedAt: string }
+  | { kind: "claimed"; claimToken: string }
   | { kind: "existing"; record: StoredIdempotencyRecord | "unavailable" }
 > {
-  const claimUpdatedAt = createClaimUpdatedAt();
+  const now = new Date();
+  const updatedAt = now.toISOString();
+  const claimToken = createClaimToken();
+  const expiresAt = createExpiresAt(now);
   try {
     await withSession((session) =>
       session.executeQuery(
@@ -427,18 +458,24 @@ DECLARE $status AS Utf8;
 DECLARE $status_code AS Uint32;
 DECLARE $response_json AS Utf8;
 DECLARE $previous_updated_at AS Utf8;
+DECLARE $previous_claim_token AS Utf8;
 DECLARE $updated_at AS Utf8;
+DECLARE $claim_token AS Utf8;
+DECLARE $expires_at AS Utf8;
 
 UPDATE ${TABLES.idempotencyKeys}
 SET status = $status,
     status_code = $status_code,
     response_json = $response_json,
-    updated_at = $updated_at
+    updated_at = $updated_at,
+    claim_token = $claim_token,
+    expires_at = $expires_at
 WHERE route = $route
   AND idempotency_key = $idempotency_key
   AND request_hash = $request_hash
   AND status = $status
-  AND updated_at = $previous_updated_at;
+  AND updated_at = $previous_updated_at
+  AND claim_token = $previous_claim_token;
         `,
         {
           $route: TypedValues.utf8(route),
@@ -448,7 +485,10 @@ WHERE route = $route
           $status_code: TypedValues.uint32(0),
           $response_json: TypedValues.utf8(""),
           $previous_updated_at: TypedValues.utf8(existing.updatedAt),
-          $updated_at: TypedValues.utf8(claimUpdatedAt),
+          $previous_claim_token: TypedValues.utf8(existing.claimToken),
+          $updated_at: TypedValues.utf8(updatedAt),
+          $claim_token: TypedValues.utf8(claimToken),
+          $expires_at: TypedValues.utf8(expiresAt),
         },
       ),
     );
@@ -465,20 +505,26 @@ WHERE route = $route
     current !== "unavailable" &&
     current.status === "in_progress" &&
     current.requestHash === requestHash &&
-    current.updatedAt === claimUpdatedAt
+    current.updatedAt === updatedAt &&
+    current.claimToken === claimToken
   ) {
-    return { kind: "claimed", updatedAt: claimUpdatedAt };
+    return { kind: "claimed", claimToken };
   }
   return { kind: "existing", record: current ?? "unavailable" };
 }
 
 function inProgressRecord(requestHash: string): StoredIdempotencyRecord {
+  const now = new Date();
+  const nowIso = now.toISOString();
   return {
     status: "in_progress",
     requestHash,
     statusCode: 0,
     responseJson: "",
-    updatedAt: createClaimUpdatedAt(),
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    claimToken: createClaimToken(),
+    expiresAt: createExpiresAt(now),
   };
 }
 
@@ -489,8 +535,57 @@ function isExpiredInProgressRecord(record: StoredIdempotencyRecord): boolean {
   return Date.now() - updatedAt > IN_PROGRESS_TTL_MS;
 }
 
-function createClaimUpdatedAt(now = new Date()): string {
-  return `${now.toISOString()}#${randomUUID()}`;
+async function cleanupExpiredRecords(): Promise<void> {
+  const now = Date.now();
+  if (
+    now >= lastCleanupAttemptAt &&
+    now - lastCleanupAttemptAt < CLEANUP_INTERVAL_MS
+  ) {
+    return;
+  }
+  lastCleanupAttemptAt = now;
+
+  const cutoff = new Date(now).toISOString();
+  if (isMockPetsDataSource()) {
+    for (const [key, record] of memoryRecords) {
+      if (record.expiresAt && record.expiresAt <= cutoff) {
+        memoryRecords.delete(key);
+      }
+    }
+    return;
+  }
+
+  if (!isYdbConfigured()) return;
+
+  try {
+    await withSession((session) =>
+      session.executeQuery(
+        `
+DECLARE $expires_before AS Utf8;
+
+DELETE FROM ${TABLES.idempotencyKeys}
+WHERE expires_at < $expires_before;
+        `,
+        {
+          $expires_before: TypedValues.utf8(cutoff),
+        },
+      ),
+    );
+  } catch {
+    // Cleanup is best-effort; claim/store paths still report hard storage failures.
+  }
+}
+
+function normalizeClaimToken(updatedAt: string, claimToken: string): string {
+  return claimToken || (updatedAt.includes("#") ? updatedAt : "");
+}
+
+function createClaimToken(): string {
+  return randomUUID();
+}
+
+function createExpiresAt(now = new Date()): string {
+  return new Date(now.getTime() + IDEMPOTENCY_RETENTION_MS).toISOString();
 }
 
 function stableStringify(value: unknown): string {
