@@ -30,11 +30,12 @@ export async function up({ sdk, execute, withSession }) {
 
   await execute(
     `
+DECLARE $empty_claim_token AS Utf8;
 DECLARE $fallback_expires_at AS Utf8;
 
 UPDATE codex_idempotency_keys
 SET claim_token = CASE
-    WHEN claim_token IS NULL THEN updated_at
+    WHEN claim_token IS NULL THEN $empty_claim_token
     ELSE claim_token
   END,
   expires_at = CASE
@@ -44,6 +45,7 @@ SET claim_token = CASE
 WHERE claim_token IS NULL OR expires_at IS NULL;
     `,
     {
+      $empty_claim_token: TypedValues.utf8(""),
       $fallback_expires_at: TypedValues.utf8(
         new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       ),
