@@ -1,6 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("OAuth protected resource metadata routes", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+  });
+
+  afterEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+  });
+
   it.each([
     {
       modulePath: "@/app/.well-known/oauth-protected-resource/route",
@@ -17,7 +27,6 @@ describe("OAuth protected resource metadata routes", () => {
     resource,
     serviceDocumentation,
   }) => {
-    vi.resetModules();
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example/codex-pets");
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/codex-pets");
 
@@ -39,7 +48,5 @@ describe("OAuth protected resource metadata routes", () => {
     });
     expect(body.authorization_servers).toBeUndefined();
     expect(body.oauth_unsupported).toBe(true);
-
-    vi.unstubAllEnvs();
   });
 });
