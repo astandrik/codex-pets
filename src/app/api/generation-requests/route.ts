@@ -9,8 +9,6 @@ import {
   hashIdempotencyPayload,
   holdIdempotencyClaim,
   type IdempotencyClaim,
-  idempotencyStorageUnavailableResponse,
-  isIdempotencyStorageAvailable,
   readIdempotencyKey,
   storeIdempotencyResult,
 } from "@/lib/idempotency";
@@ -58,9 +56,6 @@ export async function POST(req: Request): Promise<Response> {
       message: "Codex Pets persistence is not configured.",
       hint: "Try again later or contact the site operator.",
     });
-  }
-  if (idempotency.key && !isIdempotencyStorageAvailable()) {
-    return idempotencyStorageUnavailableResponse();
   }
 
   const parsed = await readRequestBody(req);
