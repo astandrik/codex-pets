@@ -258,7 +258,8 @@ describe("POST /api/generation-requests", () => {
     expect(createGenerationRequest).not.toHaveBeenCalled();
   });
 
-  it("returns idempotency_unavailable when a key is supplied without storage", async () => {
+  it("returns service_not_configured before idempotency_unavailable when persistence is disabled", async () => {
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce(null);
     vi.mocked(isYdbConfigured).mockReturnValueOnce(false);
     vi.stubEnv("CODEX_PETS_DATA_SOURCE", "");
 
@@ -269,10 +270,10 @@ describe("POST /api/generation-requests", () => {
 
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toMatchObject({
-      error: "idempotency_unavailable",
-      code: "idempotency_unavailable",
+      error: "service_not_configured",
+      code: "service_not_configured",
     });
-    expect(getCurrentPrincipal).not.toHaveBeenCalled();
+    expect(getCurrentPrincipal).toHaveBeenCalledTimes(1);
     expect(createGenerationRequest).not.toHaveBeenCalled();
   });
 

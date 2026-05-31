@@ -28,9 +28,6 @@ const ROUTE_ID = "POST /api/submissions/register";
 export async function POST(req: Request): Promise<Response> {
   const idempotency = readIdempotencyKey(req);
   if (!idempotency.ok) return idempotency.response;
-  if (idempotency.key && !isIdempotencyStorageAvailable()) {
-    return idempotencyStorageUnavailableResponse();
-  }
 
   const principal = await getCurrentPrincipal();
   if (!isYdbConfigured()) {
@@ -39,6 +36,9 @@ export async function POST(req: Request): Promise<Response> {
       message: "Codex Pets persistence is not configured.",
       hint: "Try again later or contact the site operator.",
     });
+  }
+  if (idempotency.key && !isIdempotencyStorageAvailable()) {
+    return idempotencyStorageUnavailableResponse();
   }
 
   let formData: FormData;
