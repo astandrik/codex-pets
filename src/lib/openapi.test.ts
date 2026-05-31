@@ -90,6 +90,7 @@ describe("buildOpenApiSpec", () => {
           name: "Idempotency-Key",
           in: "header",
           required: false,
+          description: expect.stringContaining("idempotency_key_in_progress"),
         }),
       ]),
     );
@@ -101,6 +102,7 @@ describe("buildOpenApiSpec", () => {
           name: "Idempotency-Key",
           in: "header",
           required: false,
+          description: expect.stringContaining("idempotency_key_in_progress"),
         }),
       ]),
     );

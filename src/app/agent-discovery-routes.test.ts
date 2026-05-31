@@ -58,6 +58,7 @@ describe("markdown agent discovery routes", () => {
         "GET /api/manifest",
         "POST /mcp",
         "Error responses",
+        "idempotency_key_in_progress",
         "Agent instructions: when to use Codex Pets",
       ],
     },

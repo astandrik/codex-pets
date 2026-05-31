@@ -7,6 +7,11 @@ vi.mock("@/lib/auth/session", () => ({
 
 vi.mock("@/lib/ydb/client", () => ({
   isYdbConfigured: vi.fn(() => true),
+  TypedValues: {
+    utf8: vi.fn((value: string) => value),
+    uint32: vi.fn((value: number) => value),
+  },
+  withSession: vi.fn(),
 }));
 
 vi.mock("@/lib/pets/generation-requests-repository", () => ({
@@ -16,7 +21,7 @@ vi.mock("@/lib/pets/generation-requests-repository", () => ({
 import { POST } from "@/app/api/generation-requests/route";
 import { getCurrentPrincipal } from "@/lib/auth/session";
 import { createGenerationRequest } from "@/lib/pets/generation-requests-repository";
-import { isYdbConfigured } from "@/lib/ydb/client";
+import { isYdbConfigured, withSession } from "@/lib/ydb/client";
 
 describe("POST /api/generation-requests", () => {
   beforeEach(() => {
@@ -269,6 +274,56 @@ describe("POST /api/generation-requests", () => {
     });
     expect(getCurrentPrincipal).not.toHaveBeenCalled();
     expect(createGenerationRequest).not.toHaveBeenCalled();
+  });
+
+  it("releases the idempotency claim when request creation fails", async () => {
+    vi.mocked(getCurrentPrincipal)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    vi.mocked(createGenerationRequest)
+      .mockRejectedValueOnce(new Error("generation failed"))
+      .mockResolvedValueOnce(generationRequestRecord("req_retry", null));
+    const body = {
+      contactEmail: "anon@example.com",
+      prompt: "Make a helper.",
+    };
+
+    await expect(
+      POST(jsonRequest(body, "request-failed-mutation-1")),
+    ).rejects.toThrow("generation failed");
+    const retry = await POST(jsonRequest(body, "request-failed-mutation-1"));
+
+    expect(retry.status).toBe(201);
+    await expect(retry.json()).resolves.toMatchObject({
+      request: { id: "req_retry" },
+    });
+    expect(createGenerationRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns the created request when result idempotency storage fails", async () => {
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "");
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce(null);
+    vi.mocked(createGenerationRequest).mockResolvedValueOnce(
+      generationRequestRecord("req_store_failure", null),
+    );
+    const executeQuery = vi.fn()
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error("path not found"));
+    vi.mocked(withSession).mockImplementation(async (callback) =>
+      callback({ executeQuery } as never),
+    );
+
+    const response = await POST(jsonRequest({
+      contactEmail: "anon@example.com",
+      prompt: "Make a helper.",
+    }, "request-result-store-failure-1"));
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      request: { id: "req_store_failure" },
+    });
+    expect(createGenerationRequest).toHaveBeenCalledTimes(1);
+    expect(executeQuery).toHaveBeenCalledTimes(2);
   });
 
   it("creates a request with a reference image from multipart form data", async () => {

@@ -10,6 +10,7 @@ import {
   idempotencyStorageUnavailableResponse,
   isIdempotencyStorageAvailable,
   readIdempotencyKey,
+  releaseIdempotencyClaim,
   storeIdempotencyResult,
 } from "@/lib/idempotency";
 import { storePetAssetsInYdb } from "@/lib/pets/assets-repository";
@@ -128,28 +129,40 @@ export async function POST(req: Request): Promise<Response> {
     if (replay.kind !== "fresh") return replay.response;
   }
 
-  const assetId = `asset_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
-  const assetUrls = await storePetAssetsInYdb({
-    assetId,
-    petJsonBuffer,
-    spritesheetBuffer,
-    zipBuffer,
-    spritesheetExt,
-  });
+  let pet: Awaited<ReturnType<typeof createPendingPet>>;
+  try {
+    const assetId = `asset_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+    const assetUrls = await storePetAssetsInYdb({
+      assetId,
+      petJsonBuffer,
+      spritesheetBuffer,
+      zipBuffer,
+      spritesheetExt,
+    });
 
-  const pet = await createPendingPet({
-    petJson: validation.value.petJson,
-    ownerId: principal?.userId ?? "",
-    ownerEmail: principal?.email ?? null,
-    ownerName: principal?.name ?? null,
-    contactEmail: principal?.email ?? normalizedContactEmail?.email ?? null,
-    kind: normalizedKind,
-    tags: normalizedTags,
-    zipUrl: assetUrls.zipUrl,
-    petJsonUrl: assetUrls.petJsonUrl,
-    spritesheetUrl: assetUrls.spritesheetUrl,
-    spritesheetExt,
-  });
+    pet = await createPendingPet({
+      petJson: validation.value.petJson,
+      ownerId: principal?.userId ?? "",
+      ownerEmail: principal?.email ?? null,
+      ownerName: principal?.name ?? null,
+      contactEmail: principal?.email ?? normalizedContactEmail?.email ?? null,
+      kind: normalizedKind,
+      tags: normalizedTags,
+      zipUrl: assetUrls.zipUrl,
+      petJsonUrl: assetUrls.petJsonUrl,
+      spritesheetUrl: assetUrls.spritesheetUrl,
+      spritesheetExt,
+    });
+  } catch (error) {
+    if (idempotency.key && requestHash) {
+      await releaseIdempotencyClaim({
+        route: routeScope,
+        key: idempotency.key,
+        requestHash,
+      }).catch(() => false);
+    }
+    throw error;
+  }
 
   const responseBody = { ok: true, pet };
   if (idempotency.key && requestHash) {
@@ -160,7 +173,9 @@ export async function POST(req: Request): Promise<Response> {
       statusCode: 201,
       responseBody,
     });
-    if (!stored) return idempotencyStorageUnavailableResponse();
+    if (!stored) {
+      return NextResponse.json(responseBody, { status: 201 });
+    }
   }
 
   return NextResponse.json(responseBody, { status: 201 });

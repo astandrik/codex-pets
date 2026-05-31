@@ -6,6 +6,11 @@ vi.mock("@/lib/auth/session", () => ({
 
 vi.mock("@/lib/ydb/client", () => ({
   isYdbConfigured: vi.fn(() => true),
+  TypedValues: {
+    utf8: vi.fn((value: string) => value),
+    uint32: vi.fn((value: number) => value),
+  },
+  withSession: vi.fn(),
 }));
 
 vi.mock("@/lib/pets/assets-repository", () => ({
@@ -25,6 +30,7 @@ import { getCurrentPrincipal } from "@/lib/auth/session";
 import { storePetAssetsInYdb } from "@/lib/pets/assets-repository";
 import { createPendingPet } from "@/lib/pets/repository";
 import { validateUploadedPackage } from "@/lib/pets/package";
+import { isYdbConfigured, withSession } from "@/lib/ydb/client";
 
 describe("POST /api/submissions/register", () => {
   beforeEach(() => {
@@ -229,7 +235,6 @@ describe("POST /api/submissions/register", () => {
   });
 
   it("returns idempotency_unavailable when a key is supplied without storage", async () => {
-    const { isYdbConfigured } = await import("@/lib/ydb/client");
     vi.mocked(isYdbConfigured).mockReturnValueOnce(false);
     vi.stubEnv("CODEX_PETS_DATA_SOURCE", "");
 
@@ -245,6 +250,71 @@ describe("POST /api/submissions/register", () => {
     expect(getCurrentPrincipal).not.toHaveBeenCalled();
     expect(storePetAssetsInYdb).not.toHaveBeenCalled();
     expect(createPendingPet).not.toHaveBeenCalled();
+  });
+
+  it("releases the idempotency claim when submission creation fails", async () => {
+    vi.mocked(getCurrentPrincipal)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    vi.mocked(validateUploadedPackage).mockResolvedValue({
+      ok: true,
+      value: {
+        petJson: {
+          id: "demo",
+          displayName: "Demo",
+          description: "Demo pet",
+          spritesheetPath: "spritesheet.webp",
+        },
+        spritesheetBytes: 10,
+        zipBytes: 10,
+      },
+    });
+    vi.mocked(storePetAssetsInYdb).mockResolvedValue({
+      petJsonUrl: "/api/assets/a/pet.json",
+      spritesheetUrl: "/api/assets/a/spritesheet.webp",
+      zipUrl: "/api/assets/a/pet.zip",
+    });
+    vi.mocked(createPendingPet)
+      .mockRejectedValueOnce(new Error("create failed"))
+      .mockResolvedValueOnce(submissionPet("pet_retry"));
+
+    await expect(
+      POST(submissionRequest(validSubmissionForm(), "submit-failed-mutation-1")),
+    ).rejects.toThrow("create failed");
+    const retry = await POST(
+      submissionRequest(validSubmissionForm(), "submit-failed-mutation-1"),
+    );
+
+    expect(retry.status).toBe(201);
+    await expect(retry.json()).resolves.toMatchObject({
+      pet: { id: "pet_retry" },
+    });
+    expect(storePetAssetsInYdb).toHaveBeenCalledTimes(2);
+    expect(createPendingPet).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns the created submission when result idempotency storage fails", async () => {
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "");
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce(null);
+    mockSuccessfulSubmission("pet_store_failure");
+    const executeQuery = vi.fn()
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error("path not found"));
+    vi.mocked(withSession).mockImplementation(async (callback) =>
+      callback({ executeQuery } as never),
+    );
+
+    const response = await POST(
+      submissionRequest(validSubmissionForm(), "submit-result-store-failure-1"),
+    );
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      pet: { id: "pet_store_failure" },
+    });
+    expect(storePetAssetsInYdb).toHaveBeenCalledTimes(1);
+    expect(createPendingPet).toHaveBeenCalledTimes(1);
+    expect(executeQuery).toHaveBeenCalledTimes(2);
   });
 
   it("binds submit to the logged-in owner when a session exists", async () => {

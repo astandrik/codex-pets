@@ -10,6 +10,7 @@ import {
   idempotencyStorageUnavailableResponse,
   isIdempotencyStorageAvailable,
   readIdempotencyKey,
+  releaseIdempotencyClaim,
   storeIdempotencyResult,
 } from "@/lib/idempotency";
 import {
@@ -82,11 +83,23 @@ export async function POST(req: Request): Promise<Response> {
     if (replay.kind !== "fresh") return replay.response;
   }
 
-  const request = await createGenerationRequest({
-    ...validation.value,
-    requesterUserId: principal?.userId ?? null,
-    referenceImage: parsed.referenceImage,
-  });
+  let request: Awaited<ReturnType<typeof createGenerationRequest>>;
+  try {
+    request = await createGenerationRequest({
+      ...validation.value,
+      requesterUserId: principal?.userId ?? null,
+      referenceImage: parsed.referenceImage,
+    });
+  } catch (error) {
+    if (idempotency.key && requestHash) {
+      await releaseIdempotencyClaim({
+        route: routeScope,
+        key: idempotency.key,
+        requestHash,
+      }).catch(() => false);
+    }
+    throw error;
+  }
 
   const responseBody = {
     ok: true,
@@ -105,7 +118,9 @@ export async function POST(req: Request): Promise<Response> {
       statusCode: 201,
       responseBody,
     });
-    if (!stored) return idempotencyStorageUnavailableResponse();
+    if (!stored) {
+      return NextResponse.json(responseBody, { status: 201 });
+    }
   }
 
   return NextResponse.json(responseBody, { status: 201 });
