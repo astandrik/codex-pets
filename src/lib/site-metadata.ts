@@ -201,6 +201,14 @@ export function getAgentResourceAlternateTypes(): AlternateTypes {
         title: "Codex Pets auth markdown",
         url: withBasePath("/auth.md"),
       },
+      {
+        title: "Codex Pets pricing markdown",
+        url: withBasePath("/pricing.md"),
+      },
+      {
+        title: "Codex Pets terms markdown",
+        url: withBasePath("/terms.md"),
+      },
     ],
   };
 }

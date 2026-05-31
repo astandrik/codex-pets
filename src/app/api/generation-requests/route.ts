@@ -4,6 +4,16 @@ import sharp from "sharp";
 import { jsonApiError, jsonValidationError } from "@/lib/api-error";
 import { getCurrentPrincipal } from "@/lib/auth/session";
 import {
+  claimIdempotencyKey,
+  hashBuffer,
+  hashIdempotencyPayload,
+  holdIdempotencyClaim,
+  type IdempotencyClaim,
+  readIdempotencyKey,
+  storeIdempotencyResult,
+} from "@/lib/idempotency";
+import {
+  type CreatePetGenerationRequestInput,
   validateCreatePetGenerationRequest,
 } from "@/lib/pets/generation-requests";
 import {
@@ -17,6 +27,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_REFERENCE_IMAGE_BYTES = 5 * 1024 * 1024;
+const ROUTE_ID = "POST /api/generation-requests";
 const REFERENCE_IMAGE_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -35,6 +46,9 @@ type ParsedRequestBody =
     };
 
 export async function POST(req: Request): Promise<Response> {
+  const idempotency = readIdempotencyKey(req);
+  if (!idempotency.ok) return idempotency.response;
+
   const principal = await getCurrentPrincipal();
   if (!isYdbConfigured() && !isMockPetsDataSource()) {
     return jsonApiError("service_not_configured", {
@@ -52,23 +66,64 @@ export async function POST(req: Request): Promise<Response> {
     return jsonValidationError(validation);
   }
 
-  const request = await createGenerationRequest({
-    ...validation.value,
-    requesterUserId: principal?.userId ?? null,
-    referenceImage: parsed.referenceImage,
-  });
+  const routeScope = idempotencyRouteScope(ROUTE_ID, principal);
+  const requestHash = idempotency.key
+    ? hashGenerationRequest(validation.value, parsed.referenceImage)
+    : null;
+  let idempotencyClaim: IdempotencyClaim | null = null;
+  if (idempotency.key && requestHash) {
+    const replay = await claimIdempotencyKey({
+      route: routeScope,
+      key: idempotency.key,
+      requestHash,
+    });
+    if (replay.kind !== "fresh") return replay.response;
+    idempotencyClaim = replay.claim;
+  }
 
-  return NextResponse.json(
-    {
-      ok: true,
-      request: {
-        id: request.id,
-        status: request.status,
-        createdAt: request.createdAt,
-      },
+  let request: Awaited<ReturnType<typeof createGenerationRequest>>;
+  try {
+    request = await createGenerationRequest({
+      ...validation.value,
+      requesterUserId: principal?.userId ?? null,
+      referenceImage: parsed.referenceImage,
+    });
+  } catch (error) {
+    if (idempotency.key && requestHash && idempotencyClaim) {
+      await holdIdempotencyClaim({
+        route: routeScope,
+        key: idempotency.key,
+        requestHash,
+        claim: idempotencyClaim,
+      }).catch(() => false);
+    }
+    throw error;
+  }
+
+  const responseBody = {
+    ok: true,
+    request: {
+      id: request.id,
+      status: request.status,
+      createdAt: request.createdAt,
     },
-    { status: 201 },
-  );
+  };
+
+  if (idempotency.key && requestHash && idempotencyClaim) {
+    const stored = await storeIdempotencyResult({
+      route: routeScope,
+      key: idempotency.key,
+      requestHash,
+      claim: idempotencyClaim,
+      statusCode: 201,
+      responseBody,
+    });
+    if (!stored) {
+      return NextResponse.json(responseBody, { status: 201 });
+    }
+  }
+
+  return NextResponse.json(responseBody, { status: 201 });
 }
 
 async function readRequestBody(req: Request): Promise<ParsedRequestBody> {
@@ -214,4 +269,31 @@ function stringField(formData: FormData, field: string): string {
 function sanitizeFileName(value: string): string {
   const name = value.trim().replace(/[\\/]+/g, "-");
   return name.slice(0, 120) || "reference-image";
+}
+
+function hashGenerationRequest(
+  body: CreatePetGenerationRequestInput,
+  referenceImage: CreateGenerationRequestImageInput | null,
+): string {
+  return hashIdempotencyPayload({
+    body: {
+      ...body,
+      contactEmail: body.contactEmail.toLowerCase(),
+    },
+    referenceImage: referenceImage
+      ? {
+          fileName: referenceImage.fileName,
+          contentType: referenceImage.contentType,
+          sizeBytes: referenceImage.sizeBytes,
+          sha256: hashBuffer(referenceImage.buffer),
+        }
+      : null,
+  });
+}
+
+function idempotencyRouteScope(
+  route: string,
+  principal: { userId: string } | null,
+): string {
+  return `${route}#${principal ? `user:${principal.userId}` : "anonymous"}`;
 }

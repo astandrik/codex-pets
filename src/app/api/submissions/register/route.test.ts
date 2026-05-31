@@ -6,6 +6,11 @@ vi.mock("@/lib/auth/session", () => ({
 
 vi.mock("@/lib/ydb/client", () => ({
   isYdbConfigured: vi.fn(() => true),
+  TypedValues: {
+    utf8: vi.fn((value: string) => value),
+    uint32: vi.fn((value: number) => value),
+  },
+  withSession: vi.fn(),
 }));
 
 vi.mock("@/lib/pets/assets-repository", () => ({
@@ -25,10 +30,13 @@ import { getCurrentPrincipal } from "@/lib/auth/session";
 import { storePetAssetsInYdb } from "@/lib/pets/assets-repository";
 import { createPendingPet } from "@/lib/pets/repository";
 import { validateUploadedPackage } from "@/lib/pets/package";
+import { isYdbConfigured, withSession } from "@/lib/ydb/client";
 
 describe("POST /api/submissions/register", () => {
   beforeEach(() => {
+    vi.unstubAllEnvs();
     vi.clearAllMocks();
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "mock");
   });
 
   it("allows anonymous submissions", async () => {
@@ -113,6 +121,297 @@ describe("POST /api/submissions/register", () => {
         ownerId: "",
         contactEmail: "anon@example.com",
       }),
+    );
+  });
+
+  it("replays successful submissions when Idempotency-Key and files match", async () => {
+    vi.mocked(getCurrentPrincipal)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    mockSuccessfulSubmission("pet_idempotent");
+
+    const first = await POST(submissionRequest(validSubmissionForm(), "submit-replay-1"));
+    const second = await POST(submissionRequest(validSubmissionForm(), "submit-replay-1"));
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    await expect(second.json()).resolves.toEqual(await first.json());
+    expect(storePetAssetsInYdb).toHaveBeenCalledTimes(1);
+    expect(createPendingPet).toHaveBeenCalledTimes(1);
+  });
+
+  it("replays semantically matching submissions after field normalization", async () => {
+    vi.mocked(getCurrentPrincipal)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    mockSuccessfulSubmission("pet_normalized");
+
+    const firstForm = validSubmissionForm();
+    firstForm.set("contactEmail", " ANON@EXAMPLE.COM ");
+    firstForm.set("tags", " Cozy ,ROBOT ");
+    const secondForm = validSubmissionForm();
+    secondForm.set("contactEmail", "anon@example.com");
+    secondForm.set("tags", "cozy,robot");
+
+    const first = await POST(submissionRequest(firstForm, "submit-normalized-1"));
+    const second = await POST(submissionRequest(secondForm, "submit-normalized-1"));
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    await expect(second.json()).resolves.toEqual(await first.json());
+    expect(storePetAssetsInYdb).toHaveBeenCalledTimes(1);
+    expect(createPendingPet).toHaveBeenCalledTimes(1);
+  });
+
+  it("replays matching submissions when uploaded MIME types are omitted", async () => {
+    vi.mocked(getCurrentPrincipal)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    mockSuccessfulSubmission("pet_mime_normalized");
+
+    const first = await POST(submissionRequest(validSubmissionForm(), "submit-mime-1"));
+    const second = await POST(
+      submissionRequest(validSubmissionFormWithoutMimeTypes(), "submit-mime-1"),
+    );
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    await expect(second.json()).resolves.toEqual(await first.json());
+    expect(storePetAssetsInYdb).toHaveBeenCalledTimes(1);
+    expect(createPendingPet).toHaveBeenCalledTimes(1);
+  });
+
+  it("scopes submission idempotency keys to signed-in users", async () => {
+    vi.mocked(getCurrentPrincipal)
+      .mockResolvedValueOnce({
+        userId: "user_1",
+        email: "one@example.com",
+        name: "One",
+        role: "user",
+      })
+      .mockResolvedValueOnce({
+        userId: "user_2",
+        email: "two@example.com",
+        name: "Two",
+        role: "user",
+      });
+    mockSuccessfulSubmission("pet_user_1");
+    vi.mocked(createPendingPet).mockResolvedValueOnce(
+      submissionPet("pet_user_1"),
+    ).mockResolvedValueOnce(submissionPet("pet_user_2"));
+
+    const first = await POST(
+      submissionRequest(validSubmissionForm(), "submit-user-scope-1"),
+    );
+    const second = await POST(
+      submissionRequest(validSubmissionForm(), "submit-user-scope-1"),
+    );
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    await expect(first.json()).resolves.toMatchObject({
+      pet: { id: "pet_user_1" },
+    });
+    await expect(second.json()).resolves.toMatchObject({
+      pet: { id: "pet_user_2" },
+    });
+    expect(storePetAssetsInYdb).toHaveBeenCalledTimes(2);
+    expect(createPendingPet).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects reused Idempotency-Key values with different submission bytes", async () => {
+    vi.mocked(getCurrentPrincipal)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    mockSuccessfulSubmission("pet_conflict");
+
+    const first = await POST(submissionRequest(validSubmissionForm(), "submit-conflict-1"));
+    const changed = validSubmissionForm();
+    changed.set("tags", "cozy,robot,space");
+    const second = await POST(submissionRequest(changed, "submit-conflict-1"));
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(409);
+    await expect(second.json()).resolves.toMatchObject({
+      error: "idempotency_key_conflict",
+      code: "idempotency_key_conflict",
+    });
+    expect(storePetAssetsInYdb).toHaveBeenCalledTimes(1);
+    expect(createPendingPet).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects invalid Idempotency-Key values before storing assets", async () => {
+    const response = await POST(submissionRequest(validSubmissionForm(), "bad key"));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "invalid_idempotency_key",
+      code: "invalid_idempotency_key",
+    });
+    expect(storePetAssetsInYdb).not.toHaveBeenCalled();
+    expect(createPendingPet).not.toHaveBeenCalled();
+  });
+
+  it("returns service_not_configured before idempotency_unavailable when persistence is disabled", async () => {
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce(null);
+    vi.mocked(isYdbConfigured).mockReturnValueOnce(false);
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "");
+
+    const response = await POST(
+      submissionRequest(validSubmissionForm(), "submit-no-storage-1"),
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "service_not_configured",
+      code: "service_not_configured",
+    });
+    expect(getCurrentPrincipal).toHaveBeenCalledTimes(1);
+    expect(storePetAssetsInYdb).not.toHaveBeenCalled();
+    expect(createPendingPet).not.toHaveBeenCalled();
+  });
+
+  it("releases the idempotency claim when submission creation fails", async () => {
+    vi.mocked(getCurrentPrincipal)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    vi.mocked(validateUploadedPackage).mockResolvedValue({
+      ok: true,
+      value: {
+        petJson: {
+          id: "demo",
+          displayName: "Demo",
+          description: "Demo pet",
+          spritesheetPath: "spritesheet.webp",
+        },
+        spritesheetBytes: 10,
+        zipBytes: 10,
+      },
+    });
+    vi.mocked(storePetAssetsInYdb).mockResolvedValue({
+      petJsonUrl: "/api/assets/a/pet.json",
+      spritesheetUrl: "/api/assets/a/spritesheet.webp",
+      zipUrl: "/api/assets/a/pet.zip",
+    });
+    vi.mocked(createPendingPet)
+      .mockRejectedValueOnce(new Error("create failed"))
+      .mockResolvedValueOnce(submissionPet("pet_retry"));
+
+    await expect(
+      POST(submissionRequest(validSubmissionForm(), "submit-failed-mutation-1")),
+    ).rejects.toThrow("create failed");
+    const retry = await POST(
+      submissionRequest(validSubmissionForm(), "submit-failed-mutation-1"),
+    );
+
+    expect(retry.status).toBe(201);
+    await expect(retry.json()).resolves.toMatchObject({
+      pet: { id: "pet_retry" },
+    });
+    expect(storePetAssetsInYdb).toHaveBeenCalledTimes(2);
+    expect(createPendingPet).toHaveBeenCalledTimes(2);
+  });
+
+  it("holds the idempotency claim when a YDB submission write error is ambiguous", async () => {
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "");
+    vi.mocked(getCurrentPrincipal).mockResolvedValue(null);
+    vi.mocked(validateUploadedPackage).mockResolvedValue({
+      ok: true,
+      value: {
+        petJson: {
+          id: "demo",
+          displayName: "Demo",
+          description: "Demo pet",
+          spritesheetPath: "spritesheet.webp",
+        },
+        spritesheetBytes: 10,
+        zipBytes: 10,
+      },
+    });
+    vi.mocked(storePetAssetsInYdb).mockResolvedValue({
+      petJsonUrl: "/api/assets/a/pet.json",
+      spritesheetUrl: "/api/assets/a/spritesheet.webp",
+      zipUrl: "/api/assets/a/pet.zip",
+    });
+    vi.mocked(createPendingPet).mockRejectedValueOnce(
+      new Error("ambiguous pet write"),
+    );
+    let stored: RouteIdempotencyRecord | null = null;
+    const executeQuery = vi.fn(
+      async (query: string, params?: Record<string, string>) => {
+        if (
+          query.includes("DELETE FROM codex_idempotency_keys") &&
+          query.includes("expires_at <")
+        ) {
+          return {};
+        }
+        if (query.includes("INSERT INTO codex_idempotency_keys")) {
+          if (stored) throw new Error("duplicate primary key");
+          stored = routeIdempotencyRecordFromParams(params);
+          return {};
+        }
+        if (query.includes("$committed_status")) {
+          stored = {
+            status: "committed",
+            requestHash: String(params?.$request_hash ?? ""),
+            updatedAt: String(params?.$updated_at ?? ""),
+            claimToken: "",
+            expiresAt: String(params?.$expires_at ?? ""),
+          };
+          return {};
+        }
+        if (query.includes("DELETE FROM codex_idempotency_keys")) {
+          stored = null;
+          return {};
+        }
+        return stored ? ydbIdempotencyRecord(stored) : emptyYdbIdempotencyRecord();
+      },
+    );
+    vi.mocked(withSession).mockImplementation(async (callback) =>
+      callback({ executeQuery } as never),
+    );
+
+    await expect(
+      POST(submissionRequest(validSubmissionForm(), "submit-ambiguous-write-1")),
+    ).rejects.toThrow("ambiguous pet write");
+    const retry = await POST(
+      submissionRequest(validSubmissionForm(), "submit-ambiguous-write-1"),
+    );
+
+    expect(retry.status).toBe(409);
+    await expect(retry.json()).resolves.toMatchObject({
+      error: "idempotency_key_in_progress",
+      code: "idempotency_key_in_progress",
+    });
+    expect(storePetAssetsInYdb).toHaveBeenCalledTimes(1);
+    expect(createPendingPet).toHaveBeenCalledTimes(1);
+    expect(stored).toEqual(expect.objectContaining({ status: "committed" }));
+  });
+
+  it("returns the created submission when result idempotency storage fails", async () => {
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "");
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce(null);
+    mockSuccessfulSubmission("pet_store_failure");
+    const executeQuery = vi.fn()
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error("transient ydb unavailable"));
+    vi.mocked(withSession).mockImplementation(async (callback) =>
+      callback({ executeQuery } as never),
+    );
+
+    const response = await POST(
+      submissionRequest(validSubmissionForm(), "submit-result-store-failure-1"),
+    );
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      pet: { id: "pet_store_failure" },
+    });
+    expect(storePetAssetsInYdb).toHaveBeenCalledTimes(1);
+    expect(createPendingPet).toHaveBeenCalledTimes(1);
+    expect(executeQuery).toHaveBeenCalledTimes(3);
+    expect(String(executeQuery.mock.calls[2]?.[0])).toContain(
+      "$committed_status",
     );
   });
 
@@ -235,3 +534,157 @@ describe("POST /api/submissions/register", () => {
     expect(createPendingPet).not.toHaveBeenCalled();
   });
 });
+
+function submissionRequest(formData: FormData, idempotencyKey?: string): Request {
+  const headers = new Headers();
+  if (idempotencyKey) headers.set("Idempotency-Key", idempotencyKey);
+  return new Request("http://localhost:3000/api/submissions/register", {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+}
+
+function validSubmissionForm(): FormData {
+  const formData = new FormData();
+  formData.set("zip", new File(["zip"], "pet.zip", { type: "application/zip" }));
+  formData.set(
+    "petjson",
+    new File(
+      [
+        JSON.stringify({
+          id: "demo",
+          displayName: "Demo",
+          description: "Demo",
+          spritesheetPath: "spritesheet.webp",
+        }),
+      ],
+      "pet.json",
+      { type: "application/json" },
+    ),
+  );
+  formData.set(
+    "sprite",
+    new File(["sprite"], "spritesheet.webp", { type: "image/webp" }),
+  );
+  formData.set("contactEmail", "anon@example.com");
+  formData.set("kind", "creature");
+  formData.set("tags", "cozy,robot");
+  return formData;
+}
+
+function validSubmissionFormWithoutMimeTypes(): FormData {
+  const formData = new FormData();
+  formData.set("zip", new File(["zip"], "pet.zip"));
+  formData.set(
+    "petjson",
+    new File(
+      [
+        JSON.stringify({
+          id: "demo",
+          displayName: "Demo",
+          description: "Demo",
+          spritesheetPath: "spritesheet.webp",
+        }),
+      ],
+      "pet.json",
+    ),
+  );
+  formData.set("sprite", new File(["sprite"], "spritesheet.webp"));
+  formData.set("contactEmail", "anon@example.com");
+  formData.set("kind", "creature");
+  formData.set("tags", "cozy,robot");
+  return formData;
+}
+
+function mockSuccessfulSubmission(id: string): void {
+  vi.mocked(validateUploadedPackage).mockResolvedValue({
+    ok: true,
+    value: {
+      petJson: {
+        id: "demo",
+        displayName: "Demo",
+        description: "Demo pet",
+        spritesheetPath: "spritesheet.webp",
+      },
+      spritesheetBytes: 10,
+      zipBytes: 10,
+    },
+  });
+  vi.mocked(storePetAssetsInYdb).mockResolvedValue({
+    petJsonUrl: "/api/assets/a/pet.json",
+    spritesheetUrl: "/api/assets/a/spritesheet.webp",
+    zipUrl: "/api/assets/a/pet.zip",
+  });
+  vi.mocked(createPendingPet).mockResolvedValue(submissionPet(id));
+}
+
+function submissionPet(id: string) {
+  return {
+    id,
+    slug: "demo",
+    displayName: "Demo",
+    description: "Demo pet",
+    spritesheetUrl: "/api/assets/a/spritesheet.webp",
+    petJsonUrl: "/api/assets/a/pet.json",
+    zipUrl: "/api/assets/a/pet.zip",
+    spritesheetExt: "webp" as const,
+    kind: "creature" as const,
+    tags: [],
+    status: "pending" as const,
+    ownerName: null,
+    contactEmail: "anon@example.com",
+    createdAt: "2026-05-16T10:00:00.000Z",
+    approvedAt: null,
+    downloadCount: 0,
+    installCount: 0,
+    likeCount: 0,
+  };
+}
+
+type RouteIdempotencyRecord = {
+  status: "in_progress" | "completed" | "committed";
+  requestHash: string;
+  updatedAt: string;
+  claimToken: string;
+  expiresAt: string;
+};
+
+function routeIdempotencyRecordFromParams(
+  params?: Record<string, string>,
+): RouteIdempotencyRecord {
+  return {
+    status: "in_progress",
+    requestHash: String(params?.$request_hash ?? ""),
+    updatedAt: String(params?.$updated_at ?? ""),
+    claimToken: String(params?.$claim_token ?? ""),
+    expiresAt: String(params?.$expires_at ?? ""),
+  };
+}
+
+function ydbIdempotencyRecord(record: RouteIdempotencyRecord) {
+  return {
+    resultSets: [
+      {
+        rows: [
+          {
+            items: [
+              { textValue: record.status },
+              { textValue: record.requestHash },
+              { uint32Value: 0 },
+              { textValue: "" },
+              { textValue: "2026-05-16T10:00:00.000Z" },
+              { textValue: record.updatedAt },
+              { textValue: record.claimToken },
+              { textValue: record.expiresAt },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function emptyYdbIdempotencyRecord() {
+  return { resultSets: [{ rows: [] }] };
+}

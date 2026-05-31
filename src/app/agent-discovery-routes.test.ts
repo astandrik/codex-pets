@@ -58,6 +58,7 @@ describe("markdown agent discovery routes", () => {
         "GET /api/manifest",
         "POST /mcp",
         "Error responses",
+        "idempotency_key_in_progress",
         "Agent instructions: when to use Codex Pets",
       ],
     },
@@ -65,6 +66,16 @@ describe("markdown agent discovery routes", () => {
       modulePath: "@/app/auth.md/route",
       heading: "# Codex Pets auth",
       expected: ["Public read endpoints", "AppSessionCookie", "ProxyBasic"],
+    },
+    {
+      modulePath: "@/app/pricing.md/route",
+      heading: "# Codex Pets pricing",
+      expected: ["Free community registry", "no paid plans", "best-effort"],
+    },
+    {
+      modulePath: "@/app/terms.md/route",
+      heading: "# Codex Pets terms",
+      expected: ["Free community registry", "moderated", "no SLA"],
     },
   ])("serves $modulePath as markdown", async ({ modulePath, heading, expected }) => {
     vi.resetModules();
@@ -92,7 +103,14 @@ describe("scoped llms.txt routes", () => {
     {
       modulePath: "@/app/developers/llms.txt/route",
       heading: "# Codex Pets developer llms.txt",
-      expected: ["OpenAPI JSON", "MCP server", "Agent instructions"],
+      expected: [
+        "OpenAPI JSON",
+        "MCP server",
+        "Pricing markdown",
+        "Terms markdown",
+        "OAuth Protected Resource metadata",
+        "Agent instructions",
+      ],
     },
     {
       modulePath: "@/app/docs/llms.txt/route",
@@ -135,6 +153,7 @@ describe("MCP markdown security notes", () => {
 
     expect(response.status).toBe(200);
     expect(body).toContain("Content-Security-Policy");
+    expect(body).toContain("/.well-known/oauth-protected-resource/mcp");
     expect(body).not.toContain("frame-ancestors");
 
     vi.unstubAllEnvs();

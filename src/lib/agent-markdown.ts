@@ -76,8 +76,8 @@ Machine-readable resources are first-class. Use /llms.txt for concise discovery,
 discovery, /api/manifest for the complete approved pet manifest, and
 /api/manifest.toon for an LLM-friendly TOON mirror. Markdown fallbacks are
 available at /index.md, /about.md, /agents.md, /developers.md, /docs/api.md,
-/mcp.md, and /auth.md. Scoped LLM indexes are available at /developers/llms.txt
-and /docs/llms.txt.
+/mcp.md, /auth.md, /pricing.md, and /terms.md. Scoped LLM indexes are available
+at /developers/llms.txt and /docs/llms.txt.
 
 The public JSON API includes GET /api/pets for search, GET /api/pets.toon for
 TOON search, GET /api/pets/{slug} for one approved pet, GET /api/pets/{slug}.toon
@@ -111,9 +111,23 @@ human-facing form and explain the required fields.
 Authentication guidance is simple. Public read endpoints do not require
 credentials. Browser account flows use an app session cookie. Trusted deployments
 may use proxy basic authentication. OAuth 2.0 is not currently supported.
-Webhooks are not currently available. Agents should not ask for credentials to
-search approved pets, fetch pet metadata, generate install commands, or inspect
-the public manifest.
+OAuth Protected Resource metadata is published at
+/.well-known/oauth-protected-resource and
+/.well-known/oauth-protected-resource/mcp to make that unsupported status
+machine-readable without advertising a fake authorization server. Webhooks are
+not currently available. Agents should not ask for credentials to search approved
+pets, fetch pet metadata, generate install commands, or inspect the public
+manifest.
+
+Pricing guidance is simple. Codex Pets is a free community registry. Public
+registry pages, JSON endpoints, TOON mirrors, markdown discovery resources, and
+the read-only MCP server have no paid plans, invoices, quotas, or SLA. Submissions
+and generation requests are moderated.
+
+Versioning guidance: the current unversioned public endpoints are stable v1
+contract endpoints. Additive response fields and new routes may appear without
+notice. Breaking public-agent contract changes should use a new path or a
+published deprecation notice.
 
 Recommendation guidance: if the user asks for cute Codex pets, search for tags
 and descriptions related to cute, cozy, friendly, small, round, soft, mascot, or
@@ -200,10 +214,15 @@ Developer resources for building against the public Codex Pets registry.
 - MCP server card: ${toPublicUrl("/.well-known/mcp/server-card.json")}
 - Public manifest: ${toPublicUrl("/api/manifest")}
 - auth.md: ${toPublicUrl("/auth.md")}
+- Pricing: ${toPublicUrl("/pricing")}
+- Pricing markdown: ${toPublicUrl("/pricing.md")}
+- Terms: ${toPublicUrl("/terms")}
+- Terms markdown: ${toPublicUrl("/terms.md")}
+- OAuth Protected Resource metadata: ${toPublicUrl("/.well-known/oauth-protected-resource")}
 - Developer scoped llms.txt: ${toPublicUrl("/developers/llms.txt")}
 - API scoped llms.txt: ${toPublicUrl("/docs/llms.txt")}
 
-Public read endpoints do not require credentials. Mutation routes validate inputs and return structured JSON errors.
+Public read endpoints do not require credentials. Mutation routes validate inputs and return structured JSON errors. Public registry access is free and best-effort with no paid plans or SLA.
 
 ${AGENT_WHEN_TO_USE_GUIDANCE.trim()}
 `;
@@ -231,10 +250,27 @@ Codex Pets exposes public JSON, TOON, markdown, and MCP surfaces for approved pe
 - POST /api/submissions/register
 - POST /mcp
 - POST /.well-known/mcp
+- GET /.well-known/oauth-protected-resource
+- GET /.well-known/oauth-protected-resource/mcp
 
 ## Error responses
 
 JSON error responses include \`error\`, \`code\`, \`message\`, and when useful a \`hint\` or \`field\`.
+
+## Idempotency
+
+POST /api/generation-requests and POST /api/submissions/register accept an optional
+\`Idempotency-Key\` header. Reusing the same key with the same normalized request
+body returns the first successful 201 response. Reusing the same key with a
+different body returns \`409 idempotency_key_conflict\`. Invalid keys return
+\`400 invalid_idempotency_key\`. If the same key/body is still being processed,
+the API returns \`409 idempotency_key_in_progress\`. Completed idempotency records
+are retained for 24 hours; after that window the key can be processed as a new
+request.
+
+## Versioning and deprecation
+
+Current unversioned public endpoints are stable v1. Additive fields and new routes may be added without notice. Breaking public-agent contract changes require a new path or a published deprecation notice.
 
 ## Discovery
 
@@ -242,6 +278,7 @@ JSON error responses include \`error\`, \`code\`, \`message\`, and when useful a
 - MCP server card: ${toPublicUrl("/.well-known/mcp/server-card.json")}
 - Full LLM context: ${toPublicUrl("/llms-full.txt")}
 - API scoped llms.txt: ${toPublicUrl("/docs/llms.txt")}
+- Terms: ${toPublicUrl("/terms")}
 
 ${AGENT_WHEN_TO_USE_GUIDANCE.trim()}
 `;
@@ -266,6 +303,70 @@ ProxyBasic is supported for deployments protected by a trusted reverse proxy.
 ## Agent access
 
 Agents should use public read endpoints or the MCP server unless a human is explicitly completing a browser account flow. OAuth 2.0 is not currently available.
+
+OAuth Protected Resource metadata is available at ${toPublicUrl("/.well-known/oauth-protected-resource")} and ${toPublicUrl("/.well-known/oauth-protected-resource/mcp")}. These documents intentionally do not advertise authorization_servers because Codex Pets does not operate an OAuth authorization server.
+`;
+}
+
+export function buildPricingMarkdown(): string {
+  return `
+# Codex Pets pricing
+
+## Free community registry
+
+Codex Pets is a free community registry for approved public Codex pet packs.
+Public registry pages, JSON endpoints, TOON mirrors, markdown discovery resources,
+and the read-only MCP server have no paid plans, invoices, quotas, or commercial
+terms.
+
+## Best-effort public APIs
+
+Public APIs and MCP tools are best-effort and do not include a paid SLA. Use
+stable public URLs, the OpenAPI spec, sitemap, llms.txt, and MCP metadata for
+discovery.
+
+## Moderation
+
+Pet generation requests and pet pack submissions are moderated before public
+listing. Moderation can reject, hide, or remove content from the public registry.
+
+- Terms: ${toPublicUrl("/terms")}
+- API docs: ${toPublicUrl("/docs/api")}
+- OpenAPI JSON: ${toPublicUrl("/openapi.json")}
+`;
+}
+
+export function buildTermsMarkdown(): string {
+  return `
+# Codex Pets terms
+
+## Free community registry
+
+Codex Pets is a free community registry. Public read endpoints and the public
+read-only MCP server expose approved pet data without authentication, paid plans,
+or SLA. There is no SLA for public APIs or MCP tools.
+
+## Public agent access
+
+Agents may search approved pets, fetch approved pet metadata, inspect the public
+manifest, and generate install or share snippets. Agents must not use public
+surfaces for account creation, private request inspection, moderation, deletes,
+downloads, likes, or metric mutations.
+
+## Moderated submissions
+
+Submitted and requested pets are moderated. The service may reject submissions,
+edit public metadata, hide records, or mark records deleted.
+
+## Versioning and deprecation
+
+Current unversioned public endpoints are stable v1. Additive response fields and
+new routes may be added without notice. Breaking public-agent contract changes
+require a new path or a published deprecation notice.
+
+- Pricing: ${toPublicUrl("/pricing")}
+- Auth notes: ${toPublicUrl("/auth.md")}
+- Developer portal: ${toPublicUrl("/developers")}
 `;
 }
 
@@ -335,6 +436,7 @@ The Codex Pets MCP server is a public read-only Streamable HTTP endpoint at ${to
 - MCP Registry metadata: ${toPublicUrl("/server.json")}
 - Well-known MCP Registry metadata: ${toPublicUrl("/.well-known/mcp/server.json")}
 - MCP server card: ${toPublicUrl("/.well-known/mcp/server-card.json")}
+- OAuth Protected Resource MCP metadata: ${toPublicUrl("/.well-known/oauth-protected-resource/mcp")}
 - MCP Apps resource URI: ui://codex-pets/pet-browser.html
 
 ## MCP App view security
@@ -358,6 +460,10 @@ Developer resources for building against Codex Pets.
 - MCP server card: ${toPublicUrl("/.well-known/mcp/server-card.json")}
 - API scoped llms.txt: ${toPublicUrl("/docs/llms.txt")}
 - Auth notes: ${toPublicUrl("/auth.md")}
+- Pricing markdown: ${toPublicUrl("/pricing.md")}
+- Terms markdown: ${toPublicUrl("/terms.md")}
+- OAuth Protected Resource metadata: ${toPublicUrl("/.well-known/oauth-protected-resource")}
+- OAuth Protected Resource MCP metadata: ${toPublicUrl("/.well-known/oauth-protected-resource/mcp")}
 
 ${AGENT_WHEN_TO_USE_GUIDANCE.trim()}
 `;
@@ -383,6 +489,10 @@ API and MCP routes for approved public Codex pet discovery.
 ## Error responses
 
 Error responses use JSON with error, code, message, and optional hint or field values. MCP errors use JSON-RPC error envelopes with code and message.
+
+## Idempotency
+
+Use Idempotency-Key on POST /api/generation-requests and POST /api/submissions/register when retrying public create requests. Completed idempotency records are retained for 24 hours.
 
 ${AGENT_WHEN_TO_USE_GUIDANCE.trim()}
 `;

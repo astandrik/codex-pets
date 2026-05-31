@@ -3,6 +3,15 @@ import { NextResponse } from "next/server";
 import { jsonApiError, jsonValidationError } from "@/lib/api-error";
 import { getCurrentPrincipal } from "@/lib/auth/session";
 import { normalizeEmail } from "@/lib/auth/repository";
+import {
+  claimIdempotencyKey,
+  hashBuffer,
+  hashIdempotencyPayload,
+  holdIdempotencyClaim,
+  type IdempotencyClaim,
+  readIdempotencyKey,
+  storeIdempotencyResult,
+} from "@/lib/idempotency";
 import { storePetAssetsInYdb } from "@/lib/pets/assets-repository";
 import { createPendingPet } from "@/lib/pets/repository";
 import { validateUploadedPackage } from "@/lib/pets/package";
@@ -12,7 +21,12 @@ import { isYdbConfigured } from "@/lib/ydb/client";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const ROUTE_ID = "POST /api/submissions/register";
+
 export async function POST(req: Request): Promise<Response> {
+  const idempotency = readIdempotencyKey(req);
+  if (!idempotency.ok) return idempotency.response;
+
   const principal = await getCurrentPrincipal();
   if (!isYdbConfigured()) {
     return jsonApiError("service_not_configured", {
@@ -77,33 +91,145 @@ export async function POST(req: Request): Promise<Response> {
     return jsonValidationError(validation);
   }
 
-  const assetId = `asset_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
-  const assetUrls = await storePetAssetsInYdb({
-    assetId,
-    petJsonBuffer,
-    spritesheetBuffer,
-    zipBuffer,
-    spritesheetExt,
-  });
+  const normalizedKind = normalizeKind(formData.get("kind"));
+  const normalizedTags = readTags(
+    String(formData.get("tags") ?? "")
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean),
+  );
+  const routeScope = idempotencyRouteScope(ROUTE_ID, principal);
+  const requestHash = idempotency.key
+    ? hashSubmissionRequest({
+        zip,
+        petjson,
+        sprite,
+        zipBuffer,
+        petJsonBuffer,
+        spritesheetBuffer,
+        spritesheetExt,
+        effectiveContactEmail:
+          principal?.email?.toLowerCase() ??
+          normalizedContactEmail?.emailLower ??
+          null,
+        normalizedKind,
+        normalizedTags,
+      })
+    : null;
+  let idempotencyClaim: IdempotencyClaim | null = null;
+  if (idempotency.key && requestHash) {
+    const replay = await claimIdempotencyKey({
+      route: routeScope,
+      key: idempotency.key,
+      requestHash,
+    });
+    if (replay.kind !== "fresh") return replay.response;
+    idempotencyClaim = replay.claim;
+  }
 
-  const pet = await createPendingPet({
-    petJson: validation.value.petJson,
-    ownerId: principal?.userId ?? "",
-    ownerEmail: principal?.email ?? null,
-    ownerName: principal?.name ?? null,
-    contactEmail: principal?.email ?? normalizedContactEmail?.email ?? null,
-    kind: normalizeKind(formData.get("kind")),
-    tags: readTags(
-      String(formData.get("tags") ?? "")
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean),
-    ),
-    zipUrl: assetUrls.zipUrl,
-    petJsonUrl: assetUrls.petJsonUrl,
-    spritesheetUrl: assetUrls.spritesheetUrl,
-    spritesheetExt,
-  });
+  let pet: Awaited<ReturnType<typeof createPendingPet>>;
+  try {
+    const assetId = `asset_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+    const assetUrls = await storePetAssetsInYdb({
+      assetId,
+      petJsonBuffer,
+      spritesheetBuffer,
+      zipBuffer,
+      spritesheetExt,
+    });
 
-  return NextResponse.json({ ok: true, pet }, { status: 201 });
+    pet = await createPendingPet({
+      petJson: validation.value.petJson,
+      ownerId: principal?.userId ?? "",
+      ownerEmail: principal?.email ?? null,
+      ownerName: principal?.name ?? null,
+      contactEmail: principal?.email ?? normalizedContactEmail?.email ?? null,
+      kind: normalizedKind,
+      tags: normalizedTags,
+      zipUrl: assetUrls.zipUrl,
+      petJsonUrl: assetUrls.petJsonUrl,
+      spritesheetUrl: assetUrls.spritesheetUrl,
+      spritesheetExt,
+    });
+  } catch (error) {
+    if (idempotency.key && requestHash && idempotencyClaim) {
+      await holdIdempotencyClaim({
+        route: routeScope,
+        key: idempotency.key,
+        requestHash,
+        claim: idempotencyClaim,
+      }).catch(() => false);
+    }
+    throw error;
+  }
+
+  const responseBody = { ok: true, pet };
+  if (idempotency.key && requestHash && idempotencyClaim) {
+    const stored = await storeIdempotencyResult({
+      route: routeScope,
+      key: idempotency.key,
+      requestHash,
+      claim: idempotencyClaim,
+      statusCode: 201,
+      responseBody,
+    });
+    if (!stored) {
+      return NextResponse.json(responseBody, { status: 201 });
+    }
+  }
+
+  return NextResponse.json(responseBody, { status: 201 });
+}
+
+function hashSubmissionRequest(input: {
+  zip: File;
+  petjson: File;
+  sprite: File;
+  zipBuffer: Buffer;
+  petJsonBuffer: Buffer;
+  spritesheetBuffer: Buffer;
+  spritesheetExt: "webp" | "png";
+  effectiveContactEmail: string | null;
+  normalizedKind: "creature" | "object" | "character";
+  normalizedTags: string[];
+}): string {
+  return hashIdempotencyPayload({
+    fields: {
+      contactEmail: input.effectiveContactEmail,
+      kind: input.normalizedKind,
+      tags: input.normalizedTags,
+      spritesheetExt: input.spritesheetExt,
+    },
+    files: {
+      zip: fileHash(input.zip, input.zipBuffer),
+      petjson: fileHash(input.petjson, input.petJsonBuffer),
+      sprite: fileHash(input.sprite, input.spritesheetBuffer),
+    },
+  });
+}
+
+function fileHash(file: File, buffer: Buffer) {
+  return {
+    name: file.name,
+    type: normalizedFileType(file),
+    size: file.size,
+    sha256: hashBuffer(buffer),
+  };
+}
+
+function normalizedFileType(file: File): string {
+  const type = file.type.trim().toLowerCase();
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".zip")) return "application/zip";
+  if (name.endsWith(".json")) return "application/json";
+  if (name.endsWith(".webp")) return "image/webp";
+  if (name.endsWith(".png")) return "image/png";
+  return type === "application/octet-stream" ? "" : type;
+}
+
+function idempotencyRouteScope(
+  route: string,
+  principal: { userId: string } | null,
+): string {
+  return `${route}#${principal ? `user:${principal.userId}` : "anonymous"}`;
 }
