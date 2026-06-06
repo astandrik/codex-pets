@@ -40,6 +40,14 @@ Open `http://localhost:3000`.
 Codex Pets exposes a public read-only MCP server so coding agents can search,
 inspect, install, and share approved pet packs.
 
+Primary public surfaces:
+
+- Best guide: https://pets.ydb-qdrant.tech/guides/best-codex-pets-for-ai-coding-agents
+- LLM discovery: https://pets.ydb-qdrant.tech/llms.txt
+- MCP endpoint: https://pets.ydb-qdrant.tech/mcp
+- Public manifest: https://pets.ydb-qdrant.tech/api/manifest
+- CLI install: `npx @astandrik/codex-pets install <slug>`
+
 Connect Codex:
 
 ```bash
@@ -70,12 +78,15 @@ HTTP fallback routes are public too:
 - `/openapi.json`
 - `/api/openapi.json`
 - `/llms-full.txt`
+- `/guides/best-codex-pets-for-ai-coding-agents`
+- `/guides/best-codex-pets-for-ai-coding-agents.md`
 - `/api/manifest`
 - `/api/manifest.toon`
 - `/api/pets`
 - `/api/pets.toon`
 - `/api/pets/<slug>`
 - `/api/pets/<slug>.toon`
+- `/pets/<slug>/markdown`
 - `/api/tags`
 - `/api/tags.toon`
 - `/api/pets/<slug>/share`

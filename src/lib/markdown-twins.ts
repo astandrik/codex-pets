@@ -6,6 +6,16 @@ const MARKDOWN_TWIN_PATHS = new Map<string, string>([
   ["/terms", "/terms.md"],
   ["/developers", "/developers.md"],
   ["/docs/api", "/docs/api.md"],
+  [
+    "/guides/best-codex-pets-for-ai-coding-agents",
+    "/guides/best-codex-pets-for-ai-coding-agents.md",
+  ],
+  [
+    "/guides/codex-pets-mcp-integration-guide",
+    "/guides/codex-pets-mcp-integration-guide.md",
+  ],
+  ["/guides/codex-pets-vs-vscode-pets", "/guides/codex-pets-vs-vscode-pets.md"],
+  ["/guides/codex-pets-vs-openpets", "/guides/codex-pets-vs-openpets.md"],
 ]);
 
 export function getMarkdownTwinPath(pathname: string): string | null {

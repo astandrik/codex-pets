@@ -2,6 +2,14 @@
   "name": "@astandrik/codex-pets",
   "version": "1.0.0",
   "description": "CLI installer and local MCP server for Codex Pets gallery pets.",
+  "keywords": [
+    "codex",
+    "codex-pets",
+    "mcp",
+    "animated-pets",
+    "pet-json",
+    "spritesheet"
+  ],
   "type": "module",
   "bin": {
     "codex-pets": "bin/codex-pets.cjs"
@@ -25,6 +33,10 @@
     "type": "git",
     "url": "git+https://github.com/astandrik/codex-pets.git",
     "directory": "packages/cli"
+  },
+  "homepage": "https://pets.ydb-qdrant.tech/",
+  "bugs": {
+    "url": "https://github.com/astandrik/codex-pets/issues"
   },
   "license": "Apache-2.0"
 }

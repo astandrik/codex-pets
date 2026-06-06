@@ -42,61 +42,51 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
   const staticEntries: MetadataRoute.Sitemap = [
     {
       url: toPublicUrl("/"),
-      lastModified: generatedAt,
       changeFrequency: "daily",
       priority: 1,
     },
     {
       url: toPublicUrl("/about"),
-      lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.7,
     },
     {
       url: toPublicUrl("/about.md"),
-      lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.5,
     },
     {
       url: toPublicUrl("/agents"),
-      lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.7,
     },
     {
       url: toPublicUrl("/agents.md"),
-      lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.5,
     },
     {
       url: toPublicUrl("/pricing"),
-      lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.6,
     },
     {
       url: toPublicUrl("/pricing.md"),
-      lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.5,
     },
     {
       url: toPublicUrl("/terms"),
-      lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.6,
     },
     {
       url: toPublicUrl("/terms.md"),
-      lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.5,
     },
     {
       url: toPublicUrl("/developers"),
-      lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.7,
     },
@@ -108,7 +98,6 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
     },
     {
       url: toPublicUrl("/docs/api"),
-      lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.7,
     },
@@ -120,55 +109,66 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
     },
     {
       url: toPublicUrl("/guides/best-codex-pets-for-ai-coding-agents"),
-      lastModified: generatedAt,
       changeFrequency: "monthly",
       priority: 0.6,
+    },
+    {
+      url: toPublicUrl("/guides/best-codex-pets-for-ai-coding-agents.md"),
+      changeFrequency: "monthly",
+      priority: 0.5,
     },
     {
       url: toPublicUrl("/guides/codex-pets-vs-vscode-pets"),
-      lastModified: generatedAt,
       changeFrequency: "monthly",
       priority: 0.6,
+    },
+    {
+      url: toPublicUrl("/guides/codex-pets-vs-vscode-pets.md"),
+      changeFrequency: "monthly",
+      priority: 0.5,
     },
     {
       url: toPublicUrl("/guides/codex-pets-vs-openpets"),
-      lastModified: generatedAt,
       changeFrequency: "monthly",
       priority: 0.6,
+    },
+    {
+      url: toPublicUrl("/guides/codex-pets-vs-openpets.md"),
+      changeFrequency: "monthly",
+      priority: 0.5,
     },
     {
       url: toPublicUrl("/guides/codex-pets-mcp-integration-guide"),
-      lastModified: generatedAt,
       changeFrequency: "monthly",
       priority: 0.6,
     },
     {
+      url: toPublicUrl("/guides/codex-pets-mcp-integration-guide.md"),
+      changeFrequency: "monthly",
+      priority: 0.5,
+    },
+    {
       url: toPublicUrl("/index.md"),
-      lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.6,
     },
     {
       url: toPublicUrl("/developers.md"),
-      lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.5,
     },
     {
       url: toPublicUrl("/docs/api.md"),
-      lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.5,
     },
     {
       url: toPublicUrl("/auth.md"),
-      lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.4,
     },
     {
       url: toPublicUrl("/mcp.md"),
-      lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.4,
     },
@@ -228,24 +228,34 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
     },
     {
       url: toPublicUrl("/request"),
-      lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.7,
     },
     {
       url: toPublicUrl("/submit"),
-      lastModified: generatedAt,
       changeFrequency: "weekly",
       priority: 0.7,
     },
   ];
 
-  const petEntries: MetadataRoute.Sitemap = pets.map((pet) => ({
-    url: toPublicUrl(`/pets/${pet.slug}`),
-    lastModified: toIsoDateTime(pet.approvedAt ?? pet.createdAt),
-    changeFrequency: "weekly",
-    priority: 0.8,
-  }));
+  const petEntries: MetadataRoute.Sitemap = pets.flatMap((pet) => {
+    const lastModified = toIsoDateTime(pet.approvedAt ?? pet.createdAt);
+
+    return [
+      {
+        url: toPublicUrl(`/pets/${pet.slug}`),
+        lastModified,
+        changeFrequency: "weekly" as const,
+        priority: 0.8,
+      },
+      {
+        url: toPublicUrl(`/pets/${pet.slug}/markdown`),
+        lastModified,
+        changeFrequency: "weekly" as const,
+        priority: 0.5,
+      },
+    ];
+  });
 
   const profileEntries: MetadataRoute.Sitemap = profiles.map((profile) => ({
     url: toPublicUrl(`/users/${profile.profileSlug}`),

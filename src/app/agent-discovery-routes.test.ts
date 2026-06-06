@@ -1,5 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
+const repositoryMocks = vi.hoisted(() => ({
+  listApprovedPets: vi.fn(),
+}));
+
+vi.mock("@/lib/pets/repository", () => ({
+  listApprovedPets: repositoryMocks.listApprovedPets,
+}));
+
+vi.mock("next/cache", () => ({
+  unstable_cache: (callback: unknown) => callback,
+}));
+
 describe("markdown agent discovery routes", () => {
   it.each([
     {
@@ -93,6 +105,89 @@ describe("markdown agent discovery routes", () => {
     for (const text of expected) {
       expect(body).toContain(text);
     }
+
+    vi.unstubAllEnvs();
+  });
+});
+
+describe("guide markdown routes", () => {
+  it.each([
+    {
+      modulePath: "@/app/guides/best-codex-pets-for-ai-coding-agents.md/route",
+      heading: "# Best Codex pets for AI coding agents",
+      expected: [
+        "Best Codex pets to try first",
+        "npx @astandrik/codex-pets install kuroa",
+        "https://pets.example/pets/kuroa",
+        "https://pets.example/api/manifest",
+      ],
+    },
+    {
+      modulePath: "@/app/guides/codex-pets-mcp-integration-guide.md/route",
+      heading: "# Codex Pets MCP integration guide",
+      expected: [
+        "codex mcp add codexPets",
+        "https://pets.example/mcp",
+        "https://pets.example/.well-known/mcp/server-card.json",
+      ],
+    },
+    {
+      modulePath: "@/app/guides/codex-pets-vs-vscode-pets.md/route",
+      heading: "# Codex Pets vs VS Code Pets",
+      expected: ["VS Code Pets", "OpenAPI", "llms.txt", "MCP"],
+    },
+    {
+      modulePath: "@/app/guides/codex-pets-vs-openpets.md/route",
+      heading: "# Codex Pets vs OpenPets",
+      expected: ["OpenPets", "desktop", "public registry", "MCP"],
+    },
+  ])("serves $modulePath as markdown", async ({
+    modulePath,
+    heading,
+    expected,
+  }) => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    repositoryMocks.listApprovedPets.mockResolvedValue([
+      {
+        id: "pet_kuroa",
+        slug: "kuroa",
+        displayName: "Kuroa",
+        description: "A chibi anime Codex pet pack.",
+        spritesheetUrl: "/api/assets/kuroa/sheet.webp",
+        petJsonUrl: "/api/assets/kuroa/pet.json",
+        zipUrl: "/api/assets/kuroa/package.zip",
+        spritesheetExt: "webp",
+        kind: "creature",
+        tags: ["anime", "chibi"],
+        status: "approved",
+        ownerName: "Creator",
+        ownerProfileSlug: "creator",
+        ownerAvatarUrl: null,
+        contactEmail: "private@example.com",
+        createdAt: "2026-05-01T00:00:00.000Z",
+        approvedAt: "2026-05-02T00:00:00.000Z",
+        downloadCount: 3,
+        installCount: 2,
+        likeCount: 1,
+      },
+    ]);
+
+    const { GET } = await import(modulePath);
+    const response = await GET();
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe(
+      "text/markdown; charset=utf-8",
+    );
+    expect(body).toContain(heading);
+    for (const text of expected) {
+      expect(body).toContain(text);
+    }
+    expect(body).not.toContain("private@example.com");
+    expect(body).not.toContain("/admin");
 
     vi.unstubAllEnvs();
   });

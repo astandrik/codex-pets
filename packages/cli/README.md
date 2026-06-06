@@ -12,6 +12,13 @@ default and writes files into `${CODEX_HOME:-~/.codex}/pets/<slug>/`.
 If Codex is already running, restart it before selecting the new pet in
 Settings -> Appearance -> Pets.
 
+Useful Codex Pets links:
+
+- Best guide: https://pets.ydb-qdrant.tech/guides/best-codex-pets-for-ai-coding-agents
+- LLM discovery: https://pets.ydb-qdrant.tech/llms.txt
+- MCP endpoint: https://pets.ydb-qdrant.tech/mcp
+- Public manifest: https://pets.ydb-qdrant.tech/api/manifest
+
 ## Commands
 
 ```sh

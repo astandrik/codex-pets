@@ -100,217 +100,250 @@ describe("sitemap", () => {
           tags: [sitemapCache.SITEMAP_CACHE_TAG],
         },
       );
+      const urls = entries.map((entry) => entry.url);
+
+      expect(new Set(urls).size).toBe(urls.length);
       expect(entries).toEqual([
-        {
-          url: "https://pets.example/codex-pets",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "daily",
-          priority: 1,
-        },
-        {
-          url: "https://pets.example/codex-pets/about",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.7,
-        },
-        {
-          url: "https://pets.example/codex-pets/about.md",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.5,
-        },
-        {
-          url: "https://pets.example/codex-pets/agents",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.7,
-        },
-        {
-          url: "https://pets.example/codex-pets/agents.md",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.5,
-        },
-        {
-          url: "https://pets.example/codex-pets/pricing",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.6,
-        },
-        {
-          url: "https://pets.example/codex-pets/pricing.md",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.5,
-        },
-        {
-          url: "https://pets.example/codex-pets/terms",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.6,
-        },
-        {
-          url: "https://pets.example/codex-pets/terms.md",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.5,
-        },
-        {
-          url: "https://pets.example/codex-pets/developers",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.7,
-        },
-        {
-          url: "https://pets.example/codex-pets/developers/llms.txt",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.5,
-        },
-        {
-          url: "https://pets.example/codex-pets/docs/api",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.7,
-        },
-        {
-          url: "https://pets.example/codex-pets/docs/llms.txt",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.5,
-        },
-        {
-          url: "https://pets.example/codex-pets/guides/best-codex-pets-for-ai-coding-agents",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "monthly",
-          priority: 0.6,
-        },
-        {
-          url: "https://pets.example/codex-pets/guides/codex-pets-vs-vscode-pets",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "monthly",
-          priority: 0.6,
-        },
-        {
-          url: "https://pets.example/codex-pets/guides/codex-pets-vs-openpets",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "monthly",
-          priority: 0.6,
-        },
-        {
-          url: "https://pets.example/codex-pets/guides/codex-pets-mcp-integration-guide",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "monthly",
-          priority: 0.6,
-        },
-        {
-          url: "https://pets.example/codex-pets/index.md",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.6,
-        },
-        {
-          url: "https://pets.example/codex-pets/developers.md",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.5,
-        },
-        {
-          url: "https://pets.example/codex-pets/docs/api.md",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.5,
-        },
-        {
-          url: "https://pets.example/codex-pets/auth.md",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.4,
-        },
-        {
-          url: "https://pets.example/codex-pets/mcp.md",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.4,
-        },
-        {
-          url: "https://pets.example/codex-pets/llms-full.txt",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.5,
-        },
-        {
-          url: "https://pets.example/codex-pets/openapi.json",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.5,
-        },
-        {
-          url: "https://pets.example/codex-pets/api/openapi.json",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.4,
-        },
-        {
-          url: "https://pets.example/codex-pets/server.json",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.4,
-        },
-        {
-          url: "https://pets.example/codex-pets/.well-known/mcp/server.json",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.4,
-        },
-        {
-          url: "https://pets.example/codex-pets/.well-known/mcp",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.4,
-        },
-        {
-          url: "https://pets.example/codex-pets/.well-known/mcp/server-card.json",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.4,
-        },
-        {
-          url: "https://pets.example/codex-pets/.well-known/oauth-protected-resource",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.4,
-        },
-        {
-          url: "https://pets.example/codex-pets/.well-known/oauth-protected-resource/mcp",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.4,
-        },
-        {
-          url: "https://pets.example/codex-pets/request",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.7,
-        },
-        {
-          url: "https://pets.example/codex-pets/submit",
-          lastModified: "2026-05-22T10:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.7,
-        },
-        {
-          url: "https://pets.example/codex-pets/pets/boba",
-          lastModified: "2026-05-02T00:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.8,
-        },
-        {
-          url: "https://pets.example/codex-pets/users/creator",
-          lastModified: "2026-05-04T00:00:00.000Z",
-          changeFrequency: "weekly",
-          priority: 0.6,
-        },
+        sitemapEntry(
+          "https://pets.example/codex-pets",
+          null,
+          "daily",
+          1,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/about",
+          null,
+          "weekly",
+          0.7,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/about.md",
+          null,
+          "weekly",
+          0.5,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/agents",
+          null,
+          "weekly",
+          0.7,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/agents.md",
+          null,
+          "weekly",
+          0.5,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/pricing",
+          null,
+          "weekly",
+          0.6,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/pricing.md",
+          null,
+          "weekly",
+          0.5,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/terms",
+          null,
+          "weekly",
+          0.6,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/terms.md",
+          null,
+          "weekly",
+          0.5,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/developers",
+          null,
+          "weekly",
+          0.7,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/developers/llms.txt",
+          "2026-05-22T10:00:00.000Z",
+          "weekly",
+          0.5,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/docs/api",
+          null,
+          "weekly",
+          0.7,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/docs/llms.txt",
+          "2026-05-22T10:00:00.000Z",
+          "weekly",
+          0.5,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/guides/best-codex-pets-for-ai-coding-agents",
+          null,
+          "monthly",
+          0.6,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/guides/best-codex-pets-for-ai-coding-agents.md",
+          null,
+          "monthly",
+          0.5,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/guides/codex-pets-vs-vscode-pets",
+          null,
+          "monthly",
+          0.6,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/guides/codex-pets-vs-vscode-pets.md",
+          null,
+          "monthly",
+          0.5,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/guides/codex-pets-vs-openpets",
+          null,
+          "monthly",
+          0.6,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/guides/codex-pets-vs-openpets.md",
+          null,
+          "monthly",
+          0.5,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/guides/codex-pets-mcp-integration-guide",
+          null,
+          "monthly",
+          0.6,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/guides/codex-pets-mcp-integration-guide.md",
+          null,
+          "monthly",
+          0.5,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/index.md",
+          null,
+          "weekly",
+          0.6,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/developers.md",
+          null,
+          "weekly",
+          0.5,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/docs/api.md",
+          null,
+          "weekly",
+          0.5,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/auth.md",
+          null,
+          "weekly",
+          0.4,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/mcp.md",
+          null,
+          "weekly",
+          0.4,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/llms-full.txt",
+          "2026-05-22T10:00:00.000Z",
+          "weekly",
+          0.5,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/openapi.json",
+          "2026-05-22T10:00:00.000Z",
+          "weekly",
+          0.5,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/api/openapi.json",
+          "2026-05-22T10:00:00.000Z",
+          "weekly",
+          0.4,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/server.json",
+          "2026-05-22T10:00:00.000Z",
+          "weekly",
+          0.4,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/.well-known/mcp/server.json",
+          "2026-05-22T10:00:00.000Z",
+          "weekly",
+          0.4,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/.well-known/mcp",
+          "2026-05-22T10:00:00.000Z",
+          "weekly",
+          0.4,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/.well-known/mcp/server-card.json",
+          "2026-05-22T10:00:00.000Z",
+          "weekly",
+          0.4,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/.well-known/oauth-protected-resource",
+          "2026-05-22T10:00:00.000Z",
+          "weekly",
+          0.4,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/.well-known/oauth-protected-resource/mcp",
+          "2026-05-22T10:00:00.000Z",
+          "weekly",
+          0.4,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/request",
+          null,
+          "weekly",
+          0.7,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/submit",
+          null,
+          "weekly",
+          0.7,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/pets/boba",
+          "2026-05-02T00:00:00.000Z",
+          "weekly",
+          0.8,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/pets/boba/markdown",
+          "2026-05-02T00:00:00.000Z",
+          "weekly",
+          0.5,
+        ),
+        sitemapEntry(
+          "https://pets.example/codex-pets/users/creator",
+          "2026-05-04T00:00:00.000Z",
+          "weekly",
+          0.6,
+        ),
       ]);
     } finally {
       vi.useRealTimers();
@@ -318,3 +351,14 @@ describe("sitemap", () => {
     }
   });
 });
+
+function sitemapEntry(
+  url: string,
+  lastModified: string | null,
+  changeFrequency: string,
+  priority: number,
+) {
+  return lastModified
+    ? { url, lastModified, changeFrequency, priority }
+    : { url, changeFrequency, priority };
+}
