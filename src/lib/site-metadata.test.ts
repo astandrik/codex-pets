@@ -293,3 +293,38 @@ describe("site identity metadata", () => {
     vi.unstubAllEnvs();
   });
 });
+
+describe("pet resource alternates", () => {
+  it("advertises JSON, TOON, and markdown pet resources", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example/codex-pets");
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/codex-pets");
+
+    const { getPetResourceAlternateTypes } = await import(
+      "@/lib/site-metadata"
+    );
+
+    expect(getPetResourceAlternateTypes("kuroa", "Kuroa")).toEqual({
+      "application/json": [
+        {
+          title: "Kuroa JSON",
+          url: "/codex-pets/api/pets/kuroa",
+        },
+      ],
+      "text/toon": [
+        {
+          title: "Kuroa TOON",
+          url: "/codex-pets/api/pets/kuroa.toon",
+        },
+      ],
+      "text/markdown": [
+        {
+          title: "Kuroa markdown",
+          url: "/codex-pets/pets/kuroa/markdown",
+        },
+      ],
+    });
+
+    vi.unstubAllEnvs();
+  });
+});

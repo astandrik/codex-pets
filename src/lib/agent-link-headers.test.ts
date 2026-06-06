@@ -39,6 +39,20 @@ describe("agent link headers", () => {
     vi.unstubAllEnvs();
   });
 
+  it("advertises markdown alternates for guide pages", () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+
+    const header = getAgentLinkHeaderForPath(
+      "/guides/best-codex-pets-for-ai-coding-agents",
+    );
+
+    expect(header).toContain(
+      '<https://pets.example/guides/best-codex-pets-for-ai-coding-agents.md>; rel="alternate"; type="text/markdown"',
+    );
+
+    vi.unstubAllEnvs();
+  });
+
   it("appends agent discovery links to an existing response", () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
     const response = new Response("ok", {

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { unstable_cache } from "next/cache";
 import { ArrowRight } from "@gravity-ui/icons";
 import {
   Button,
@@ -9,7 +10,15 @@ import {
 } from "@/components/GravityUI/GravityUI";
 
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
+import {
+  BEST_CODEX_PETS_GUIDE_PATH,
+  BEST_CODEX_PETS_GUIDE_TITLE,
+  buildBestCodexPetGuideSections,
+  buildBestCodexPetGuideSummary,
+  getBestCodexPetsGuideJsonLd,
+} from "@/lib/guides/best-codex-pets";
 import { serializeJsonLd } from "@/lib/json-ld";
+import { listApprovedPets } from "@/lib/pets/repository";
 import {
   getOpenGraphImages,
   getTwitterImages,
@@ -19,41 +28,45 @@ import {
 const GUIDE_DESCRIPTION =
   "A practical guide to choosing the best Codex pets for AI coding agents, including install, preview, and agent-readable discovery paths.";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
-  title: "Best Codex pets for AI coding agents",
+  title: BEST_CODEX_PETS_GUIDE_TITLE,
   description: GUIDE_DESCRIPTION,
   alternates: {
-    canonical: withBasePath("/guides/best-codex-pets-for-ai-coding-agents"),
+    canonical: withBasePath(BEST_CODEX_PETS_GUIDE_PATH),
   },
   openGraph: {
     type: "article",
     siteName: SITE_NAME,
-    title: "Best Codex pets for AI coding agents",
+    title: BEST_CODEX_PETS_GUIDE_TITLE,
     description: GUIDE_DESCRIPTION,
-    url: withBasePath("/guides/best-codex-pets-for-ai-coding-agents"),
+    url: withBasePath(BEST_CODEX_PETS_GUIDE_PATH),
     images: getOpenGraphImages(),
   },
   twitter: {
     card: "summary_large_image",
-    title: "Best Codex pets for AI coding agents",
+    title: BEST_CODEX_PETS_GUIDE_TITLE,
     description: GUIDE_DESCRIPTION,
     images: getTwitterImages(),
   },
 };
 
-export default function BestCodexPetsGuidePage() {
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "Article",
-    headline: "Best Codex pets for AI coding agents",
-    url: toPublicUrl("/guides/best-codex-pets-for-ai-coding-agents"),
-    description: GUIDE_DESCRIPTION,
-    isPartOf: {
-      "@type": "WebSite",
-      name: SITE_NAME,
-      url: toPublicUrl("/"),
-    },
-  };
+const getApprovedPetsSnapshot = unstable_cache(
+  async () => listApprovedPets(),
+  [
+    "best-codex-pets-guide",
+    process.env.CODEX_PETS_DATA_SOURCE?.trim() || "ydb",
+  ],
+  { revalidate: 60 },
+);
+
+export default async function BestCodexPetsGuidePage() {
+  const pets = await getApprovedPetsSnapshot();
+  const sections = buildBestCodexPetGuideSections(pets);
+  const summary = buildBestCodexPetGuideSummary(sections);
+  const jsonLd = getBestCodexPetsGuideJsonLd(sections);
 
   return (
     <Container as="main" maxWidth="xl" gutters={5} className="page-shell">
@@ -65,11 +78,11 @@ export default function BestCodexPetsGuidePage() {
         <Flex direction="column" gap={3}>
           <Label theme="info">Guide</Label>
           <Text variant="display-2" as="h1">
-            Best Codex pets for AI coding agents
+            {BEST_CODEX_PETS_GUIDE_TITLE}
           </Text>
           <Text variant="body-2" color="secondary" className="page-section-header__lead">
-            Choose Codex pet packs that are easy for agents to discover,
-            install, cite, and hand back to a user.
+            {summary} Choose Codex pet packs that are easy for agents to
+            discover, install, cite, and hand back to a user.
           </Text>
           <Flex gap={2} wrap>
             <Button view="action" size="l" href={withBasePath("/")}>
@@ -86,41 +99,53 @@ export default function BestCodexPetsGuidePage() {
 
       <section className="page-section">
         <Text variant="display-1" as="h2">
-          What to look for
+          Which Codex pet should I try first?
         </Text>
-        <ul>
-          <li>Clear display name, description, kind, and tags.</li>
-          <li>Approved package assets with pet.json and a valid spritesheet.</li>
-          <li>Stable page URL, package URL, and install command.</li>
-          <li>Share snippets for README badges, animated cards, and embeds.</li>
-          <li>MCP and OpenAPI resources that agents can inspect directly.</li>
-        </ul>
+        <Text variant="body-2" color="secondary">
+          {summary} Each recommendation below is an approved public Codex pet
+          pack with a stable page URL, package assets, and a ready install
+          command.
+        </Text>
       </section>
 
-      <section className="page-section">
-        <Text variant="display-1" as="h2">
-          Best fit by workflow
-        </Text>
-        <ul>
-          <li>
-            For quick setup, choose pets with a clear slug, concise description,
-            and a ready <code>npx @astandrik/codex-pets install &lt;slug&gt;</code>{" "}
-            command.
-          </li>
-          <li>
-            For agent recommendations, prefer pets with descriptive tags such as
-            pixel, cute, fantasy, terminal, minimal, anime, or space.
-          </li>
-          <li>
-            For documentation and READMEs, choose pets with badge, card, and
-            iframe snippets exposed by the share route or MCP tools.
-          </li>
-          <li>
-            For pack validation, confirm the package contains pet.json plus a
-            spritesheet.webp or spritesheet.png atlas at the expected Codex size.
-          </li>
-        </ul>
-      </section>
+      {sections.map((section) => (
+        <section className="page-section" key={section.id}>
+          <Text variant="display-1" as="h2">
+            {section.question}
+          </Text>
+          {section.pets.length > 0 ? (
+            <div>
+              {section.pets.map((pet) => (
+                <article key={pet.slug}>
+                  <Text variant="subheader-2" as="h3">
+                    <a href={withBasePath(`/pets/${pet.slug}`)}>
+                      {pet.displayName}
+                    </a>
+                  </Text>
+                  <Text variant="body-2" color="secondary">
+                    {pet.reason} {pet.description}
+                  </Text>
+                  <ul>
+                    <li>
+                      Page: <a href={pet.pageUrl}>{pet.pageUrl}</a>
+                    </li>
+                    <li>
+                      Tags: {pet.tags.length > 0 ? pet.tags.join(", ") : "none"}
+                    </li>
+                    <li>
+                      Install: <code>{pet.installCommand}</code>
+                    </li>
+                  </ul>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <Text variant="body-2" color="secondary">
+              No approved pets currently match this category.
+            </Text>
+          )}
+        </section>
+      ))}
 
       <section className="page-section">
         <Text variant="display-1" as="h2">

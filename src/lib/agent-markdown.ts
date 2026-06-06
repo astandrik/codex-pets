@@ -1,5 +1,19 @@
 import { BASE_PATH, getPublicOrigin, toPublicUrl } from "@/lib/base-path";
 
+const MARKDOWN_INLINE_SPECIALS = /[\\`*_[\]{}()#+\-!|<>]/g;
+
+export function escapeMarkdownInlineText(value: string): string {
+  return value
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(MARKDOWN_INLINE_SPECIALS, "\\$&");
+}
+
+export function formatMarkdownInlineList(values: string[]): string {
+  const escaped = values.map(escapeMarkdownInlineText).filter(Boolean);
+  return escaped.length > 0 ? escaped.join(", ") : "none";
+}
+
 export function markdownResponse(body: string): Response {
   return new Response(`${body.trim()}\n`, {
     headers: {

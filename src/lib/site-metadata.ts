@@ -288,6 +288,12 @@ export function getPetResourceAlternateTypes(
         url: withBasePath(`/api/pets/${encodedSlug}.toon`),
       },
     ],
+    "text/markdown": [
+      {
+        title: `${displayName} markdown`,
+        url: withBasePath(`/pets/${encodedSlug}/markdown`),
+      },
+    ],
   };
 }
 
