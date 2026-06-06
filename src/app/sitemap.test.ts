@@ -106,61 +106,61 @@ describe("sitemap", () => {
       expect(entries).toEqual([
         sitemapEntry(
           "https://pets.example/codex-pets",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "daily",
           1,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/about",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "weekly",
           0.7,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/about.md",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "weekly",
           0.5,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/agents",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "weekly",
           0.7,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/agents.md",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "weekly",
           0.5,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/pricing",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "weekly",
           0.6,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/pricing.md",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "weekly",
           0.5,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/terms",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "weekly",
           0.6,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/terms.md",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "weekly",
           0.5,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/developers",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "weekly",
           0.7,
         ),
@@ -172,7 +172,7 @@ describe("sitemap", () => {
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/docs/api",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "weekly",
           0.7,
         ),
@@ -184,79 +184,79 @@ describe("sitemap", () => {
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/guides/best-codex-pets-for-ai-coding-agents",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "monthly",
           0.6,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/guides/best-codex-pets-for-ai-coding-agents.md",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "monthly",
           0.5,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/guides/codex-pets-vs-vscode-pets",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "monthly",
           0.6,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/guides/codex-pets-vs-vscode-pets.md",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "monthly",
           0.5,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/guides/codex-pets-vs-openpets",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "monthly",
           0.6,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/guides/codex-pets-vs-openpets.md",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "monthly",
           0.5,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/guides/codex-pets-mcp-integration-guide",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "monthly",
           0.6,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/guides/codex-pets-mcp-integration-guide.md",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "monthly",
           0.5,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/index.md",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "weekly",
           0.6,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/developers.md",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "weekly",
           0.5,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/docs/api.md",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "weekly",
           0.5,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/auth.md",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "weekly",
           0.4,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/mcp.md",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "weekly",
           0.4,
         ),
@@ -316,13 +316,13 @@ describe("sitemap", () => {
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/request",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "weekly",
           0.7,
         ),
         sitemapEntry(
           "https://pets.example/codex-pets/submit",
-          "2026-06-06T00:00:00.000Z",
+          null,
           "weekly",
           0.7,
         ),
@@ -354,9 +354,11 @@ describe("sitemap", () => {
 
 function sitemapEntry(
   url: string,
-  lastModified: string,
+  lastModified: string | null,
   changeFrequency: string,
   priority: number,
 ) {
-  return { url, lastModified, changeFrequency, priority };
+  return lastModified
+    ? { url, lastModified, changeFrequency, priority }
+    : { url, changeFrequency, priority };
 }

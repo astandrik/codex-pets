@@ -110,6 +110,10 @@ describe("GET /pets/[slug]/markdown", () => {
       );
 
       expect(response.status).toBe(404);
+      expect(response.headers.get("Content-Type")).toBe(
+        "text/plain; charset=utf-8",
+      );
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
     },
   );
 });

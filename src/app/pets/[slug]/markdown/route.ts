@@ -12,7 +12,13 @@ export async function GET(
   const { slug } = await params;
   const pet = await getApprovedPetBySlug(slug);
   if (!pet) {
-    return new Response("not found", { status: 404 });
+    return new Response("not found\n", {
+      status: 404,
+      headers: {
+        "Cache-Control": "no-store",
+        "Content-Type": "text/plain; charset=utf-8",
+      },
+    });
   }
 
   const response = markdownResponse(buildPetMarkdown(pet));

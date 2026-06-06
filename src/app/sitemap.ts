@@ -12,8 +12,6 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const STATIC_CONTENT_LAST_MODIFIED = "2026-06-06T00:00:00.000Z";
-
 const getSitemapSnapshot = unstable_cache(
   async (): Promise<MetadataRoute.Sitemap> => {
     return buildSitemap();
@@ -44,61 +42,51 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
   const staticEntries: MetadataRoute.Sitemap = [
     {
       url: toPublicUrl("/"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "daily",
       priority: 1,
     },
     {
       url: toPublicUrl("/about"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.7,
     },
     {
       url: toPublicUrl("/about.md"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.5,
     },
     {
       url: toPublicUrl("/agents"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.7,
     },
     {
       url: toPublicUrl("/agents.md"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.5,
     },
     {
       url: toPublicUrl("/pricing"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.6,
     },
     {
       url: toPublicUrl("/pricing.md"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.5,
     },
     {
       url: toPublicUrl("/terms"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.6,
     },
     {
       url: toPublicUrl("/terms.md"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.5,
     },
     {
       url: toPublicUrl("/developers"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.7,
     },
@@ -110,7 +98,6 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
     },
     {
       url: toPublicUrl("/docs/api"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.7,
     },
@@ -122,79 +109,66 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
     },
     {
       url: toPublicUrl("/guides/best-codex-pets-for-ai-coding-agents"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "monthly",
       priority: 0.6,
     },
     {
       url: toPublicUrl("/guides/best-codex-pets-for-ai-coding-agents.md"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "monthly",
       priority: 0.5,
     },
     {
       url: toPublicUrl("/guides/codex-pets-vs-vscode-pets"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "monthly",
       priority: 0.6,
     },
     {
       url: toPublicUrl("/guides/codex-pets-vs-vscode-pets.md"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "monthly",
       priority: 0.5,
     },
     {
       url: toPublicUrl("/guides/codex-pets-vs-openpets"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "monthly",
       priority: 0.6,
     },
     {
       url: toPublicUrl("/guides/codex-pets-vs-openpets.md"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "monthly",
       priority: 0.5,
     },
     {
       url: toPublicUrl("/guides/codex-pets-mcp-integration-guide"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "monthly",
       priority: 0.6,
     },
     {
       url: toPublicUrl("/guides/codex-pets-mcp-integration-guide.md"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "monthly",
       priority: 0.5,
     },
     {
       url: toPublicUrl("/index.md"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.6,
     },
     {
       url: toPublicUrl("/developers.md"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.5,
     },
     {
       url: toPublicUrl("/docs/api.md"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.5,
     },
     {
       url: toPublicUrl("/auth.md"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.4,
     },
     {
       url: toPublicUrl("/mcp.md"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.4,
     },
@@ -254,13 +228,11 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
     },
     {
       url: toPublicUrl("/request"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.7,
     },
     {
       url: toPublicUrl("/submit"),
-      lastModified: STATIC_CONTENT_LAST_MODIFIED,
       changeFrequency: "weekly",
       priority: 0.7,
     },
