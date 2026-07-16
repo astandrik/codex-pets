@@ -2,9 +2,12 @@
   overflow: hidden;
 
   &__stage {
-    display: grid;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    align-items: center;
+    justify-content: center;
     min-height: 320px;
-    place-items: center;
     border-bottom: 1px solid var(--line);
     background: rgba(0, 0, 0, 0.2);
   }
@@ -13,6 +16,22 @@
     width: min(192px, 58vw);
     aspect-ratio: 192 / 208;
     background-repeat: no-repeat;
+  }
+
+  &__direction-label {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: baseline;
+    color: var(--muted-strong);
+
+    strong {
+      color: var(--fg);
+      font-variant-numeric: tabular-nums;
+    }
+
+    small {
+      color: var(--muted);
+    }
   }
 
   &__controls {
@@ -38,6 +57,29 @@
       color: var(--muted);
       font-size: 12px;
     }
+
+    &--active {
+      background: rgba(255, 190, 92, 0.14);
+      color: var(--fg);
+    }
+  }
+
+  &__directions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+    gap: 1px;
+    border-top: 1px solid var(--line);
+    background: var(--line);
+  }
+
+  &__direction {
+    border: 0;
+    padding: var(--spacing-sm);
+    background: var(--bg-elevated);
+    color: var(--muted-strong);
+    cursor: pointer;
+    font: inherit;
+    font-variant-numeric: tabular-nums;
 
     &--active {
       background: rgba(255, 190, 92, 0.14);

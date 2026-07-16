@@ -1,11 +1,112 @@
-export const PET_SHEET = {
+export type SpriteVersionNumber = 1 | 2;
+
+export type PetSheet = {
+  readonly columns: number;
+  readonly rows: number;
+  readonly cellWidth: number;
+  readonly cellHeight: number;
+  readonly width: number;
+  readonly height: number;
+};
+
+const PET_CELL = {
   columns: 8,
-  rows: 9,
   cellWidth: 192,
   cellHeight: 208,
-  width: 1536,
-  height: 1872,
 } as const;
+
+export const PET_SHEETS = {
+  1: {
+    ...PET_CELL,
+    rows: 9,
+    width: 1536,
+    height: 1872,
+  },
+  2: {
+    ...PET_CELL,
+    rows: 11,
+    width: 1536,
+    height: 2288,
+  },
+} as const satisfies Record<SpriteVersionNumber, PetSheet>;
+
+export const PET_SHEET = PET_SHEETS[1];
+
+export function resolveSpriteVersionNumber(
+  version?: SpriteVersionNumber,
+): SpriteVersionNumber {
+  return version ?? 1;
+}
+
+export function getPetSheet(version?: SpriteVersionNumber) {
+  return PET_SHEETS[resolveSpriteVersionNumber(version)];
+}
+
+export function inferSpriteVersionNumber(
+  width: number,
+  height: number,
+): SpriteVersionNumber | null {
+  for (const version of [1, 2] as const) {
+    const sheet = PET_SHEETS[version];
+    if (width === sheet.width && height === sheet.height) return version;
+  }
+  return null;
+}
+
+const LOOK_DIRECTION_LABELS = [
+  "Up",
+  "Up-right",
+  "Up-right",
+  "Up-right",
+  "Right",
+  "Down-right",
+  "Down-right",
+  "Down-right",
+  "Down",
+  "Down-left",
+  "Down-left",
+  "Down-left",
+  "Left",
+  "Up-left",
+  "Up-left",
+  "Up-left",
+] as const;
+
+export type LookDirectionCell = {
+  index: number;
+  row: 9 | 10;
+  column: number;
+  degrees: number;
+  displayDegrees: string;
+  accessibleLabel: string;
+  label: (typeof LOOK_DIRECTION_LABELS)[number];
+};
+
+export function getLookDirectionCell(index: number): LookDirectionCell | null {
+  if (!Number.isInteger(index) || index < 0 || index >= 16) return null;
+
+  const degrees = index * 22.5;
+  const displayDegrees = formatLookDirectionDegrees(degrees);
+  const label = LOOK_DIRECTION_LABELS[index];
+  return {
+    index,
+    row: index < 8 ? 9 : 10,
+    column: index % 8,
+    degrees,
+    displayDegrees,
+    accessibleLabel: `${displayDegrees} ${label}`,
+    label,
+  };
+}
+
+export const PET_LOOK_DIRECTIONS = Array.from({ length: 16 }, (_, index) =>
+  getLookDirectionCell(index),
+).filter((direction): direction is LookDirectionCell => direction !== null);
+
+function formatLookDirectionDegrees(degrees: number): string {
+  const [whole, fraction] = String(degrees).split(".");
+  return `${whole.padStart(3, "0")}${fraction ? `.${fraction}` : ""}°`;
+}
 
 export const PET_STATES = [
   {

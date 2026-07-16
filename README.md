@@ -449,8 +449,12 @@ Each pet is distributed as:
 - `spritesheet.webp` or `spritesheet.png`
 - downloadable ZIP containing both files at the root
 
-The v1 validator expects an 8x9 atlas at `1536x1872`, where each cell is
-`192x208`.
+The registry accepts both Codex atlas versions, each using `192x208` cells:
+
+- v1: omit `spriteVersionNumber` or set it to `1`; use an 8x9 atlas at
+  `1536x1872`.
+- v2: set `spriteVersionNumber` to `2`; use an 8x11 atlas at `1536x2288`,
+  including the 16 clockwise look directions in rows 9 and 10.
 
 ## CLI install
 

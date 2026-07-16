@@ -1,7 +1,10 @@
+import type { SpriteVersionNumber } from "@/lib/pets/types";
+
 export type SubmitPetJson = {
   id: string;
   displayName: string;
   description: string;
+  spriteVersionNumber?: SpriteVersionNumber;
   spritesheetPath: string;
 };
 
@@ -65,10 +68,22 @@ export function parseEditablePetJson(input: {
     }
   }
 
-  const petJson = {
+  let spriteVersionNumber: SpriteVersionNumber | undefined;
+  if (record.spriteVersionNumber !== undefined) {
+    if (record.spriteVersionNumber !== 1 && record.spriteVersionNumber !== 2) {
+      return {
+        ok: false,
+        message: "spriteVersionNumber must be 1 or 2.",
+      };
+    }
+    spriteVersionNumber = record.spriteVersionNumber;
+  }
+
+  const petJson: SubmitPetJson = {
     id: String(record.id).trim(),
     displayName: String(record.displayName).trim(),
     description: String(record.description).trim(),
+    ...(spriteVersionNumber === undefined ? {} : { spriteVersionNumber }),
     spritesheetPath: String(record.spritesheetPath).trim(),
   };
 

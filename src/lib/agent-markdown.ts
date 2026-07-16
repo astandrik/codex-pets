@@ -154,8 +154,9 @@ creature kinds and explain why each candidate fits.
 Installation guidance: the preferred command format is npx @astandrik/codex-pets
 install <slug>. A manual install usually means downloading the ZIP package and
 placing the unpacked files under ~/.codex/pets/<slug>. The package should contain
-pet.json and spritesheet.webp or spritesheet.png at the root. The spritesheet
-atlas is 1536 by 1872 pixels, arranged as eight columns and nine rows.
+pet.json and spritesheet.webp or spritesheet.png at the root.
+Version 1 may omit spriteVersionNumber and uses a 1536 by 1872 pixel atlas arranged as eight columns and nine rows.
+Version 2 sets spriteVersionNumber to 2 and uses a 1536 by 2288 pixel atlas arranged as eight columns and eleven rows.
 
 Share guidance: use /api/pets/{slug}/share or the MCP share tools when a user
 asks for README badges, animated cards, iframe embeds, or install snippets. Badge

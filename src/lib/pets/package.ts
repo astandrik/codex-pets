@@ -43,7 +43,10 @@ export async function validateUploadedPackage(input: {
     };
   }
 
-  const sprite = await validateSpriteBuffer(input.spritesheetBuffer);
+  const sprite = await validateSpriteBuffer(
+    input.spritesheetBuffer,
+    petJson.value.spriteVersionNumber,
+  );
   if (!sprite.ok) return sprite;
 
   let zip: JSZip;

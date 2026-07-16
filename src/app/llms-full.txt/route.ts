@@ -1,7 +1,7 @@
 import { toPublicUrl } from "@/lib/base-path";
 import { AGENT_WHEN_TO_USE_GUIDANCE } from "@/lib/agent-markdown";
 import { listApprovedPets } from "@/lib/pets/repository";
-import { PET_SHEET } from "@/lib/pets/types";
+import { PET_SHEETS } from "@/lib/pets/types";
 import { SITE_DESCRIPTION, SITE_NAME } from "@/lib/site-metadata";
 
 export const runtime = "nodejs";
@@ -42,7 +42,8 @@ export async function GET(): Promise<Response> {
       "## Product",
       "",
       "Codex Pets is a moderated community registry for downloadable Codex pet packs. Each approved pet has a public detail page, a package ZIP, pet.json metadata, a spritesheet atlas, share snippets, and install instructions.",
-      `Pet spritesheets use an ${PET_SHEET.columns}x${PET_SHEET.rows} atlas at ${PET_SHEET.width}x${PET_SHEET.height}.`,
+      `Pet v1 spritesheets use an ${PET_SHEETS[1].columns}x${PET_SHEETS[1].rows} atlas at ${PET_SHEETS[1].width}x${PET_SHEETS[1].height}; spriteVersionNumber may be omitted or set to 1.`,
+      `Pet v2 spritesheets set spriteVersionNumber to 2 and use an ${PET_SHEETS[2].columns}x${PET_SHEETS[2].rows} atlas at ${PET_SHEETS[2].width}x${PET_SHEETS[2].height}, with 16 look directions in rows 9 and 10.`,
       "The public agent contract is read-oriented: agents can search approved pets, fetch one pet, generate install guidance, and discover the pet request workflow.",
       "",
       "## Developer resources",
@@ -139,7 +140,8 @@ export async function GET(): Promise<Response> {
       "",
       "- Required files: pet.json and spritesheet.webp or spritesheet.png.",
       "- ZIP packages must contain pet.json and the spritesheet file at the root.",
-      `- Atlas dimensions: ${PET_SHEET.width}x${PET_SHEET.height}, ${PET_SHEET.columns} columns, ${PET_SHEET.rows} rows.`,
+      `- v1 atlas dimensions: ${PET_SHEETS[1].width}x${PET_SHEETS[1].height}, ${PET_SHEETS[1].columns} columns, ${PET_SHEETS[1].rows} rows; spriteVersionNumber may be omitted or set to 1.`,
+      `- v2 atlas dimensions: ${PET_SHEETS[2].width}x${PET_SHEETS[2].height}, ${PET_SHEETS[2].columns} columns, ${PET_SHEETS[2].rows} rows; spriteVersionNumber must be 2.`,
       "- Install command format: npx @astandrik/codex-pets install <slug>.",
       "",
       "## Webhooks",
