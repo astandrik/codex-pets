@@ -3,6 +3,15 @@ import { describe, expect, it } from "vitest";
 import { parseClientPetJson } from "@/lib/pets/client-validation";
 
 describe("client pet validation", () => {
+  it.each(["null", "42", JSON.stringify("value"), "[]"])(
+    "rejects non-object pet JSON: %s",
+    (text) => {
+      expect(() => parseClientPetJson(text)).toThrow(
+        "pet.json must be a JSON object.",
+      );
+    },
+  );
+
   it("preserves spriteVersionNumber 2", () => {
     expect(
       parseClientPetJson(
