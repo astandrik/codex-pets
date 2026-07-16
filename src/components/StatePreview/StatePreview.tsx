@@ -129,7 +129,7 @@ export function StatePreview({ petJsonUrl, spritesheetUrl }: StatePreviewProps) 
             key={state.key}
             type="button"
             className={
-              state.key === selected.key
+              state.key === selectedKey
                 ? "state-preview__button state-preview__button--active"
                 : "state-preview__button"
             }
