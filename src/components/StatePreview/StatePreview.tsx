@@ -175,7 +175,8 @@ export function StatePreview({ petJsonUrl, spritesheetUrl }: StatePreviewProps) 
                   : "state-preview__direction"
               }
               aria-pressed={direction.index === frame}
-              title={direction.label}
+              aria-label={direction.accessibleLabel}
+              title={direction.accessibleLabel}
               onClick={() => {
                 setFrame(direction.index);
                 setLookPlaying(false);

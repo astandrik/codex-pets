@@ -105,6 +105,7 @@ describe("GET /embed/[slug]", () => {
     expect(body).toContain('class="embed-sprite"');
     expect(body).toContain("width:384px");
     expect(body).toContain("height:416px");
+    expect(body).toContain("background-size:3072px auto");
     expect(body).toContain("--pet-row-y:-2912px");
     expect(body).toContain("--pet-end-x:-2304px");
     expect(body).not.toContain("View in registry");

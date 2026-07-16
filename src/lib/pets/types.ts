@@ -1,5 +1,14 @@
 export type SpriteVersionNumber = 1 | 2;
 
+export type PetSheet = {
+  readonly columns: number;
+  readonly rows: number;
+  readonly cellWidth: number;
+  readonly cellHeight: number;
+  readonly width: number;
+  readonly height: number;
+};
+
 const PET_CELL = {
   columns: 8,
   cellWidth: 192,
@@ -19,7 +28,7 @@ export const PET_SHEETS = {
     width: 1536,
     height: 2288,
   },
-} as const satisfies Record<SpriteVersionNumber, object>;
+} as const satisfies Record<SpriteVersionNumber, PetSheet>;
 
 export const PET_SHEET = PET_SHEETS[1];
 
@@ -69,6 +78,7 @@ export type LookDirectionCell = {
   column: number;
   degrees: number;
   displayDegrees: string;
+  accessibleLabel: string;
   label: (typeof LOOK_DIRECTION_LABELS)[number];
 };
 
@@ -76,13 +86,16 @@ export function getLookDirectionCell(index: number): LookDirectionCell | null {
   if (!Number.isInteger(index) || index < 0 || index >= 16) return null;
 
   const degrees = index * 22.5;
+  const displayDegrees = formatLookDirectionDegrees(degrees);
+  const label = LOOK_DIRECTION_LABELS[index];
   return {
     index,
     row: index < 8 ? 9 : 10,
     column: index % 8,
     degrees,
-    displayDegrees: formatLookDirectionDegrees(degrees),
-    label: LOOK_DIRECTION_LABELS[index],
+    displayDegrees,
+    accessibleLabel: `${displayDegrees} ${label}`,
+    label,
   };
 }
 

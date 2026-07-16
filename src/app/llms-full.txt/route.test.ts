@@ -57,6 +57,12 @@ describe("GET /llms-full.txt", () => {
       expect(body).toContain("## Webhooks");
       expect(body).toContain("Webhooks are not currently available");
       expect(body).toContain("[Boba](https://pets.example/pets/boba)");
+      expect(body).toContain(
+        "Pet v1 spritesheets use an 8x9 atlas at 1536x1872",
+      );
+      expect(body).toContain(
+        "Pet v2 spritesheets set spriteVersionNumber to 2 and use an 8x11 atlas at 1536x2288",
+      );
     } finally {
       vi.useRealTimers();
     }

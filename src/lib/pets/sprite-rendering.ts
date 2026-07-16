@@ -82,7 +82,7 @@ export function spriteCssValues(input: {
   duration: string;
 } {
   return {
-    backgroundSize: `${PET_SHEET.width * input.scale}px ${PET_SHEET.height * input.scale}px`,
+    backgroundSize: `${PET_SHEET.width * input.scale}px auto`,
     endX: `-${input.state.frames * PET_SHEET.cellWidth * input.scale}px`,
     rowY: `-${input.state.row * PET_SHEET.cellHeight * input.scale}px`,
     width: `${PET_SHEET.cellWidth * input.scale}px`,

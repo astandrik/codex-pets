@@ -35,6 +35,7 @@ describe("v2 look directions", () => {
       column: 0,
       degrees: 0,
       displayDegrees: "000°",
+      accessibleLabel: "000° Up",
       label: "Up",
     });
     expect(getLookDirectionCell(1)).toMatchObject({
@@ -64,6 +65,7 @@ describe("v2 look directions", () => {
       column: 7,
       degrees: 337.5,
       displayDegrees: "337.5°",
+      accessibleLabel: "337.5° Up-left",
       label: "Up-left",
     });
     expect(getLookDirectionCell(-1)).toBeNull();
