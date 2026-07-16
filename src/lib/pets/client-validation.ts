@@ -16,7 +16,7 @@ export function parseClientPetJson(text: string): ClientPetJson {
 
   const record = value as Record<string, unknown>;
   for (const key of ["id", "displayName", "description", "spritesheetPath"]) {
-    if (typeof record[key] !== "string" || !record[key]) {
+    if (typeof record[key] !== "string" || !record[key].trim()) {
       throw new Error(`pet.json is missing ${key}.`);
     }
   }

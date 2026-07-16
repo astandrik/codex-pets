@@ -12,6 +12,24 @@ describe("client pet validation", () => {
     },
   );
 
+  it.each(["id", "displayName", "description", "spritesheetPath"] as const)(
+    "rejects a whitespace-only %s",
+    (field) => {
+      const petJson = {
+        id: "rose-katana",
+        displayName: "Rose Katana",
+        description: "A Codex v2 pet.",
+        spriteVersionNumber: 2,
+        spritesheetPath: "spritesheet.webp",
+      };
+      petJson[field] = " \t ";
+
+      expect(() => parseClientPetJson(JSON.stringify(petJson))).toThrow(
+        `pet.json is missing ${field}.`,
+      );
+    },
+  );
+
   it("preserves spriteVersionNumber 2", () => {
     expect(
       parseClientPetJson(
