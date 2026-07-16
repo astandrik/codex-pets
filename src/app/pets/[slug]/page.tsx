@@ -285,7 +285,11 @@ export default async function PetPage({ params }: PetPageProps) {
 
       <section className="pet-detail__body">
         <Card view="raised" className="pet-detail__preview-card">
-          <StatePreview spritesheetUrl={spritesheetUrl} />
+          <StatePreview
+            key={pet.slug}
+            petJsonUrl={petJsonUrl}
+            spritesheetUrl={spritesheetUrl}
+          />
         </Card>
         <div className="pet-detail__side">
           <Card view="raised" className="pet-detail__meta-card">

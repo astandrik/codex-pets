@@ -120,6 +120,40 @@ describe("pet-json editor helpers", () => {
     if (result.ok) expect(result.value.spritesheetExt).toBe("png");
   });
 
+  it("preserves a supported sprite version", () => {
+    const result = parseEditablePetJson({
+      originalId: "demo",
+      text: JSON.stringify({
+        id: "demo",
+        displayName: "Demo",
+        description: "Demo pet.",
+        spriteVersionNumber: 2,
+        spritesheetPath: "spritesheet.webp",
+      }),
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.petJson.spriteVersionNumber).toBe(2);
+  });
+
+  it("rejects an unsupported sprite version", () => {
+    expect(
+      parseEditablePetJson({
+        originalId: "demo",
+        text: JSON.stringify({
+          id: "demo",
+          displayName: "Demo",
+          description: "Demo pet.",
+          spriteVersionNumber: 3,
+          spritesheetPath: "spritesheet.webp",
+        }),
+      }),
+    ).toEqual({
+      ok: false,
+      message: "spriteVersionNumber must be 1 or 2.",
+    });
+  });
+
   it("reads the original id only when it is valid", () => {
     expect(readOriginalPetJsonId('{"id":" demo "}')).toBe("demo");
     expect(readOriginalPetJsonId('{"id":""}')).toBeNull();

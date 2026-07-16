@@ -18,7 +18,10 @@ import {
 
 import { withBasePath } from "@/lib/base-path";
 import { trackGoal } from "@/lib/metrics/yandex";
-import { PET_SHEET } from "@/lib/pets/types";
+import {
+  getPetSheet,
+  type SpriteVersionNumber,
+} from "@/lib/pets/types";
 import {
   parseEditablePetJson,
   readOriginalPetJsonId,
@@ -358,7 +361,10 @@ async function prepareFromZip(
   }
 
   const spriteBlob = await spriteEntry.async("blob");
-  await validateImageDimensions(spriteBlob);
+  await validateImageDimensions(
+    spriteBlob,
+    editedPetJson.petJson.spriteVersionNumber,
+  );
   zip.file("pet.json", petJsonText);
   const zipBlob = await zip.generateAsync({
     type: "blob",
@@ -390,7 +396,10 @@ async function prepareFromSeparateFiles(
   if (!spriteFile.name.toLowerCase().endsWith(`.${ext}`)) {
     throw new Error(`Sprite file must match ${editedPetJson.petJson.spritesheetPath}.`);
   }
-  await validateImageDimensions(spriteFile);
+  await validateImageDimensions(
+    spriteFile,
+    editedPetJson.petJson.spriteVersionNumber,
+  );
 
   const zip = new JSZip();
   zip.file("pet.json", petJsonText);
@@ -433,16 +442,20 @@ function clearFileInput(ref: React.RefObject<HTMLInputElement | null>) {
   if (ref.current) ref.current.value = "";
 }
 
-function validateImageDimensions(blob: Blob): Promise<void> {
+function validateImageDimensions(
+  blob: Blob,
+  spriteVersionNumber?: SpriteVersionNumber,
+): Promise<void> {
+  const sheet = getPetSheet(spriteVersionNumber);
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob);
     const image = new Image();
     image.onload = () => {
       URL.revokeObjectURL(url);
-      if (image.width !== PET_SHEET.width || image.height !== PET_SHEET.height) {
+      if (image.width !== sheet.width || image.height !== sheet.height) {
         reject(
           new Error(
-            `Spritesheet must be ${PET_SHEET.width}x${PET_SHEET.height}; got ${image.width}x${image.height}.`,
+            `Spritesheet must be ${sheet.width}x${sheet.height}; got ${image.width}x${image.height}.`,
           ),
         );
         return;

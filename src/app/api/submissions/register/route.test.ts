@@ -48,6 +48,7 @@ describe("POST /api/submissions/register", () => {
           id: "demo",
           displayName: "Demo",
           description: "Demo pet",
+          spriteVersionNumber: 2,
           spritesheetPath: "spritesheet.webp",
         },
         spritesheetBytes: 10,
@@ -90,6 +91,7 @@ describe("POST /api/submissions/register", () => {
             id: "demo",
             displayName: "Demo",
             description: "Demo",
+            spriteVersionNumber: 2,
             spritesheetPath: "spritesheet.webp",
           }),
         ],
@@ -120,6 +122,7 @@ describe("POST /api/submissions/register", () => {
       expect.objectContaining({
         ownerId: "",
         contactEmail: "anon@example.com",
+        petJson: expect.objectContaining({ spriteVersionNumber: 2 }),
       }),
     );
   });

@@ -32,7 +32,7 @@ const GRAVITY_AI_URL = "https://gravity-ai.ydb-qdrant.tech/";
 const packFacts = [
   "pet.json metadata",
   "spritesheet.webp or spritesheet.png",
-  "8x9 atlas at 1536x1872",
+  "v1 8x9 or v2 8x11 atlas",
   "reviewed before public listing",
 ];
 
@@ -60,7 +60,7 @@ const faqs = [
   {
     question: "What files does a pack need?",
     answer:
-      "A pack needs pet.json and one spritesheet file at the root. The current validator expects an 8x9 atlas at 1536x1872, with each cell sized for Codex pet animation states.",
+      "A pack needs pet.json and one spritesheet file at the root. The validator accepts a v1 8x9 atlas at 1536x1872 or a v2 8x11 atlas at 1536x2288. Every cell is 192x208.",
   },
 ];
 
@@ -189,8 +189,9 @@ export default function AboutPage() {
             A pack is intentionally small: <code>pet.json</code> describes the
             pet metadata and animation settings, while{" "}
             <code>spritesheet.webp</code> or <code>spritesheet.png</code>{" "}
-            contains the visual atlas. The current atlas is 8 columns by 9 rows
-            at <code>1536x1872</code>.
+            contains the visual atlas. Version 1 uses 8 columns by 9 rows at{" "}
+            <code>1536x1872</code>. Version 2 uses 8 columns by 11 rows at{" "}
+            <code>1536x2288</code> and adds 16 clockwise look directions.
           </Text>
         </article>
 

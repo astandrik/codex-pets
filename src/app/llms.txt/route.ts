@@ -1,7 +1,7 @@
 import { toPublicUrl } from "@/lib/base-path";
 import { AGENT_WHEN_TO_USE_GUIDANCE } from "@/lib/agent-markdown";
 import { listApprovedPets } from "@/lib/pets/repository";
-import { PET_SHEET } from "@/lib/pets/types";
+import { PET_SHEETS } from "@/lib/pets/types";
 import { SITE_DESCRIPTION, SITE_NAME } from "@/lib/site-metadata";
 
 export const runtime = "nodejs";
@@ -41,7 +41,8 @@ export async function GET(): Promise<Response> {
       "",
       "Important notes:",
       "",
-      `- Pet spritesheets use an ${PET_SHEET.columns}x${PET_SHEET.rows} atlas at ${PET_SHEET.width}x${PET_SHEET.height}.`,
+      `- Pet v1 spritesheets use an ${PET_SHEETS[1].columns}x${PET_SHEETS[1].rows} atlas at ${PET_SHEETS[1].width}x${PET_SHEETS[1].height}; spriteVersionNumber may be omitted or set to 1.`,
+      `- Pet v2 spritesheets set spriteVersionNumber to 2 and use an ${PET_SHEETS[2].columns}x${PET_SHEETS[2].rows} atlas at ${PET_SHEETS[2].width}x${PET_SHEETS[2].height}, with 16 look directions in rows 9 and 10.`,
       "- Public gallery and approved pet pages are intended for search and AI retrieval.",
       "- Admin, account, and API mutation routes are not intended as retrieval sources.",
       "- User-submitted pet pages are moderated before they appear in the public gallery.",

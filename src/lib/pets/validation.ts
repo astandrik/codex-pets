@@ -1,11 +1,16 @@
 import sharp from "sharp";
 
-import { PET_SHEET, type PetKind } from "@/lib/pets/types";
+import {
+  getPetSheet,
+  type PetKind,
+  type SpriteVersionNumber,
+} from "@/lib/pets/types";
 
 export type PetJson = {
   id: string;
   displayName: string;
   description: string;
+  spriteVersionNumber?: SpriteVersionNumber;
   spritesheetPath: string;
 };
 
@@ -64,12 +69,26 @@ export function validatePetJson(value: unknown): ValidationResult<PetJson> {
     };
   }
 
+  let spriteVersionNumber: SpriteVersionNumber | undefined;
+  if (record.spriteVersionNumber !== undefined) {
+    if (record.spriteVersionNumber !== 1 && record.spriteVersionNumber !== 2) {
+      return {
+        ok: false,
+        error: "invalid_sprite_version",
+        field: "spriteVersionNumber",
+        message: "spriteVersionNumber must be 1 or 2.",
+      };
+    }
+    spriteVersionNumber = record.spriteVersionNumber;
+  }
+
   return {
     ok: true,
     value: {
       id: id.value,
       displayName: displayName.value.slice(0, 80),
       description: description.value.slice(0, 320),
+      ...(spriteVersionNumber === undefined ? {} : { spriteVersionNumber }),
       spritesheetPath: spritesheetPath.value,
     },
   };
@@ -78,12 +97,14 @@ export function validatePetJson(value: unknown): ValidationResult<PetJson> {
 export function validateSpriteDimensions(
   width: number,
   height: number,
+  spriteVersionNumber?: SpriteVersionNumber,
 ): ValidationResult<{ width: number; height: number }> {
-  if (width !== PET_SHEET.width || height !== PET_SHEET.height) {
+  const sheet = getPetSheet(spriteVersionNumber);
+  if (width !== sheet.width || height !== sheet.height) {
     return {
       ok: false,
       error: "invalid_spritesheet_dimensions",
-      message: `Spritesheet must be ${PET_SHEET.width}x${PET_SHEET.height}; got ${width}x${height}.`,
+      message: `Spritesheet must be ${sheet.width}x${sheet.height}; got ${width}x${height}.`,
     };
   }
 
@@ -92,6 +113,7 @@ export function validateSpriteDimensions(
 
 export async function validateSpriteBuffer(
   buffer: Buffer,
+  spriteVersionNumber?: SpriteVersionNumber,
 ): Promise<ValidationResult<{ width: number; height: number }>> {
   let metadata: sharp.Metadata;
   try {
@@ -112,7 +134,11 @@ export async function validateSpriteBuffer(
     };
   }
 
-  return validateSpriteDimensions(metadata.width, metadata.height);
+  return validateSpriteDimensions(
+    metadata.width,
+    metadata.height,
+    spriteVersionNumber,
+  );
 }
 
 export function validateSpriteExtension(
