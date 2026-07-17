@@ -39,8 +39,12 @@ type HomeProps = {
 export async function generateMetadata({
   searchParams,
 }: HomeProps): Promise<Metadata> {
-  const filters = parseGalleryFilters(await searchParams);
-  return buildGalleryPageMetadata(filters);
+  const rawSearchParams = await searchParams;
+  const filters = parseGalleryFilters(rawSearchParams);
+  return buildGalleryPageMetadata(
+    filters,
+    hasGalleryFilterSearchParam(rawSearchParams),
+  );
 }
 
 export default async function Home({ searchParams }: HomeProps) {
@@ -94,4 +98,12 @@ function toPublicPetSummary(pet: PublicPet): PublicPetSummary {
     installCount: pet.installCount,
     likeCount: pet.likeCount,
   };
+}
+
+function hasGalleryFilterSearchParam(
+  searchParams: Record<string, string | string[] | undefined> | undefined,
+): boolean {
+  return ["q", "tags", "kind"].some((key) =>
+    Object.hasOwn(searchParams ?? {}, key),
+  );
 }

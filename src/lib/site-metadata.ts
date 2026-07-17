@@ -230,11 +230,26 @@ function getGalleryResourceAlternateTypes(search: string): AlternateTypes {
   };
 }
 
-export function buildGalleryPageMetadata(filters: GalleryFilters): Metadata {
+export function buildGalleryPageMetadata(
+  filters: GalleryFilters,
+  hasRawGalleryFilterKey: boolean,
+): Metadata {
+  if (!hasRawGalleryFilterKey) {
+    return {};
+  }
+
   const normalizedFilters = normalizeGalleryFilters(filters);
   const search = serializeGalleryFilters(normalizedFilters);
   if (!search) {
-    return {};
+    return {
+      alternates: {
+        canonical: withBasePath("/"),
+      },
+      robots: {
+        index: false,
+        follow: true,
+      },
+    };
   }
 
   const path = `/?${search}`;
@@ -261,6 +276,10 @@ export function buildGalleryPageMetadata(filters: GalleryFilters): Metadata {
       title: buildPageTitle(title),
       description,
       images: getTwitterImages(),
+    },
+    robots: {
+      index: false,
+      follow: true,
     },
   };
 }
