@@ -110,4 +110,83 @@ describe("Yandex Metrika route transitions", () => {
       title: "Encoded pets",
     });
   });
+
+  it("tracks distinct browser URLs whose parsed queries normalize equally", async () => {
+    const firstHref = "https://pets.example/codex-pets/?q=red+fox";
+    const secondHref = "https://pets.example/codex-pets/?q=red%20fox";
+    const thirdHref = "https://pets.example/codex-pets/?q=blue+fox";
+    const location = {
+      href: firstHref,
+      origin: "https://pets.example",
+    };
+    const previousUrlRef = { current: null as string | null };
+    let searchParams = new URLSearchParams("q=red+fox");
+    let previousDependencies: readonly unknown[] | undefined;
+
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubGlobal("window", { location });
+    vi.stubGlobal("document", { title: "Red pets" });
+    testDoubles.usePathname.mockReturnValue("/");
+    testDoubles.useSearchParams.mockImplementation(() => searchParams);
+    testDoubles.useRef.mockReturnValue(previousUrlRef);
+    testDoubles.useEffect.mockImplementation(
+      (effect: () => void, dependencies?: readonly unknown[]) => {
+        const dependenciesChanged =
+          previousDependencies === undefined ||
+          dependencies === undefined ||
+          dependencies.length !== previousDependencies.length ||
+          dependencies.some(
+            (dependency, index) =>
+              !Object.is(dependency, previousDependencies?.[index]),
+          );
+
+        previousDependencies = dependencies;
+        if (dependenciesChanged) {
+          effect();
+        }
+      },
+    );
+    vi.resetModules();
+
+    const { default: YandexMetrika } = await import("@/app/YandexMetrika");
+    const metrikaElement = YandexMetrika() as ReactElement<{
+      children: React.ReactNode;
+    }>;
+    const suspenseElement = Children.toArray(
+      metrikaElement.props.children,
+    )[1] as ReactElement<{
+      children: ReactElement;
+    }>;
+    const renderTracker = suspenseElement.props.children.type as () => null;
+
+    renderTracker();
+    expect(testDoubles.trackPageView).not.toHaveBeenCalled();
+
+    location.href = secondHref;
+    searchParams = new URLSearchParams("q=red%20fox");
+    document.title = "Encoded red pets";
+    renderTracker();
+
+    location.href = thirdHref;
+    searchParams = new URLSearchParams("q=blue+fox");
+    document.title = "Blue pets";
+    renderTracker();
+
+    expect(testDoubles.trackPageView.mock.calls).toEqual([
+      [
+        secondHref,
+        {
+          referer: firstHref,
+          title: "Encoded red pets",
+        },
+      ],
+      [
+        thirdHref,
+        {
+          referer: secondHref,
+          title: "Blue pets",
+        },
+      ],
+    ]);
+  });
 });

@@ -30,8 +30,6 @@ function YandexMetrikaRouteTracker() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const previousUrlRef = useRef<string | null>(null);
-  const queryString = searchParams.toString();
-  const routeUrl = queryString ? `${pathname}?${queryString}` : pathname;
 
   useEffect(() => {
     const currentUrl = window.location.href;
@@ -49,7 +47,7 @@ function YandexMetrikaRouteTracker() {
       referer: transition.referer,
       title: document.title,
     });
-  }, [routeUrl]);
+  }, [pathname, searchParams]);
 
   return null;
 }
