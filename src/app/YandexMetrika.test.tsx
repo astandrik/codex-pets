@@ -36,10 +36,69 @@ vi.mock("@/lib/metrics/yandex", async (importOriginal) => {
   };
 });
 
+async function loadRouteTrackerRender(): Promise<() => null> {
+  const { default: YandexMetrika } = await import("@/app/YandexMetrika");
+  const metrikaElement = YandexMetrika() as ReactElement<{
+    children: React.ReactNode;
+  }>;
+  const suspenseElement = Children.toArray(
+    metrikaElement.props.children,
+  )[1] as ReactElement<{
+    children: ReactElement;
+  }>;
+
+  return suspenseElement.props.children.type as () => null;
+}
+
+function installMutationObserverHarness() {
+  const observers: Array<{
+    active: boolean;
+    callback: MutationCallback;
+    instance: MutationObserver;
+  }> = [];
+
+  class MutationObserverDouble implements MutationObserver {
+    private readonly record: (typeof observers)[number];
+
+    constructor(callback: MutationCallback) {
+      this.record = {
+        active: true,
+        callback,
+        instance: this,
+      };
+      observers.push(this.record);
+    }
+
+    disconnect() {
+      this.record.active = false;
+    }
+
+    observe() {}
+
+    takeRecords(): MutationRecord[] {
+      return [];
+    }
+  }
+
+  vi.stubGlobal("MutationObserver", MutationObserverDouble);
+
+  return {
+    commitTitle(title: string) {
+      document.title = title;
+      for (const observer of observers) {
+        if (observer.active) {
+          observer.callback([], observer.instance);
+        }
+      }
+    },
+  };
+}
+
 afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("Yandex Metrika route transitions", () => {
@@ -87,7 +146,12 @@ describe("Yandex Metrika route transitions", () => {
     testDoubles.useSearchParams.mockReturnValue(
       new URLSearchParams("tag=red%20fox&language=c%2B%2B"),
     );
-    testDoubles.useRef.mockReturnValue({ current: previousUrl });
+    testDoubles.useRef.mockReturnValue({
+      current: {
+        title: "Previous pets",
+        url: previousUrl,
+      },
+    });
     testDoubles.useEffect.mockImplementation((effect) => effect());
     vi.resetModules();
 
@@ -119,7 +183,12 @@ describe("Yandex Metrika route transitions", () => {
       href: firstHref,
       origin: "https://pets.example",
     };
-    const previousUrlRef = { current: null as string | null };
+    const pageViewStateRef = {
+      current: {
+        title: "",
+        url: null as string | null,
+      },
+    };
     let searchParams = new URLSearchParams("q=red+fox");
     let previousDependencies: readonly unknown[] | undefined;
 
@@ -128,7 +197,7 @@ describe("Yandex Metrika route transitions", () => {
     vi.stubGlobal("document", { title: "Red pets" });
     testDoubles.usePathname.mockReturnValue("/");
     testDoubles.useSearchParams.mockImplementation(() => searchParams);
-    testDoubles.useRef.mockReturnValue(previousUrlRef);
+    testDoubles.useRef.mockReturnValue(pageViewStateRef);
     testDoubles.useEffect.mockImplementation(
       (effect: () => void, dependencies?: readonly unknown[]) => {
         const dependenciesChanged =
@@ -188,5 +257,132 @@ describe("Yandex Metrika route transitions", () => {
         },
       ],
     ]);
+  });
+
+  it("waits for the destination title before sending a route hit", async () => {
+    const previousUrl = "https://pets.example/codex-pets/?q=previous";
+    const destinationUrl = "https://pets.example/codex-pets/?q=red%20fox";
+    const titleObserver = installMutationObserverHarness();
+
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubGlobal("window", {
+      location: {
+        href: destinationUrl,
+        origin: "https://pets.example",
+      },
+    });
+    vi.stubGlobal("document", { head: {}, title: "" });
+    testDoubles.usePathname.mockReturnValue("/");
+    testDoubles.useSearchParams.mockReturnValue(
+      new URLSearchParams("q=red%20fox"),
+    );
+    testDoubles.useRef.mockReturnValue({
+      current: {
+        title: 'Codex pets matching "previous"',
+        url: previousUrl,
+      },
+    });
+    testDoubles.useEffect.mockImplementation((effect) => effect());
+    vi.resetModules();
+
+    const renderTracker = await loadRouteTrackerRender();
+    renderTracker();
+
+    expect(testDoubles.trackPageView).not.toHaveBeenCalled();
+
+    titleObserver.commitTitle('Codex pets matching "red fox"');
+
+    expect(testDoubles.trackPageView).toHaveBeenCalledOnce();
+    expect(testDoubles.trackPageView).toHaveBeenCalledWith(destinationUrl, {
+      referer: previousUrl,
+      title: 'Codex pets matching "red fox"',
+    });
+  });
+
+  it("cancels a pending title wait when navigation is superseded", async () => {
+    const firstUrl = "https://pets.example/codex-pets/?q=previous";
+    const supersededUrl = "https://pets.example/codex-pets/?q=red%20fox";
+    const finalUrl = "https://pets.example/codex-pets/?q=blue%20fox";
+    const location = {
+      href: supersededUrl,
+      origin: "https://pets.example",
+    };
+    const titleObserver = installMutationObserverHarness();
+    const pageViewStateRef = {
+      current: {
+        title: 'Codex pets matching "previous"',
+        url: firstUrl,
+      },
+    };
+    let searchParams = new URLSearchParams("q=red%20fox");
+    let cleanup: (() => void) | undefined;
+
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubGlobal("window", { location });
+    vi.stubGlobal("document", { head: {}, title: "" });
+    testDoubles.usePathname.mockReturnValue("/");
+    testDoubles.useSearchParams.mockImplementation(() => searchParams);
+    testDoubles.useRef.mockReturnValue(pageViewStateRef);
+    testDoubles.useEffect.mockImplementation((effect) => {
+      cleanup?.();
+      const nextCleanup = effect();
+      cleanup = typeof nextCleanup === "function" ? nextCleanup : undefined;
+    });
+    vi.resetModules();
+
+    const renderTracker = await loadRouteTrackerRender();
+    renderTracker();
+
+    location.href = finalUrl;
+    searchParams = new URLSearchParams("q=blue%20fox");
+    renderTracker();
+
+    titleObserver.commitTitle('Codex pets matching "blue fox"');
+
+    expect(testDoubles.trackPageView).toHaveBeenCalledOnce();
+    expect(testDoubles.trackPageView).toHaveBeenCalledWith(finalUrl, {
+      referer: supersededUrl,
+      title: 'Codex pets matching "blue fox"',
+    });
+  });
+
+  it("uses a bounded fallback when the destination title stays unchanged", async () => {
+    const previousUrl = "https://pets.example/codex-pets/about";
+    const destinationUrl = "https://pets.example/codex-pets/terms";
+    const sharedTitle = "Codex Pets";
+
+    vi.useFakeTimers();
+    installMutationObserverHarness();
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubGlobal("window", {
+      location: {
+        href: destinationUrl,
+        origin: "https://pets.example",
+      },
+    });
+    vi.stubGlobal("document", { head: {}, title: sharedTitle });
+    testDoubles.usePathname.mockReturnValue("/terms");
+    testDoubles.useSearchParams.mockReturnValue(new URLSearchParams());
+    testDoubles.useRef.mockReturnValue({
+      current: {
+        title: sharedTitle,
+        url: previousUrl,
+      },
+    });
+    testDoubles.useEffect.mockImplementation((effect) => effect());
+    vi.resetModules();
+
+    const renderTracker = await loadRouteTrackerRender();
+    renderTracker();
+
+    expect(testDoubles.trackPageView).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(5_000);
+
+    expect(testDoubles.trackPageView).toHaveBeenCalledOnce();
+    expect(testDoubles.trackPageView).toHaveBeenCalledWith(destinationUrl, {
+      referer: previousUrl,
+      title: sharedTitle,
+    });
   });
 });

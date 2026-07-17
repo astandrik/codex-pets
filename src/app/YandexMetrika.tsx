@@ -11,6 +11,12 @@ import {
 } from "@/lib/metrics/yandex";
 
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const PAGE_TITLE_WAIT_TIMEOUT_MS = 5_000;
+
+type PageViewState = {
+  title: string;
+  url: string | null;
+};
 
 export function getPageViewTransition(
   previousUrl: string | null,
@@ -26,27 +32,118 @@ export function getPageViewTransition(
   };
 }
 
+function hasEquivalentPageContent(
+  previousUrl: string,
+  currentUrl: string,
+): boolean {
+  const previous = new URL(previousUrl);
+  const current = new URL(currentUrl);
+
+  return (
+    previous.pathname === current.pathname &&
+    previous.searchParams.toString() === current.searchParams.toString()
+  );
+}
+
+function waitForPageTitle(
+  previousTitle: string,
+  onReady: (title: string) => void,
+): () => void {
+  let observer: MutationObserver | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let settled = false;
+
+  function cleanup() {
+    observer?.disconnect();
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  function deliverChangedTitle(): boolean {
+    const title = document.title;
+    if (settled || !title || title === previousTitle) {
+      return false;
+    }
+
+    settled = true;
+    cleanup();
+    onReady(title);
+    return true;
+  }
+
+  observer = new MutationObserver(() => {
+    deliverChangedTitle();
+  });
+  observer.observe(document.head, {
+    characterData: true,
+    childList: true,
+    subtree: true,
+  });
+
+  if (!deliverChangedTitle()) {
+    timeoutId = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      onReady(document.title);
+    }, PAGE_TITLE_WAIT_TIMEOUT_MS);
+  }
+
+  return () => {
+    settled = true;
+    cleanup();
+  };
+}
+
 function YandexMetrikaRouteTracker() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const previousUrlRef = useRef<string | null>(null);
+  const pageViewStateRef = useRef<PageViewState>({
+    title: "",
+    url: null,
+  });
 
   useEffect(() => {
     const currentUrl = window.location.href;
-    const transition = getPageViewTransition(
-      previousUrlRef.current,
-      currentUrl,
-    );
-    previousUrlRef.current = currentUrl;
+    const pageViewState = pageViewStateRef.current;
+    const previousUrl = pageViewState.url;
+    const transition = getPageViewTransition(previousUrl, currentUrl);
+    pageViewState.url = currentUrl;
+
+    if (previousUrl === null) {
+      pageViewState.title = document.title;
+      return;
+    }
 
     if (transition === null) {
       return;
     }
 
-    trackPageView(transition.url, {
-      referer: transition.referer,
-      title: document.title,
-    });
+    const { referer, url } = transition;
+
+    function sendPageView(title: string) {
+      pageViewState.title = title;
+      trackPageView(url, {
+        referer,
+        title,
+      });
+    }
+
+    const currentTitle = document.title;
+    if (
+      currentTitle &&
+      (currentTitle !== pageViewState.title ||
+        hasEquivalentPageContent(previousUrl, currentUrl))
+    ) {
+      sendPageView(currentTitle);
+      return;
+    }
+
+    return waitForPageTitle(pageViewState.title, sendPageView);
   }, [pathname, searchParams]);
 
   return null;
