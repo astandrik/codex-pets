@@ -124,7 +124,7 @@ describe("gallery page metadata", () => {
 
     expect(metadata.title).toBe("Codex pets tagged #space");
     expect(metadata.description).toContain("tagged #space");
-    expect(metadata.alternates?.canonical).toBe("/codex-pets/?tags=space");
+    expect(metadata.alternates?.canonical).toBe("/codex-pets");
     expect(metadata.alternates?.types).toEqual({
       "application/json": [
         {
@@ -148,7 +148,7 @@ describe("gallery page metadata", () => {
     vi.unstubAllEnvs();
   });
 
-  it("builds canonical metadata for combined gallery filters", async () => {
+  it("keeps combined gallery resources filtered while canonicalizing the homepage", async () => {
     vi.resetModules();
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://example.test");
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "");
@@ -163,9 +163,7 @@ describe("gallery page metadata", () => {
     expect(metadata.title).toBe(
       'Object Codex pets matching "green" tagged #space and #terminal',
     );
-    expect(metadata.alternates?.canonical).toBe(
-      '/?q=green&kind=object&tags=space,terminal',
-    );
+    expect(metadata.alternates?.canonical).toBe("/");
     expect(metadata.alternates?.types).toMatchObject({
       "application/json": [
         {

@@ -260,7 +260,7 @@ export function buildGalleryPageMetadata(
     title,
     description,
     alternates: {
-      canonical: withBasePath(path),
+      canonical: withBasePath("/"),
       types: getGalleryResourceAlternateTypes(search),
     },
     openGraph: {
