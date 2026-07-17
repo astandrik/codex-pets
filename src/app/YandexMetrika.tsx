@@ -34,7 +34,7 @@ function YandexMetrikaRouteTracker() {
   const routeUrl = queryString ? `${pathname}?${queryString}` : pathname;
 
   useEffect(() => {
-    const currentUrl = new URL(routeUrl, window.location.origin).href;
+    const currentUrl = window.location.href;
     const transition = getPageViewTransition(
       previousUrlRef.current,
       currentUrl,
