@@ -45,6 +45,8 @@ next-env.d.ts
 .turbo/
 .eslintcache
 .playwright-mcp/
+/.superpowers/
+/.worktrees/
 
 # IDE
 .idea/
