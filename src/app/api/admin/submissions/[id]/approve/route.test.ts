@@ -150,10 +150,118 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     expect(response.status).toBe(200);
     expect(infoSpy).toHaveBeenCalledWith("[codex-pets][indexnow]", {
       slug: "boba",
+      status: "submitted",
       httpStatus: 200,
       urlCount: 1,
     });
     expect(JSON.stringify(infoSpy.mock.calls)).not.toContain("pets.example");
+    expect(JSON.stringify(infoSpy.mock.calls)).not.toContain("indexnow-key-123");
+
+    infoSpy.mockRestore();
+  });
+
+  it("logs failed IndexNow submissions without sensitive request data", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce({
+      id: "pet_1",
+      slug: "boba",
+      displayName: "Boba",
+      description: "desc",
+      spritesheetUrl: "https://assets/pets/boba.webp",
+      petJsonUrl: "https://assets/pets/boba.json",
+      zipUrl: "https://assets/pets/boba.zip",
+      spritesheetExt: "webp",
+      kind: "creature",
+      tags: [],
+      status: "approved",
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString(),
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    });
+    vi.mocked(notifyIndexNowOfApprovedPet).mockResolvedValueOnce({
+      status: "failed",
+      httpStatus: 429,
+      error: "IndexNow rejected the request",
+      urls: ["https://pets.example/pets/boba"],
+    });
+
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ id: "pet_1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(warnSpy).toHaveBeenCalledWith("[codex-pets][indexnow]", {
+      slug: "boba",
+      status: "failed",
+      httpStatus: 429,
+      urlCount: 1,
+    });
+    const logPayload = JSON.stringify(warnSpy.mock.calls);
+    expect(logPayload).not.toContain("pets.example");
+    expect(logPayload).not.toContain("indexnow-key-123");
+
+    warnSpy.mockRestore();
+  });
+
+  it("logs skipped IndexNow submissions without sensitive request data", async () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce({
+      id: "pet_1",
+      slug: "boba",
+      displayName: "Boba",
+      description: "desc",
+      spritesheetUrl: "https://assets/pets/boba.webp",
+      petJsonUrl: "https://assets/pets/boba.json",
+      zipUrl: "https://assets/pets/boba.zip",
+      spritesheetExt: "webp",
+      kind: "creature",
+      tags: [],
+      status: "approved",
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString(),
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    });
+    vi.mocked(notifyIndexNowOfApprovedPet).mockResolvedValueOnce({
+      status: "skipped",
+      reason: "missing-key",
+      urls: ["https://pets.example/pets/boba"],
+    });
+
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ id: "pet_1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(infoSpy).toHaveBeenCalledWith("[codex-pets][indexnow]", {
+      slug: "boba",
+      status: "skipped",
+      reason: "missing-key",
+    });
+    const logPayload = JSON.stringify(infoSpy.mock.calls);
+    expect(logPayload).not.toContain("pets.example");
+    expect(logPayload).not.toContain("indexnow-key-123");
 
     infoSpy.mockRestore();
   });

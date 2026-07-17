@@ -33,14 +33,24 @@ export async function POST(
   if (indexNow.status === "submitted") {
     console.info("[codex-pets][indexnow]", {
       slug: pet.slug,
+      status: "submitted",
       httpStatus: indexNow.httpStatus,
       urlCount: indexNow.urls.length,
     });
   } else if (indexNow.status === "failed") {
     console.warn("[codex-pets][indexnow]", {
-      httpStatus: indexNow.httpStatus,
-      error: indexNow.error,
-      urls: indexNow.urls,
+      slug: pet.slug,
+      status: "failed",
+      ...(indexNow.httpStatus !== undefined
+        ? { httpStatus: indexNow.httpStatus }
+        : {}),
+      urlCount: indexNow.urls.length,
+    });
+  } else {
+    console.info("[codex-pets][indexnow]", {
+      slug: pet.slug,
+      status: "skipped",
+      reason: indexNow.reason,
     });
   }
 
