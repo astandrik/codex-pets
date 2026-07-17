@@ -44,6 +44,7 @@ export async function POST(
       ...(indexNow.httpStatus !== undefined
         ? { httpStatus: indexNow.httpStatus }
         : {}),
+      ...(indexNow.error !== undefined ? { error: "request_failed" } : {}),
       urlCount: indexNow.urls.length,
     });
   } else {

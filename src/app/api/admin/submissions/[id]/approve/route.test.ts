@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/auth/session", () => ({
   getCurrentPrincipal: vi.fn(),
@@ -24,8 +24,13 @@ import { moderatePet } from "@/lib/pets/repository";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 describe("POST /api/admin/submissions/[id]/approve", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("INDEXNOW_KEY", "indexnow-key-123");
     vi.mocked(notifyIndexNowOfApprovedPet).mockResolvedValue({
       status: "skipped",
       reason: "missing-key",
@@ -192,7 +197,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     vi.mocked(notifyIndexNowOfApprovedPet).mockResolvedValueOnce({
       status: "failed",
       httpStatus: 429,
-      error: "IndexNow rejected the request",
+      error: `IndexNow rejected https://pets.example/pets/boba with ${process.env.INDEXNOW_KEY}`,
       urls: ["https://pets.example/pets/boba"],
     });
 
@@ -205,6 +210,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
       slug: "boba",
       status: "failed",
       httpStatus: 429,
+      error: "request_failed",
       urlCount: 1,
     });
     const logPayload = JSON.stringify(warnSpy.mock.calls);
