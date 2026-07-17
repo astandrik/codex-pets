@@ -25,5 +25,5 @@ Codex Pets exposes its registry through MCP, JSON, TOON, OpenAPI, sitemap, llms.
 - Gallery: ${toPublicUrl("/")}
 - Developer resources: ${toPublicUrl("/developers")}
 - Best Codex pets guide: ${toPublicUrl("/guides/best-codex-pets-for-ai-coding-agents")}
-`);
+`, { canonicalPath: "/guides/codex-pets-vs-vscode-pets" });
 }

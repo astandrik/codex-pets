@@ -24,5 +24,7 @@ export async function GET(): Promise<Response> {
     await getApprovedPetsSnapshot(),
   );
 
-  return markdownResponse(buildBestCodexPetsGuideMarkdown(sections));
+  return markdownResponse(buildBestCodexPetsGuideMarkdown(sections), {
+    canonicalPath: "/guides/best-codex-pets-for-ai-coding-agents",
+  });
 }

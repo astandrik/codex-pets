@@ -110,6 +110,27 @@ describe("markdown agent discovery routes", () => {
   });
 });
 
+describe("markdown route indexing headers", () => {
+  it("canonicalizes a static markdown twin and noindexes a standalone document", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+
+    const { GET: getIndexMarkdown } = await import("@/app/index.md/route");
+    const { GET: getAuthMarkdown } = await import("@/app/auth.md/route");
+    const indexResponse = getIndexMarkdown();
+    const authResponse = getAuthMarkdown();
+
+    expect(indexResponse.headers.get("Link")).toContain(
+      '<https://pets.example/>; rel="canonical"',
+    );
+    expect(indexResponse.headers.get("X-Robots-Tag")).toBeNull();
+    expect(authResponse.headers.get("Link")).not.toContain('rel="canonical"');
+    expect(authResponse.headers.get("X-Robots-Tag")).toBe("noindex, follow");
+
+    vi.unstubAllEnvs();
+  });
+});
+
 describe("guide markdown routes", () => {
   it.each([
     {

@@ -25,5 +25,5 @@ OpenPets documents a local-first desktop app, MCP server, CLI, and assistant int
 - Gallery: ${toPublicUrl("/")}
 - Agent access: ${toPublicUrl("/agents")}
 - Best Codex pets guide: ${toPublicUrl("/guides/best-codex-pets-for-ai-coding-agents")}
-`);
+`, { canonicalPath: "/guides/codex-pets-vs-openpets" });
 }

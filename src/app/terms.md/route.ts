@@ -3,5 +3,5 @@ import { buildTermsMarkdown, markdownResponse } from "@/lib/agent-markdown";
 export const runtime = "nodejs";
 
 export function GET(): Response {
-  return markdownResponse(buildTermsMarkdown());
+  return markdownResponse(buildTermsMarkdown(), { canonicalPath: "/terms" });
 }

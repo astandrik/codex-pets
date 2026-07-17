@@ -6,5 +6,7 @@ import {
 export const runtime = "nodejs";
 
 export function GET(): Response {
-  return markdownResponse(buildDevelopersMarkdown());
+  return markdownResponse(buildDevelopersMarkdown(), {
+    canonicalPath: "/developers",
+  });
 }
