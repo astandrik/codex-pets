@@ -522,6 +522,82 @@ describe("Yandex Metrika route transitions", () => {
     });
   });
 
+  it.each([
+    ["q", "q=red", 'Codex pets matching "red"', ""],
+    ["tags", "tags=space", "Codex pets tagged #space", ""],
+    ["kind", "kind=character", "Character Codex pets", ""],
+    [
+      "q with a base path",
+      "q=red",
+      'Codex pets matching "red"',
+      "/codex-pets",
+    ],
+  ])(
+    "waits for query-bearing gallery metadata before tracking %s filters",
+    async (_filter, query, destinationTitle, basePath) => {
+      const galleryUrl = `https://pets.example${basePath || "/"}`;
+      const previousUrl = galleryUrl;
+      const destinationUrl = `${galleryUrl}?${query}`;
+      const titleObserver = installMutationObserverHarness();
+      const pageViewMetadataElement =
+        titleObserver.getPageViewMetadataElement();
+      const location = {
+        href: previousUrl,
+        origin: "https://pets.example",
+      };
+      const pageViewStateRef = {
+        current: {
+          title: "",
+          url: null as string | null,
+        },
+      };
+      let searchParams = new URLSearchParams();
+      const effectHarness = installEffectHarness();
+
+      vi.useFakeTimers();
+      vi.stubEnv("NODE_ENV", "production");
+      vi.stubEnv("NEXT_PUBLIC_BASE_PATH", basePath);
+      vi.stubGlobal("window", { location });
+      vi.stubGlobal("document", {
+        head: {},
+        querySelector: (selector: string) =>
+          selector === 'meta[name="codex-pets-page-view"]'
+            ? pageViewMetadataElement
+            : null,
+        title: "Codex Pets",
+      });
+      titleObserver.setPageViewMetadata(previousUrl, "Codex Pets");
+      testDoubles.usePathname.mockReturnValue("/");
+      testDoubles.useSearchParams.mockImplementation(() => searchParams);
+      testDoubles.useRef.mockReturnValue(pageViewStateRef);
+      vi.resetModules();
+
+      const renderTracker = await loadRouteTrackerRender();
+      effectHarness.render(renderTracker);
+
+      location.href = destinationUrl;
+      searchParams = new URLSearchParams(query);
+      effectHarness.render(renderTracker);
+
+      expect(testDoubles.trackPageView).not.toHaveBeenCalled();
+
+      titleObserver.queuePageViewMetadata(
+        destinationUrl,
+        destinationTitle,
+      );
+      titleObserver.flushQueuedTitles();
+      vi.advanceTimersByTime(5_000);
+
+      expect(testDoubles.trackPageView).toHaveBeenCalledOnce();
+      expect(testDoubles.trackPageView).toHaveBeenCalledWith(destinationUrl, {
+        referer: previousUrl,
+        title: destinationTitle,
+      });
+
+      effectHarness.unmount();
+    },
+  );
+
   it("waits for the destination title to settle before sending a route hit", async () => {
     const previousUrl = "https://pets.example/codex-pets/?q=previous";
     const destinationUrl = "https://pets.example/codex-pets/?q=red%20fox";

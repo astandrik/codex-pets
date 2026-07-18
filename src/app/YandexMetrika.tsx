@@ -14,10 +14,12 @@ import {
   parsePageViewMetadata,
   type PageViewMetadata,
 } from "@/lib/metrics/page-view-metadata";
+import { withBasePath } from "@/lib/base-path";
 
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const PAGE_TITLE_SETTLE_DELAY_MS = 250;
 const PAGE_TITLE_WAIT_TIMEOUT_MS = 5_000;
+const GALLERY_CONTENT_SEARCH_PARAMS = ["q", "tags", "kind"] as const;
 
 type PageViewState = {
   runtime?: PageViewRuntime;
@@ -75,10 +77,20 @@ function hasMatchingPageViewMetadata(
   const baseUrl = window.location.origin;
   const pageView = new URL(pageViewUrl, baseUrl);
   const metadata = new URL(metadataUrl, baseUrl);
+  const galleryPathname = withBasePath("/");
+  const isGalleryPage =
+    pageView.pathname === galleryPathname ||
+    (galleryPathname !== "/" &&
+      pageView.pathname === `${galleryPathname}/`);
+  const hasContentSearchParam =
+    isGalleryPage &&
+    GALLERY_CONTENT_SEARCH_PARAMS.some((key) =>
+      pageView.searchParams.has(key),
+    );
 
   return (
     pageView.pathname === metadata.pathname &&
-    (metadata.search === "" ||
+    ((!hasContentSearchParam && metadata.search === "") ||
       pageView.searchParams.toString() === metadata.searchParams.toString())
   );
 }
