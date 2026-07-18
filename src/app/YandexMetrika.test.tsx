@@ -468,6 +468,60 @@ describe("Yandex Metrika route transitions", () => {
     });
   });
 
+  it("matches query-bearing static URLs to path-only page-view metadata", async () => {
+    const previousUrl = "https://pets.example/";
+    const destinationUrl =
+      "https://pets.example/about?utm_source=newsletter";
+    const previousTitle = "Codex Pets";
+    const destinationTitle = "About Codex Pets - Codex Pets";
+    const titleObserver = installMutationObserverHarness();
+    const pageViewMetadataElement =
+      titleObserver.getPageViewMetadataElement();
+
+    vi.useFakeTimers();
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubGlobal("window", {
+      location: {
+        href: destinationUrl,
+        origin: "https://pets.example",
+      },
+    });
+    vi.stubGlobal("document", {
+      head: {},
+      querySelector: (selector: string) =>
+        selector === 'meta[name="codex-pets-page-view"]'
+          ? pageViewMetadataElement
+          : null,
+      title: destinationTitle,
+    });
+    titleObserver.setPageViewMetadata(
+      "https://pets.example/about",
+      destinationTitle,
+    );
+    testDoubles.usePathname.mockReturnValue("/about");
+    testDoubles.useSearchParams.mockReturnValue(
+      new URLSearchParams("utm_source=newsletter"),
+    );
+    testDoubles.useRef.mockReturnValue({
+      current: {
+        title: previousTitle,
+        url: previousUrl,
+      },
+    });
+    testDoubles.useEffect.mockImplementation((effect) => effect());
+    vi.resetModules();
+
+    const renderTracker = await loadRouteTrackerRender();
+    renderTracker();
+    vi.advanceTimersByTime(5_000);
+
+    expect(testDoubles.trackPageView).toHaveBeenCalledOnce();
+    expect(testDoubles.trackPageView).toHaveBeenCalledWith(destinationUrl, {
+      referer: previousUrl,
+      title: destinationTitle,
+    });
+  });
+
   it("waits for the destination title to settle before sending a route hit", async () => {
     const previousUrl = "https://pets.example/codex-pets/?q=previous";
     const destinationUrl = "https://pets.example/codex-pets/?q=red%20fox";

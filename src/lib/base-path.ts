@@ -19,7 +19,11 @@ export function withBasePath(path: string): string {
     return path;
   }
 
-  if (path === BASE_PATH || path.startsWith(`${BASE_PATH}/`)) {
+  if (
+    path === BASE_PATH ||
+    path.startsWith(`${BASE_PATH}/`) ||
+    path.startsWith(`${BASE_PATH}?`)
+  ) {
     return path;
   }
 

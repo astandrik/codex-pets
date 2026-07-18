@@ -18,6 +18,9 @@ describe("withBasePath", () => {
     expect(withBasePath("/submit")).toBe("/codex-pets/submit");
     expect(withBasePath("/")).toBe("/codex-pets");
     expect(withBasePath("/?q=red+fox")).toBe("/codex-pets?q=red+fox");
+    expect(withBasePath("/codex-pets?q=red+fox")).toBe(
+      "/codex-pets?q=red+fox",
+    );
     expect(withBasePath("/codex-pets/api/pets")).toBe("/codex-pets/api/pets");
 
     vi.unstubAllEnvs();

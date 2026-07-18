@@ -68,6 +68,21 @@ function hasEquivalentPageContent(
   );
 }
 
+function hasMatchingPageViewMetadata(
+  pageViewUrl: string,
+  metadataUrl: string,
+): boolean {
+  const baseUrl = window.location.origin;
+  const pageView = new URL(pageViewUrl, baseUrl);
+  const metadata = new URL(metadataUrl, baseUrl);
+
+  return (
+    pageView.pathname === metadata.pathname &&
+    (metadata.search === "" ||
+      pageView.searchParams.toString() === metadata.searchParams.toString())
+  );
+}
+
 type PageViewMetadataElement = HTMLMetaElement;
 
 function asPageViewMetadataElement(
@@ -329,7 +344,7 @@ function capturePageViewMetadata(
   const pageView = pageViewState.runtime?.pendingPageViews.find(
     (candidate) =>
       candidate.readyTitle === null &&
-      hasEquivalentPageContent(candidate.url, metadata.url),
+      hasMatchingPageViewMetadata(candidate.url, metadata.url),
   );
   if (pageView) {
     markPageViewReady(pageViewState, pageView, metadata.title);
