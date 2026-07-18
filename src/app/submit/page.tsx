@@ -7,6 +7,7 @@ import { getCurrentPrincipal } from "@/lib/auth/session";
 import { withBasePath } from "@/lib/base-path";
 import {
   getOpenGraphImages,
+  getPageViewOtherMetadata,
   getTwitterImages,
   SITE_NAME,
 } from "@/lib/site-metadata";
@@ -19,6 +20,7 @@ const submitDescription =
 export const metadata: Metadata = {
   title: "Submit a Codex pet",
   description: submitDescription,
+  other: getPageViewOtherMetadata("/submit", "Submit a Codex pet"),
   alternates: {
     canonical: withBasePath("/submit"),
   },

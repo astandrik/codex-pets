@@ -141,7 +141,13 @@ describe("gallery page metadata", () => {
     });
     expect(metadata.openGraph).toMatchObject({
       title: "Codex pets tagged #space - Codex Pets",
-      url: "/codex-pets/?tags=space",
+      url: "/codex-pets?tags=space",
+    });
+    expect(metadata.other).toEqual({
+      "codex-pets-page-view": JSON.stringify({
+        title: "Codex pets tagged #space",
+        url: "/codex-pets?tags=space",
+      }),
     });
     expect(metadata.robots).toEqual({ index: false, follow: true });
 
@@ -180,26 +186,55 @@ describe("gallery page metadata", () => {
       title:
         'Object Codex pets matching "green" tagged #space and #terminal - Codex Pets',
     });
+    expect(metadata.other).toEqual({
+      "codex-pets-page-view": JSON.stringify({
+        title:
+          'Object Codex pets matching "green" tagged #space and #terminal',
+        url: "/?q=green&kind=object&tags=space,terminal",
+      }),
+    });
     expect(metadata.robots).toEqual({ index: false, follow: true });
 
     vi.unstubAllEnvs();
   });
 
   it.each([
-    ["empty query", { q: "" }],
-    ["empty tags", { tags: "" }],
-    ["default kind", { kind: "all" }],
-    ["invalid kind", { kind: "not-a-kind" }],
+    ["empty query", { q: "" }, "/?q=", "/codex-pets?q="],
+    ["empty tags", { tags: "" }, "/?tags=", "/codex-pets?tags="],
+    ["default kind", { kind: "all" }, "/?kind=all", "/codex-pets?kind=all"],
+    [
+      "invalid kind",
+      { kind: "not-a-kind" },
+      "/?kind=not-a-kind",
+      "/codex-pets?kind=not-a-kind",
+    ],
   ])(
     "marks the canonical homepage noindex when a raw %s filter key normalizes away",
-    async (_caseName, rawSearchParams) => {
+    async (
+      _caseName,
+      rawSearchParams,
+      pageViewPath,
+      expectedPageViewPath,
+    ) => {
       vi.resetModules();
       vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://example.test/codex-pets");
       vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/codex-pets");
 
       const { buildGalleryPageMetadata } = await import("@/lib/site-metadata");
 
-      expect(buildGalleryPageMetadata(parseGalleryFilters(rawSearchParams), true)).toEqual({
+      expect(
+        buildGalleryPageMetadata(
+          parseGalleryFilters(rawSearchParams),
+          true,
+          pageViewPath,
+        ),
+      ).toEqual({
+        other: {
+          "codex-pets-page-view": JSON.stringify({
+            title: "Codex Pets - Animated pet packs for AI coding agents",
+            url: expectedPageViewPath,
+          }),
+        },
         alternates: { canonical: "/codex-pets" },
         robots: { index: false, follow: true },
       });
@@ -216,6 +251,27 @@ describe("gallery page metadata", () => {
     expect(
       buildGalleryPageMetadata({ query: "", kind: "all", tags: [] }, false),
     ).toEqual({});
+  });
+
+  it("correlates unrelated query changes without changing index metadata", async () => {
+    vi.resetModules();
+
+    const { buildGalleryPageMetadata } = await import("@/lib/site-metadata");
+
+    expect(
+      buildGalleryPageMetadata(
+        { query: "", kind: "all", tags: [] },
+        false,
+        "/?utm_source=agent",
+      ),
+    ).toEqual({
+      other: {
+        "codex-pets-page-view": JSON.stringify({
+          title: "Codex Pets - Animated pet packs for AI coding agents",
+          url: "/?utm_source=agent",
+        }),
+      },
+    });
   });
 });
 

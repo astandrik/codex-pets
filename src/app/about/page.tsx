@@ -13,6 +13,7 @@ import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import { serializeJsonLd } from "@/lib/json-ld";
 import {
   getOpenGraphImages,
+  getPageViewOtherMetadata,
   getTwitterImages,
   SITE_NAME,
 } from "@/lib/site-metadata";
@@ -67,6 +68,7 @@ const faqs = [
 export const metadata: Metadata = {
   title: "About Codex Pets",
   description: ABOUT_DESCRIPTION,
+  other: getPageViewOtherMetadata("/about", "About Codex Pets"),
   alternates: {
     canonical: withBasePath("/about"),
   },

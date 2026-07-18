@@ -12,6 +12,7 @@ import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import { serializeJsonLd } from "@/lib/json-ld";
 import {
   getOpenGraphImages,
+  getPageViewOtherMetadata,
   getTwitterImages,
   SITE_NAME,
 } from "@/lib/site-metadata";
@@ -23,6 +24,10 @@ const MCP_GUIDE_PRIMARY_CTA_PATH = "/mcp.md";
 export const metadata: Metadata = {
   title: "Codex Pets MCP integration guide",
   description: GUIDE_DESCRIPTION,
+  other: getPageViewOtherMetadata(
+    "/guides/codex-pets-mcp-integration-guide",
+    "Codex Pets MCP integration guide",
+  ),
   alternates: {
     canonical: withBasePath("/guides/codex-pets-mcp-integration-guide"),
   },

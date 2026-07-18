@@ -25,7 +25,11 @@ import { getPublicUserProfileBySlug } from "@/lib/auth/repository";
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import { serializeJsonLd } from "@/lib/json-ld";
 import { listApprovedPetsForOwner } from "@/lib/pets/repository";
-import { buildPageTitle, SITE_NAME } from "@/lib/site-metadata";
+import {
+  buildPageTitle,
+  getPageViewOtherMetadata,
+  SITE_NAME,
+} from "@/lib/site-metadata";
 import "./user-profile.scss";
 
 export const runtime = "nodejs";
@@ -53,6 +57,10 @@ export async function generateMetadata({
   if (!profile) {
     return {
       title: "User not found",
+      other: getPageViewOtherMetadata(
+        `/users/${encodeURIComponent(profileSlug)}`,
+        "User not found",
+      ),
       robots: {
         index: false,
         follow: false,
@@ -68,6 +76,7 @@ export async function generateMetadata({
   return {
     title: profile.displayName,
     description,
+    other: getPageViewOtherMetadata(path, profile.displayName),
     alternates: {
       canonical: withBasePath(path),
     },

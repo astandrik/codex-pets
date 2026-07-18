@@ -18,6 +18,7 @@ import {
 import { getCurrentPrincipal } from "@/lib/auth/session";
 import { withBasePath } from "@/lib/base-path";
 import { listGenerationRequestsForUser } from "@/lib/pets/generation-requests-repository";
+import { getPageViewOtherMetadata } from "@/lib/site-metadata";
 
 function EmptyIcon() {
   return <Picture width={64} height={64} />;
@@ -29,6 +30,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "My pet requests",
   description: "Track Codex pet generation requests for your account.",
+  other: getPageViewOtherMetadata("/my-requests", "My pet requests"),
   robots: {
     index: false,
     follow: false,

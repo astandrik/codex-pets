@@ -7,6 +7,10 @@ import {
   type GalleryFilters,
 } from "@/lib/pets/gallery-filters";
 import type { PublicPet } from "@/lib/pets/types";
+import {
+  PAGE_VIEW_METADATA_NAME,
+  serializePageViewMetadata,
+} from "@/lib/metrics/page-view-metadata";
 
 export const SITE_NAME = "Codex Pets";
 export const SITE_TAGLINE = "Animated pet packs for AI coding agents";
@@ -55,9 +59,31 @@ type SocialImageOptions = {
 
 type TwitterImageInput = string | SocialImage;
 type AlternateTypes = NonNullable<NonNullable<Metadata["alternates"]>["types"]>;
+type PageViewOtherMetadataOptions = {
+  applyTitleTemplate?: boolean;
+};
 
 export function buildPageTitle(title: string): string {
   return `${title} - ${SITE_NAME}`;
+}
+
+export function getPageViewOtherMetadata(
+  path: string,
+  pageTitle: string,
+  options: PageViewOtherMetadataOptions = {},
+): NonNullable<Metadata["other"]> {
+  const { applyTitleTemplate = true } = options;
+  const title =
+    applyTitleTemplate && pageTitle !== SITE_TITLE
+      ? buildPageTitle(pageTitle)
+      : pageTitle;
+
+  return {
+    [PAGE_VIEW_METADATA_NAME]: serializePageViewMetadata({
+      title,
+      url: withBasePath(path),
+    }),
+  };
 }
 
 export function getOpenGraphImages(
@@ -233,15 +259,27 @@ function getGalleryResourceAlternateTypes(search: string): AlternateTypes {
 export function buildGalleryPageMetadata(
   filters: GalleryFilters,
   hasRawGalleryFilterKey: boolean,
+  pageViewPath?: string,
 ): Metadata {
   if (!hasRawGalleryFilterKey) {
-    return {};
+    return pageViewPath && pageViewPath !== "/"
+      ? {
+          other: getPageViewOtherMetadata(pageViewPath, SITE_TITLE, {
+            applyTitleTemplate: false,
+          }),
+        }
+      : {};
   }
 
   const normalizedFilters = normalizeGalleryFilters(filters);
   const search = serializeGalleryFilters(normalizedFilters);
   if (!search) {
     return {
+      other: getPageViewOtherMetadata(
+        pageViewPath ?? "/",
+        SITE_TITLE,
+        { applyTitleTemplate: false },
+      ),
       alternates: {
         canonical: withBasePath("/"),
       },
@@ -259,6 +297,9 @@ export function buildGalleryPageMetadata(
   return {
     title,
     description,
+    other: getPageViewOtherMetadata(pageViewPath ?? path, title, {
+      applyTitleTemplate: false,
+    }),
     alternates: {
       canonical: withBasePath("/"),
       types: getGalleryResourceAlternateTypes(search),

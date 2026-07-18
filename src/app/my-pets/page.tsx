@@ -19,6 +19,7 @@ function EmptyIcon() {
 import { PetCard } from "@/components/PetCard/PetCard";
 import { getCurrentPrincipal } from "@/lib/auth/session";
 import { listPetsForOwner } from "@/lib/pets/repository";
+import { getPageViewOtherMetadata } from "@/lib/site-metadata";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "My pets",
   description: "Track Codex pet submissions for your account.",
+  other: getPageViewOtherMetadata("/my-pets", "My pets"),
   robots: {
     index: false,
     follow: false,

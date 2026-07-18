@@ -18,6 +18,7 @@ import { serializeJsonLd } from "@/lib/json-ld";
 import {
   getAgentResourceAlternateTypes,
   getOpenGraphImages,
+  getPageViewOtherMetadata,
   getTwitterImages,
   SITE_NAME,
 } from "@/lib/site-metadata";
@@ -28,6 +29,7 @@ const AGENTS_DESCRIPTION =
 export const metadata: Metadata = {
   title: "Agent Access",
   description: AGENTS_DESCRIPTION,
+  other: getPageViewOtherMetadata("/agents", "Agent Access"),
   alternates: {
     canonical: withBasePath("/agents"),
     types: getAgentResourceAlternateTypes(),

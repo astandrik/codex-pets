@@ -24,7 +24,6 @@ export function middleware(request: NextRequest): Response {
     rewriteUrl.pathname = withBasePath(markdownPath, basePath);
     const response = NextResponse.rewrite(rewriteUrl);
     appendVary(response.headers, "Accept");
-    appendAgentLinkHeaders(response.headers, pathname);
     return response;
   }
 

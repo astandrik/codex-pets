@@ -21,6 +21,7 @@ import { serializeJsonLd } from "@/lib/json-ld";
 import { listApprovedPets } from "@/lib/pets/repository";
 import {
   getOpenGraphImages,
+  getPageViewOtherMetadata,
   getTwitterImages,
   SITE_NAME,
 } from "@/lib/site-metadata";
@@ -34,6 +35,10 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: BEST_CODEX_PETS_GUIDE_TITLE,
   description: GUIDE_DESCRIPTION,
+  other: getPageViewOtherMetadata(
+    BEST_CODEX_PETS_GUIDE_PATH,
+    BEST_CODEX_PETS_GUIDE_TITLE,
+  ),
   alternates: {
     canonical: withBasePath(BEST_CODEX_PETS_GUIDE_PATH),
   },

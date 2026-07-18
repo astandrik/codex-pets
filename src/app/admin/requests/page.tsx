@@ -17,6 +17,7 @@ import {
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { withBasePath } from "@/lib/base-path";
 import { listGenerationRequests } from "@/lib/pets/generation-requests-repository";
+import { getPageViewOtherMetadata } from "@/lib/site-metadata";
 
 function EmptyIcon() {
   return <Picture width={64} height={64} />;
@@ -28,6 +29,10 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Pet generation requests",
   description: "Admin queue for Codex pet generation requests.",
+  other: getPageViewOtherMetadata(
+    "/admin/requests",
+    "Pet generation requests",
+  ),
   robots: {
     index: false,
     follow: false,

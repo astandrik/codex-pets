@@ -4,12 +4,14 @@ import { Container, Flex, Label, Text } from "@/components/GravityUI/GravityUI";
 
 import { AuthForm } from "@/components/AuthForm/AuthForm";
 import { getCurrentPrincipal } from "@/lib/auth/session";
+import { getPageViewOtherMetadata } from "@/lib/site-metadata";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Create account",
   description: "Create an account to track your Codex Pets submissions.",
+  other: getPageViewOtherMetadata("/register", "Create account"),
   robots: {
     index: false,
     follow: false,

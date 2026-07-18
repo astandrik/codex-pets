@@ -220,6 +220,61 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     warnSpy.mockRestore();
   });
 
+  it("logs a null HTTP status when IndexNow fails before receiving a response", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce({
+      id: "pet_1",
+      slug: "boba",
+      displayName: "Boba",
+      description: "desc",
+      spritesheetUrl: "https://assets/pets/boba.webp",
+      petJsonUrl: "https://assets/pets/boba.json",
+      zipUrl: "https://assets/pets/boba.zip",
+      spritesheetExt: "webp",
+      kind: "creature",
+      tags: [],
+      status: "approved",
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString(),
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    });
+    vi.mocked(notifyIndexNowOfApprovedPet).mockResolvedValueOnce({
+      status: "failed",
+      error: "fetch failed",
+      urls: ["https://pets.example/pets/boba"],
+    });
+
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ id: "pet_1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(warnSpy).toHaveBeenCalledWith("[codex-pets][indexnow]", {
+      slug: "boba",
+      status: "failed",
+      httpStatus: null,
+      error: "request_failed",
+      urlCount: 1,
+    });
+    const logPayload = JSON.stringify(warnSpy.mock.calls);
+    expect(logPayload).not.toContain("pets.example");
+    expect(logPayload).not.toContain("indexnow-key-123");
+    expect(logPayload).not.toContain("fetch failed");
+
+    warnSpy.mockRestore();
+  });
+
   it("logs skipped IndexNow submissions without sensitive request data", async () => {
     const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
     vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({

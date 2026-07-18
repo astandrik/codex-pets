@@ -11,6 +11,7 @@ import { getCurrentPrincipal } from "@/lib/auth/session";
 import { withBasePath } from "@/lib/base-path";
 import {
   getOpenGraphImages,
+  getPageViewOtherMetadata,
   getTwitterImages,
   SITE_NAME,
 } from "@/lib/site-metadata";
@@ -23,6 +24,7 @@ const requestDescription =
 export const metadata: Metadata = {
   title: "Request a Codex pet",
   description: requestDescription,
+  other: getPageViewOtherMetadata("/request", "Request a Codex pet"),
   alternates: {
     canonical: withBasePath("/request"),
   },

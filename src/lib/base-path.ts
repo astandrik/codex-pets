@@ -23,7 +23,9 @@ export function withBasePath(path: string): string {
     return path;
   }
 
-  return path === "/" ? BASE_PATH : `${BASE_PATH}${path}`;
+  return path === "/" || path.startsWith("/?")
+    ? `${BASE_PATH}${path.slice(1)}`
+    : `${BASE_PATH}${path}`;
 }
 
 export function getPublicOrigin(): string {

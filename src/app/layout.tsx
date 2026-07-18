@@ -13,6 +13,7 @@ import { getPublicOrigin, toPublicUrl, withBasePath } from "@/lib/base-path";
 import { serializeJsonLd } from "@/lib/json-ld";
 import {
   getAgentResourceAlternateTypes,
+  getPageViewOtherMetadata,
   getSiteSocialImagePath,
   getWebsiteJsonLd,
   SITE_DESCRIPTION,
@@ -37,6 +38,7 @@ export const metadata: Metadata = {
   description: SITE_DESCRIPTION,
   keywords: SITE_KEYWORDS,
   metadataBase: new URL(getPublicOrigin()),
+  other: getPageViewOtherMetadata("/", SITE_TITLE),
   alternates: {
     canonical: withBasePath("/"),
     types: getAgentResourceAlternateTypes(),

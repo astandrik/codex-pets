@@ -41,9 +41,7 @@ export async function POST(
     console.warn("[codex-pets][indexnow]", {
       slug: pet.slug,
       status: "failed",
-      ...(indexNow.httpStatus !== undefined
-        ? { httpStatus: indexNow.httpStatus }
-        : {}),
+      httpStatus: indexNow.httpStatus ?? null,
       ...(indexNow.error !== undefined ? { error: "request_failed" } : {}),
       urlCount: indexNow.urls.length,
     });

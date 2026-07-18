@@ -44,6 +44,7 @@ export async function generateMetadata({
   return buildGalleryPageMetadata(
     filters,
     hasGalleryFilterSearchParam(rawSearchParams),
+    getGalleryPageViewPath(rawSearchParams),
   );
 }
 
@@ -106,4 +107,20 @@ function hasGalleryFilterSearchParam(
   return ["q", "tags", "kind"].some((key) =>
     Object.hasOwn(searchParams ?? {}, key),
   );
+}
+
+function getGalleryPageViewPath(
+  searchParams: Record<string, string | string[] | undefined> | undefined,
+): string {
+  const serialized = new URLSearchParams();
+  for (const [key, value] of Object.entries(searchParams ?? {})) {
+    for (const item of Array.isArray(value) ? value : [value]) {
+      if (item !== undefined) {
+        serialized.append(key, item);
+      }
+    }
+  }
+
+  const search = serialized.toString();
+  return search ? `/?${search}` : "/";
 }
