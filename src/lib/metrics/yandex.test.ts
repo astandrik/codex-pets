@@ -8,20 +8,39 @@ import {
   trackPageView,
 } from "@/lib/metrics/yandex";
 
-function runInlineScript() {
+type InlineScriptOptions = {
+  readyState?: DocumentReadyState;
+  title?: string;
+};
+
+function runInlineScript({
+  readyState = "complete",
+  title = "Codex Pets",
+}: InlineScriptOptions = {}) {
   const insertBefore = vi.fn();
-  const context: Record<string, unknown> = {
-    document: {
-      createElement: () => ({}),
-      getElementsByTagName: () => [
-        {
-          parentNode: { insertBefore },
-        },
-      ],
-      referrer: "https://referrer.example/source",
-      scripts: [],
-      title: "Codex Pets",
+  let domContentLoadedListener: (() => void) | undefined;
+  const addEventListener = vi.fn(
+    (eventName: string, listener: () => void) => {
+      if (eventName === "DOMContentLoaded") {
+        domContentLoadedListener = listener;
+      }
     },
+  );
+  const document = {
+    addEventListener,
+    createElement: () => ({}),
+    getElementsByTagName: () => [
+      {
+        parentNode: { insertBefore },
+      },
+    ],
+    readyState,
+    referrer: "https://referrer.example/source",
+    scripts: [],
+    title,
+  };
+  const context: Record<string, unknown> = {
+    document,
     location: {
       href: "https://pets.example/gallery?tag=otter",
     },
@@ -35,7 +54,16 @@ function runInlineScript() {
   };
 
   return {
-    calls: ym.a.map((args) => Array.from(args)),
+    addEventListener,
+    get calls() {
+      return ym.a.map((args) => Array.from(args));
+    },
+    dispatchDOMContentLoaded(nextTitle: string) {
+      document.title = nextTitle;
+      const listener = domContentLoadedListener;
+      domContentLoadedListener = undefined;
+      listener?.();
+    },
     insertBefore,
   };
 }
@@ -67,6 +95,37 @@ describe("Yandex Metrika inline initialization", () => {
         },
       ],
     ]);
+  });
+
+  it("waits for streamed metadata before queuing the initial hit", () => {
+    const execution = runInlineScript({
+      readyState: "loading",
+      title: "Codex Pets",
+    });
+
+    expect(execution.calls.filter((call) => call[1] === "hit")).toEqual([]);
+    expect(execution.addEventListener).toHaveBeenCalledWith(
+      "DOMContentLoaded",
+      expect.any(Function),
+      { once: true },
+    );
+
+    execution.dispatchDOMContentLoaded("Rose Katana - Codex Pets");
+
+    expect(execution.calls.filter((call) => call[1] === "hit")).toEqual([
+      [
+        YANDEX_METRIKA_ID,
+        "hit",
+        "https://pets.example/gallery?tag=otter",
+        {
+          referer: "https://referrer.example/source",
+          title: "Rose Katana - Codex Pets",
+        },
+      ],
+    ]);
+
+    execution.dispatchDOMContentLoaded("Another title");
+    expect(execution.calls.filter((call) => call[1] === "hit")).toHaveLength(1);
   });
 });
 

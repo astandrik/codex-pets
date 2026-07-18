@@ -39,10 +39,20 @@ export function getYandexMetrikaInlineScript(): string {
            accurateTrackBounce:true,
            webvisor:true
       });
-      ym(${YANDEX_METRIKA_ID}, "hit", window.location.href, {
-           referer:document.referrer,
-           title:document.title
-      });
+      (function() {
+        function sendInitialHit() {
+          ym(${YANDEX_METRIKA_ID}, "hit", window.location.href, {
+               referer:document.referrer,
+               title:document.title
+          });
+        }
+
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", sendInitialHit, { once: true });
+        } else {
+          sendInitialHit();
+        }
+      })();
     `;
 }
 
