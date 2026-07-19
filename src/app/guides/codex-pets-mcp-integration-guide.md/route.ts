@@ -30,5 +30,5 @@ curl -s ${toPublicUrl("/api/manifest")}
 - Developer llms.txt: ${toPublicUrl("/developers/llms.txt")}
 - API llms.txt: ${toPublicUrl("/docs/llms.txt")}
 - Full LLM context: ${toPublicUrl("/llms-full.txt")}
-`);
+`, { canonicalPath: "/guides/codex-pets-mcp-integration-guide" });
 }

@@ -19,11 +19,17 @@ export function withBasePath(path: string): string {
     return path;
   }
 
-  if (path === BASE_PATH || path.startsWith(`${BASE_PATH}/`)) {
+  if (
+    path === BASE_PATH ||
+    path.startsWith(`${BASE_PATH}/`) ||
+    path.startsWith(`${BASE_PATH}?`)
+  ) {
     return path;
   }
 
-  return path === "/" ? BASE_PATH : `${BASE_PATH}${path}`;
+  return path === "/" || path.startsWith("/?")
+    ? `${BASE_PATH}${path.slice(1)}`
+    : `${BASE_PATH}${path}`;
 }
 
 export function getPublicOrigin(): string {

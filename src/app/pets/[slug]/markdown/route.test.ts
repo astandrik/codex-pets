@@ -56,6 +56,10 @@ describe("GET /pets/[slug]/markdown", () => {
     expect(response.headers.get("Cache-Control")).toBe(
       "public, max-age=60, s-maxage=300",
     );
+    expect(response.headers.get("Link")).toContain(
+      '<https://pets.example/pets/kuroa>; rel="canonical"',
+    );
+    expect(response.headers.get("X-Robots-Tag")).toBeNull();
     expect(body).toContain("# Kuroa");
     expect(body).toContain("https://pets.example/pets/kuroa");
     expect(body).toContain("npx @astandrik/codex-pets install kuroa");

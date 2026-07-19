@@ -39,8 +39,13 @@ type HomeProps = {
 export async function generateMetadata({
   searchParams,
 }: HomeProps): Promise<Metadata> {
-  const filters = parseGalleryFilters(await searchParams);
-  return buildGalleryPageMetadata(filters);
+  const rawSearchParams = await searchParams;
+  const filters = parseGalleryFilters(rawSearchParams);
+  return buildGalleryPageMetadata(
+    filters,
+    hasGalleryFilterSearchParam(rawSearchParams),
+    getGalleryPageViewPath(rawSearchParams),
+  );
 }
 
 export default async function Home({ searchParams }: HomeProps) {
@@ -94,4 +99,28 @@ function toPublicPetSummary(pet: PublicPet): PublicPetSummary {
     installCount: pet.installCount,
     likeCount: pet.likeCount,
   };
+}
+
+function hasGalleryFilterSearchParam(
+  searchParams: Record<string, string | string[] | undefined> | undefined,
+): boolean {
+  return ["q", "tags", "kind"].some((key) =>
+    Object.hasOwn(searchParams ?? {}, key),
+  );
+}
+
+function getGalleryPageViewPath(
+  searchParams: Record<string, string | string[] | undefined> | undefined,
+): string {
+  const serialized = new URLSearchParams();
+  for (const [key, value] of Object.entries(searchParams ?? {})) {
+    for (const item of Array.isArray(value) ? value : [value]) {
+      if (item !== undefined) {
+        serialized.append(key, item);
+      }
+    }
+  }
+
+  const search = serialized.toString();
+  return search ? `/?${search}` : "/";
 }

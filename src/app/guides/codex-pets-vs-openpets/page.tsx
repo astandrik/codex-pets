@@ -12,6 +12,7 @@ import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import { serializeJsonLd } from "@/lib/json-ld";
 import {
   getOpenGraphImages,
+  getPageViewOtherMetadata,
   getTwitterImages,
   SITE_NAME,
 } from "@/lib/site-metadata";
@@ -22,6 +23,10 @@ const GUIDE_DESCRIPTION =
 export const metadata: Metadata = {
   title: "Codex Pets vs OpenPets",
   description: GUIDE_DESCRIPTION,
+  other: getPageViewOtherMetadata(
+    "/guides/codex-pets-vs-openpets",
+    "Codex Pets vs OpenPets",
+  ),
   alternates: {
     canonical: withBasePath("/guides/codex-pets-vs-openpets"),
   },

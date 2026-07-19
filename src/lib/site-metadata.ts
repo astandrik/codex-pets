@@ -7,6 +7,10 @@ import {
   type GalleryFilters,
 } from "@/lib/pets/gallery-filters";
 import type { PublicPet } from "@/lib/pets/types";
+import {
+  PAGE_VIEW_METADATA_NAME,
+  serializePageViewMetadata,
+} from "@/lib/metrics/page-view-metadata";
 
 export const SITE_NAME = "Codex Pets";
 export const SITE_TAGLINE = "Animated pet packs for AI coding agents";
@@ -55,9 +59,31 @@ type SocialImageOptions = {
 
 type TwitterImageInput = string | SocialImage;
 type AlternateTypes = NonNullable<NonNullable<Metadata["alternates"]>["types"]>;
+type PageViewOtherMetadataOptions = {
+  applyTitleTemplate?: boolean;
+};
 
 export function buildPageTitle(title: string): string {
   return `${title} - ${SITE_NAME}`;
+}
+
+export function getPageViewOtherMetadata(
+  path: string,
+  pageTitle: string,
+  options: PageViewOtherMetadataOptions = {},
+): NonNullable<Metadata["other"]> {
+  const { applyTitleTemplate = true } = options;
+  const title =
+    applyTitleTemplate && pageTitle !== SITE_TITLE
+      ? buildPageTitle(pageTitle)
+      : pageTitle;
+
+  return {
+    [PAGE_VIEW_METADATA_NAME]: serializePageViewMetadata({
+      title,
+      url: withBasePath(path),
+    }),
+  };
 }
 
 export function getOpenGraphImages(
@@ -230,11 +256,38 @@ function getGalleryResourceAlternateTypes(search: string): AlternateTypes {
   };
 }
 
-export function buildGalleryPageMetadata(filters: GalleryFilters): Metadata {
+export function buildGalleryPageMetadata(
+  filters: GalleryFilters,
+  hasRawGalleryFilterKey: boolean,
+  pageViewPath?: string,
+): Metadata {
+  if (!hasRawGalleryFilterKey) {
+    return pageViewPath && pageViewPath !== "/"
+      ? {
+          other: getPageViewOtherMetadata(pageViewPath, SITE_TITLE, {
+            applyTitleTemplate: false,
+          }),
+        }
+      : {};
+  }
+
   const normalizedFilters = normalizeGalleryFilters(filters);
   const search = serializeGalleryFilters(normalizedFilters);
   if (!search) {
-    return {};
+    return {
+      other: getPageViewOtherMetadata(
+        pageViewPath ?? "/",
+        SITE_TITLE,
+        { applyTitleTemplate: false },
+      ),
+      alternates: {
+        canonical: withBasePath("/"),
+      },
+      robots: {
+        index: false,
+        follow: true,
+      },
+    };
   }
 
   const path = `/?${search}`;
@@ -244,8 +297,11 @@ export function buildGalleryPageMetadata(filters: GalleryFilters): Metadata {
   return {
     title,
     description,
+    other: getPageViewOtherMetadata(pageViewPath ?? path, title, {
+      applyTitleTemplate: false,
+    }),
     alternates: {
-      canonical: withBasePath(path),
+      canonical: withBasePath("/"),
       types: getGalleryResourceAlternateTypes(search),
     },
     openGraph: {
@@ -261,6 +317,10 @@ export function buildGalleryPageMetadata(filters: GalleryFilters): Metadata {
       title: buildPageTitle(title),
       description,
       images: getTwitterImages(),
+    },
+    robots: {
+      index: false,
+      follow: true,
     },
   };
 }

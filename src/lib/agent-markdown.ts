@@ -14,16 +14,23 @@ export function formatMarkdownInlineList(values: string[]): string {
   return escaped.length > 0 ? escaped.join(", ") : "none";
 }
 
-export function markdownResponse(body: string): Response {
+export function markdownResponse(
+  body: string,
+  options: { canonicalPath?: string } = {},
+): Response {
   return new Response(`${body.trim()}\n`, {
     headers: {
       "Cache-Control": "public, max-age=300, s-maxage=3600",
       "Content-Type": "text/markdown; charset=utf-8",
       Link: [
+        ...(options.canonicalPath
+          ? [`<${toPublicUrl(options.canonicalPath)}>; rel="canonical"`]
+          : []),
         `<${toPublicUrl("/llms.txt")}>; rel="describedby"; type="text/plain"`,
         `<${toPublicUrl("/openapi.json")}>; rel="service-desc"; type="application/json"`,
         `<${toPublicUrl("/mcp")}>; rel="service"; type="application/json"`,
       ].join(", "),
+      ...(options.canonicalPath ? {} : { "X-Robots-Tag": "noindex, follow" }),
     },
   });
 }

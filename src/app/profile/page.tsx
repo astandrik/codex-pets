@@ -14,6 +14,7 @@ import { avatarUrlFromId } from "@/lib/auth/avatar-repository";
 import { getUserById } from "@/lib/auth/repository";
 import { getCurrentPrincipal } from "@/lib/auth/session";
 import { withBasePath } from "@/lib/base-path";
+import { getPageViewOtherMetadata } from "@/lib/site-metadata";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +22,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Profile",
   description: "Edit your Codex Pets public profile.",
+  other: getPageViewOtherMetadata("/profile", "Profile"),
   robots: {
     index: false,
     follow: false,

@@ -31,7 +31,10 @@ export function appendAgentLinkHeaders(
 }
 
 function shouldExposeAgentLinks(pathname: string): boolean {
-  return isMarkdownTwinSourcePath(pathname) || pathname.startsWith("/guides/");
+  return (
+    isMarkdownTwinSourcePath(pathname) ||
+    (pathname.startsWith("/guides/") && !pathname.endsWith(".md"))
+  );
 }
 
 function getPathSpecificLinks(pathname: string): string[] {

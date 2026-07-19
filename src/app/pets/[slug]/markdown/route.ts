@@ -21,7 +21,9 @@ export async function GET(
     });
   }
 
-  const response = markdownResponse(buildPetMarkdown(pet));
+  const response = markdownResponse(buildPetMarkdown(pet), {
+    canonicalPath: `/pets/${pet.slug}`,
+  });
   response.headers.set("Cache-Control", "public, max-age=60, s-maxage=300");
   return response;
 }

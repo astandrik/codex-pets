@@ -42,6 +42,7 @@ import {
   buildPageTitle,
   getBreadcrumbJsonLd,
   getOpenGraphImages,
+  getPageViewOtherMetadata,
   getPetMetadataDescription,
   getPetResourceAlternateTypes,
   getPetSocialImagePath,
@@ -83,6 +84,10 @@ export async function generateMetadata({
   if (!pet || pet.status === "deleted") {
     return {
       title: "Pet not found",
+      other: getPageViewOtherMetadata(
+        `/pets/${encodeURIComponent(slug)}`,
+        "Pet not found",
+      ),
       robots: {
         index: false,
         follow: false,
@@ -109,6 +114,7 @@ export async function generateMetadata({
   return {
     title: pet.displayName,
     description,
+    other: getPageViewOtherMetadata(path, pet.displayName),
     alternates: {
       canonical: withBasePath(path),
       types: getPetResourceAlternateTypes(pet.slug, pet.displayName),

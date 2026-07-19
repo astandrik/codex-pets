@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { parseGalleryFilters } from "@/lib/pets/gallery-filters";
 
 describe("social metadata images", () => {
   it("prepends page-specific images before the default social image", async () => {
@@ -119,11 +120,11 @@ describe("gallery page metadata", () => {
       query: "",
       kind: "all",
       tags: ["space"],
-    });
+    }, true);
 
     expect(metadata.title).toBe("Codex pets tagged #space");
     expect(metadata.description).toContain("tagged #space");
-    expect(metadata.alternates?.canonical).toBe("/codex-pets/?tags=space");
+    expect(metadata.alternates?.canonical).toBe("/codex-pets");
     expect(metadata.alternates?.types).toEqual({
       "application/json": [
         {
@@ -140,13 +141,20 @@ describe("gallery page metadata", () => {
     });
     expect(metadata.openGraph).toMatchObject({
       title: "Codex pets tagged #space - Codex Pets",
-      url: "/codex-pets/?tags=space",
+      url: "/codex-pets?tags=space",
     });
+    expect(metadata.other).toEqual({
+      "codex-pets-page-view": JSON.stringify({
+        title: "Codex pets tagged #space",
+        url: "/codex-pets?tags=space",
+      }),
+    });
+    expect(metadata.robots).toEqual({ index: false, follow: true });
 
     vi.unstubAllEnvs();
   });
 
-  it("builds canonical metadata for combined gallery filters", async () => {
+  it("keeps combined gallery resources filtered while canonicalizing the homepage", async () => {
     vi.resetModules();
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://example.test");
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "");
@@ -156,14 +164,12 @@ describe("gallery page metadata", () => {
       query: "green",
       kind: "object",
       tags: ["terminal", "space"],
-    });
+    }, true);
 
     expect(metadata.title).toBe(
       'Object Codex pets matching "green" tagged #space and #terminal',
     );
-    expect(metadata.alternates?.canonical).toBe(
-      '/?q=green&kind=object&tags=space,terminal',
-    );
+    expect(metadata.alternates?.canonical).toBe("/");
     expect(metadata.alternates?.types).toMatchObject({
       "application/json": [
         {
@@ -180,8 +186,92 @@ describe("gallery page metadata", () => {
       title:
         'Object Codex pets matching "green" tagged #space and #terminal - Codex Pets',
     });
+    expect(metadata.other).toEqual({
+      "codex-pets-page-view": JSON.stringify({
+        title:
+          'Object Codex pets matching "green" tagged #space and #terminal',
+        url: "/?q=green&kind=object&tags=space,terminal",
+      }),
+    });
+    expect(metadata.robots).toEqual({ index: false, follow: true });
 
     vi.unstubAllEnvs();
+  });
+
+  it.each([
+    ["empty query", { q: "" }, "/?q=", "/codex-pets?q="],
+    ["empty tags", { tags: "" }, "/?tags=", "/codex-pets?tags="],
+    ["default kind", { kind: "all" }, "/?kind=all", "/codex-pets?kind=all"],
+    [
+      "invalid kind",
+      { kind: "not-a-kind" },
+      "/?kind=not-a-kind",
+      "/codex-pets?kind=not-a-kind",
+    ],
+  ])(
+    "marks the canonical homepage noindex when a raw %s filter key normalizes away",
+    async (
+      _caseName,
+      rawSearchParams,
+      pageViewPath,
+      expectedPageViewPath,
+    ) => {
+      vi.resetModules();
+      vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://example.test/codex-pets");
+      vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/codex-pets");
+
+      const { buildGalleryPageMetadata } = await import("@/lib/site-metadata");
+
+      expect(
+        buildGalleryPageMetadata(
+          parseGalleryFilters(rawSearchParams),
+          true,
+          pageViewPath,
+        ),
+      ).toEqual({
+        other: {
+          "codex-pets-page-view": JSON.stringify({
+            title: "Codex Pets - Animated pet packs for AI coding agents",
+            url: expectedPageViewPath,
+          }),
+        },
+        alternates: { canonical: "/codex-pets" },
+        robots: { index: false, follow: true },
+      });
+
+      vi.unstubAllEnvs();
+    },
+  );
+
+  it("leaves the unfiltered homepage to layout metadata when no raw filter key exists", async () => {
+    vi.resetModules();
+
+    const { buildGalleryPageMetadata } = await import("@/lib/site-metadata");
+
+    expect(
+      buildGalleryPageMetadata({ query: "", kind: "all", tags: [] }, false),
+    ).toEqual({});
+  });
+
+  it("correlates unrelated query changes without changing index metadata", async () => {
+    vi.resetModules();
+
+    const { buildGalleryPageMetadata } = await import("@/lib/site-metadata");
+
+    expect(
+      buildGalleryPageMetadata(
+        { query: "", kind: "all", tags: [] },
+        false,
+        "/?utm_source=agent",
+      ),
+    ).toEqual({
+      other: {
+        "codex-pets-page-view": JSON.stringify({
+          title: "Codex Pets - Animated pet packs for AI coding agents",
+          url: "/?utm_source=agent",
+        }),
+      },
+    });
   });
 });
 

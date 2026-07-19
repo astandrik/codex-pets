@@ -63,6 +63,54 @@ describe("middleware markdown content negotiation", () => {
     );
   });
 
+  it("leaves Link ownership to a rewritten markdown route", async () => {
+    const { middleware } = await import("@/middleware");
+    const request = new NextRequest(
+      "https://pets.example/guides/codex-pets-vs-openpets",
+      {
+        headers: {
+          Accept: "text/markdown",
+        },
+      },
+    );
+
+    const response = middleware(request);
+
+    expect(response.headers.get("x-middleware-rewrite")).toBe(
+      "https://pets.example/guides/codex-pets-vs-openpets.md",
+    );
+    expect(response.headers.get("Link")).toBeNull();
+  });
+
+  it("leaves Link ownership to a direct guide markdown route", async () => {
+    const { middleware } = await import("@/middleware");
+    const request = new NextRequest(
+      "https://pets.example/guides/codex-pets-vs-openpets.md",
+    );
+
+    const response = middleware(request);
+
+    expect(response.headers.get("Link")).toBeNull();
+  });
+
+  it("keeps agent Link discovery on a guide HTML response", async () => {
+    const { middleware } = await import("@/middleware");
+    const request = new NextRequest(
+      "https://pets.example/guides/codex-pets-vs-openpets",
+      {
+        headers: {
+          Accept: "text/html",
+        },
+      },
+    );
+
+    const response = middleware(request);
+
+    expect(response.headers.get("Link")).toContain(
+      '<http://localhost:3000/guides/codex-pets-vs-openpets.md>; rel="alternate"; type="text/markdown"',
+    );
+  });
+
   it.each([
     ["/agents", "/agents.md"],
     ["/about", "/about.md"],

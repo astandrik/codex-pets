@@ -13,6 +13,7 @@ import { serializeJsonLd } from "@/lib/json-ld";
 import {
   getAgentResourceAlternateTypes,
   getOpenGraphImages,
+  getPageViewOtherMetadata,
   getTwitterImages,
   SITE_NAME,
 } from "@/lib/site-metadata";
@@ -71,6 +72,10 @@ const resources = [
 export const metadata: Metadata = {
   title: "Codex Pets Developer Portal",
   description: DEVELOPERS_DESCRIPTION,
+  other: getPageViewOtherMetadata(
+    "/developers",
+    "Codex Pets Developer Portal",
+  ),
   alternates: {
     canonical: withBasePath("/developers"),
     types: getAgentResourceAlternateTypes(),

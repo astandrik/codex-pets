@@ -22,6 +22,7 @@ function EmptyIcon() {
 }
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { listPendingPets } from "@/lib/pets/repository";
+import { getPageViewOtherMetadata } from "@/lib/site-metadata";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +30,10 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Pending submissions",
   description: "Admin moderation queue for Codex Pets submissions.",
+  other: getPageViewOtherMetadata(
+    "/admin/submissions",
+    "Pending submissions",
+  ),
   robots: {
     index: false,
     follow: false,
