@@ -9,7 +9,7 @@ const MAX_TIMEOUT_MS = 5_000;
 export const PET_SEARCH_MODEL_REVISIONS = {
   "yandex-text-search-2026-07": {
     dimensions: 256,
-    minSemanticScore: 0.55,
+    minSemanticScore: 0.31,
   },
 } as const;
 

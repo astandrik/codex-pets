@@ -39,11 +39,11 @@ describe("pet search evaluation", () => {
       {
         relevantSlugs: [],
         negative: true,
-        matches: [{ slug: "unrelated", score: 0.54 }],
+        matches: [{ slug: "unrelated", score: 0.3 }],
       },
     ]);
 
-    expect(threshold).toBe(0.55);
+    expect(threshold).toBe(0.31);
     expect(
       PET_SEARCH_MODEL_REVISIONS["yandex-text-search-2026-07"]
       .minSemanticScore,

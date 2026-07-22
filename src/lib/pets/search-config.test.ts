@@ -57,7 +57,7 @@ describe("pet search runtime configuration", () => {
         apiKey: "secret-key",
         revision: supportedRevision,
         dimensions: 256,
-        minSemanticScore: 0.55,
+        minSemanticScore: 0.31,
         timeoutMs: 900,
       },
       fallbackReason: null,
