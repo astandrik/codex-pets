@@ -179,47 +179,6 @@ export function normalizeAgentSearchFilters(input: {
   };
 }
 
-export function filterAgentPets(
-  pets: PublicPet[],
-  filters: AgentSearchFilters,
-): PublicPet[] {
-  if (!isCompatibleWithCodex(filters.compatibleWith)) {
-    return [];
-  }
-
-  const query = filters.query?.toLowerCase();
-  const author = filters.author?.toLowerCase();
-  const tags = filters.tags.map((tag) => tag.toLowerCase());
-
-  return pets.filter((pet) => {
-    if (filters.kind !== "all" && pet.kind !== filters.kind) return false;
-
-    if (
-      query &&
-      !pet.displayName.toLowerCase().includes(query) &&
-      !pet.description.toLowerCase().includes(query) &&
-      !pet.tags.some((tag) => tag.toLowerCase().includes(query))
-    ) {
-      return false;
-    }
-
-    if (
-      tags.length > 0 &&
-      !tags.every((tag) =>
-        pet.tags.some((petTag) => petTag.toLowerCase() === tag),
-      )
-    ) {
-      return false;
-    }
-
-    if (author && !(pet.ownerName ?? "").toLowerCase().includes(author)) {
-      return false;
-    }
-
-    return true;
-  }).slice(0, filters.limit);
-}
-
 export function readSafeAgentSlug(value: unknown): string | null {
   const slug = typeof value === "string" ? value.trim() : "";
   return SAFE_SLUG.test(slug) ? slug : null;
@@ -305,8 +264,4 @@ function normalizeCompatibleWith(value: unknown): string[] {
         .filter(Boolean),
     ),
   );
-}
-
-function isCompatibleWithCodex(values: string[]): boolean {
-  return values.length === 0 || values.every((value) => value === "codex");
 }

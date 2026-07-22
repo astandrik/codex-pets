@@ -13,4 +13,5 @@ export const TABLES = {
   generationRequests: "codex_pet_generation_requests",
   generationRequestImages: "codex_pet_generation_request_images",
   idempotencyKeys: "codex_idempotency_keys",
+  searchEmbeddings: "codex_pet_search_embeddings",
 } as const;

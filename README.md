@@ -108,6 +108,15 @@ Optional server-side MCP metrics also need `YANDEX_METRIKA_MP_TOKEN` and
 Optional IndexNow notifications are enabled by `INDEXNOW_KEY`; the app serves
 `/<key>.txt` and pings IndexNow after an admin approves a pet.
 
+Optional semantic search uses Yandex AI Studio text embeddings and exact cosine
+ranking in YDB. Query mode defaults to `PET_SEARCH_MODE=lexical`; `shadow`
+computes semantic ranking without changing public order, and `hybrid` combines
+lexical and semantic ranks. Configure `YANDEX_AI_STUDIO_FOLDER_ID`,
+`YANDEX_AI_STUDIO_API_KEY_FILE`, and
+`PET_SEARCH_MODEL_REVISION=yandex-text-search-2026-07`. The API key is accepted
+only through the secret-file setting. Provider failures and timeouts fall back
+to lexical results.
+
 To run without YDB on generated sample data:
 
 ```bash
@@ -249,6 +258,26 @@ Apply migrations to an existing database:
 ```bash
 npm run db:migrate
 ```
+
+Preview and apply the approved-pet embedding backfill after the migration:
+
+```bash
+npm run search:backfill -- --dry-run
+npm run search:backfill -- --apply
+npm run search:backfill -- --apply --slug orbit-otter --force
+npm run search:eval
+```
+
+The command requires an explicit `--dry-run` or `--apply`. It never prints
+canonical document text. A safe rollout is `lexical` → migration → backfill →
+`shadow` → eval/metrics → `hybrid`; rollback is
+`PET_SEARCH_MODE=lexical`, and the additive embeddings table may remain.
+The checked-in eval queries live in
+`src/lib/pets/search-eval-fixtures.json`. Style and Russian judgments with a
+null `reviewedBy` remain provisional; the rollout gate requires a human-reviewed
+relevant `sexy` result before enabling `hybrid`. The opt-in live eval requires
+the configured YDB and AI Studio credentials, prints only aggregate results,
+and fails until the fixed threshold and every rollout gate are satisfied.
 
 Seed local development data after the schema exists:
 

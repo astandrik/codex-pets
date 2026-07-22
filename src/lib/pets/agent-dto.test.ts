@@ -119,40 +119,6 @@ describe("agent DTO", () => {
     });
   });
 
-  it("filters by tags, author, kind, query, and compatibility", async () => {
-    const { filterAgentPets, normalizeAgentSearchFilters } = await import(
-      "@/lib/pets/agent-dto"
-    );
-    const objectPet: PublicPet = {
-      ...approvedPet,
-      slug: "terminal-cube",
-      displayName: "Terminal Cube",
-      kind: "object",
-      tags: ["terminal"],
-      ownerName: "Other Creator",
-    };
-
-    expect(
-      filterAgentPets(
-        [approvedPet, objectPet],
-        normalizeAgentSearchFilters({
-          query: "space",
-          tags: ["friendly"],
-          author: "local",
-          compatibleWith: ["codex"],
-        }),
-      ).map((pet) => pet.slug),
-    ).toEqual(["orbit-otter"]);
-    expect(
-      filterAgentPets(
-        [approvedPet, objectPet],
-        normalizeAgentSearchFilters({
-          compatibleWith: ["other-agent"],
-        }),
-      ),
-    ).toEqual([]);
-  });
-
   it("parses safe slugs for pets and badge files", async () => {
     const { readSafeAgentSlug, readSafeBadgeSlug, readSafeCardSlug } = await import(
       "@/lib/pets/agent-dto"

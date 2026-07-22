@@ -1,6 +1,8 @@
 type YdbCell = {
   bytesValue?: Uint8Array | Buffer;
   textValue?: string;
+  floatValue?: number;
+  doubleValue?: number;
   uint32Value?: number;
   uint64Value?: string | number | { toString(): string };
 };
@@ -23,6 +25,11 @@ export function uintAt(row: YdbRow, index: number): number {
   const cell = row.items?.[index];
   const value = cell?.uint32Value ?? cell?.uint64Value ?? 0;
   return Number(value);
+}
+
+export function floatAt(row: YdbRow, index: number): number {
+  const cell = row.items?.[index];
+  return cell?.floatValue ?? cell?.doubleValue ?? 0;
 }
 
 export function bytesAt(row: YdbRow, index: number): Buffer {

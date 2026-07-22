@@ -1,12 +1,12 @@
 import { decode } from "@toon-format/toon";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const repositoryMocks = vi.hoisted(() => ({
-  listApprovedPets: vi.fn(),
+const searchMocks = vi.hoisted(() => ({
+  searchApprovedPets: vi.fn(),
 }));
 
-vi.mock("@/lib/pets/repository", () => ({
-  listApprovedPets: repositoryMocks.listApprovedPets,
+vi.mock("@/lib/pets/search-runtime", () => ({
+  searchApprovedPets: searchMocks.searchApprovedPets,
 }));
 
 const approvedPet = {
@@ -55,6 +55,14 @@ const approvedPetPayload = {
   likeCount: 0,
 };
 
+const semanticPet = {
+  ...approvedPet,
+  id: "pet_2",
+  slug: "velvet-luma",
+  displayName: "Velvet Luma",
+  description: "A gothic character with no literal query token.",
+};
+
 describe("GET /api/pets", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -64,7 +72,13 @@ describe("GET /api/pets", () => {
 
   it("returns approved pets as JSON and advertises the TOON alternate", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
-    repositoryMocks.listApprovedPets.mockResolvedValueOnce([approvedPet]);
+    searchMocks.searchApprovedPets.mockResolvedValueOnce({
+      pets: [approvedPet],
+      total: 1,
+      mode: "hybrid",
+      fallbackReason: null,
+      durationMs: 12,
+    });
     const { GET } = await import("@/app/api/pets/route");
 
     const response = await GET(
@@ -74,7 +88,7 @@ describe("GET /api/pets", () => {
     );
     const body = await response.json();
 
-    expect(repositoryMocks.listApprovedPets).toHaveBeenCalledWith({
+    expect(searchMocks.searchApprovedPets).toHaveBeenCalledWith({
       q: "space",
       kind: "creature",
       tags: ["friendly", "space"],
@@ -99,12 +113,24 @@ describe("GET /api/pets", () => {
       "https://pets.example/api/pets.toon?q=space&kind=creature&tags=friendly,space",
     );
 
-    repositoryMocks.listApprovedPets.mockResolvedValueOnce([approvedPet]);
+    searchMocks.searchApprovedPets.mockResolvedValueOnce({
+      pets: [semanticPet, approvedPet],
+      total: 2,
+      mode: "hybrid",
+      fallbackReason: null,
+      durationMs: 12,
+    });
     const { GET: getJson } = await import("@/app/api/pets/route");
     const jsonResponse = await getJson(request);
     const jsonBody = await jsonResponse.json();
 
-    repositoryMocks.listApprovedPets.mockResolvedValueOnce([approvedPet]);
+    searchMocks.searchApprovedPets.mockResolvedValueOnce({
+      pets: [semanticPet, approvedPet],
+      total: 2,
+      mode: "hybrid",
+      fallbackReason: null,
+      durationMs: 12,
+    });
     const { GET: getToon } = await import("@/app/api/pets.toon/route");
     const toonResponse = await getToon(toonRequest);
     const toonBody = decode(await toonResponse.text());
@@ -117,5 +143,34 @@ describe("GET /api/pets", () => {
       '<https://pets.example/api/pets?q=space&kind=creature&tags=friendly,space>; rel="alternate"; type="application/json"',
     );
     expect(toonBody).toEqual(jsonBody);
+    expect(jsonBody.pets.map((pet: { slug: string }) => pet.slug)).toEqual([
+      "velvet-luma",
+      "orbit-otter",
+    ]);
   });
+
+  it.each(["timeout", "rate_limited", "provider_error"] as const)(
+    "returns HTTP 200 lexical payloads for %s semantic fallbacks",
+    async (fallbackReason) => {
+      searchMocks.searchApprovedPets.mockResolvedValueOnce({
+        pets: [approvedPet],
+        total: 1,
+        mode: "lexical_fallback",
+        fallbackReason,
+        durationMs: 800,
+      });
+      const { GET } = await import("@/app/api/pets/route");
+
+      const response = await GET(
+        new Request("https://pets.example/api/pets?q=sexy"),
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.pets).toHaveLength(1);
+      expect(body).not.toHaveProperty("mode");
+      expect(body).not.toHaveProperty("fallbackReason");
+      expect(body).not.toHaveProperty("durationMs");
+    },
+  );
 });

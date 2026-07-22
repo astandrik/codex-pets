@@ -1,0 +1,50 @@
+export type BackfillOptions = {
+  mode: "dry-run" | "apply";
+  slug: string | null;
+  force: boolean;
+};
+
+export type BackfillPet = {
+  slug: string;
+  displayName: string;
+  description: string;
+  kind: string;
+  tags: string[];
+  status?: string;
+};
+
+export type BackfillSummary = {
+  scanned: number;
+  unchanged: number;
+  planned: number;
+  updated: number;
+};
+
+export function parseBackfillArgs(argv: string[]): BackfillOptions;
+export function buildPetSearchDocument(pet: BackfillPet): string;
+export function createPetSearchSourceHash(
+  pet: BackfillPet,
+  modelRevision: string,
+): string;
+export function embeddingToBuffer(embedding: readonly number[]): Buffer;
+export function runPetSearchBackfill(input: {
+  options: BackfillOptions;
+  revision: string;
+  dimensions: number;
+  pets: BackfillPet[];
+  getMetadata: (
+    modelRevision: string,
+    slug: string,
+  ) => Promise<{ sourceHash: string; dimensions: number } | null>;
+  embedDocument: (document: string) => Promise<number[]>;
+  upsert: (input: {
+    modelRevision: string;
+    slug: string;
+    sourceHash: string;
+    dimensions: number;
+    embedding: readonly number[];
+    updatedAt: string;
+  }) => Promise<void>;
+  now?: () => Date;
+  log?: (entry: unknown) => void;
+}): Promise<BackfillSummary>;

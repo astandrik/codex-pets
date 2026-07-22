@@ -1,4 +1,5 @@
 import type { PetKind } from "@/lib/pets/types";
+import { normalizeSearchQuery } from "@/lib/pets/search-ranking";
 
 export const MAX_GALLERY_TAGS = 8;
 
@@ -50,9 +51,7 @@ export function normalizeGalleryFilters(
 }
 
 export function normalizeGalleryQuery(value: unknown): string {
-  return typeof value === "string"
-    ? value.replace(/\s+/g, " ").trim().toLowerCase()
-    : "";
+  return normalizeSearchQuery(value).text;
 }
 
 export function parseGalleryKind(value: unknown): PetKind | "all" {

@@ -48,6 +48,12 @@ YANDEX_METRIKA_MP_CLIENT_ID=
 INDEXNOW_KEY=
 INDEXNOW_ENDPOINT=
 
+PET_SEARCH_MODE=lexical
+PET_SEARCH_MODEL_REVISION=yandex-text-search-2026-07
+PET_SEARCH_EMBEDDING_TIMEOUT_MS=800
+YANDEX_AI_STUDIO_FOLDER_ID=
+YANDEX_AI_STUDIO_API_KEY_FILE=/run/secrets/yandex-ai-studio.key
+
 AUTH_MODE=app-session
 SESSION_COOKIE_SECRET=replace-with-random-secret
 PASSWORD_PEPPER=replace-with-another-random-secret
@@ -76,6 +82,7 @@ The schema currently includes:
 
 - `codex_pets`
 - `codex_pet_assets`
+- `codex_pet_search_embeddings`
 - `codex_users`
 - `codex_sessions`
 - `codex_email_verification_tokens`
@@ -88,6 +95,23 @@ The schema currently includes:
 
 `codex_pet_upload_sessions` is legacy and may remain present if it already
 exists.
+
+For semantic search, deploy with `PET_SEARCH_MODE=lexical`, apply the additive
+migration, and run:
+
+```bash
+npm run search:backfill -- --dry-run
+npm run search:backfill -- --apply
+npm run search:eval
+```
+
+The live eval uses the checked-in fixtures and configured YDB/AI Studio access;
+it emits aggregate threshold/quality/gate results without document text. Then
+use `shadow` while evaluating relevance and aggregate latency/fallback metrics
+before enabling `hybrid`. Switch back to `lexical` for rollback; the embeddings
+table can remain. The AI Studio API key must be mounted as a read-only file and
+referenced by `YANDEX_AI_STUDIO_API_KEY_FILE`; do not place it directly in the
+environment file.
 
 ## Build and run
 
@@ -109,6 +133,7 @@ docker run -d --name codex-pets \
   -p 127.0.0.1:3001:3000 \
   --env-file /path/to/.env.runtime \
   -v /path/to/app.password:/run/secrets/app.password:ro \
+  -v /path/to/yandex-ai-studio.key:/run/secrets/yandex-ai-studio.key:ro \
   codex-pets:latest
 ```
 

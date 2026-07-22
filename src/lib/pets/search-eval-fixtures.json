@@ -1,0 +1,72 @@
+[
+  {
+    "id": "exact-name-zero-two",
+    "category": "exact",
+    "query": "Zero Two",
+    "relevantSlugs": ["zero-two"],
+    "reviewedBy": "deterministic-exact-match"
+  },
+  {
+    "id": "exact-slug-velvet-luma",
+    "category": "exact",
+    "query": "velvet-luma",
+    "relevantSlugs": ["velvet-luma"],
+    "reviewedBy": "deterministic-exact-match"
+  },
+  {
+    "id": "multi-token-gothic-anime",
+    "category": "multi-token",
+    "query": "gothic anime",
+    "relevantSlugs": ["velvet-luma", "nightshade-2", "fischl-detailed"],
+    "reviewedBy": null
+  },
+  {
+    "id": "typo-gigachad",
+    "category": "typo",
+    "query": "gigachd",
+    "relevantSlugs": ["gigachad-2"],
+    "reviewedBy": "deterministic-typo-fixture"
+  },
+  {
+    "id": "style-cute",
+    "category": "style",
+    "query": "cute",
+    "relevantSlugs": ["cheburashka", "crawlstack-polished", "foggy-hedgehog"],
+    "reviewedBy": null
+  },
+  {
+    "id": "style-badass",
+    "category": "style",
+    "query": "badass",
+    "relevantSlugs": ["vi", "jinx-2", "master-of-terra", "primaris"],
+    "reviewedBy": null
+  },
+  {
+    "id": "style-sexy",
+    "category": "style",
+    "query": "sexy",
+    "relevantSlugs": ["nozomi-2", "pink-catgirl", "2b-2", "lady-d-2"],
+    "reviewedBy": null
+  },
+  {
+    "id": "russian-green-giant",
+    "category": "russian",
+    "query": "большой зелёный гигант",
+    "relevantSlugs": ["bolshoy-tyll"],
+    "reviewedBy": null
+  },
+  {
+    "id": "negative-quantum-banana",
+    "category": "negative",
+    "query": "quantum banana compiler",
+    "relevantSlugs": [],
+    "reviewedBy": "deterministic-negative-fixture"
+  },
+  {
+    "id": "negative-tax-invoice",
+    "category": "negative",
+    "query": "tax invoice spreadsheet",
+    "relevantSlugs": [],
+    "reviewedBy": "deterministic-negative-fixture"
+  }
+]

@@ -13,6 +13,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "db:migrate": "node scripts/apply-ydb-migrations.mjs",
+    "search:backfill": "node scripts/backfill-pet-search-embeddings.mjs",
+    "search:eval": "PET_SEARCH_LIVE_EVAL=1 vitest run src/lib/pets/search-live-eval.test.ts",
     "seed:dev": "node scripts/seed-dev-data.mjs",
     "seed:dev:reset": "node scripts/seed-dev-data.mjs --reset"
   },

@@ -11,7 +11,6 @@ import {
   type AgentPet,
   createAgentPet,
   createAgentPets,
-  filterAgentPets,
   normalizeAgentSearchFilters,
   readSafeAgentSlug,
 } from "@/lib/pets/agent-dto";
@@ -19,8 +18,9 @@ import {
   type McpToolCallPayload,
   trackMcpToolCall,
 } from "@/lib/metrics/yandex-measurement";
-import { getApprovedPetBySlug, listApprovedPets } from "@/lib/pets/repository";
+import { getApprovedPetBySlug } from "@/lib/pets/repository";
 import { MCP_REGISTRY_SERVER_VERSION } from "@/lib/pets/mcp-registry";
+import { searchApprovedPets } from "@/lib/pets/search-runtime";
 
 type McpToolName = McpToolCallPayload["tool"];
 type SlugMcpToolName = Exclude<
@@ -112,12 +112,21 @@ export function createCodexPetsMcpServer(): McpServer {
     async (args) => {
       try {
         const filters = normalizeAgentSearchFilters(args);
-        const pets = await listApprovedPets({
-          q: filters.query,
-          kind: filters.kind,
-        });
-        const filteredPets = filterAgentPets(pets, filters);
-        const agentPets = createAgentPets(filteredPets);
+        const compatibleWithCodex = filters.compatibleWith.every(
+          (value) => value === "codex",
+        );
+        const pets = compatibleWithCodex
+          ? (
+              await searchApprovedPets({
+                q: filters.query,
+                kind: filters.kind,
+                tags: filters.tags,
+                author: filters.author,
+                limit: filters.limit,
+              })
+            ).pets
+          : [];
+        const agentPets = createAgentPets(pets);
 
         await trackMcpToolCall({
           tool: "search_pets",
