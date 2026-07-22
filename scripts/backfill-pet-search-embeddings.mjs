@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
 import {
+  createRequestStartLimiter,
   embeddingToBuffer,
   parseBackfillArgs,
   runPetSearchBackfill,
@@ -139,7 +140,10 @@ function readEmbeddingProviderConfig() {
 }
 
 function createEmbeddingProvider({ folderId, apiKey, timeoutMs }) {
-  let requestTimestamps = [];
+  const reserveRateLimitSlot = createRequestStartLimiter({
+    requestsPerMinute: REQUESTS_PER_MINUTE,
+    sleep: delay,
+  });
 
   return async function embedDocument(document) {
     await reserveRateLimitSlot();
@@ -175,22 +179,6 @@ function createEmbeddingProvider({ folderId, apiKey, timeoutMs }) {
       clearTimeout(timeout);
     }
   };
-
-  async function reserveRateLimitSlot() {
-    while (true) {
-      const now = Date.now();
-      requestTimestamps = requestTimestamps.filter(
-        (timestamp) => now - timestamp < 60_000,
-      );
-      if (requestTimestamps.length < REQUESTS_PER_MINUTE) {
-        requestTimestamps.push(now);
-        return;
-      }
-
-      const waitMs = Math.max(1, 60_000 - (now - requestTimestamps[0]));
-      await delay(waitMs);
-    }
-  }
 }
 
 async function listApprovedPets(driver) {

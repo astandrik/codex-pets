@@ -9,6 +9,7 @@ import {
 const {
   buildPetSearchDocument,
   createPetSearchSourceHash,
+  createRequestStartLimiter,
   embeddingToBuffer,
   parseBackfillArgs,
   runPetSearchBackfill,
@@ -53,6 +54,28 @@ describe("pet search embeddings backfill", () => {
     const commandBuffer = embeddingToBuffer([1.5, -2.25]);
     expect(commandBuffer).toEqual(runtimeEmbeddingToBuffer([1.5, -2.25]));
     expect(commandBuffer.at(-1)).toBe(0x01);
+  });
+
+  it("spaces provider starts across the configured per-minute limit", async () => {
+    let currentTime = 0;
+    const waits: number[] = [];
+    const reserve = createRequestStartLimiter({
+      requestsPerMinute: 60,
+      now: () => currentTime,
+      sleep: async (milliseconds: number) => {
+        waits.push(milliseconds);
+        currentTime += milliseconds;
+      },
+    });
+
+    const starts: number[] = [];
+    for (let request = 0; request < 3; request += 1) {
+      await reserve();
+      starts.push(currentTime);
+    }
+
+    expect(starts).toEqual([0, 1_000, 2_000]);
+    expect(waits).toEqual([1_000, 1_000]);
   });
 
   it("dry-runs stale approved pets without provider or YDB writes", async () => {

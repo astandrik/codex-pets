@@ -78,6 +78,26 @@ export function embeddingToBuffer(embedding) {
   return buffer;
 }
 
+export function createRequestStartLimiter({
+  requestsPerMinute,
+  now = Date.now,
+  sleep,
+}) {
+  if (!Number.isInteger(requestsPerMinute) || requestsPerMinute < 1) {
+    throw new Error("requestsPerMinute must be a positive integer.");
+  }
+  const minimumIntervalMs = Math.ceil(60_000 / requestsPerMinute);
+  let nextStartAt = 0;
+
+  return async function reserveRequestStart() {
+    const waitMs = Math.max(0, nextStartAt - now());
+    if (waitMs > 0) await sleep(waitMs);
+
+    const startedAt = now();
+    nextStartAt = Math.max(nextStartAt, startedAt) + minimumIntervalMs;
+  };
+}
+
 export async function runPetSearchBackfill({
   options,
   revision,

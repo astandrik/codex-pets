@@ -27,6 +27,11 @@ export function createPetSearchSourceHash(
   modelRevision: string,
 ): string;
 export function embeddingToBuffer(embedding: readonly number[]): Buffer;
+export function createRequestStartLimiter(input: {
+  requestsPerMinute: number;
+  now?: () => number;
+  sleep: (milliseconds: number) => Promise<void>;
+}): () => Promise<void>;
 export function runPetSearchBackfill(input: {
   options: BackfillOptions;
   revision: string;
