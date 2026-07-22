@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 class FakeColumn {
   constructor(
     public readonly name: string,
-    public readonly type: string,
+    public readonly type: unknown,
   ) {}
 }
 
@@ -46,12 +46,18 @@ describe("pet search embeddings migration", () => {
         createTable,
       }),
     );
+    const types = {
+      UTF8: "utf8",
+      UINT32: "uint32",
+      STRING: "string",
+      optional: (type: string) => ({ optionalType: { item: type } }),
+    };
 
     await up({
       sdk: {
         Column: FakeColumn,
         TableDescription: FakeTableDescription,
-        Types: { UTF8: "utf8", UINT32: "uint32", STRING: "string" },
+        Types: types,
       },
       withSession,
     });
@@ -66,6 +72,14 @@ describe("pet search embeddings migration", () => {
       "embedding",
       "updated_at",
     ]);
+    expect(description.columns.map((column: FakeColumn) => column.type)).toEqual([
+      types.optional(types.UTF8),
+      types.optional(types.UTF8),
+      types.optional(types.UTF8),
+      types.optional(types.UINT32),
+      types.optional(types.STRING),
+      types.optional(types.UTF8),
+    ]);
     expect(description.primaryKeys).toEqual(["model_revision", "pet_slug"]);
 
     const existingCreateTable = vi.fn();
@@ -73,7 +87,7 @@ describe("pet search embeddings migration", () => {
       sdk: {
         Column: FakeColumn,
         TableDescription: FakeTableDescription,
-        Types: { UTF8: "utf8", UINT32: "uint32", STRING: "string" },
+        Types: types,
       },
       withSession: async (callback: (session: {
         describeTable: () => Promise<object>;
