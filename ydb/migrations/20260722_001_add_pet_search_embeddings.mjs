@@ -23,7 +23,7 @@ export async function up({ sdk, withSession }) {
         .withColumn(new Column("pet_slug", Types.optional(Types.UTF8)))
         .withColumn(new Column("source_hash", Types.optional(Types.UTF8)))
         .withColumn(new Column("dimensions", Types.optional(Types.UINT32)))
-        .withColumn(new Column("embedding", Types.optional(Types.STRING)))
+        .withColumn(new Column("embedding", Types.optional(Types.BYTES)))
         .withColumn(new Column("updated_at", Types.optional(Types.UTF8)))
         .withPrimaryKey("model_revision")
         .withPrimaryKey("pet_slug"),

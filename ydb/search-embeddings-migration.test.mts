@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 
+import { Types } from "ydb-sdk";
 import { describe, expect, it, vi } from "vitest";
 
 class FakeColumn {
@@ -46,18 +47,11 @@ describe("pet search embeddings migration", () => {
         createTable,
       }),
     );
-    const types = {
-      UTF8: "utf8",
-      UINT32: "uint32",
-      STRING: "string",
-      optional: (type: string) => ({ optionalType: { item: type } }),
-    };
-
     await up({
       sdk: {
         Column: FakeColumn,
         TableDescription: FakeTableDescription,
-        Types: types,
+        Types,
       },
       withSession,
     });
@@ -73,12 +67,12 @@ describe("pet search embeddings migration", () => {
       "updated_at",
     ]);
     expect(description.columns.map((column: FakeColumn) => column.type)).toEqual([
-      types.optional(types.UTF8),
-      types.optional(types.UTF8),
-      types.optional(types.UTF8),
-      types.optional(types.UINT32),
-      types.optional(types.STRING),
-      types.optional(types.UTF8),
+      Types.optional(Types.UTF8),
+      Types.optional(Types.UTF8),
+      Types.optional(Types.UTF8),
+      Types.optional(Types.UINT32),
+      Types.optional(Types.BYTES),
+      Types.optional(Types.UTF8),
     ]);
     expect(description.primaryKeys).toEqual(["model_revision", "pet_slug"]);
 
@@ -87,7 +81,7 @@ describe("pet search embeddings migration", () => {
       sdk: {
         Column: FakeColumn,
         TableDescription: FakeTableDescription,
-        Types: types,
+        Types,
       },
       withSession: async (callback: (session: {
         describeTable: () => Promise<object>;
