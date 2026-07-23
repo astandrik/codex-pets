@@ -130,8 +130,12 @@ PET_SEARCH_EVAL_LABEL_POOL_DIR=/private/tmp/codex-pets-v2-labels \
   npm run search:eval:label-pool
 ```
 
-The reviewer sees only each frozen query, slug, display name, and four frames.
-Every candidate must be labeled `relevant`, `irrelevant`, or `uncertain`.
+The pool includes each raw ranker's first ten, a deterministic catalog sample,
+and every candidate that can reach fused top five under the frozen threshold
+and weight grid. The reviewer still sees only each frozen query, slug, display
+name, and four frames. Every candidate must be labeled `relevant`,
+`irrelevant`, or `uncertain`. Eval refuses any raw top-five result absent from
+the bound candidate pool.
 Replace `src/lib/pets/search-eval-judgments-v2.json` with the single exported
 JSON and freeze it before reading metrics:
 
@@ -145,16 +149,22 @@ has overall non-regression plus at least 15% visual-subset lift. Pin the
 selected threshold and weight to the exact v2 visual revision in
 `chore(search): pin visual v2 calibration profile`, repeat the full verification
 chain, and rebuild an exact-SHA candidate. Run the untouched holdout exactly
-once:
+once. Mount a durable private receipt directory into the eval runner, use a
+new absolute receipt path, and bind the execution to the rebuilt full SHA:
 
 ```bash
-npm run search:eval:holdout
+PET_SEARCH_EVAL_COMMIT_SHA=<40-character-lowercase-candidate-sha> \
+PET_SEARCH_EVAL_HOLDOUT_RECEIPT_FILE=/private/holdout-receipts/visual-holdout-v2.json \
+  npm run search:eval:holdout
 ```
 
-Do not tune on holdout results. A failed holdout permanently rejects that
-holdout and requires a new revision and v3 holdout. Stop if any gate fails, and
-require explicit human review of the printed combined `sexy` top five before
-enabling both base and visual `hybrid`.
+The command refuses a v1 or mixed revision pair and atomically creates a
+mode-`0400` receipt before any ranking calls. The receipt binds the commit,
+query-manifest hash, judgment hash, v2 revisions, and pinned profile; a second
+run with the same path is refused. Do not delete or replace it. A failed run
+permanently rejects that holdout and requires a new revision and v3 holdout.
+Stop if any gate fails, and require explicit human review of the printed
+combined `sexy` top five before enabling both base and visual `hybrid`.
 
 The first rollback is `PET_SEARCH_VISUAL_MODE=off`; switch
 `PET_SEARCH_MODE=lexical` only if the text contour must also be disabled.

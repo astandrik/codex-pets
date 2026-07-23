@@ -59,6 +59,7 @@ export function buildPetSearchLabelPool(input: {
     visualV1: readonly string[];
     visualV2: readonly string[];
   };
+  evaluatedTopSlugs?: readonly string[];
 }): PetSearchLabelPool {
   if (!input.queryId || !input.query.trim()) {
     throw new Error("Label pool query identity is missing.");
@@ -78,6 +79,14 @@ export function buildPetSearchLabelPool(input: {
     for (const slug of rankedSlugs.slice(0, PET_SEARCH_LABEL_POOL_RANK_LIMIT)) {
       if (catalogBySlug.has(slug)) selectedSlugs.add(slug);
     }
+  }
+  for (const slug of input.evaluatedTopSlugs ?? []) {
+    if (!catalogBySlug.has(slug)) {
+      throw new Error(
+        `Evaluated label pool candidate is absent from catalog: ${slug}`,
+      );
+    }
+    selectedSlugs.add(slug);
   }
 
   const sample = [...input.catalog]

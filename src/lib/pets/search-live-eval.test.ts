@@ -35,7 +35,9 @@ import {
   type PetSearchLabelPoolCandidate,
 } from "@/lib/pets/search-eval-label-pool";
 import {
+  assertV2VisualSearchEvalConfig,
   calibrateVisualSearchProfile,
+  collectPotentialVisualEvaluationSlugs,
   condenseRankedSlugs,
   evaluateSearchQuality,
   evaluateVisualSearchProfile,
@@ -45,6 +47,9 @@ import {
   type VisualSearchObservation,
   type VisualSearchProfileReport,
 } from "@/lib/pets/search-eval";
+import {
+  acquirePetSearchHoldoutReceipt,
+} from "@/lib/pets/search-eval-holdout-receipt";
 import {
   fuseRankedPets,
   rankPetsLexically,
@@ -76,6 +81,7 @@ type LiveEvalFixture = {
   relevantSlugs: string[];
   judgmentMode: JudgmentMode;
   judgedSlugs: string[];
+  poolCandidateSlugs: string[];
   reviewedBy: string | null;
   visualSubset: boolean;
 };
@@ -96,6 +102,52 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
       }
       const semanticConfig = config.semantic;
       const selectedVisualConfig = config.visual;
+      let preparedFixtures: LiveEvalFixture[] | null = null;
+      if (LIVE_EVAL_SUITE) {
+        if (
+          LIVE_EVAL_SUITE === "visual-calibration-v2" ||
+          LIVE_EVAL_SUITE === "visual-holdout-v2"
+        ) {
+          if (!selectedVisualConfig) {
+            throw new Error(
+              "Live visual search eval configuration is unavailable.",
+            );
+          }
+          assertV2VisualSearchEvalConfig(
+            LIVE_EVAL_SUITE,
+            selectedVisualConfig,
+          );
+        }
+        preparedFixtures = fixturesForSuite(LIVE_EVAL_SUITE);
+        if (LIVE_EVAL_SUITE === "visual-holdout-v2") {
+          if (!selectedVisualConfig?.profile) {
+            throw new Error(
+              "Holdout requires a committed revision-bound visual profile.",
+            );
+          }
+          const receiptPath =
+            process.env.PET_SEARCH_EVAL_HOLDOUT_RECEIPT_FILE?.trim();
+          const commitSha =
+            process.env.PET_SEARCH_EVAL_COMMIT_SHA?.trim();
+          if (!receiptPath || !commitSha) {
+            throw new Error(
+              "Holdout requires PET_SEARCH_EVAL_HOLDOUT_RECEIPT_FILE and PET_SEARCH_EVAL_COMMIT_SHA.",
+            );
+          }
+          await acquirePetSearchHoldoutReceipt({
+            receiptPath,
+            commitSha,
+            captionRevision:
+              selectedVisualConfig.captionRevision,
+            visualRevision:
+              selectedVisualConfig.visualRevision,
+            profile: selectedVisualConfig.profile,
+            queryManifest: PET_SEARCH_EVAL_QUERIES_V2,
+            judgments:
+              frozenJudgments as PetSearchEvalJudgmentRecord[],
+          });
+        }
+      }
       const embeddingClient = createYandexEmbeddingClient(semanticConfig);
       const catalog = await listApprovedPetsForSearch();
       const petsBySlug = new Map(catalog.map((pet) => [pet.slug, pet]));
@@ -166,6 +218,23 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
             storedCaptions: visualV2Captions,
             visualConfig: visualV2Config,
           });
+          const lexicalMatches = rankPetsLexically(
+            catalog,
+            fixture.query,
+          );
+          const evaluatedTopSlugs =
+            collectPotentialVisualEvaluationSlugs({
+              pets: catalog,
+              lexical: lexicalMatches,
+              textMatches,
+              visualMatches:
+                fixture.suite === "visual-calibration-v2" ||
+                fixture.suite === "visual-holdout-v2"
+                  ? visualV2Matches
+                  : [],
+              textMinSemanticScore:
+                semanticConfig.minSemanticScore,
+            });
           pools.push(
             buildPetSearchLabelPool({
               queryId: fixture.id,
@@ -173,12 +242,14 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
               query: fixture.query,
               catalog: labelCatalog,
               rankings: {
-                lexical: rankPetsLexically(catalog, fixture.query)
-                  .map((match) => match.pet.slug),
+                lexical: lexicalMatches.map(
+                  (match) => match.pet.slug,
+                ),
                 text: textMatches.map((match) => match.slug),
                 visualV1: visualV1Matches.map((match) => match.slug),
                 visualV2: visualV2Matches.map((match) => match.slug),
               },
+              evaluatedTopSlugs,
             }),
           );
         }
@@ -205,7 +276,8 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
         throw new Error("Live pet search eval suite is unavailable.");
       }
       const suite = LIVE_EVAL_SUITE;
-      const selectedFixtures = fixturesForSuite(suite);
+      const selectedFixtures =
+        preparedFixtures ?? fixturesForSuite(suite);
       if (selectedFixtures.length === 0) {
         throw new Error(`No frozen ${suite} fixtures are configured.`);
       }
@@ -391,6 +463,7 @@ function fixturesForSuite(suite: PetSearchEvalSuite): LiveEvalFixture[] {
       ...fixture,
       judgmentMode: "deterministic",
       judgedSlugs: [],
+      poolCandidateSlugs: [],
     }));
   }
   return joinPetSearchEvalJudgments(
@@ -440,6 +513,7 @@ async function collectTextOnlyObservation(input: {
     relevantSlugs: input.fixture.relevantSlugs,
     judgmentMode: input.fixture.judgmentMode,
     judgedSlugs: input.fixture.judgedSlugs,
+    poolCandidateSlugs: input.fixture.poolCandidateSlugs,
     reviewedBy: input.fixture.reviewedBy,
     visualSubset: input.fixture.visualSubset,
     pets: input.catalog,
@@ -497,6 +571,7 @@ async function collectObservation(input: {
     relevantSlugs: input.fixture.relevantSlugs,
     judgmentMode: input.fixture.judgmentMode,
     judgedSlugs: input.fixture.judgedSlugs,
+    poolCandidateSlugs: input.fixture.poolCandidateSlugs,
     reviewedBy: input.fixture.reviewedBy,
     visualSubset: input.fixture.visualSubset,
     pets: input.catalog,
@@ -623,6 +698,7 @@ function toTextObservation(
     relevantSlugs: observation.relevantSlugs,
     judgmentMode: observation.judgmentMode,
     judgedSlugs: observation.judgedSlugs,
+    poolCandidateSlugs: observation.poolCandidateSlugs,
     reviewedBy: observation.reviewedBy,
     lexicalSlugs,
     hybridSlugs,

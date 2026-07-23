@@ -295,14 +295,22 @@ blocked until the four canaries pass in the frozen order shown above.
 Generate the blinded label bundle into a new or empty directory (default:
 `/private/tmp/codex-pets-v2-labels`), review every candidate, and replace
 `src/lib/pets/search-eval-judgments-v2.json` with the exported JSON before
-running any v2 eval command. Freeze those labels in
+running any v2 eval command. Each pool includes the first ten results from
+every raw ranker, the deterministic catalog sample, and every candidate that
+can enter the fused top five anywhere in the frozen calibration grid. Eval
+refuses a pooled ranking whose raw top five is absent from that pool. Freeze
+those labels in
 `test(search): freeze v2 pooled search judgments`; do not inspect model metrics
 while labeling. `search:eval:text-regression` owns the 20% text lift gate.
 Calibration independently requires overall non-regression and at least 15%
 visual-subset lift, then the selected threshold/weight is pinned to the exact
-v2 visual revision. Run `search:eval:holdout` exactly once only after rebuilding
-that exact commit. A failed holdout is not a tuning set and requires a new
-revision and holdout.
+v2 visual revision. Visual v2 eval refuses any configured v1 or mixed revision
+pair. Run `search:eval:holdout` exactly once only after rebuilding that exact
+commit, with `PET_SEARCH_EVAL_COMMIT_SHA` set to its full lowercase SHA and
+`PET_SEARCH_EVAL_HOLDOUT_RECEIPT_FILE` set to a new absolute path on durable
+storage. The command atomically creates a read-only receipt before collecting
+rankings and refuses a second run. A failed run consumes the holdout; it is not
+a tuning set and requires a new revision and holdout.
 
 A safe rollout is base `lexical` and visual `off` → v2 canaries and backfill →
 visual `shadow` → blinded-label freeze → text regression → calibration →

@@ -12,7 +12,10 @@ import {
   type PetSearchLabelPoolJudgmentRecord,
 } from "@/lib/pets/search-eval-label-pool";
 import {
+  assertPooledTopFiveCoverage,
+  assertV2VisualSearchEvalConfig,
   calibrateVisualSearchProfile,
+  collectPotentialVisualEvaluationSlugs,
   condenseRankedSlugs,
   evaluateSearchRolloutGate,
   evaluateSearchQuality,
@@ -23,6 +26,12 @@ import {
 } from "@/lib/pets/search-eval";
 import { PET_SEARCH_MODEL_REVISIONS } from "@/lib/pets/search-config";
 import { rankPetsLexically } from "@/lib/pets/search-ranking";
+import {
+  PET_VISION_CAPTION_REVISION_V1,
+  PET_VISION_CAPTION_REVISION_V2,
+  PET_VISUAL_MODEL_REVISION_V1,
+  PET_VISUAL_MODEL_REVISION_V2,
+} from "@/lib/pets/search-vision-contract";
 
 describe("pet search evaluation", () => {
   it("maps live commands to distinct frozen v2 suites", () => {
@@ -39,6 +48,100 @@ describe("pet search evaluation", () => {
       "diagnostic-v1",
     );
     expect(resolveVisualSearchEvalSplit(undefined)).toBeNull();
+  });
+
+  it("requires the exact v2 revision pair before visual v2 evaluation", () => {
+    expect(() =>
+      assertV2VisualSearchEvalConfig("visual-calibration-v2", {
+        captionRevision: PET_VISION_CAPTION_REVISION_V1,
+        visualRevision: PET_VISUAL_MODEL_REVISION_V1,
+      }),
+    ).toThrow(/requires.*v2.*revision/i);
+    expect(() =>
+      assertV2VisualSearchEvalConfig("visual-holdout-v2", {
+        captionRevision: PET_VISION_CAPTION_REVISION_V2,
+        visualRevision: PET_VISUAL_MODEL_REVISION_V1,
+      }),
+    ).toThrow(/requires.*v2.*revision/i);
+    expect(() =>
+      assertV2VisualSearchEvalConfig("visual-holdout-v2", {
+        captionRevision: PET_VISION_CAPTION_REVISION_V2,
+        visualRevision: PET_VISUAL_MODEL_REVISION_V2,
+      }),
+    ).not.toThrow();
+  });
+
+  it("covers candidates that weighted RRF promotes from source rank eleven", () => {
+    const lexicalOnly = Array.from({ length: 10 }, (_, index) =>
+      searchablePet(`lexical-${index}`, `Lexical ${index}`),
+    );
+    const textOnly = Array.from({ length: 10 }, (_, index) =>
+      searchablePet(`text-${index}`, `Text ${index}`),
+    );
+    const visualOnly = Array.from({ length: 10 }, (_, index) =>
+      searchablePet(`visual-${index}`, `Visual ${index}`),
+    );
+    const shared = searchablePet("shared-rank-eleven", "Shared");
+    const pets = [...lexicalOnly, ...textOnly, ...visualOnly, shared];
+    const lexical = [...lexicalOnly, shared].map((pet, index) => ({
+      pet,
+      score: 100 - index,
+      exactIdentifier: false,
+    }));
+    const textMatches = [...textOnly, shared].map((pet, index) => ({
+      slug: pet.slug,
+      score: 1 - index / 100,
+    }));
+    const visualMatches = [...visualOnly, shared].map((pet, index) => ({
+      slug: pet.slug,
+      score: 1 - index / 100,
+    }));
+
+    const covered = collectPotentialVisualEvaluationSlugs({
+      pets,
+      lexical,
+      textMatches,
+      visualMatches,
+      textMinSemanticScore: 0,
+    });
+
+    expect(covered).toContain(shared.slug);
+    expect(() =>
+      assertPooledTopFiveCoverage(
+        "pooled",
+        covered.filter((slug) => slug !== shared.slug),
+        [shared.slug, ...covered],
+        "combined",
+      ),
+    ).toThrow(/candidate pool.*shared-rank-eleven/i);
+  });
+
+  it("covers semantic-only top five after lexical overlap is removed", () => {
+    const overlapping = Array.from({ length: 10 }, (_, index) =>
+      searchablePet(`overlap-${index}`, `Overlap ${index}`),
+    );
+    const semanticOnly = Array.from({ length: 5 }, (_, index) =>
+      searchablePet(`semantic-only-${index}`, `Semantic ${index}`),
+    );
+    const pets = [...overlapping, ...semanticOnly];
+    const covered = collectPotentialVisualEvaluationSlugs({
+      pets,
+      lexical: overlapping.map((pet, index) => ({
+        pet,
+        score: 100 - index,
+        exactIdentifier: false,
+      })),
+      textMatches: pets.map((pet, index) => ({
+        slug: pet.slug,
+        score: 1 - index / 100,
+      })),
+      visualMatches: [],
+      textMinSemanticScore: 0,
+    });
+
+    expect(covered).toEqual(
+      expect.arrayContaining(semanticOnly.map((pet) => pet.slug)),
+    );
   });
 
   it("preserves all exposed v1 fixtures as diagnostic-only labels", () => {
@@ -123,6 +226,11 @@ describe("pet search evaluation", () => {
       ],
       reviewedBy: "reviewer",
     });
+    expect(firstPooled?.poolCandidateSlugs).toEqual([
+      expect.stringMatching(/-relevant$/),
+      expect.stringMatching(/-irrelevant$/),
+      expect.stringMatching(/-uncertain$/),
+    ]);
 
     expect(() =>
       joinPetSearchEvalJudgments(
@@ -421,6 +529,10 @@ function completeJudgments(
           slug: `${query.id}-irrelevant`,
           spritesheetSha256: "2".repeat(64),
         },
+        {
+          slug: `${query.id}-uncertain`,
+          spritesheetSha256: "3".repeat(64),
+        },
       ];
       return {
         poolVersion: PET_SEARCH_LABEL_POOL_VERSION,
@@ -444,6 +556,10 @@ function completeJudgments(
           {
             slug: `${query.id}-irrelevant`,
             judgment: "irrelevant" as const,
+          },
+          {
+            slug: `${query.id}-uncertain`,
+            judgment: "uncertain" as const,
           },
         ],
       };

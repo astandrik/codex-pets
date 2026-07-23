@@ -48,6 +48,7 @@ export type PetSearchEvalJudgmentRecord =
 export type FrozenPetSearchEvalFixture = PetSearchEvalQuery & {
   relevantSlugs: string[];
   judgedSlugs: string[];
+  poolCandidateSlugs: string[];
   reviewedBy: string | null;
 };
 
@@ -205,6 +206,7 @@ export function joinPetSearchEvalJudgments(
         ...entry,
         relevantSlugs: [...(entry.relevantSlugs ?? [])],
         judgedSlugs: [],
+        poolCandidateSlugs: [],
         reviewedBy: "deterministic",
       };
     }
@@ -224,6 +226,9 @@ export function joinPetSearchEvalJudgments(
       judgedSlugs: record.judgments
         .filter((judgment) => judgment.judgment !== "uncertain")
         .map((judgment) => judgment.slug),
+      poolCandidateSlugs: record.candidateRecords.map(
+        (candidate) => candidate.slug,
+      ),
       reviewedBy: record.reviewer,
     };
   });

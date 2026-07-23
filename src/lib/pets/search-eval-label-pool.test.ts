@@ -50,6 +50,27 @@ describe("blinded pet search label pools", () => {
     expect(first.candidatePoolHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  it("includes fused top-five candidates outside every source top ten", () => {
+    const catalog = createCatalog(120);
+    const fusedCandidate = "pet-99";
+    const pool = buildPetSearchLabelPool({
+      queryId: "visual-calibration-badass",
+      suite: "visual-calibration-v2",
+      query: "badass",
+      catalog,
+      rankings: {
+        lexical: [...slugs(0, 10), fusedCandidate],
+        text: [...slugs(20, 10), fusedCandidate],
+        visualV1: [],
+        visualV2: [...slugs(40, 10), fusedCandidate],
+      },
+      evaluatedTopSlugs: [fusedCandidate],
+    });
+
+    expect(pool.candidates.map((candidate) => candidate.slug))
+      .toContain(fusedCandidate);
+  });
+
   it("binds the pool hash and display order to spritesheet content", () => {
     const catalog = createCatalog(20);
     const input = {
