@@ -23,6 +23,7 @@ import {
   createPetVisionCaptionSourceHash,
   createPetVisualEmbeddingSourceHash,
   parsePetVisionCaptionEnvelope,
+  type PetVisionCaptionRevision,
 } from "@/lib/pets/search-vision-contract";
 import type { YandexVisionCaptionClient } from "@/lib/pets/search-vision-client";
 import {
@@ -102,6 +103,7 @@ export function createPetVisionSearchRuntime(
     const freshCaption = readFreshCaption({
       storedCaption,
       expectedSourceHash: captionSourceHash,
+      captionRevision: visual.captionRevision,
       assetId,
       spritesheetSha256: extracted.spritesheetSha256,
     });
@@ -145,9 +147,13 @@ export function createPetVisionSearchRuntime(
     const caption = await dependencies.visionClient.createCaption(
       extracted.frames,
     );
-    const captionText = buildPetVisionCaptionText(caption);
+    const captionText = buildPetVisionCaptionText(
+      visual.captionRevision,
+      caption,
+    );
     const captionJson = JSON.stringify(
       createPetVisionCaptionEnvelope({
+        captionRevision: visual.captionRevision,
         assetId,
         spritesheetSha256: extracted.spritesheetSha256,
         caption,
@@ -205,6 +211,7 @@ class PetVisionIndexingError extends Error {
 function readFreshCaption(input: {
   storedCaption: StoredPetSearchCaption | null;
   expectedSourceHash: string;
+  captionRevision: PetVisionCaptionRevision;
   assetId: string;
   spritesheetSha256: string;
 }): { captionText: string } | null {
@@ -212,9 +219,13 @@ function readFreshCaption(input: {
 
   try {
     const envelope = parsePetVisionCaptionEnvelope(
+      input.captionRevision,
       input.storedCaption.captionJson,
     );
-    const canonicalText = buildPetVisionCaptionText(envelope.caption);
+    const canonicalText = buildPetVisionCaptionText(
+      input.captionRevision,
+      envelope.caption,
+    );
     if (
       envelope.source.assetId !== input.assetId ||
       envelope.source.spritesheetSha256 !== input.spritesheetSha256 ||

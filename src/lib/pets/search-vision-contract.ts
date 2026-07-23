@@ -272,6 +272,10 @@ export function parsePetVisionCaption(
   input: unknown,
 ): PetVisionCaptionV2;
 export function parsePetVisionCaption(
+  revision: PetVisionCaptionRevision,
+  input: unknown,
+): PetVisionCaption;
+export function parsePetVisionCaption(
   revisionOrInput: PetVisionCaptionRevision | unknown,
   input?: unknown,
 ): PetVisionCaption {
@@ -351,6 +355,12 @@ export function createPetVisionCaptionEnvelope(input: {
   caption: PetVisionCaptionV2;
 }): PetVisionCaptionEnvelopeV2;
 export function createPetVisionCaptionEnvelope(input: {
+  captionRevision: PetVisionCaptionRevision;
+  assetId: string;
+  spritesheetSha256: string;
+  caption: PetVisionCaption;
+}): PetVisionCaptionEnvelope;
+export function createPetVisionCaptionEnvelope(input: {
   captionRevision?: PetVisionCaptionRevision;
   assetId: string;
   spritesheetSha256: string;
@@ -381,6 +391,10 @@ export function parsePetVisionCaptionEnvelope(
   value: string,
 ): PetVisionCaptionEnvelopeV2;
 export function parsePetVisionCaptionEnvelope(
+  revision: PetVisionCaptionRevision,
+  value: string,
+): PetVisionCaptionEnvelope;
+export function parsePetVisionCaptionEnvelope(
   revisionOrValue: PetVisionCaptionRevision | string,
   value?: string,
 ): PetVisionCaptionEnvelope {
@@ -408,6 +422,10 @@ export function buildPetVisionCaptionText(
 export function buildPetVisionCaptionText(
   revision: typeof PET_VISION_CAPTION_REVISION_V2,
   caption: PetVisionCaptionV2,
+): string;
+export function buildPetVisionCaptionText(
+  revision: PetVisionCaptionRevision,
+  caption: PetVisionCaption,
 ): string;
 export function buildPetVisionCaptionText(
   revisionOrCaption: PetVisionCaptionRevision | PetVisionCaption,

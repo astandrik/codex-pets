@@ -2,11 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { PetSearchConfig } from "@/lib/pets/search-config";
 import {
+  PET_VISION_CAPTION_REVISION_V2,
+  PET_VISUAL_MODEL_REVISION_V2,
   buildPetVisionCaptionText,
   createPetVisionCaptionEnvelope,
   createPetVisionCaptionSourceHash,
   createPetVisualEmbeddingSourceHash,
   type PetVisionCaption,
+  type PetVisionCaptionV2,
 } from "@/lib/pets/search-vision-contract";
 import {
   createPetVisionSearchRuntime,
@@ -98,6 +101,103 @@ function dependencies(overrides: Record<string, unknown> = {}) {
 }
 
 describe("pet vision search indexing runtime", () => {
+  it("writes and reuses only envelopes matching the configured v2 revision", async () => {
+    const v2Config: PetSearchConfig = {
+      ...config,
+      visual: {
+        ...config.visual!,
+        captionRevision: PET_VISION_CAPTION_REVISION_V2,
+        visualRevision: PET_VISUAL_MODEL_REVISION_V2,
+      },
+    };
+    const v2Caption: PetVisionCaptionV2 = {
+      ...caption,
+      accessories: {
+        en: "black blindfold and sword",
+        ru: "чёрная повязка и меч",
+      },
+    };
+    const v2CaptionText = buildPetVisionCaptionText(
+      PET_VISION_CAPTION_REVISION_V2,
+      v2Caption,
+    );
+    const v2CaptionSourceHash = createPetVisionCaptionSourceHash({
+      captionRevision: PET_VISION_CAPTION_REVISION_V2,
+      modelUri: v2Config.visual!.modelUri,
+      assetId: "asset-123",
+      spritesheetSha256: "a".repeat(64),
+    });
+    let writtenCaption:
+      | {
+          captionRevision: string;
+          slug: string;
+          sourceHash: string;
+          captionJson: string;
+          captionText: string;
+          updatedAt: string;
+        }
+      | undefined;
+    const deps = dependencies({
+      config: v2Config,
+      getCaption: vi.fn(async () => ({
+        slug: pet.slug,
+        sourceHash: v2CaptionSourceHash,
+        captionJson,
+        captionText,
+        updatedAt: "2026-07-22T11:00:00.000Z",
+      })),
+      visionClient: {
+        createCaption: vi.fn(async () => v2Caption),
+      },
+      upsertCaption: vi.fn(async (input) => {
+        writtenCaption = {
+          captionRevision: input.captionRevision,
+          slug: input.slug,
+          sourceHash: input.sourceHash,
+          captionJson: input.captionJson,
+          captionText: input.captionText,
+          updatedAt: input.updatedAt,
+        };
+      }),
+    });
+    const runtime = createPetVisionSearchRuntime(deps);
+
+    await expect(runtime.refresh(pet)).resolves.toBe("caption-and-vector");
+    expect(deps.getCaption).toHaveBeenCalledWith(
+      PET_VISION_CAPTION_REVISION_V2,
+      pet.slug,
+    );
+    expect(writtenCaption).toMatchObject({
+      slug: pet.slug,
+      captionRevision: PET_VISION_CAPTION_REVISION_V2,
+      sourceHash: v2CaptionSourceHash,
+      captionText: v2CaptionText,
+    });
+    expect(JSON.parse(writtenCaption?.captionJson ?? "{}")).toMatchObject({
+      schemaVersion: 2,
+      caption: {
+        accessories: v2Caption.accessories,
+      },
+    });
+
+    const freshDeps = dependencies({
+      config: v2Config,
+      getCaption: vi.fn(async () => writtenCaption ?? null),
+      getEmbeddingMetadata: vi.fn(async () => ({
+        sourceHash: createPetVisualEmbeddingSourceHash({
+          visualRevision: PET_VISUAL_MODEL_REVISION_V2,
+          captionRevision: PET_VISION_CAPTION_REVISION_V2,
+          captionSourceHash: v2CaptionSourceHash,
+          captionText: v2CaptionText,
+        }),
+        dimensions: 256,
+      })),
+    });
+    await expect(
+      createPetVisionSearchRuntime(freshDeps).refresh(pet),
+    ).resolves.toBe("unchanged");
+  });
+
   it("skips non-approved pets without reading assets", async () => {
     const deps = dependencies();
     const runtime = createPetVisionSearchRuntime(deps);

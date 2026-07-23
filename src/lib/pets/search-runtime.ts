@@ -251,8 +251,14 @@ export function filterCurrentVisualMatches<T extends ApprovedSearchPet>(input: {
     const assetId = getPetAssetIdFromSpritesheetUrl(pet.spritesheetUrl);
     if (!assetId) return [];
 
-    const envelope = parsePetVisionCaptionEnvelope(caption.captionJson);
-    const captionText = buildPetVisionCaptionText(envelope.caption);
+    const envelope = parsePetVisionCaptionEnvelope(
+      input.visualConfig.captionRevision,
+      caption.captionJson,
+    );
+    const captionText = buildPetVisionCaptionText(
+      input.visualConfig.captionRevision,
+      envelope.caption,
+    );
     if (captionText !== caption.captionText) {
       throw new Error("Stored visual caption is not canonical.");
     }

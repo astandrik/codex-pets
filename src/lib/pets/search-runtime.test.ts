@@ -2,15 +2,21 @@ import { describe, expect, it, vi } from "vitest";
 
 import { PET_SEARCH_MODEL_REVISIONS } from "@/lib/pets/search-config";
 import { createPetSearchSourceHash } from "@/lib/pets/search-embeddings";
-import { createApprovedPetSearchRuntime } from "@/lib/pets/search-runtime";
+import {
+  createApprovedPetSearchRuntime,
+  filterCurrentVisualMatches,
+} from "@/lib/pets/search-runtime";
 import {
   PET_VISION_CAPTION_REVISION,
+  PET_VISION_CAPTION_REVISION_V2,
   PET_VISUAL_MODEL_REVISION,
+  PET_VISUAL_MODEL_REVISION_V2,
   buildPetVisionCaptionText,
   createPetVisionCaptionEnvelope,
   createPetVisionCaptionSourceHash,
   createPetVisualEmbeddingSourceHash,
   type PetVisionCaption,
+  type PetVisionCaptionV2,
 } from "@/lib/pets/search-vision-contract";
 import type { ApprovalStatus } from "@/lib/pets/types";
 
@@ -72,6 +78,79 @@ function dependencies(overrides = {}) {
 }
 
 describe("approved pet search runtime", () => {
+  it("validates stored visual rows with the configured caption revision", () => {
+    const visualConfig = {
+      folderId: "folder-1",
+      apiKey: "secret",
+      captionRevision: PET_VISION_CAPTION_REVISION_V2,
+      visualRevision: PET_VISUAL_MODEL_REVISION_V2,
+      dimensions: 256,
+      profile: null,
+      visionTimeoutMs: 30_000,
+      modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+    } as const;
+    const visualCaption: PetVisionCaptionV2 = {
+      subject: { en: "woman", ru: "женщина" },
+      appearance: { en: "silver hair", ru: "серебряные волосы" },
+      clothing: { en: "black dress", ru: "чёрное платье" },
+      accessories: {
+        en: "black blindfold and sword",
+        ru: "чёрная повязка и меч",
+      },
+      style: { en: "pixel art", ru: "пиксель-арт" },
+      mood: { en: "confident", ru: "уверенная" },
+      colors: { en: ["black"], ru: ["чёрный"] },
+      search_terms_en: ["anime woman", "gothic", "elegant"],
+      search_terms_ru: ["аниме девушка", "готика", "элегантная"],
+    };
+    const captionText = buildPetVisionCaptionText(
+      PET_VISION_CAPTION_REVISION_V2,
+      visualCaption,
+    );
+    const captionSourceHash = createPetVisionCaptionSourceHash({
+      captionRevision: PET_VISION_CAPTION_REVISION_V2,
+      modelUri: visualConfig.modelUri,
+      assetId: "asset-velvet",
+      spritesheetSha256: "a".repeat(64),
+    });
+    const visualSourceHash = createPetVisualEmbeddingSourceHash({
+      visualRevision: PET_VISUAL_MODEL_REVISION_V2,
+      captionRevision: PET_VISION_CAPTION_REVISION_V2,
+      captionSourceHash,
+      captionText,
+    });
+
+    expect(
+      filterCurrentVisualMatches({
+        candidates: new Map([[catalog[0].slug, catalog[0]]]),
+        storedMatches: [
+          {
+            slug: catalog[0].slug,
+            sourceHash: visualSourceHash,
+            score: 0.95,
+          },
+        ],
+        storedCaptions: [
+          {
+            slug: catalog[0].slug,
+            sourceHash: captionSourceHash,
+            captionJson: JSON.stringify(
+              createPetVisionCaptionEnvelope({
+                captionRevision: PET_VISION_CAPTION_REVISION_V2,
+                assetId: "asset-velvet",
+                spritesheetSha256: "a".repeat(64),
+                caption: visualCaption,
+              }),
+            ),
+            captionText,
+            updatedAt: "2026-07-23T00:00:00.000Z",
+          },
+        ],
+        visualConfig,
+      }),
+    ).toEqual([{ slug: catalog[0].slug, score: 0.95 }]);
+  });
+
   it("returns semantic candidates only when they are current approved documents", async () => {
     const findSimilar = vi.fn(async () => [
       {

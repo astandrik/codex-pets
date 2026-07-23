@@ -13,7 +13,12 @@ export type VisionBackfillCaption = {
   colors: { en: string[]; ru: string[] };
   search_terms_en: string[];
   search_terms_ru: string[];
+  accessories?: { en: string; ru: string };
 };
+
+export type VisionBackfillCaptionRevision =
+  | "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1"
+  | "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v2";
 
 export type VisionBackfillFrame = {
   state: string;
@@ -40,10 +45,29 @@ export const PET_VISION_FRAME_POLICY: {
     frame: number;
   }>;
 };
+export const PET_VISION_CAPTION_REVISION_V1: VisionBackfillCaptionRevision;
+export const PET_VISION_CAPTION_REVISION_V2: VisionBackfillCaptionRevision;
+export const PET_VISUAL_MODEL_REVISION_V1: string;
+export const PET_VISUAL_MODEL_REVISION_V2: string;
 export const PET_VISION_SYSTEM_PROMPT: string;
 export const PET_VISION_USER_PROMPT: string;
 export const PET_VISION_RESPONSE_JSON_SCHEMA: Readonly<
   Record<string, unknown>
+>;
+export const PET_VISION_CAPTION_CONTRACTS: Record<
+  VisionBackfillCaptionRevision,
+  {
+    modelName: string;
+    schemaVersion: 1 | 2;
+    responseSchemaName: string;
+    systemPrompt: string;
+    userPrompt: string;
+    responseJsonSchema: Readonly<Record<string, unknown>>;
+  }
+>;
+export const PET_VISUAL_MODEL_REVISIONS: Record<
+  string,
+  { captionRevision: VisionBackfillCaptionRevision; dimensions: number }
 >;
 
 export class PetVisionBackfillError extends Error {
@@ -63,19 +87,49 @@ export function extractPetVisionFrames(
 export function parsePetVisionCaption(
   input: unknown,
 ): VisionBackfillCaption;
+export function parsePetVisionCaption(
+  revision: VisionBackfillCaptionRevision,
+  input: unknown,
+): VisionBackfillCaption;
 export function createPetVisionCaptionEnvelope(input: {
+  captionRevision?: VisionBackfillCaptionRevision;
   assetId: string;
   spritesheetSha256: string;
   caption: VisionBackfillCaption;
-}): unknown;
+}): {
+  schemaVersion: 1 | 2;
+  source: { assetId: string; spritesheetSha256: string };
+  caption: VisionBackfillCaption;
+};
 export function parsePetVisionCaptionEnvelope(value: string): {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
+  source: { assetId: string; spritesheetSha256: string };
+  caption: VisionBackfillCaption;
+};
+export function parsePetVisionCaptionEnvelope(
+  revision: VisionBackfillCaptionRevision,
+  value: string,
+): {
+  schemaVersion: 1 | 2;
   source: { assetId: string; spritesheetSha256: string };
   caption: VisionBackfillCaption;
 };
 export function buildPetVisionCaptionText(
   caption: VisionBackfillCaption,
 ): string;
+export function buildPetVisionCaptionText(
+  revision: VisionBackfillCaptionRevision,
+  caption: VisionBackfillCaption,
+): string;
+export function resolvePetVisionRevisionConfig(
+  captionRevision: string,
+  visualRevision: string,
+): {
+  captionRevision: VisionBackfillCaptionRevision;
+  visualRevision: string;
+  dimensions: number;
+  captionContract: (typeof PET_VISION_CAPTION_CONTRACTS)[VisionBackfillCaptionRevision];
+};
 export function createPetVisionCaptionSourceHash(input: {
   captionRevision: string;
   modelUri: string;

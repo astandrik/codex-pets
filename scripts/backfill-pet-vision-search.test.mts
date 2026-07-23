@@ -4,9 +4,13 @@ import {
   embeddingToBuffer as runtimeEmbeddingToBuffer,
 } from "../src/lib/pets/search-embeddings";
 import {
+  PET_VISION_CAPTION_CONTRACTS as RUNTIME_CAPTION_CONTRACTS,
   PET_VISION_CAPTION_REVISION,
+  PET_VISION_CAPTION_REVISION_V2,
   PET_VISUAL_MODEL_REVISION,
+  PET_VISUAL_MODEL_REVISION_V2,
   buildPetVisionCaptionText as buildRuntimeCaptionText,
+  createPetVisionCaptionEnvelope as createRuntimeCaptionEnvelope,
   createPetVisionCaptionSourceHash as createRuntimeCaptionHash,
   createPetVisualEmbeddingSourceHash as createRuntimeVisualHash,
 } from "../src/lib/pets/search-vision-contract";
@@ -16,6 +20,8 @@ import {
 } from "../src/lib/pets/search-vision-frames";
 
 const {
+  PET_VISION_CAPTION_CONTRACTS,
+  PET_VISUAL_MODEL_REVISIONS,
   PET_VISION_FRAME_POLICY,
   buildPetVisionCaptionText,
   createPetVisionCaptionEnvelope,
@@ -24,6 +30,7 @@ const {
   embeddingToBuffer,
   extractPetVisionFrames,
   parseVisionBackfillArgs,
+  resolvePetVisionRevisionConfig,
   runPetVisionSearchBackfill,
 } = await import("./lib/pet-vision-search-backfill.mjs");
 
@@ -47,6 +54,13 @@ const caption = {
   colors: { en: ["black"], ru: ["чёрный"] },
   search_terms_en: ["anime woman", "gothic", "elegant"],
   search_terms_ru: ["аниме девушка", "готика", "элегантная"],
+};
+const v2Caption = {
+  ...caption,
+  accessories: {
+    en: "black blindfold and sword",
+    ru: "чёрная повязка и меч",
+  },
 };
 const spritesheetSha256 = "a".repeat(64);
 const frames = PET_VISION_FRAME_POLICY.frames.map(
@@ -110,6 +124,32 @@ function freshCaption() {
 }
 
 describe("pet vision search backfill", () => {
+  it("accepts only registered matching caption and visual revisions", () => {
+    expect(
+      resolvePetVisionRevisionConfig(
+        PET_VISION_CAPTION_REVISION_V2,
+        PET_VISUAL_MODEL_REVISION_V2,
+      ),
+    ).toMatchObject({
+      captionRevision: PET_VISION_CAPTION_REVISION_V2,
+      visualRevision: PET_VISUAL_MODEL_REVISION_V2,
+      dimensions: 256,
+      captionContract:
+        PET_VISION_CAPTION_CONTRACTS[PET_VISION_CAPTION_REVISION_V2],
+    });
+    expect(PET_VISUAL_MODEL_REVISIONS[PET_VISUAL_MODEL_REVISION_V2])
+      .toMatchObject({
+        captionRevision: PET_VISION_CAPTION_REVISION_V2,
+        dimensions: 256,
+      });
+    expect(() =>
+      resolvePetVisionRevisionConfig(
+        PET_VISION_CAPTION_REVISION_V2,
+        PET_VISUAL_MODEL_REVISION,
+      ),
+    ).toThrow(/matching caption and visual revisions/i);
+  });
+
   it("accepts only explicit supported modes and apply-only force", () => {
     expect(parseVisionBackfillArgs(["--dry-run"])).toEqual({
       mode: "dry-run",
@@ -166,6 +206,57 @@ describe("pet vision search backfill", () => {
     );
     expect(embeddingToBuffer([1.5, -2.25])).toEqual(
       runtimeEmbeddingToBuffer([1.5, -2.25]),
+    );
+  });
+
+  it("keeps the v2 contract, envelope, canonical text, and hashes in runtime parity", () => {
+    expect(PET_VISION_CAPTION_CONTRACTS[PET_VISION_CAPTION_REVISION_V2])
+      .toEqual(RUNTIME_CAPTION_CONTRACTS[PET_VISION_CAPTION_REVISION_V2]);
+    const scriptText = buildPetVisionCaptionText(
+      PET_VISION_CAPTION_REVISION_V2,
+      v2Caption,
+    );
+    expect(scriptText).toBe(
+      buildRuntimeCaptionText(
+        PET_VISION_CAPTION_REVISION_V2,
+        v2Caption,
+      ),
+    );
+    const scriptEnvelope = createPetVisionCaptionEnvelope({
+      captionRevision: PET_VISION_CAPTION_REVISION_V2,
+      assetId: "asset-velvet",
+      spritesheetSha256,
+      caption: v2Caption,
+    });
+    expect(scriptEnvelope).toEqual(
+      createRuntimeCaptionEnvelope({
+        captionRevision: PET_VISION_CAPTION_REVISION_V2,
+        assetId: "asset-velvet",
+        spritesheetSha256,
+        caption: v2Caption,
+      }),
+    );
+    expect(scriptEnvelope.schemaVersion).toBe(2);
+
+    const captionHashInput = {
+      captionRevision: PET_VISION_CAPTION_REVISION_V2,
+      modelUri: visualConfig.modelUri,
+      assetId: "asset-velvet",
+      spritesheetSha256,
+    };
+    const captionSourceHash =
+      createPetVisionCaptionSourceHash(captionHashInput);
+    expect(captionSourceHash).toBe(
+      createRuntimeCaptionHash(captionHashInput),
+    );
+    const visualHashInput = {
+      visualRevision: PET_VISUAL_MODEL_REVISION_V2,
+      captionRevision: PET_VISION_CAPTION_REVISION_V2,
+      captionSourceHash,
+      captionText: scriptText,
+    };
+    expect(createPetVisualEmbeddingSourceHash(visualHashInput)).toBe(
+      createRuntimeVisualHash(visualHashInput),
     );
   });
 

@@ -6,13 +6,13 @@ import { pathToFileURL } from "node:url";
 
 import { createRequestStartLimiter } from "./lib/pet-search-backfill.mjs";
 import {
-  PET_VISION_RESPONSE_JSON_SCHEMA,
-  PET_VISION_SYSTEM_PROMPT,
-  PET_VISION_USER_PROMPT,
+  PET_VISION_CAPTION_REVISION_V1,
+  PET_VISUAL_MODEL_REVISION_V1,
   embeddingToBuffer,
   extractPetVisionFrames,
   parsePetVisionCaption,
   parseVisionBackfillArgs,
+  resolvePetVisionRevisionConfig,
   runPetVisionSearchBackfill,
 } from "./lib/pet-vision-search-backfill.mjs";
 
@@ -29,11 +29,8 @@ const PETS_TABLE = "codex_pets";
 const ASSETS_TABLE = "codex_pet_assets";
 const CAPTIONS_TABLE = "codex_pet_search_captions";
 const EMBEDDINGS_TABLE = "codex_pet_search_embeddings";
-const CAPTION_REVISION =
-  "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1";
-const VISUAL_REVISION = "yandex-text-search-2026-07-pet-vision-v1";
-const CAPTION_MODEL_NAME = "qwen3.6-35b-a3b";
-const DIMENSIONS = 256;
+const CAPTION_REVISION = PET_VISION_CAPTION_REVISION_V1;
+const VISUAL_REVISION = PET_VISUAL_MODEL_REVISION_V1;
 const DEFAULT_EMBEDDING_TIMEOUT_MS = 800;
 const DEFAULT_VISION_TIMEOUT_MS = 30_000;
 const VISION_ENDPOINT =
@@ -76,9 +73,9 @@ export async function main(argv = process.argv.slice(2)) {
     return await runPetVisionSearchBackfill({
       options,
       config: {
-        captionRevision: CAPTION_REVISION,
-        visualRevision: VISUAL_REVISION,
-        dimensions: DIMENSIONS,
+        captionRevision: providerConfig.captionRevision,
+        visualRevision: providerConfig.visualRevision,
+        dimensions: providerConfig.dimensions,
         modelUri: providerConfig.modelUri,
       },
       pets,
@@ -107,24 +104,20 @@ function readProviderConfig(mode) {
   const visualRevision =
     process.env.PET_SEARCH_VISUAL_MODEL_REVISION?.trim() ||
     VISUAL_REVISION;
-  if (captionRevision !== CAPTION_REVISION) {
-    throw new Error(
-      `PET_SEARCH_VISION_CAPTION_REVISION must be ${CAPTION_REVISION}.`,
-    );
-  }
-  if (visualRevision !== VISUAL_REVISION) {
-    throw new Error(
-      `PET_SEARCH_VISUAL_MODEL_REVISION must be ${VISUAL_REVISION}.`,
-    );
-  }
+  const revisionConfig = resolvePetVisionRevisionConfig(
+    captionRevision,
+    visualRevision,
+  );
 
   const folderId = process.env.YANDEX_AI_STUDIO_FOLDER_ID?.trim();
   if (!folderId) {
     throw new Error("YANDEX_AI_STUDIO_FOLDER_ID is required.");
   }
-  const modelUri = `gpt://${folderId}/${CAPTION_MODEL_NAME}`;
+  const modelUri =
+    `gpt://${folderId}/${revisionConfig.captionContract.modelName}`;
   if (mode === "dry-run") {
     return {
+      ...revisionConfig,
       folderId,
       apiKey: "",
       modelUri,
@@ -145,6 +138,7 @@ function readProviderConfig(mode) {
     throw new Error("YANDEX_AI_STUDIO_API_KEY_FILE is empty.");
   }
   return {
+    ...revisionConfig,
     folderId,
     apiKey,
     modelUri,
@@ -208,7 +202,10 @@ function createVisionProvider(config) {
       throw providerError("invalid_response");
     }
     try {
-      return parsePetVisionCaption(JSON.parse(message.content));
+      return parsePetVisionCaption(
+        config.captionRevision,
+        JSON.parse(message.content),
+      );
     } catch {
       throw providerError("invalid_response");
     }
@@ -229,13 +226,19 @@ function createVisionProvider(config) {
             "OpenAI-Project": config.folderId,
           },
           body: JSON.stringify({
-            model: config.modelUri,
-            messages: [
-              { role: "system", content: PET_VISION_SYSTEM_PROMPT },
+          model: config.modelUri,
+          messages: [
+              {
+                role: "system",
+                content: config.captionContract.systemPrompt,
+              },
               {
                 role: "user",
                 content: [
-                  { type: "text", text: PET_VISION_USER_PROMPT },
+                  {
+                    type: "text",
+                    text: config.captionContract.userPrompt,
+                  },
                   ...frames.map((frame) => ({
                     type: "image_url",
                     image_url: { url: frame.dataUrl },
@@ -249,9 +252,9 @@ function createVisionProvider(config) {
             response_format: {
               type: "json_schema",
               json_schema: {
-                name: "pet_visual_caption_v1",
+                name: config.captionContract.responseSchemaName,
                 strict: true,
-                schema: PET_VISION_RESPONSE_JSON_SCHEMA,
+                schema: config.captionContract.responseJsonSchema,
               },
             },
           }),
