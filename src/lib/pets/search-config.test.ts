@@ -3,9 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   loadPetSearchConfig,
   PET_SEARCH_MODEL_REVISIONS,
+  PET_VISUAL_MODEL_REVISIONS,
 } from "@/lib/pets/search-config";
+import { PET_VISION_CAPTION_REVISION } from "@/lib/pets/search-vision-contract";
 
 const supportedRevision = Object.keys(PET_SEARCH_MODEL_REVISIONS)[0] ?? "";
+const supportedVisualRevision =
+  Object.keys(PET_VISUAL_MODEL_REVISIONS)[0] ?? "";
 
 describe("pet search runtime configuration", () => {
   it("defaults to lexical mode without reading semantic secrets", () => {
@@ -15,6 +19,9 @@ describe("pet search runtime configuration", () => {
       mode: "lexical",
       semantic: null,
       fallbackReason: null,
+      visualMode: "off",
+      visual: null,
+      visualFallbackReason: null,
     });
     expect(readTextFile).not.toHaveBeenCalled();
   });
@@ -32,7 +39,16 @@ describe("pet search runtime configuration", () => {
 
     expect(config.mode).toBe("lexical");
     expect(config.semantic).toMatchObject({ revision: supportedRevision });
+    expect(config.visual).toMatchObject({
+      captionRevision: PET_VISION_CAPTION_REVISION,
+      visualRevision: supportedVisualRevision,
+      dimensions: 256,
+      profile: null,
+      visionTimeoutMs: 30_000,
+      modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+    });
     expect(config.fallbackReason).toBeNull();
+    expect(config.visualFallbackReason).toBeNull();
   });
 
   it("loads a supported hybrid model and trims the secret file", () => {
@@ -61,6 +77,18 @@ describe("pet search runtime configuration", () => {
         timeoutMs: 900,
       },
       fallbackReason: null,
+      visualMode: "off",
+      visual: {
+        folderId: "folder-1",
+        apiKey: "secret-key",
+        captionRevision: PET_VISION_CAPTION_REVISION,
+        visualRevision: supportedVisualRevision,
+        dimensions: 256,
+        profile: null,
+        visionTimeoutMs: 30_000,
+        modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+      },
+      visualFallbackReason: null,
     });
   });
 
@@ -71,6 +99,9 @@ describe("pet search runtime configuration", () => {
       mode: "hybrid",
       semantic: null,
       fallbackReason: "configuration_missing",
+      visualMode: "off",
+      visual: null,
+      visualFallbackReason: null,
     });
   });
 
@@ -128,5 +159,56 @@ describe("pet search runtime configuration", () => {
       () => "secret",
     );
     expect(config.semantic?.timeoutMs).toBe(800);
+  });
+
+  it("loads visual mode independently and fails hybrid closed until calibrated", () => {
+    const config = loadPetSearchConfig(
+      {
+        PET_SEARCH_VISUAL_MODE: "hybrid",
+        PET_SEARCH_VISION_TIMEOUT_MS: "45000",
+        YANDEX_AI_STUDIO_FOLDER_ID: "folder-1",
+        YANDEX_AI_STUDIO_API_KEY_FILE: "/run/secrets/key",
+      },
+      () => "secret",
+    );
+
+    expect(config).toMatchObject({
+      mode: "lexical",
+      semantic: null,
+      fallbackReason: null,
+      visualMode: "hybrid",
+      visual: {
+        captionRevision: PET_VISION_CAPTION_REVISION,
+        visualRevision: supportedVisualRevision,
+        visionTimeoutMs: 45_000,
+        profile: null,
+      },
+      visualFallbackReason: "visual_calibration_missing",
+    });
+  });
+
+  it("disables unsupported or incomplete visual configuration safely", () => {
+    expect(
+      loadPetSearchConfig(
+        {
+          PET_SEARCH_VISUAL_MODE: "shadow",
+          YANDEX_AI_STUDIO_FOLDER_ID: "folder-1",
+          YANDEX_AI_STUDIO_API_KEY_FILE: "/run/secrets/key",
+          PET_SEARCH_VISUAL_MODEL_REVISION: "unknown",
+        },
+        () => "secret",
+      ),
+    ).toMatchObject({
+      visualMode: "shadow",
+      visual: null,
+      visualFallbackReason: "visual_configuration_missing",
+    });
+    expect(
+      loadPetSearchConfig({ PET_SEARCH_VISUAL_MODE: "hybrid" }, () => "unused"),
+    ).toMatchObject({
+      visualMode: "hybrid",
+      visual: null,
+      visualFallbackReason: "visual_configuration_missing",
+    });
   });
 });
