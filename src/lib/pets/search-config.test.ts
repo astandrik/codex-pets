@@ -10,6 +10,10 @@ import { PET_VISION_CAPTION_REVISION } from "@/lib/pets/search-vision-contract";
 const supportedRevision = Object.keys(PET_SEARCH_MODEL_REVISIONS)[0] ?? "";
 const supportedVisualRevision =
   Object.keys(PET_VISUAL_MODEL_REVISIONS)[0] ?? "";
+const calibratedVisualProfile = {
+  minSemanticScore: 0.3455384373664856,
+  weight: 0.25,
+};
 
 describe("pet search runtime configuration", () => {
   it("defaults to lexical mode without reading semantic secrets", () => {
@@ -43,7 +47,7 @@ describe("pet search runtime configuration", () => {
       captionRevision: PET_VISION_CAPTION_REVISION,
       visualRevision: supportedVisualRevision,
       dimensions: 256,
-      profile: null,
+      profile: calibratedVisualProfile,
       visionTimeoutMs: 30_000,
       modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
     });
@@ -84,7 +88,7 @@ describe("pet search runtime configuration", () => {
         captionRevision: PET_VISION_CAPTION_REVISION,
         visualRevision: supportedVisualRevision,
         dimensions: 256,
-        profile: null,
+        profile: calibratedVisualProfile,
         visionTimeoutMs: 30_000,
         modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
       },
@@ -161,7 +165,7 @@ describe("pet search runtime configuration", () => {
     expect(config.semantic?.timeoutMs).toBe(800);
   });
 
-  it("loads visual mode independently and fails hybrid closed until calibrated", () => {
+  it("loads the revision-bound visual calibration independently", () => {
     const config = loadPetSearchConfig(
       {
         PET_SEARCH_VISUAL_MODE: "hybrid",
@@ -181,9 +185,9 @@ describe("pet search runtime configuration", () => {
         captionRevision: PET_VISION_CAPTION_REVISION,
         visualRevision: supportedVisualRevision,
         visionTimeoutMs: 45_000,
-        profile: null,
+        profile: calibratedVisualProfile,
       },
-      visualFallbackReason: "visual_calibration_missing",
+      visualFallbackReason: null,
     });
   });
 

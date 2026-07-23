@@ -41,7 +41,10 @@ export const PET_VISUAL_MODEL_REVISIONS = {
   [PET_VISUAL_MODEL_REVISION]: {
     dimensions: 256,
     captionRevision: PET_VISION_CAPTION_REVISION,
-    profile: null,
+    profile: {
+      minSemanticScore: 0.3455384373664856,
+      weight: 0.25,
+    },
   },
 } as const satisfies Record<string, PetVisualModelRevisionDefinition>;
 
