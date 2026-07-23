@@ -263,6 +263,8 @@ export function evaluateVisualSearchRolloutGate(
   const checks = {
     exactNameMrrAt5: report.exactNameMrrAt5 === 1,
     textHybridNdcgLift: textReport.hybridNdcgLift >= 0.2,
+    textNegativeSemanticOnlySafe:
+      textReport.negativeSemanticOnlySafe,
     combinedOverallNonRegression:
       report.combinedNdcgAt5 >= report.textHybridNdcgAt5,
     visualSubsetNdcgLift: report.visualSubsetLift >= 0.15,

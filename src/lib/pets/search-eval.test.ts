@@ -203,8 +203,7 @@ describe("pet search evaluation", () => {
   });
 
   it("evaluates combined holdout gates independently from calibration", () => {
-    expect(
-      evaluateVisualSearchRolloutGate(
+    const gate = evaluateVisualSearchRolloutGate(
         {
           exactNameMrrAt5: 1,
           textHybridNdcgAt5: 0.7,
@@ -232,8 +231,12 @@ describe("pet search evaluation", () => {
           visualFallbackHttpStatuses: [200, 200],
           captionsAbsentFromPublicContracts: true,
         },
-      ),
-    ).toMatchObject({ passed: true });
+      );
+
+    expect(gate).toMatchObject({
+      passed: true,
+      checks: { textNegativeSemanticOnlySafe: true },
+    });
   });
 });
 

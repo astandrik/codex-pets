@@ -52,7 +52,8 @@ describe("pet vision caption contract", () => {
     expect(() =>
       parsePetVisionCaption({ ...rawCaption, identity: "forbidden" }),
     ).toThrow(/unknown field/i);
-    const { mood: _mood, ...missingMood } = rawCaption;
+    const missingMood: Partial<typeof rawCaption> = { ...rawCaption };
+    delete missingMood.mood;
     expect(() => parsePetVisionCaption(missingMood)).toThrow(/missing field/i);
     expect(() =>
       parsePetVisionCaption({
