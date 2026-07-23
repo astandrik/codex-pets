@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createSiteTools } from "@/components/WebMCP/WebMCPRegistrar";
+import {
+  findInternalSearchFieldPaths,
+} from "@/lib/pets/search-public-contract";
 
 describe("WebMCP search tool", () => {
   afterEach(() => {
@@ -32,9 +35,9 @@ describe("WebMCP search tool", () => {
       "velvet-luma",
       "orbit-otter",
     ]);
-    expect(JSON.stringify(result?.structuredContent)).not.toMatch(
-      /captionJson|captionText|sourceHash|visualMode|visualFallbackReason/,
-    );
+    expect(
+      findInternalSearchFieldPaths(result?.structuredContent),
+    ).toEqual([]);
   });
 });
 
@@ -53,8 +56,12 @@ function createPet(slug: string, displayName: string) {
     ownerProfileSlug: "creator",
     createdAt: "2026-07-01T00:00:00.000Z",
     approvedAt: "2026-07-02T00:00:00.000Z",
-    captionJson: '{"internal":true}',
-    captionText: "internal visual caption",
-    sourceHash: "internal-source-hash",
+    internalSearch: {
+      captionEnvelope: { accessories: "internal accessory" },
+      sourceHash: "internal-source-hash",
+      provenance: "visual-v2",
+      scores: [0.99],
+      prompt: "internal prompt",
+    },
   };
 }

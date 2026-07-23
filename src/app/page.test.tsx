@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  findInternalSearchFieldPaths,
+} from "@/lib/pets/search-public-contract";
+
 const repositoryMocks = vi.hoisted(() => ({
   listApprovedPets: vi.fn(),
 }));
@@ -67,9 +71,7 @@ describe("homepage pet search", () => {
       ),
     ).toEqual(["velvet-luma", "orbit-otter"]);
     expect(homePage?.props.filteredTotal).toBe(2);
-    expect(JSON.stringify(homePage?.props)).not.toMatch(
-      /captionJson|captionText|sourceHash|visualMode|visualFallbackReason/,
-    );
+    expect(findInternalSearchFieldPaths(homePage?.props)).toEqual([]);
   });
 });
 
@@ -95,8 +97,12 @@ function createPet(slug: string, displayName: string) {
     downloadCount: 0,
     installCount: 0,
     likeCount: 0,
-    captionJson: '{"internal":true}',
-    captionText: "internal visual caption",
-    sourceHash: "internal-source-hash",
+    internalSearch: {
+      captionEnvelope: { accessories: "internal accessory" },
+      sourceHash: "internal-source-hash",
+      provenance: "visual-v2",
+      scores: [0.99],
+      prompt: "internal prompt",
+    },
   };
 }

@@ -117,9 +117,13 @@ from four fixed sprite frames. Captions and their provenance remain internal;
 public JSON, TOON, homepage, MCP, and WebMCP shapes do not change. Configure
 `YANDEX_AI_STUDIO_FOLDER_ID`,
 `YANDEX_AI_STUDIO_API_KEY_FILE`, and
-`PET_SEARCH_MODEL_REVISION=yandex-text-search-2026-07`. The API key is accepted
-only through the secret-file setting. Provider failures and timeouts fall back
-to lexical results; visual-only failures preserve the text-hybrid order.
+`PET_SEARCH_MODEL_REVISION=yandex-text-search-2026-07`. Vision v2 uses
+`PET_SEARCH_VISION_CAPTION_REVISION=yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v2`
+and
+`PET_SEARCH_VISUAL_MODEL_REVISION=yandex-text-search-2026-07-pet-vision-v2`.
+The v1 pair remains a pinned rollback path. The API key is accepted only
+through the secret-file setting. Provider failures and timeouts fall back to
+lexical results; visual-only failures preserve the text-hybrid order.
 
 To run without YDB on generated sample data:
 
@@ -271,8 +275,13 @@ npm run search:backfill -- --dry-run
 npm run search:backfill -- --apply
 npm run search:backfill -- --apply --slug orbit-otter --force
 npm run search:backfill-vision -- --dry-run
-npm run search:backfill-vision -- --apply --slug orbit-otter
+npm run search:backfill-vision -- --apply --force --slug fischl-detailed
+npm run search:backfill-vision -- --apply --force --slug 2b-2
+npm run search:backfill-vision -- --apply --force --slug master-of-terra
+npm run search:backfill-vision -- --apply --force --slug vi
 npm run search:backfill-vision -- --apply
+npm run search:eval:label-pool
+npm run search:eval:text-regression
 npm run search:eval:calibrate
 npm run search:eval:holdout
 ```
@@ -280,19 +289,36 @@ npm run search:eval:holdout
 Both backfills require an explicit `--dry-run` or `--apply`; visual `--force`
 is valid only with `--apply`. They never print document text, captions, images,
 embeddings, prompts, or secrets. Dry-run still reads and hashes spritesheets
-but never calls either AI provider and never writes YDB. A safe rollout is
-base `lexical` and visual `off` → additive migrations → backfills → visual
-`shadow` → calibration → untouched holdout → human review of the combined
-`sexy` top five → both modes `hybrid`.
+but never calls either AI provider and never writes YDB. V2 full backfill is
+blocked until the four canaries pass in the frozen order shown above.
+
+Generate the blinded label bundle into a new or empty directory (default:
+`/private/tmp/codex-pets-v2-labels`), review every candidate, and replace
+`src/lib/pets/search-eval-judgments-v2.json` with the exported JSON before
+running any v2 eval command. Freeze those labels in
+`test(search): freeze v2 pooled search judgments`; do not inspect model metrics
+while labeling. `search:eval:text-regression` owns the 20% text lift gate.
+Calibration independently requires overall non-regression and at least 15%
+visual-subset lift, then the selected threshold/weight is pinned to the exact
+v2 visual revision. Run `search:eval:holdout` exactly once only after rebuilding
+that exact commit. A failed holdout is not a tuning set and requires a new
+revision and holdout.
+
+A safe rollout is base `lexical` and visual `off` → v2 canaries and backfill →
+visual `shadow` → blinded-label freeze → text regression → calibration →
+exact-SHA rebuild → one-time holdout → human review of the combined `sexy` top
+five → both modes `hybrid`.
 
 The first rollback is `PET_SEARCH_VISUAL_MODE=off`; use
 `PET_SEARCH_MODE=lexical` to disable the text-semantic contour too. The additive
-caption and embeddings tables may remain.
-The checked-in eval queries live in
-`src/lib/pets/search-eval-fixtures.json` with frozen `calibration` and
-`holdout` splits. Calibration evaluates all observed visual scores against
-weights `0.25`, `0.50`, `0.75`, and `1.00`; the holdout command requires a
-committed revision-bound profile and must not be used for tuning. Live eval
+caption and embeddings rows may remain. To restore the already calibrated v1
+ranker, select the matching pair
+`yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1` and
+`yandex-text-search-2026-07-pet-vision-v1`; never mix revision pairs.
+Legacy labels remain diagnostic-only in
+`src/lib/pets/search-eval-fixtures.json`; the frozen v2 query manifest is
+`src/lib/pets/search-eval-queries-v2.json`. Run
+`npm run search:eval:diagnostic-v1` only for explanatory comparisons. Live eval
 requires configured YDB and AI Studio access and prints aggregate results plus
 the public slugs in the final `sexy` review list.
 

@@ -51,6 +51,10 @@ INDEXNOW_ENDPOINT=
 PET_SEARCH_MODE=lexical
 PET_SEARCH_MODEL_REVISION=yandex-text-search-2026-07
 PET_SEARCH_EMBEDDING_TIMEOUT_MS=800
+PET_SEARCH_VISUAL_MODE=off
+PET_SEARCH_VISION_CAPTION_REVISION=yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v2
+PET_SEARCH_VISUAL_MODEL_REVISION=yandex-text-search-2026-07-pet-vision-v2
+PET_SEARCH_VISION_TIMEOUT_MS=30000
 YANDEX_AI_STUDIO_FOLDER_ID=
 YANDEX_AI_STUDIO_API_KEY_FILE=/run/secrets/yandex-ai-studio.key
 
@@ -104,34 +108,63 @@ For hybrid search, deploy with `PET_SEARCH_MODE=lexical` and
 npm run search:backfill -- --dry-run
 npm run search:backfill -- --apply
 npm run search:backfill-vision -- --dry-run
-npm run search:backfill-vision -- --apply --slug PET_SLUG
+npm run search:backfill-vision -- --apply --force --slug fischl-detailed
+npm run search:backfill-vision -- --apply --force --slug 2b-2
+npm run search:backfill-vision -- --apply --force --slug master-of-terra
+npm run search:backfill-vision -- --apply --force --slug vi
 npm run search:backfill-vision -- --apply
 ```
 
 The visual dry-run reads and hashes spritesheets but does not call providers or
-write YDB. After the full paced backfill, enable visual `shadow`, inspect only
-aggregate latency/fallback metrics, and run:
+write YDB. Full v2 backfill must remain blocked until all four attribute
+canaries pass in that order. V1 rows remain in the same tables and must not be
+deleted.
+
+After the full paced backfill, verify fresh v2 caption/vector counts against
+the current approved count, enable visual `shadow`, and inspect only aggregate
+latency/fallback metrics. Generate a blinded bundle under a new or empty local
+directory:
 
 ```bash
+PET_SEARCH_EVAL_LABEL_POOL_DIR=/private/tmp/codex-pets-v2-labels \
+  npm run search:eval:label-pool
+```
+
+The reviewer sees only each frozen query, slug, display name, and four frames.
+Every candidate must be labeled `relevant`, `irrelevant`, or `uncertain`.
+Replace `src/lib/pets/search-eval-judgments-v2.json` with the single exported
+JSON and freeze it before reading metrics:
+
+```bash
+npm run search:eval:text-regression
 npm run search:eval:calibrate
 ```
 
-Pin the selected threshold and weight to the exact visual revision in code,
-repeat the full verification chain and candidate build, then run the untouched
-holdout exactly once:
+Stop unless text regression reaches its 20% lift gate and visual calibration
+has overall non-regression plus at least 15% visual-subset lift. Pin the
+selected threshold and weight to the exact v2 visual revision in
+`chore(search): pin visual v2 calibration profile`, repeat the full verification
+chain, and rebuild an exact-SHA candidate. Run the untouched holdout exactly
+once:
 
 ```bash
 npm run search:eval:holdout
 ```
 
-Do not tune on holdout results. Stop if any gate fails, and require explicit
-human review of the printed combined `sexy` top five before enabling both base
-and visual `hybrid`. The first rollback is `PET_SEARCH_VISUAL_MODE=off`; switch
+Do not tune on holdout results. A failed holdout permanently rejects that
+holdout and requires a new revision and v3 holdout. Stop if any gate fails, and
+require explicit human review of the printed combined `sexy` top five before
+enabling both base and visual `hybrid`.
+
+The first rollback is `PET_SEARCH_VISUAL_MODE=off`; switch
 `PET_SEARCH_MODE=lexical` only if the text contour must also be disabled.
-Caption and embedding tables can remain. The AI Studio API key must be mounted
-as a read-only file and referenced by `YANDEX_AI_STUDIO_API_KEY_FILE`; do not
-place it directly in the environment file. Captions, images, prompts, and
-embeddings must not be copied into deployment logs.
+Caption and embedding tables can remain. The calibrated v1 rollback pair is
+`yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1` with
+`yandex-text-search-2026-07-pet-vision-v1`; set both together. The AI Studio API
+key must be mounted as a read-only file and referenced by
+`YANDEX_AI_STUDIO_API_KEY_FILE`; do not place it directly in the environment
+file. Captions, images, prompts, hashes, scores, and embeddings must not be
+copied into deployment logs or public DTOs.
 
 ## Build and run
 

@@ -1,6 +1,10 @@
 import { decode } from "@toon-format/toon";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  findInternalSearchFieldPaths,
+} from "@/lib/pets/search-public-contract";
+
 const searchMocks = vi.hoisted(() => ({
   searchApprovedPets: vi.fn(),
 }));
@@ -61,9 +65,13 @@ const semanticPet = {
   slug: "velvet-luma",
   displayName: "Velvet Luma",
   description: "A gothic character with no literal query token.",
-  captionJson: '{"internal":true}',
-  captionText: "internal visual caption",
-  sourceHash: "internal-source-hash",
+  internalSearch: {
+    captionEnvelope: { accessories: "internal accessory" },
+    sourceHash: "internal-source-hash",
+    provenance: "visual-v2",
+    scores: [0.99],
+    prompt: "internal prompt",
+  },
 };
 
 describe("GET /api/pets", () => {
@@ -108,6 +116,7 @@ describe("GET /api/pets", () => {
       pets: [approvedPetPayload],
     });
     expect(JSON.stringify(body)).not.toContain("private@example.com");
+    expect(findInternalSearchFieldPaths(body)).toEqual([]);
   });
 
   it("returns TOON search results matching the JSON payload", async () => {
@@ -159,9 +168,8 @@ describe("GET /api/pets", () => {
       "velvet-luma",
       "orbit-otter",
     ]);
-    expect(JSON.stringify(jsonBody)).not.toMatch(
-      /captionJson|captionText|sourceHash|visualMode|visualFallbackReason/,
-    );
+    expect(findInternalSearchFieldPaths(jsonBody)).toEqual([]);
+    expect(findInternalSearchFieldPaths(toonBody)).toEqual([]);
   });
 
   it.each(["timeout", "rate_limited", "provider_error"] as const)(
@@ -220,9 +228,7 @@ describe("GET /api/pets", () => {
         "velvet-luma",
         "orbit-otter",
       ]);
-      expect(JSON.stringify(body)).not.toMatch(
-        /caption|sourceHash|visualFallbackReason/,
-      );
+      expect(findInternalSearchFieldPaths(body)).toEqual([]);
     },
   );
 });

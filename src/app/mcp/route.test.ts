@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  findInternalSearchFieldPaths,
+} from "@/lib/pets/search-public-contract";
+
 const repositoryMocks = vi.hoisted(() => ({
   getApprovedPetBySlug: vi.fn(),
 }));
@@ -51,9 +55,13 @@ const semanticPet = {
   slug: "velvet-luma",
   displayName: "Velvet Luma",
   description: "A gothic character with no literal query token.",
-  captionJson: '{"internal":true}',
-  captionText: "internal visual caption",
-  sourceHash: "internal-source-hash",
+  internalSearch: {
+    captionEnvelope: { accessories: "internal accessory" },
+    sourceHash: "internal-source-hash",
+    provenance: "visual-v2",
+    scores: [0.99],
+    prompt: "internal prompt",
+  },
 };
 
 describe("POST /mcp", () => {
@@ -225,9 +233,9 @@ describe("POST /mcp", () => {
     expect(JSON.stringify(body.result.structuredContent)).not.toContain(
       "private@example.com",
     );
-    expect(JSON.stringify(body.result.structuredContent)).not.toMatch(
-      /captionJson|captionText|sourceHash|visualMode|visualFallbackReason/,
-    );
+    expect(
+      findInternalSearchFieldPaths(body.result.structuredContent),
+    ).toEqual([]);
     expect(body.result.content[0].text).toContain('"orbit-otter"');
     expect(searchMocks.searchApprovedPets).toHaveBeenCalledWith({
       q: "sexy",
