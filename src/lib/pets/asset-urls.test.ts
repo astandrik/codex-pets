@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   assetUrl,
+  getPetAssetIdFromSpritesheetUrl,
   getPetIdleStripUrl,
   getPetPreviewUrl,
 } from "@/lib/pets/asset-urls";
@@ -43,5 +44,21 @@ describe("asset URLs", () => {
     ).toBeNull();
     expect(getPetPreviewUrl("/api/assets/asset_123/pet.zip")).toBeNull();
     expect(getPetIdleStripUrl("/api/assets/asset_123/pet.zip")).toBeNull();
+  });
+
+  it("extracts decoded asset IDs from relative and absolute spritesheet URLs", () => {
+    expect(
+      getPetAssetIdFromSpritesheetUrl(
+        "/api/assets/asset_123%2Fvariant/spritesheet.webp",
+      ),
+    ).toBe("asset_123/variant");
+    expect(
+      getPetAssetIdFromSpritesheetUrl(
+        "https://pets.example/codex-pets/api/assets/asset_456/spritesheet.png",
+      ),
+    ).toBe("asset_456");
+    expect(
+      getPetAssetIdFromSpritesheetUrl("/api/assets/asset_123/pet.zip"),
+    ).toBeNull();
   });
 });
