@@ -1,0 +1,496 @@
+[
+  {
+    "id": "text-exact-zero-two",
+    "suite": "text-regression-v2",
+    "category": "exact",
+    "query": "Zero Two",
+    "judgmentMode": "deterministic",
+    "relevantSlugs": ["zero-two"],
+    "visualSubset": false,
+    "visualAspects": []
+  },
+  {
+    "id": "text-exact-velvet-luma",
+    "suite": "text-regression-v2",
+    "category": "exact",
+    "query": "velvet-luma",
+    "judgmentMode": "deterministic",
+    "relevantSlugs": ["velvet-luma"],
+    "visualSubset": false,
+    "visualAspects": []
+  },
+  {
+    "id": "text-golden-armor-sword",
+    "suite": "text-regression-v2",
+    "category": "multi-token",
+    "query": "golden armor and sword",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["clothing", "accessory", "color"]
+  },
+  {
+    "id": "text-blue-haired-water-goddess",
+    "suite": "text-regression-v2",
+    "category": "multi-token",
+    "query": "blue-haired water goddess",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "color", "subject"]
+  },
+  {
+    "id": "text-typo-gigachd",
+    "suite": "text-regression-v2",
+    "category": "typo",
+    "query": "gigachd",
+    "judgmentMode": "deterministic",
+    "relevantSlugs": ["gigachad-2"],
+    "visualSubset": false,
+    "visualAspects": []
+  },
+  {
+    "id": "text-typo-cheburashkka",
+    "suite": "text-regression-v2",
+    "category": "typo",
+    "query": "cheburashkka",
+    "judgmentMode": "deterministic",
+    "relevantSlugs": ["cheburashka"],
+    "visualSubset": false,
+    "visualAspects": []
+  },
+  {
+    "id": "text-cute-spooky-companion",
+    "suite": "text-regression-v2",
+    "category": "style",
+    "query": "cute spooky companion",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["mood", "style", "subject"]
+  },
+  {
+    "id": "text-gothic-anime-woman",
+    "suite": "text-regression-v2",
+    "category": "style",
+    "query": "gothic anime woman",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "style"]
+  },
+  {
+    "id": "text-friendly-coding-wolf",
+    "suite": "text-regression-v2",
+    "category": "style",
+    "query": "friendly coding wolf",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["mood", "subject"]
+  },
+  {
+    "id": "text-ru-green-giant",
+    "suite": "text-regression-v2",
+    "category": "russian",
+    "query": "большой зелёный гигант",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "color", "subject"]
+  },
+  {
+    "id": "text-ru-silver-haired-swordswoman",
+    "suite": "text-regression-v2",
+    "category": "russian",
+    "query": "сереброволосая девушка с мечом",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "accessory"]
+  },
+  {
+    "id": "text-ru-cute-hedgehog",
+    "suite": "text-regression-v2",
+    "category": "russian",
+    "query": "милый ёжик с мешочком",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["mood", "accessory", "subject"]
+  },
+  {
+    "id": "text-ru-pink-haired-red-suit",
+    "suite": "text-regression-v2",
+    "category": "russian",
+    "query": "девушка с розовыми волосами в красном костюме",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "color"]
+  },
+  {
+    "id": "text-masked-armored-anime-woman",
+    "suite": "text-regression-v2",
+    "category": "multi-token",
+    "query": "masked armored anime woman",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "accessory"]
+  },
+  {
+    "id": "text-wise-grey-wizard",
+    "suite": "text-regression-v2",
+    "category": "multi-token",
+    "query": "wise grey wizard with staff",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "accessory", "subject"]
+  },
+  {
+    "id": "text-negative-quantum-banana",
+    "suite": "text-regression-v2",
+    "category": "negative",
+    "query": "quantum banana compiler",
+    "judgmentMode": "deterministic",
+    "relevantSlugs": [],
+    "visualSubset": false,
+    "visualAspects": []
+  },
+  {
+    "id": "text-negative-tax-invoice",
+    "suite": "text-regression-v2",
+    "category": "negative",
+    "query": "tax invoice spreadsheet",
+    "judgmentMode": "deterministic",
+    "relevantSlugs": [],
+    "visualSubset": false,
+    "visualAspects": []
+  },
+  {
+    "id": "text-negative-orbital-accountant",
+    "suite": "text-regression-v2",
+    "category": "negative",
+    "query": "orbital concrete accountant",
+    "judgmentMode": "deterministic",
+    "relevantSlugs": [],
+    "visualSubset": false,
+    "visualAspects": []
+  },
+  {
+    "id": "visual-calibration-sexy",
+    "suite": "visual-calibration-v2",
+    "category": "style",
+    "query": "sexy",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "mood", "style"]
+  },
+  {
+    "id": "visual-calibration-badass",
+    "suite": "visual-calibration-v2",
+    "category": "style",
+    "query": "badass",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "mood", "style"]
+  },
+  {
+    "id": "visual-calibration-blonde-eye-covering",
+    "suite": "visual-calibration-v2",
+    "category": "multi-token",
+    "query": "blonde woman with a dark eye covering",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "accessory", "color"]
+  },
+  {
+    "id": "visual-calibration-silver-blindfold-swordswoman",
+    "suite": "visual-calibration-v2",
+    "category": "multi-token",
+    "query": "silver-haired blindfolded swordswoman in a black dress",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "accessory", "color"]
+  },
+  {
+    "id": "visual-calibration-magenta-brawler",
+    "suite": "visual-calibration-v2",
+    "category": "multi-token",
+    "query": "magenta-haired brawler with oversized gauntlets",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "accessory", "color"]
+  },
+  {
+    "id": "visual-calibration-golden-warrior",
+    "suite": "visual-calibration-v2",
+    "category": "multi-token",
+    "query": "golden-armored warrior with a red cloak and flaming sword",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["clothing", "accessory", "color", "subject"]
+  },
+  {
+    "id": "visual-calibration-cyan-punk-corset",
+    "suite": "visual-calibration-v2",
+    "category": "multi-token",
+    "query": "cyan-haired punk girl in a magenta corset",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "color", "style"]
+  },
+  {
+    "id": "visual-calibration-gothic-chains-boots",
+    "suite": "visual-calibration-v2",
+    "category": "style",
+    "query": "black gothic outfit with chains and platform boots",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["clothing", "accessory", "color", "style"]
+  },
+  {
+    "id": "visual-calibration-hooded-curator",
+    "suite": "visual-calibration-v2",
+    "category": "multi-token",
+    "query": "tiny faceless hooded curator in a black cape",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "subject"]
+  },
+  {
+    "id": "visual-calibration-pink-horns-red-bodysuit",
+    "suite": "visual-calibration-v2",
+    "category": "multi-token",
+    "query": "pink-haired woman with horns in a red bodysuit",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "accessory", "color"]
+  },
+  {
+    "id": "visual-calibration-blue-braided-punk",
+    "suite": "visual-calibration-v2",
+    "category": "style",
+    "query": "blue-braided punk woman",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "color", "style"]
+  },
+  {
+    "id": "visual-calibration-rabbit-forest-warrior",
+    "suite": "visual-calibration-v2",
+    "category": "multi-token",
+    "query": "rabbit-eared forest warrior woman",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "accessory", "subject"]
+  },
+  {
+    "id": "visual-calibration-mask-crawler",
+    "suite": "visual-calibration-v2",
+    "category": "style",
+    "query": "creepy mask-faced crawler",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "mood", "style"]
+  },
+  {
+    "id": "visual-calibration-pink-hedgehog-glasses",
+    "suite": "visual-calibration-v2",
+    "category": "multi-token",
+    "query": "round pink hedgehog with purple glasses",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "accessory", "color", "subject"]
+  },
+  {
+    "id": "visual-calibration-vintage-bird-gentleman",
+    "suite": "visual-calibration-v2",
+    "category": "style",
+    "query": "vintage bird gentleman in a black coat and teal vest",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "color", "style", "subject"]
+  },
+  {
+    "id": "visual-calibration-exact-master-of-terra",
+    "suite": "visual-calibration-v2",
+    "category": "exact",
+    "query": "master-of-terra",
+    "judgmentMode": "deterministic",
+    "relevantSlugs": ["master-of-terra"],
+    "visualSubset": false,
+    "visualAspects": []
+  },
+  {
+    "id": "visual-calibration-exact-aqua-heart",
+    "suite": "visual-calibration-v2",
+    "category": "exact",
+    "query": "Aqua Heart",
+    "judgmentMode": "deterministic",
+    "relevantSlugs": ["aqua-heart"],
+    "visualSubset": false,
+    "visualAspects": []
+  },
+  {
+    "id": "visual-calibration-negative-submarine",
+    "suite": "visual-calibration-v2",
+    "category": "negative",
+    "query": "transparent glass submarine",
+    "judgmentMode": "deterministic",
+    "relevantSlugs": [],
+    "visualSubset": false,
+    "visualAspects": []
+  },
+  {
+    "id": "visual-calibration-negative-school-bus",
+    "suite": "visual-calibration-v2",
+    "category": "negative",
+    "query": "yellow school bus",
+    "judgmentMode": "deterministic",
+    "relevantSlugs": [],
+    "visualSubset": false,
+    "visualAspects": []
+  },
+  {
+    "id": "visual-calibration-negative-landscape",
+    "suite": "visual-calibration-v2",
+    "category": "negative",
+    "query": "photorealistic mountain landscape",
+    "judgmentMode": "deterministic",
+    "relevantSlugs": [],
+    "visualSubset": false,
+    "visualAspects": []
+  },
+  {
+    "id": "visual-holdout-ru-vampire-huntress",
+    "suite": "visual-holdout-v2",
+    "category": "russian",
+    "query": "рыжая охотница на вампиров в чёрном костюме с клинками",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "accessory", "color", "subject"]
+  },
+  {
+    "id": "visual-holdout-triangular-helmet",
+    "suite": "visual-holdout-v2",
+    "category": "multi-token",
+    "query": "rusted triangular helmet and an oversized blade",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "accessory", "color"]
+  },
+  {
+    "id": "visual-holdout-coral-ponytail",
+    "suite": "visual-holdout-v2",
+    "category": "multi-token",
+    "query": "silver armor, coral ponytail, black bow and sword",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "accessory", "color"]
+  },
+  {
+    "id": "visual-holdout-cat-samurai",
+    "suite": "visual-holdout-v2",
+    "category": "multi-token",
+    "query": "white-haired cat-eared samurai with gold trim and a katana",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "accessory", "color", "subject"]
+  },
+  {
+    "id": "visual-holdout-ribbon-idol",
+    "suite": "visual-holdout-v2",
+    "category": "style",
+    "query": "teal-haired ribbon idol in a pink-and-white stage outfit",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "accessory", "color", "style"]
+  },
+  {
+    "id": "visual-holdout-futuristic-bodysuit",
+    "suite": "visual-holdout-v2",
+    "category": "style",
+    "query": "pale blue bob, red eyes, white futuristic bodysuit",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "color", "style"]
+  },
+  {
+    "id": "visual-holdout-striped-suit",
+    "suite": "visual-holdout-v2",
+    "category": "style",
+    "query": "black-and-white striped suit, pale purple face, green teeth",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "color", "style"]
+  },
+  {
+    "id": "visual-holdout-ru-blue-wolf",
+    "suite": "visual-holdout-v2",
+    "category": "russian",
+    "query": "маленький синий волк с дружелюбным сосредоточенным выражением",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "color", "mood", "subject"]
+  },
+  {
+    "id": "visual-holdout-golden-bird",
+    "suite": "visual-holdout-v2",
+    "category": "multi-token",
+    "query": "golden fantasy bird companion",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["color", "style", "subject"]
+  },
+  {
+    "id": "visual-holdout-blonde-headscarf",
+    "suite": "visual-holdout-v2",
+    "category": "multi-token",
+    "query": "blonde woman in a green headscarf with blue eyes",
+    "judgmentMode": "pooled",
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "accessory", "color"]
+  },
+  {
+    "id": "visual-holdout-exact-foggy-hedgehog",
+    "suite": "visual-holdout-v2",
+    "category": "exact",
+    "query": "Foggy Hedgehog",
+    "judgmentMode": "deterministic",
+    "relevantSlugs": ["foggy-hedgehog"],
+    "visualSubset": false,
+    "visualAspects": []
+  },
+  {
+    "id": "visual-holdout-exact-2b",
+    "suite": "visual-holdout-v2",
+    "category": "exact",
+    "query": "2b-2",
+    "judgmentMode": "deterministic",
+    "relevantSlugs": ["2b-2"],
+    "visualSubset": false,
+    "visualAspects": []
+  },
+  {
+    "id": "visual-holdout-negative-excavator",
+    "suite": "visual-holdout-v2",
+    "category": "negative",
+    "query": "neon orange excavator",
+    "judgmentMode": "deterministic",
+    "relevantSlugs": [],
+    "visualSubset": false,
+    "visualAspects": []
+  },
+  {
+    "id": "visual-holdout-negative-microwave",
+    "suite": "visual-holdout-v2",
+    "category": "negative",
+    "query": "purple microwave oven",
+    "judgmentMode": "deterministic",
+    "relevantSlugs": [],
+    "visualSubset": false,
+    "visualAspects": []
+  },
+  {
+    "id": "visual-holdout-negative-tax-form",
+    "suite": "visual-holdout-v2",
+    "category": "negative",
+    "query": "paper tax form with barcode",
+    "judgmentMode": "deterministic",
+    "relevantSlugs": [],
+    "visualSubset": false,
+    "visualAspects": []
+  }
+]

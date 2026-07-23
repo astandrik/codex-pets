@@ -1,4 +1,8 @@
 import type { PetVisualCalibrationProfile } from "@/lib/pets/search-config";
+import type {
+  JudgmentMode,
+  PetSearchEvalSuite,
+} from "@/lib/pets/search-eval-fixtures";
 import {
   fuseRankedPets,
   type LexicalPetMatch,
@@ -23,6 +27,8 @@ export type RankedSearchObservation = {
   category: string;
   query: string;
   relevantSlugs: string[];
+  judgmentMode?: JudgmentMode;
+  judgedSlugs?: string[];
   lexicalSlugs: string[];
   hybridSlugs: string[];
   semanticOnlySlugs: string[];
@@ -45,6 +51,9 @@ export type VisualSearchObservation<T extends SearchablePet> = {
   category: string;
   query: string;
   relevantSlugs: string[];
+  judgmentMode?: JudgmentMode;
+  judgedSlugs?: string[];
+  reviewedBy?: string | null;
   visualSubset: boolean;
   pets: readonly T[];
   lexical: readonly LexicalPetMatch<T>[];
@@ -71,13 +80,15 @@ export type VisualSearchProfileReport = {
   }>;
 };
 
-export type VisualSearchEvalSplit = "calibration" | "holdout";
+export type VisualSearchEvalSplit = PetSearchEvalSuite;
 
 export function resolveVisualSearchEvalSplit(
   mode: string | undefined,
 ): VisualSearchEvalSplit | null {
-  if (mode === "calibrate") return "calibration";
-  if (mode === "holdout") return "holdout";
+  if (mode === "calibrate") return "visual-calibration-v2";
+  if (mode === "holdout") return "visual-holdout-v2";
+  if (mode === "text-regression") return "text-regression-v2";
+  if (mode === "diagnostic-v1") return "diagnostic-v1";
   return null;
 }
 
@@ -116,7 +127,7 @@ export function calibrateVisualSearchProfile<T extends SearchablePet>(
         textMinSemanticScore,
         profile,
       );
-      if (!passesVisualCalibrationSafety(report)) continue;
+      if (!isVisualCalibrationReportEligible(report)) continue;
       if (!selected || isBetterVisualProfile(profile, report, selected)) {
         selected = { profile, report };
       }
@@ -139,33 +150,41 @@ export function evaluateVisualSearchProfile<T extends SearchablePet>(
   profile: PetVisualCalibrationProfile,
 ): VisualSearchProfileReport {
   const rankings = observations.map((observation) => {
-    const textHybridSlugs = fuseRankedPets({
-      pets: observation.pets,
-      lexical: observation.lexical,
-      semanticRanks: [
-        {
-          matches: observation.textMatches,
-          minScore: textMinSemanticScore,
-          weight: 1,
-        },
-      ],
-    }).map((pet) => pet.slug);
-    const combinedSlugs = fuseRankedPets({
-      pets: observation.pets,
-      lexical: observation.lexical,
-      semanticRanks: [
-        {
-          matches: observation.textMatches,
-          minScore: textMinSemanticScore,
-          weight: 1,
-        },
-        {
-          matches: observation.visualMatches,
-          minScore: profile.minSemanticScore,
-          weight: profile.weight,
-        },
-      ],
-    }).map((pet) => pet.slug);
+    const textHybridSlugs = condenseRankedSlugs(
+      fuseRankedPets({
+        pets: observation.pets,
+        lexical: observation.lexical,
+        semanticRanks: [
+          {
+            matches: observation.textMatches,
+            minScore: textMinSemanticScore,
+            weight: 1,
+          },
+        ],
+      }).map((pet) => pet.slug),
+      observation.judgmentMode ?? "deterministic",
+      observation.judgedSlugs ?? [],
+    );
+    const combinedSlugs = condenseRankedSlugs(
+      fuseRankedPets({
+        pets: observation.pets,
+        lexical: observation.lexical,
+        semanticRanks: [
+          {
+            matches: observation.textMatches,
+            minScore: textMinSemanticScore,
+            weight: 1,
+          },
+          {
+            matches: observation.visualMatches,
+            minScore: profile.minSemanticScore,
+            weight: profile.weight,
+          },
+        ],
+      }).map((pet) => pet.slug),
+      observation.judgmentMode ?? "deterministic",
+      observation.judgedSlugs ?? [],
+    );
     const textHybrid = new Set(textHybridSlugs);
     return {
       query: observation.query,
@@ -344,13 +363,14 @@ export function selectSemanticThreshold(
   return selected;
 }
 
-function passesVisualCalibrationSafety(
+export function isVisualCalibrationReportEligible(
   report: VisualSearchProfileReport,
 ): boolean {
   return (
     report.exactNameMrrAt5 === 1 &&
     report.negativeVisualOnlySafe &&
     report.combinedNdcgAt5 >= report.textHybridNdcgAt5 &&
+    report.visualSubsetLift >= 0.15 &&
     report.sexyHasRelevantTop5
   );
 }
@@ -386,13 +406,31 @@ function relativeLift(baseline: number, candidate: number): number {
 export function evaluateSearchQuality(
   observations: readonly RankedSearchObservation[],
 ): SearchQualityReport {
-  const positive = observations.filter(
+  const condensedObservations = observations.map((observation) => ({
+    ...observation,
+    lexicalSlugs: condenseRankedSlugs(
+      observation.lexicalSlugs,
+      observation.judgmentMode ?? "deterministic",
+      observation.judgedSlugs ?? [],
+    ),
+    hybridSlugs: condenseRankedSlugs(
+      observation.hybridSlugs,
+      observation.judgmentMode ?? "deterministic",
+      observation.judgedSlugs ?? [],
+    ),
+    semanticOnlySlugs: condenseRankedSlugs(
+      observation.semanticOnlySlugs,
+      observation.judgmentMode ?? "deterministic",
+      observation.judgedSlugs ?? [],
+    ),
+  }));
+  const positive = condensedObservations.filter(
     (observation) => observation.relevantSlugs.length > 0,
   );
   const exact = positive.filter(
     (observation) => observation.category === "exact",
   );
-  const negative = observations.filter(
+  const negative = condensedObservations.filter(
     (observation) => observation.category === "negative",
   );
   const lexicalNdcgAt5 = mean(
@@ -423,7 +461,7 @@ export function evaluateSearchQuality(
         : hybridNdcgAt5 > 0
           ? Number.POSITIVE_INFINITY
           : 0,
-    sexyHasRelevantTop5: observations
+    sexyHasRelevantTop5: condensedObservations
       .filter((observation) => observation.query.toLowerCase() === "sexy")
       .some(
         (observation) =>
@@ -432,7 +470,7 @@ export function evaluateSearchQuality(
             observation.relevantSlugs,
           ) > 0,
       ),
-    sexyHumanReviewedTop5: observations
+    sexyHumanReviewedTop5: condensedObservations
       .filter(
         (observation) =>
           observation.query.toLowerCase() === "sexy" &&
@@ -451,9 +489,21 @@ export function evaluateSearchQuality(
         (observation) => observation.semanticOnlySlugs.length === 0,
       ),
     p95DurationMs: percentile95(
-      observations.map((observation) => observation.durationMs),
+      condensedObservations.map((observation) => observation.durationMs),
     ),
   };
+}
+
+export function condenseRankedSlugs(
+  rankedSlugs: readonly string[],
+  judgmentMode: JudgmentMode,
+  judgedSlugs: readonly string[],
+): string[] {
+  if (judgmentMode === "deterministic") {
+    return [...rankedSlugs];
+  }
+  const judged = new Set(judgedSlugs);
+  return rankedSlugs.filter((slug) => judged.has(slug));
 }
 
 export function evaluateSearchRolloutGate(

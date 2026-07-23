@@ -10,7 +10,14 @@ import {
   findSimilarPetEmbeddings,
   type StoredSemanticPetMatch,
 } from "@/lib/pets/search-embeddings-repository";
-import fixtures from "@/lib/pets/search-eval-fixtures.json";
+import diagnosticFixtures from "@/lib/pets/search-eval-fixtures.json";
+import frozenJudgments from "@/lib/pets/search-eval-judgments-v2.json";
+import {
+  joinPetSearchEvalJudgments,
+  PET_SEARCH_EVAL_QUERIES_V2,
+  type JudgmentMode,
+  type PetSearchEvalJudgmentRecord,
+} from "@/lib/pets/search-eval-fixtures";
 import {
   calibrateVisualSearchProfile,
   evaluateSearchQuality,
@@ -35,6 +42,16 @@ const LIVE_EVAL_MODE = process.env.PET_SEARCH_LIVE_EVAL;
 const LIVE_EVAL_SPLIT = resolveVisualSearchEvalSplit(LIVE_EVAL_MODE);
 const LIVE_EVAL_ENABLED = LIVE_EVAL_SPLIT !== null;
 
+type LiveEvalFixture = {
+  category: string;
+  query: string;
+  relevantSlugs: string[];
+  judgmentMode: JudgmentMode;
+  judgedSlugs: string[];
+  reviewedBy: string | null;
+  visualSubset: boolean;
+};
+
 describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
   it(
     "uses only the requested frozen split and deterministic profile rules",
@@ -56,9 +73,19 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
       const visualConfig = config.visual;
       const embeddingClient = createYandexEmbeddingClient(semanticConfig);
       const split = LIVE_EVAL_SPLIT;
-      const selectedFixtures = fixtures.filter(
-        (fixture) => fixture.split === split,
-      );
+      const selectedFixtures: LiveEvalFixture[] =
+        split === "diagnostic-v1"
+          ? diagnosticFixtures.map((fixture) => ({
+              ...fixture,
+              suite: "diagnostic-v1",
+              judgmentMode: "deterministic",
+              judgedSlugs: [],
+            }))
+          : joinPetSearchEvalJudgments(
+              PET_SEARCH_EVAL_QUERIES_V2,
+              frozenJudgments as PetSearchEvalJudgmentRecord[],
+              split,
+            );
       if (selectedFixtures.length === 0) {
         throw new Error(`No frozen ${split} fixtures are configured.`);
       }
@@ -76,7 +103,24 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
         ),
       );
 
-      if (split === "calibration") {
+      if (split === "text-regression-v2") {
+        console.info("[codex-pets][pet-text-regression]", {
+          textReport,
+        });
+        expect(textReport.exactNameMrrAt5).toBe(1);
+        expect(textReport.hybridNdcgLift).toBeGreaterThanOrEqual(0.2);
+        expect(textReport.negativeSemanticOnlySafe).toBe(true);
+        return;
+      }
+
+      if (split === "diagnostic-v1") {
+        console.info("[codex-pets][pet-search-diagnostic-v1]", {
+          textReport,
+        });
+        return;
+      }
+
+      if (split === "visual-calibration-v2") {
         const calibration = calibrateVisualSearchProfile(
           observations,
           semanticConfig.minSemanticScore,
@@ -104,9 +148,11 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
         semanticConfig.minSemanticScore,
         visualConfig.profile,
       );
-      const sexyFixture = fixtures.find(
-        (fixture) => fixture.query === "sexy",
-      );
+      const sexyFixture = joinPetSearchEvalJudgments(
+        PET_SEARCH_EVAL_QUERIES_V2,
+        frozenJudgments as PetSearchEvalJudgmentRecord[],
+        "visual-calibration-v2",
+      ).find((fixture) => fixture.query === "sexy");
       if (!sexyFixture) {
         throw new Error("The frozen sexy review fixture is missing.");
       }
@@ -141,7 +187,7 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
       });
       expect(gate.passed).toBe(true);
 
-      async function collectObservation(fixture: (typeof fixtures)[number]) {
+      async function collectObservation(fixture: LiveEvalFixture) {
         const startedAt = performance.now();
         const catalog = await listApprovedPetsForSearch();
         const queryEmbedding = await embeddingClient.embedQuery(
@@ -180,6 +226,9 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
           category: fixture.category,
           query: fixture.query,
           relevantSlugs: fixture.relevantSlugs,
+          judgmentMode: fixture.judgmentMode,
+          judgedSlugs: fixture.judgedSlugs,
+          reviewedBy: fixture.reviewedBy,
           visualSubset: fixture.visualSubset,
           pets: catalog,
           lexical: rankPetsLexically(catalog, fixture.query),
@@ -232,6 +281,9 @@ function toTextObservation(
     category: observation.category,
     query: observation.query,
     relevantSlugs: observation.relevantSlugs,
+    judgmentMode: observation.judgmentMode,
+    judgedSlugs: observation.judgedSlugs,
+    reviewedBy: observation.reviewedBy,
     lexicalSlugs,
     hybridSlugs,
     semanticOnlySlugs: semanticOnlySlugs(

@@ -2,10 +2,17 @@ import { describe, expect, it } from "vitest";
 
 import fixtures from "@/lib/pets/search-eval-fixtures.json";
 import {
+  PET_SEARCH_EVAL_QUERIES_V2,
+  joinPetSearchEvalJudgments,
+  validatePetSearchEvalQueryManifest,
+} from "@/lib/pets/search-eval-fixtures";
+import {
   calibrateVisualSearchProfile,
+  condenseRankedSlugs,
   evaluateSearchRolloutGate,
   evaluateSearchQuality,
   evaluateVisualSearchRolloutGate,
+  isVisualCalibrationReportEligible,
   resolveVisualSearchEvalSplit,
   selectSemanticThreshold,
 } from "@/lib/pets/search-eval";
@@ -13,13 +20,23 @@ import { PET_SEARCH_MODEL_REVISIONS } from "@/lib/pets/search-config";
 import { rankPetsLexically } from "@/lib/pets/search-ranking";
 
 describe("pet search evaluation", () => {
-  it("maps the calibrate command to the frozen calibration split", () => {
-    expect(resolveVisualSearchEvalSplit("calibrate")).toBe("calibration");
-    expect(resolveVisualSearchEvalSplit("holdout")).toBe("holdout");
+  it("maps live commands to distinct frozen v2 suites", () => {
+    expect(resolveVisualSearchEvalSplit("calibrate")).toBe(
+      "visual-calibration-v2",
+    );
+    expect(resolveVisualSearchEvalSplit("holdout")).toBe(
+      "visual-holdout-v2",
+    );
+    expect(resolveVisualSearchEvalSplit("text-regression")).toBe(
+      "text-regression-v2",
+    );
+    expect(resolveVisualSearchEvalSplit("diagnostic-v1")).toBe(
+      "diagnostic-v1",
+    );
     expect(resolveVisualSearchEvalSplit(undefined)).toBeNull();
   });
 
-  it("covers every required query family without claiming unfinished human review", () => {
+  it("preserves all exposed v1 fixtures as diagnostic-only labels", () => {
     expect(new Set(fixtures.map((fixture) => fixture.category))).toEqual(
       new Set(["exact", "multi-token", "typo", "style", "russian", "negative"]),
     );
@@ -29,8 +46,8 @@ describe("pet search evaluation", () => {
     expect(
       fixtures.find((fixture) => fixture.query === "sexy")?.reviewedBy,
     ).toBeNull();
-    expect(new Set(fixtures.map((fixture) => fixture.split))).toEqual(
-      new Set(["calibration", "holdout"]),
+    expect(new Set(fixtures.map((fixture) => fixture.suite))).toEqual(
+      new Set(["diagnostic-v1"]),
     );
     expect(fixtures.every((fixture) => fixture.labelsFrozenBy.length > 0))
       .toBe(true);
@@ -44,6 +61,60 @@ describe("pet search evaluation", () => {
     ).toEqual(
       new Set(["appearance", "clothing", "accessory", "color", "mood", "style"]),
     );
+  });
+
+  it("validates the frozen v2 suite sizes and calibration/holdout isolation", () => {
+    expect(() =>
+      validatePetSearchEvalQueryManifest(PET_SEARCH_EVAL_QUERIES_V2),
+    ).not.toThrow();
+
+    const firstCalibration = PET_SEARCH_EVAL_QUERIES_V2.find(
+      (query) => query.suite === "visual-calibration-v2",
+    );
+    const duplicate = PET_SEARCH_EVAL_QUERIES_V2.map((query) =>
+      query.suite === "visual-holdout-v2"
+        ? { ...query, query: firstCalibration?.query ?? "sexy" }
+        : query,
+    );
+    expect(() => validatePetSearchEvalQueryManifest(duplicate)).toThrow(
+      /duplicated.*calibration.*holdout/i,
+    );
+
+    const undersized = PET_SEARCH_EVAL_QUERIES_V2.filter(
+      (query) =>
+        query.suite !== "visual-holdout-v2" ||
+        query.category === "negative",
+    );
+    expect(() => validatePetSearchEvalQueryManifest(undersized)).toThrow(
+      /visual-holdout-v2.*positive/i,
+    );
+  });
+
+  it("refuses pooled evaluation until complete frozen judgments exist", () => {
+    expect(() =>
+      joinPetSearchEvalJudgments(
+        PET_SEARCH_EVAL_QUERIES_V2,
+        [],
+        "visual-calibration-v2",
+      ),
+    ).toThrow(/frozen pooled judgments.*missing/i);
+  });
+
+  it("condenses pooled rankings to relevant and irrelevant judgments", () => {
+    expect(
+      condenseRankedSlugs(
+        ["unjudged", "relevant", "uncertain", "irrelevant"],
+        "pooled",
+        ["relevant", "irrelevant"],
+      ),
+    ).toEqual(["relevant", "irrelevant"]);
+    expect(
+      condenseRankedSlugs(
+        ["unjudged", "relevant", "irrelevant"],
+        "deterministic",
+        [],
+      ),
+    ).toEqual(["unjudged", "relevant", "irrelevant"]);
   });
 
   it("selects the fixed model threshold from labeled semantic scores", () => {
@@ -207,6 +278,34 @@ describe("pet search evaluation", () => {
     expect(result.report.negativeVisualOnlySafe).toBe(true);
     expect(result.report.visualSubsetCombinedNdcgAt5).toBe(1);
     expect(result.evaluatedProfileCount).toBe(8);
+  });
+
+  it("requires the full 15 percent visual calibration lift", () => {
+    const safeReport = {
+      exactNameMrrAt5: 1,
+      textHybridNdcgAt5: 0.7,
+      combinedNdcgAt5: 0.8,
+      visualSubsetTextHybridNdcgAt5: 0.6,
+      visualSubsetCombinedNdcgAt5: 0.69,
+      visualSubsetLift: 0.15,
+      sexyHasRelevantTop5: true,
+      negativeVisualOnlySafe: true,
+      p95DurationMs: 900,
+      rankings: [],
+    };
+    expect(
+      isVisualCalibrationReportEligible({
+        ...safeReport,
+        visualSubsetLift: 0.1499,
+      }),
+    ).toBe(false);
+    expect(isVisualCalibrationReportEligible(safeReport)).toBe(true);
+    expect(
+      isVisualCalibrationReportEligible({
+        ...safeReport,
+        negativeVisualOnlySafe: false,
+      }),
+    ).toBe(false);
   });
 
   it("evaluates combined holdout gates independently from calibration", () => {

@@ -1,7 +1,7 @@
 [
   {
     "id": "exact-name-zero-two",
-    "split": "calibration",
+    "suite": "diagnostic-v1",
     "category": "exact",
     "query": "Zero Two",
     "relevantSlugs": ["zero-two"],
@@ -12,7 +12,7 @@
   },
   {
     "id": "exact-slug-velvet-luma",
-    "split": "holdout",
+    "suite": "diagnostic-v1",
     "category": "exact",
     "query": "velvet-luma",
     "relevantSlugs": ["velvet-luma"],
@@ -23,7 +23,7 @@
   },
   {
     "id": "multi-token-gothic-anime",
-    "split": "calibration",
+    "suite": "diagnostic-v1",
     "category": "multi-token",
     "query": "gothic anime",
     "relevantSlugs": ["velvet-luma", "nightshade-2", "fischl-detailed"],
@@ -34,7 +34,7 @@
   },
   {
     "id": "typo-gigachad",
-    "split": "calibration",
+    "suite": "diagnostic-v1",
     "category": "typo",
     "query": "gigachd",
     "relevantSlugs": ["gigachad-2"],
@@ -45,7 +45,7 @@
   },
   {
     "id": "style-cute",
-    "split": "calibration",
+    "suite": "diagnostic-v1",
     "category": "style",
     "query": "cute",
     "relevantSlugs": ["cheburashka", "crawlstack-polished", "foggy-hedgehog"],
@@ -56,7 +56,7 @@
   },
   {
     "id": "style-badass",
-    "split": "holdout",
+    "suite": "diagnostic-v1",
     "category": "style",
     "query": "badass",
     "relevantSlugs": ["vi", "jinx-2", "master-of-terra", "primaris"],
@@ -67,7 +67,7 @@
   },
   {
     "id": "style-sexy",
-    "split": "calibration",
+    "suite": "diagnostic-v1",
     "category": "style",
     "query": "sexy",
     "relevantSlugs": ["nozomi-2", "pink-catgirl", "2b-2", "lady-d-2"],
@@ -78,7 +78,7 @@
   },
   {
     "id": "russian-green-giant",
-    "split": "calibration",
+    "suite": "diagnostic-v1",
     "category": "russian",
     "query": "большой зелёный гигант",
     "relevantSlugs": ["bolshoy-tyll"],
@@ -89,7 +89,7 @@
   },
   {
     "id": "clothing-black-gothic-dress",
-    "split": "calibration",
+    "suite": "diagnostic-v1",
     "category": "style",
     "query": "black gothic dress and blindfold",
     "relevantSlugs": ["2b-2"],
@@ -100,7 +100,7 @@
   },
   {
     "id": "accessory-blonde-eyepatch",
-    "split": "holdout",
+    "suite": "diagnostic-v1",
     "category": "style",
     "query": "blonde woman with eyepatch",
     "relevantSlugs": ["fischl-detailed"],
@@ -111,7 +111,7 @@
   },
   {
     "id": "color-pink-hair-red-bodysuit",
-    "split": "holdout",
+    "suite": "diagnostic-v1",
     "category": "style",
     "query": "pink hair red bodysuit",
     "relevantSlugs": ["zero-two-2"],
@@ -122,7 +122,7 @@
   },
   {
     "id": "mood-friendly-focused-wolf",
-    "split": "holdout",
+    "suite": "diagnostic-v1",
     "category": "style",
     "query": "friendly focused wolf",
     "relevantSlugs": ["luna"],
@@ -133,7 +133,7 @@
   },
   {
     "id": "negative-quantum-banana",
-    "split": "calibration",
+    "suite": "diagnostic-v1",
     "category": "negative",
     "query": "quantum banana compiler",
     "relevantSlugs": [],
@@ -144,7 +144,7 @@
   },
   {
     "id": "negative-tax-invoice",
-    "split": "holdout",
+    "suite": "diagnostic-v1",
     "category": "negative",
     "query": "tax invoice spreadsheet",
     "relevantSlugs": [],
