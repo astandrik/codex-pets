@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 
+import {
+  getPetAssetIdFromSpritesheetUrl,
+} from "@/lib/pets/asset-urls";
+import { readPetSpritesheetAsset } from "@/lib/pets/assets-repository";
 import { listPetSearchCaptions } from "@/lib/pets/search-captions-repository";
-import { loadPetSearchConfig } from "@/lib/pets/search-config";
+import {
+  PET_VISION_CAPTION_REVISIONS,
+  PET_VISUAL_MODEL_REVISIONS,
+  loadPetSearchConfig,
+  type PetSearchSemanticConfig,
+  type PetSearchVisualConfig,
+} from "@/lib/pets/search-config";
 import {
   createPetSearchSourceHash,
   createYandexEmbeddingClient,
@@ -17,9 +27,16 @@ import {
   PET_SEARCH_EVAL_QUERIES_V2,
   type JudgmentMode,
   type PetSearchEvalJudgmentRecord,
+  type PetSearchEvalSuite,
 } from "@/lib/pets/search-eval-fixtures";
 import {
+  buildPetSearchLabelPool,
+  writePetSearchLabelPoolBundle,
+  type PetSearchLabelPoolCandidate,
+} from "@/lib/pets/search-eval-label-pool";
+import {
   calibrateVisualSearchProfile,
+  condenseRankedSlugs,
   evaluateSearchQuality,
   evaluateVisualSearchProfile,
   evaluateVisualSearchRolloutGate,
@@ -35,12 +52,23 @@ import {
   type SemanticPetMatch,
 } from "@/lib/pets/search-ranking";
 import { filterCurrentVisualMatches } from "@/lib/pets/search-runtime";
+import {
+  PET_VISION_CAPTION_REVISION_V1,
+  PET_VISION_CAPTION_REVISION_V2,
+  PET_VISUAL_MODEL_REVISION_V1,
+  PET_VISUAL_MODEL_REVISION_V2,
+} from "@/lib/pets/search-vision-contract";
+import { extractPetVisionFrames } from "@/lib/pets/search-vision-frames";
 import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 import type { PublicPet } from "@/lib/pets/types";
 
 const LIVE_EVAL_MODE = process.env.PET_SEARCH_LIVE_EVAL;
-const LIVE_EVAL_SPLIT = resolveVisualSearchEvalSplit(LIVE_EVAL_MODE);
-const LIVE_EVAL_ENABLED = LIVE_EVAL_SPLIT !== null;
+const LIVE_EVAL_SUITE = resolveVisualSearchEvalSplit(LIVE_EVAL_MODE);
+const LABEL_POOL_MODE = LIVE_EVAL_MODE === "label-pool";
+const LIVE_EVAL_ENABLED = LIVE_EVAL_SUITE !== null || LABEL_POOL_MODE;
+const LABEL_POOL_OUTPUT_DIRECTORY =
+  process.env.PET_SEARCH_EVAL_LABEL_POOL_DIR?.trim() ||
+  "/private/tmp/codex-pets-v2-labels";
 
 type LiveEvalFixture = {
   category: string;
@@ -54,80 +82,228 @@ type LiveEvalFixture = {
 
 describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
   it(
-    "uses only the requested frozen split and deterministic profile rules",
+    "uses only frozen suites and blinded revision-complete candidate pools",
     async () => {
       const config = loadPetSearchConfig({
         ...process.env,
         PET_SEARCH_MODE: "hybrid",
         PET_SEARCH_VISUAL_MODE: "shadow",
       });
-      if (!config.semantic || !config.visual) {
+      if (!config.semantic) {
         throw new Error(
-          "Live visual search eval configuration is unavailable.",
+          "Live pet search eval text configuration is unavailable.",
         );
       }
-      if (!LIVE_EVAL_SPLIT) {
-        throw new Error("Live visual search eval mode is invalid.");
-      }
       const semanticConfig = config.semantic;
-      const visualConfig = config.visual;
+      const selectedVisualConfig = config.visual;
       const embeddingClient = createYandexEmbeddingClient(semanticConfig);
-      const split = LIVE_EVAL_SPLIT;
-      const selectedFixtures: LiveEvalFixture[] =
-        split === "diagnostic-v1"
-          ? diagnosticFixtures.map((fixture) => ({
-              ...fixture,
-              suite: "diagnostic-v1",
-              judgmentMode: "deterministic",
-              judgedSlugs: [],
-            }))
-          : joinPetSearchEvalJudgments(
-              PET_SEARCH_EVAL_QUERIES_V2,
-              frozenJudgments as PetSearchEvalJudgmentRecord[],
-              split,
-            );
-      if (selectedFixtures.length === 0) {
-        throw new Error(`No frozen ${split} fixtures are configured.`);
+      const catalog = await listApprovedPetsForSearch();
+      const petsBySlug = new Map(catalog.map((pet) => [pet.slug, pet]));
+
+      if (LABEL_POOL_MODE) {
+        const visualV1Config = createRevisionVisualConfig(
+          semanticConfig,
+          PET_VISUAL_MODEL_REVISION_V1,
+          selectedVisualConfig?.visionTimeoutMs,
+        );
+        const visualV2Config = createRevisionVisualConfig(
+          semanticConfig,
+          PET_VISUAL_MODEL_REVISION_V2,
+          selectedVisualConfig?.visionTimeoutMs,
+        );
+        const [
+          visualV1Captions,
+          visualV2Captions,
+          labelCatalog,
+        ] = await Promise.all([
+          listPetSearchCaptions(PET_VISION_CAPTION_REVISION_V1),
+          listPetSearchCaptions(PET_VISION_CAPTION_REVISION_V2),
+          createLabelCatalog(catalog),
+        ]);
+        const pooledQueries = PET_SEARCH_EVAL_QUERIES_V2.filter(
+          (query) => query.judgmentMode === "pooled",
+        );
+        const pools = [];
+        for (const fixture of pooledQueries) {
+          const queryEmbedding = await embeddingClient.embedQuery(
+            fixture.query,
+          );
+          const [
+            storedTextMatches,
+            storedVisualV1Matches,
+            storedVisualV2Matches,
+          ] = await Promise.all([
+            findSimilarPetEmbeddings({
+              modelRevision: semanticConfig.revision,
+              dimensions: semanticConfig.dimensions,
+              embedding: queryEmbedding,
+            }),
+            findSimilarPetEmbeddings({
+              modelRevision: visualV1Config.visualRevision,
+              dimensions: visualV1Config.dimensions,
+              embedding: queryEmbedding,
+            }),
+            findSimilarPetEmbeddings({
+              modelRevision: visualV2Config.visualRevision,
+              dimensions: visualV2Config.dimensions,
+              embedding: queryEmbedding,
+            }),
+          ]);
+          const textMatches = currentTextMatches(
+            storedTextMatches,
+            petsBySlug,
+            semanticConfig.revision,
+          );
+          const visualV1Matches = filterCurrentVisualMatches({
+            candidates: petsBySlug,
+            storedMatches: storedVisualV1Matches,
+            storedCaptions: visualV1Captions,
+            visualConfig: visualV1Config,
+          });
+          const visualV2Matches = filterCurrentVisualMatches({
+            candidates: petsBySlug,
+            storedMatches: storedVisualV2Matches,
+            storedCaptions: visualV2Captions,
+            visualConfig: visualV2Config,
+          });
+          pools.push(
+            buildPetSearchLabelPool({
+              queryId: fixture.id,
+              suite: fixture.suite,
+              query: fixture.query,
+              catalog: labelCatalog,
+              rankings: {
+                lexical: rankPetsLexically(catalog, fixture.query)
+                  .map((match) => match.pet.slug),
+                text: textMatches.map((match) => match.slug),
+                visualV1: visualV1Matches.map((match) => match.slug),
+                visualV2: visualV2Matches.map((match) => match.slug),
+              },
+            }),
+          );
+        }
+        const bundle = await writePetSearchLabelPoolBundle({
+          outputDirectory: LABEL_POOL_OUTPUT_DIRECTORY,
+          pools,
+        });
+        console.info("[codex-pets][pet-search-label-pool]", {
+          outputDirectory: LABEL_POOL_OUTPUT_DIRECTORY,
+          queryCount: pools.length,
+          candidateCount: pools.reduce(
+            (count, pool) => count + pool.candidates.length,
+            0,
+          ),
+        });
+        expect(bundle.indexPath).toBe(
+          `${LABEL_POOL_OUTPUT_DIRECTORY}/index.html`,
+        );
+        expect(pools).toHaveLength(pooledQueries.length);
+        return;
       }
 
-      const observations: VisualSearchObservation<PublicPet>[] = [];
-      for (const fixture of selectedFixtures) {
-        observations.push(await collectObservation(fixture));
+      if (!LIVE_EVAL_SUITE) {
+        throw new Error("Live pet search eval suite is unavailable.");
       }
+      const suite = LIVE_EVAL_SUITE;
+      const selectedFixtures = fixturesForSuite(suite);
+      if (selectedFixtures.length === 0) {
+        throw new Error(`No frozen ${suite} fixtures are configured.`);
+      }
+      const observations: VisualSearchObservation<PublicPet>[] = [];
+      if (
+        suite === "diagnostic-v1" ||
+        suite === "text-regression-v2"
+      ) {
+        for (const fixture of selectedFixtures) {
+          observations.push(
+            await collectTextOnlyObservation({
+              fixture,
+              catalog,
+              petsBySlug,
+              semanticConfig,
+              embeddingClient,
+            }),
+          );
+        }
+      } else {
+        if (!selectedVisualConfig) {
+          throw new Error(
+            "Live visual search eval configuration is unavailable.",
+          );
+        }
+        const selectedCaptions = await listPetSearchCaptions(
+          selectedVisualConfig.captionRevision,
+        );
+        for (const fixture of selectedFixtures) {
+          observations.push(
+            await collectObservation({
+              fixture,
+              catalog,
+              petsBySlug,
+              semanticConfig,
+              visualConfig: selectedVisualConfig,
+              storedCaptions: selectedCaptions,
+              embeddingClient,
+            }),
+          );
+        }
+      }
+
+      if (suite === "diagnostic-v1") {
+        const diagnosticReport = evaluateSearchQuality(
+          observations.map((observation) =>
+            toTextObservation(
+              observation,
+              semanticConfig.minSemanticScore,
+            ),
+          ),
+        );
+        console.info("[codex-pets][pet-search-diagnostic-v1]", {
+          report: diagnosticReport,
+        });
+        return;
+      }
+
+      const textObservations =
+        suite === "text-regression-v2"
+          ? observations
+          : await collectTextRegressionObservations({
+              catalog,
+              petsBySlug,
+              semanticConfig,
+              embeddingClient,
+            });
       const textReport = evaluateSearchQuality(
-        observations.map((observation) =>
+        textObservations.map((observation) =>
           toTextObservation(
             observation,
             semanticConfig.minSemanticScore,
-          )
+          ),
         ),
       );
 
-      if (split === "text-regression-v2") {
-        console.info("[codex-pets][pet-text-regression]", {
-          textReport,
-        });
+      if (suite === "text-regression-v2") {
+        console.info("[codex-pets][pet-text-regression]", { textReport });
         expect(textReport.exactNameMrrAt5).toBe(1);
         expect(textReport.hybridNdcgLift).toBeGreaterThanOrEqual(0.2);
         expect(textReport.negativeSemanticOnlySafe).toBe(true);
+        expect(textReport.p95DurationMs).toBeLessThan(1_000);
         return;
       }
 
-      if (split === "diagnostic-v1") {
-        console.info("[codex-pets][pet-search-diagnostic-v1]", {
-          textReport,
-        });
-        return;
-      }
-
-      if (split === "visual-calibration-v2") {
+      if (suite === "visual-calibration-v2") {
+        if (!selectedVisualConfig) {
+          throw new Error(
+            "Visual calibration configuration is unavailable.",
+          );
+        }
         const calibration = calibrateVisualSearchProfile(
           observations,
           semanticConfig.minSemanticScore,
         );
         console.info("[codex-pets][pet-visual-calibration]", {
-          captionRevision: visualConfig.captionRevision,
-          visualRevision: visualConfig.visualRevision,
+          captionRevision: selectedVisualConfig.captionRevision,
+          visualRevision: selectedVisualConfig.visualRevision,
           profile: calibration.profile,
           evaluatedProfileCount: calibration.evaluatedProfileCount,
           textReport,
@@ -135,35 +311,53 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
         });
         expect(calibration.report.exactNameMrrAt5).toBe(1);
         expect(calibration.report.negativeVisualOnlySafe).toBe(true);
+        expect(calibration.report.visualSubsetLift).toBeGreaterThanOrEqual(
+          0.15,
+        );
         return;
       }
 
-      if (!visualConfig.profile) {
+      if (!selectedVisualConfig?.profile) {
         throw new Error(
           "Holdout requires a committed revision-bound visual profile.",
         );
       }
+      const selectedCaptions = await listPetSearchCaptions(
+        selectedVisualConfig.captionRevision,
+      );
       const holdoutReport = evaluateVisualSearchProfile(
         observations,
         semanticConfig.minSemanticScore,
-        visualConfig.profile,
+        selectedVisualConfig.profile,
       );
-      const sexyFixture = joinPetSearchEvalJudgments(
-        PET_SEARCH_EVAL_QUERIES_V2,
-        frozenJudgments as PetSearchEvalJudgmentRecord[],
-        "visual-calibration-v2",
-      ).find((fixture) => fixture.query === "sexy");
+      const sexyFixture = fixturesForSuite("visual-calibration-v2").find(
+        (fixture) => fixture.query === "sexy",
+      );
       if (!sexyFixture) {
         throw new Error("The frozen sexy review fixture is missing.");
       }
-      const sexyObservation = await collectObservation(sexyFixture);
-      const sexyTop5 = combinedSlugs(
+      const sexyObservation = await collectObservation({
+        fixture: sexyFixture,
+        catalog,
+        petsBySlug,
+        semanticConfig,
+        visualConfig: selectedVisualConfig,
+        storedCaptions: selectedCaptions,
+        embeddingClient,
+      });
+      const sexyRanking = combinedSlugs(
         sexyObservation,
         semanticConfig.minSemanticScore,
-        visualConfig.profile,
+        selectedVisualConfig.profile,
+      );
+      const sexyTop5 = sexyRanking.slice(0, 5);
+      const sexyJudgedTop5 = condenseRankedSlugs(
+        sexyRanking,
+        sexyObservation.judgmentMode ?? "deterministic",
+        sexyObservation.judgedSlugs ?? [],
       ).slice(0, 5);
-      const sexyRelevant = sexyTop5.some((slug) =>
-        sexyFixture.relevantSlugs.includes(slug)
+      const sexyRelevant = sexyJudgedTop5.some((slug) =>
+        sexyFixture.relevantSlugs.includes(slug),
       );
       const gate = evaluateVisualSearchRolloutGate(
         holdoutReport,
@@ -176,9 +370,9 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
         },
       );
       console.info("[codex-pets][pet-visual-holdout]", {
-        captionRevision: visualConfig.captionRevision,
-        visualRevision: visualConfig.visualRevision,
-        profile: visualConfig.profile,
+        captionRevision: selectedVisualConfig.captionRevision,
+        visualRevision: selectedVisualConfig.visualRevision,
+        profile: selectedVisualConfig.profile,
         textReport,
         report: aggregateVisualReport(holdoutReport),
         gate,
@@ -186,61 +380,207 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
         requiresHumanReview: true,
       });
       expect(gate.passed).toBe(true);
-
-      async function collectObservation(fixture: LiveEvalFixture) {
-        const startedAt = performance.now();
-        const catalog = await listApprovedPetsForSearch();
-        const queryEmbedding = await embeddingClient.embedQuery(
-          fixture.query,
-        );
-        const [storedTextMatches, storedVisualMatches, storedCaptions] =
-          await Promise.all([
-            findSimilarPetEmbeddings({
-              modelRevision: semanticConfig.revision,
-              dimensions: semanticConfig.dimensions,
-              embedding: queryEmbedding,
-            }),
-            findSimilarPetEmbeddings({
-              modelRevision: visualConfig.visualRevision,
-              dimensions: visualConfig.dimensions,
-              embedding: queryEmbedding,
-            }),
-            listPetSearchCaptions(visualConfig.captionRevision),
-          ]);
-        const petsBySlug = new Map(
-          catalog.map((pet) => [pet.slug, pet]),
-        );
-        const textMatches = currentTextMatches(
-          storedTextMatches,
-          petsBySlug,
-          semanticConfig.revision,
-        );
-        const visualMatches = filterCurrentVisualMatches({
-          candidates: petsBySlug,
-          storedMatches: storedVisualMatches,
-          storedCaptions,
-          visualConfig,
-        });
-
-        return {
-          category: fixture.category,
-          query: fixture.query,
-          relevantSlugs: fixture.relevantSlugs,
-          judgmentMode: fixture.judgmentMode,
-          judgedSlugs: fixture.judgedSlugs,
-          reviewedBy: fixture.reviewedBy,
-          visualSubset: fixture.visualSubset,
-          pets: catalog,
-          lexical: rankPetsLexically(catalog, fixture.query),
-          textMatches,
-          visualMatches,
-          durationMs: performance.now() - startedAt,
-        };
-      }
     },
-    180_000,
+    300_000,
   );
 });
+
+function fixturesForSuite(suite: PetSearchEvalSuite): LiveEvalFixture[] {
+  if (suite === "diagnostic-v1") {
+    return diagnosticFixtures.map((fixture) => ({
+      ...fixture,
+      judgmentMode: "deterministic",
+      judgedSlugs: [],
+    }));
+  }
+  return joinPetSearchEvalJudgments(
+    PET_SEARCH_EVAL_QUERIES_V2,
+    frozenJudgments as PetSearchEvalJudgmentRecord[],
+    suite,
+  );
+}
+
+async function collectTextRegressionObservations(input: {
+  catalog: readonly PublicPet[];
+  petsBySlug: ReadonlyMap<string, PublicPet>;
+  semanticConfig: PetSearchSemanticConfig;
+  embeddingClient: ReturnType<typeof createYandexEmbeddingClient>;
+}): Promise<VisualSearchObservation<PublicPet>[]> {
+  const observations: VisualSearchObservation<PublicPet>[] = [];
+  for (const fixture of fixturesForSuite("text-regression-v2")) {
+    observations.push(
+      await collectTextOnlyObservation({
+        ...input,
+        fixture,
+      }),
+    );
+  }
+  return observations;
+}
+
+async function collectTextOnlyObservation(input: {
+  fixture: LiveEvalFixture;
+  catalog: readonly PublicPet[];
+  petsBySlug: ReadonlyMap<string, PublicPet>;
+  semanticConfig: PetSearchSemanticConfig;
+  embeddingClient: ReturnType<typeof createYandexEmbeddingClient>;
+}): Promise<VisualSearchObservation<PublicPet>> {
+  const startedAt = performance.now();
+  const queryEmbedding = await input.embeddingClient.embedQuery(
+    input.fixture.query,
+  );
+  const storedTextMatches = await findSimilarPetEmbeddings({
+    modelRevision: input.semanticConfig.revision,
+    dimensions: input.semanticConfig.dimensions,
+    embedding: queryEmbedding,
+  });
+  return {
+    category: input.fixture.category,
+    query: input.fixture.query,
+    relevantSlugs: input.fixture.relevantSlugs,
+    judgmentMode: input.fixture.judgmentMode,
+    judgedSlugs: input.fixture.judgedSlugs,
+    reviewedBy: input.fixture.reviewedBy,
+    visualSubset: input.fixture.visualSubset,
+    pets: input.catalog,
+    lexical: rankPetsLexically(input.catalog, input.fixture.query),
+    textMatches: currentTextMatches(
+      storedTextMatches,
+      input.petsBySlug,
+      input.semanticConfig.revision,
+    ),
+    visualMatches: [],
+    durationMs: performance.now() - startedAt,
+  };
+}
+
+async function collectObservation(input: {
+  fixture: LiveEvalFixture;
+  catalog: readonly PublicPet[];
+  petsBySlug: ReadonlyMap<string, PublicPet>;
+  semanticConfig: PetSearchSemanticConfig;
+  visualConfig: PetSearchVisualConfig;
+  storedCaptions: Awaited<ReturnType<typeof listPetSearchCaptions>>;
+  embeddingClient: ReturnType<typeof createYandexEmbeddingClient>;
+}): Promise<VisualSearchObservation<PublicPet>> {
+  const startedAt = performance.now();
+  const queryEmbedding = await input.embeddingClient.embedQuery(
+    input.fixture.query,
+  );
+  const [storedTextMatches, storedVisualMatches] = await Promise.all([
+    findSimilarPetEmbeddings({
+      modelRevision: input.semanticConfig.revision,
+      dimensions: input.semanticConfig.dimensions,
+      embedding: queryEmbedding,
+    }),
+    findSimilarPetEmbeddings({
+      modelRevision: input.visualConfig.visualRevision,
+      dimensions: input.visualConfig.dimensions,
+      embedding: queryEmbedding,
+    }),
+  ]);
+  const textMatches = currentTextMatches(
+    storedTextMatches,
+    input.petsBySlug,
+    input.semanticConfig.revision,
+  );
+  const visualMatches = filterCurrentVisualMatches({
+    candidates: input.petsBySlug,
+    storedMatches: storedVisualMatches,
+    storedCaptions: input.storedCaptions,
+    visualConfig: input.visualConfig,
+  });
+
+  return {
+    category: input.fixture.category,
+    query: input.fixture.query,
+    relevantSlugs: input.fixture.relevantSlugs,
+    judgmentMode: input.fixture.judgmentMode,
+    judgedSlugs: input.fixture.judgedSlugs,
+    reviewedBy: input.fixture.reviewedBy,
+    visualSubset: input.fixture.visualSubset,
+    pets: input.catalog,
+    lexical: rankPetsLexically(input.catalog, input.fixture.query),
+    textMatches,
+    visualMatches,
+    durationMs: performance.now() - startedAt,
+  };
+}
+
+function createRevisionVisualConfig(
+  semanticConfig: PetSearchSemanticConfig,
+  visualRevision: keyof typeof PET_VISUAL_MODEL_REVISIONS,
+  visionTimeoutMs = 30_000,
+): PetSearchVisualConfig {
+  const definition = PET_VISUAL_MODEL_REVISIONS[visualRevision];
+  const captionRevision =
+    definition.captionRevision as keyof typeof PET_VISION_CAPTION_REVISIONS;
+  const captionContract = PET_VISION_CAPTION_REVISIONS[captionRevision];
+  return {
+    folderId: semanticConfig.folderId,
+    apiKey: semanticConfig.apiKey,
+    captionRevision,
+    visualRevision,
+    dimensions: definition.dimensions,
+    profile: definition.profile,
+    visionTimeoutMs,
+    modelUri:
+      `gpt://${semanticConfig.folderId}/${captionContract.modelName}`,
+  };
+}
+
+async function createLabelCatalog(
+  catalog: readonly PublicPet[],
+): Promise<PetSearchLabelPoolCandidate[]> {
+  return mapWithConcurrency(catalog, 4, async (pet) => {
+    const assetId = getPetAssetIdFromSpritesheetUrl(pet.spritesheetUrl);
+    if (!assetId) {
+      throw new Error(`Approved pet has no asset id: ${pet.slug}`);
+    }
+    const asset = await readPetSpritesheetAsset({ assetId });
+    const extracted = await extractPetVisionFrames(asset.buffer);
+    const frameDataUrls = extracted.frames.map((frame) => frame.dataUrl);
+    if (frameDataUrls.length !== 4) {
+      throw new Error(`Approved pet has incomplete vision frames: ${pet.slug}`);
+    }
+    return {
+      slug: pet.slug,
+      displayName: pet.displayName,
+      spritesheetSha256: extracted.spritesheetSha256,
+      frameDataUrls: [
+        frameDataUrls[0] ?? "",
+        frameDataUrls[1] ?? "",
+        frameDataUrls[2] ?? "",
+        frameDataUrls[3] ?? "",
+      ],
+    };
+  });
+}
+
+async function mapWithConcurrency<T, R>(
+  values: readonly T[],
+  concurrency: number,
+  mapper: (value: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let nextIndex = 0;
+  await Promise.all(
+    Array.from(
+      { length: Math.min(concurrency, values.length) },
+      async () => {
+        while (nextIndex < values.length) {
+          const index = nextIndex;
+          nextIndex += 1;
+          const value = values[index];
+          if (value !== undefined) {
+            results[index] = await mapper(value);
+          }
+        }
+      },
+    ),
+  );
+  return results;
+}
 
 function currentTextMatches(
   matches: readonly StoredSemanticPetMatch[],

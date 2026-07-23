@@ -7,6 +7,11 @@ import {
   validatePetSearchEvalQueryManifest,
 } from "@/lib/pets/search-eval-fixtures";
 import {
+  PET_SEARCH_LABEL_POOL_VERSION,
+  createPetSearchLabelPoolHash,
+  type PetSearchLabelPoolJudgmentRecord,
+} from "@/lib/pets/search-eval-label-pool";
+import {
   calibrateVisualSearchProfile,
   condenseRankedSlugs,
   evaluateSearchRolloutGate,
@@ -98,6 +103,49 @@ describe("pet search evaluation", () => {
         "visual-calibration-v2",
       ),
     ).toThrow(/frozen pooled judgments.*missing/i);
+  });
+
+  it("binds frozen judgments to complete candidate pools", () => {
+    const judgments = completeJudgments("visual-calibration-v2");
+    const joined = joinPetSearchEvalJudgments(
+      PET_SEARCH_EVAL_QUERIES_V2,
+      judgments,
+      "visual-calibration-v2",
+    );
+    const firstPooled = joined.find(
+      (fixture) => fixture.judgmentMode === "pooled",
+    );
+    expect(firstPooled).toMatchObject({
+      relevantSlugs: [expect.stringMatching(/-relevant$/)],
+      judgedSlugs: [
+        expect.stringMatching(/-relevant$/),
+        expect.stringMatching(/-irrelevant$/),
+      ],
+      reviewedBy: "reviewer",
+    });
+
+    expect(() =>
+      joinPetSearchEvalJudgments(
+        PET_SEARCH_EVAL_QUERIES_V2,
+        judgments.map((record, index) =>
+          index === 0
+            ? { ...record, candidatePoolHash: "b".repeat(64) }
+            : record,
+        ),
+        "visual-calibration-v2",
+      ),
+    ).toThrow(/pool hash.*mismatch/i);
+    expect(() =>
+      joinPetSearchEvalJudgments(
+        PET_SEARCH_EVAL_QUERIES_V2,
+        judgments.map((record, index) =>
+          index === 0
+            ? { ...record, judgments: record.judgments.slice(0, 1) }
+            : record,
+        ),
+        "visual-calibration-v2",
+      ),
+    ).toThrow(/incomplete/i);
   });
 
   it("condenses pooled rankings to relevant and irrelevant judgments", () => {
@@ -353,4 +401,51 @@ function searchablePet(slug: string, displayName: string) {
     description: "",
     tags: [],
   };
+}
+
+function completeJudgments(
+  suite: "text-regression-v2" | "visual-calibration-v2" | "visual-holdout-v2",
+): PetSearchLabelPoolJudgmentRecord[] {
+  return PET_SEARCH_EVAL_QUERIES_V2
+    .filter(
+      (query) =>
+        query.suite === suite && query.judgmentMode === "pooled",
+    )
+    .map((query) => {
+      const candidateRecords = [
+        {
+          slug: `${query.id}-relevant`,
+          spritesheetSha256: "1".repeat(64),
+        },
+        {
+          slug: `${query.id}-irrelevant`,
+          spritesheetSha256: "2".repeat(64),
+        },
+      ];
+      return {
+        poolVersion: PET_SEARCH_LABEL_POOL_VERSION,
+        queryId: query.id,
+        suite: query.suite,
+        query: query.query,
+        candidatePoolHash: createPetSearchLabelPoolHash({
+          poolVersion: PET_SEARCH_LABEL_POOL_VERSION,
+          suite: query.suite,
+          query: query.query,
+          candidateRecords,
+        }),
+        candidateRecords,
+        reviewer: "reviewer",
+        reviewedAt: "2026-07-23T12:00:00.000Z",
+        judgments: [
+          {
+            slug: `${query.id}-relevant`,
+            judgment: "relevant" as const,
+          },
+          {
+            slug: `${query.id}-irrelevant`,
+            judgment: "irrelevant" as const,
+          },
+        ],
+      };
+    });
 }

@@ -1,4 +1,9 @@
 import queries from "@/lib/pets/search-eval-queries-v2.json";
+import {
+  PET_SEARCH_LABEL_POOL_VERSION,
+  createPetSearchLabelPoolHash,
+  type PetSearchLabelPoolJudgmentRecord,
+} from "@/lib/pets/search-eval-label-pool";
 
 export type PetSearchEvalSuite =
   | "diagnostic-v1"
@@ -37,16 +42,8 @@ export type PetSearchEvalQuery = {
   visualAspects: PetSearchVisualAspect[];
 };
 
-export type PetSearchEvalJudgmentRecord = {
-  queryId: string;
-  candidatePoolHash: string;
-  reviewer: string;
-  reviewedAt: string;
-  judgments: Array<{
-    slug: string;
-    judgment: PetSearchJudgment;
-  }>;
-};
+export type PetSearchEvalJudgmentRecord =
+  PetSearchLabelPoolJudgmentRecord;
 
 export type FrozenPetSearchEvalFixture = PetSearchEvalQuery & {
   relevantSlugs: string[];
@@ -302,9 +299,45 @@ function validateJudgmentRecord(
   entry: PetSearchEvalQuery,
   record: PetSearchEvalJudgmentRecord,
 ): void {
-  if (!/^[a-f0-9]{64}$/.test(record.candidatePoolHash)) {
+  if (
+    record.poolVersion !== PET_SEARCH_LABEL_POOL_VERSION ||
+    record.suite !== entry.suite ||
+    record.query !== entry.query
+  ) {
+    throw new Error(
+      `Frozen pooled judgments have a contract mismatch: ${entry.id}`,
+    );
+  }
+  if (
+    !/^[a-f0-9]{64}$/.test(record.candidatePoolHash) ||
+    record.candidateRecords.length === 0
+  ) {
     throw new Error(
       `Frozen pooled judgments have an invalid pool hash: ${entry.id}`,
+    );
+  }
+  const candidates = new Set<string>();
+  for (const candidate of record.candidateRecords) {
+    if (
+      !candidate.slug ||
+      candidates.has(candidate.slug) ||
+      !/^[a-f0-9]{64}$/.test(candidate.spritesheetSha256)
+    ) {
+      throw new Error(
+        `Frozen pooled judgments have invalid candidate records: ${entry.id}`,
+      );
+    }
+    candidates.add(candidate.slug);
+  }
+  const expectedPoolHash = createPetSearchLabelPoolHash({
+    poolVersion: record.poolVersion,
+    suite: record.suite,
+    query: record.query,
+    candidateRecords: record.candidateRecords,
+  });
+  if (expectedPoolHash !== record.candidatePoolHash) {
+    throw new Error(
+      `Frozen pooled judgment pool hash mismatch: ${entry.id}`,
     );
   }
   if (!record.reviewer.trim()) {
@@ -314,7 +347,9 @@ function validateJudgmentRecord(
   }
   if (
     !record.reviewedAt ||
-    !Number.isFinite(Date.parse(record.reviewedAt))
+    !Number.isFinite(Date.parse(record.reviewedAt)) ||
+    new Date(Date.parse(record.reviewedAt)).toISOString() !==
+      record.reviewedAt
   ) {
     throw new Error(
       `Frozen pooled judgments have an invalid timestamp: ${entry.id}`,
@@ -330,6 +365,7 @@ function validateJudgmentRecord(
   for (const judgment of record.judgments) {
     if (
       !judgment.slug ||
+      !candidates.has(judgment.slug) ||
       slugs.has(judgment.slug) ||
       !JUDGMENTS.has(judgment.judgment)
     ) {
@@ -338,6 +374,14 @@ function validateJudgmentRecord(
       );
     }
     slugs.add(judgment.slug);
+  }
+  if (
+    slugs.size !== candidates.size ||
+    [...candidates].some((slug) => !slugs.has(slug))
+  ) {
+    throw new Error(
+      `Frozen pooled judgments are incomplete: ${entry.id}`,
+    );
   }
   if (
     entry.category !== "negative" &&
