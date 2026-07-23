@@ -5,8 +5,10 @@ import {
   PET_VISION_CAPTION_CONTRACTS,
   PET_VISION_CAPTION_REVISION,
   PET_VISION_CAPTION_REVISION_V2,
+  PET_VISION_CAPTION_REVISION_V3,
   PET_VISUAL_MODEL_REVISION,
   PET_VISUAL_MODEL_REVISION_V2,
+  PET_VISUAL_MODEL_REVISION_V3,
 } from "@/lib/pets/search-vision-contract";
 
 const DEFAULT_EMBEDDING_TIMEOUT_MS = 800;
@@ -49,6 +51,11 @@ export const PET_VISUAL_MODEL_REVISIONS = {
   [PET_VISUAL_MODEL_REVISION_V2]: {
     dimensions: 256,
     captionRevision: PET_VISION_CAPTION_REVISION_V2,
+    profile: null,
+  },
+  [PET_VISUAL_MODEL_REVISION_V3]: {
+    dimensions: 256,
+    captionRevision: PET_VISION_CAPTION_REVISION_V3,
     profile: null,
   },
 } as const satisfies Record<string, PetVisualModelRevisionDefinition>;

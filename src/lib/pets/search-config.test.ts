@@ -13,6 +13,9 @@ const supportedVisualRevision =
 const v2CaptionRevision =
   "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v2";
 const v2VisualRevision = "yandex-text-search-2026-07-pet-vision-v2";
+const v3CaptionRevision =
+  "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v3";
+const v3VisualRevision = "yandex-text-search-2026-07-pet-vision-v3";
 const calibratedVisualProfile = {
   minSemanticScore: 0.3455384373664856,
   weight: 0.25,
@@ -218,23 +221,56 @@ describe("pet search runtime configuration", () => {
     });
   });
 
-  it("rejects mismatched v1 and v2 caption/vector revisions", () => {
-    expect(
-      loadPetSearchConfig(
-        {
-          PET_SEARCH_VISUAL_MODE: "shadow",
-          PET_SEARCH_VISION_CAPTION_REVISION: v2CaptionRevision,
-          PET_SEARCH_VISUAL_MODEL_REVISION: supportedVisualRevision,
-          YANDEX_AI_STUDIO_FOLDER_ID: "folder-1",
-          YANDEX_AI_STUDIO_API_KEY_FILE: "/run/secrets/key",
-        },
-        () => "secret",
-      ),
-    ).toMatchObject({
-      visual: null,
-      visualFallbackReason: "visual_configuration_missing",
+  it("loads only the matching v3 pair and fails hybrid closed until calibration", () => {
+    const config = loadPetSearchConfig(
+      {
+        PET_SEARCH_VISUAL_MODE: "hybrid",
+        PET_SEARCH_VISION_CAPTION_REVISION: v3CaptionRevision,
+        PET_SEARCH_VISUAL_MODEL_REVISION: v3VisualRevision,
+        YANDEX_AI_STUDIO_FOLDER_ID: "folder-1",
+        YANDEX_AI_STUDIO_API_KEY_FILE: "/run/secrets/key",
+      },
+      () => "secret",
+    );
+
+    expect(config).toMatchObject({
+      visualMode: "hybrid",
+      visual: {
+        captionRevision: v3CaptionRevision,
+        visualRevision: v3VisualRevision,
+        dimensions: 256,
+        profile: null,
+        modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+      },
+      visualFallbackReason: "visual_calibration_missing",
     });
   });
+
+  it.each([
+    [v2CaptionRevision, supportedVisualRevision],
+    [v3CaptionRevision, supportedVisualRevision],
+    [v3CaptionRevision, v2VisualRevision],
+    [v2CaptionRevision, v3VisualRevision],
+  ])(
+    "rejects mismatched caption %s and visual %s revisions",
+    (captionRevision, visualRevision) => {
+      expect(
+        loadPetSearchConfig(
+          {
+            PET_SEARCH_VISUAL_MODE: "shadow",
+            PET_SEARCH_VISION_CAPTION_REVISION: captionRevision,
+            PET_SEARCH_VISUAL_MODEL_REVISION: visualRevision,
+            YANDEX_AI_STUDIO_FOLDER_ID: "folder-1",
+            YANDEX_AI_STUDIO_API_KEY_FILE: "/run/secrets/key",
+          },
+          () => "secret",
+        ),
+      ).toMatchObject({
+        visual: null,
+        visualFallbackReason: "visual_configuration_missing",
+      });
+    },
+  );
 
   it("disables unsupported or incomplete visual configuration safely", () => {
     expect(

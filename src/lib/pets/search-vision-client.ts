@@ -136,7 +136,7 @@ export function createYandexVisionCaptionClient(
           ],
           temperature: 0,
           stream: false,
-          max_tokens: 900,
+          max_tokens: contract.maxTokens,
           response_format: {
             type: "json_schema",
             json_schema: {
@@ -214,9 +214,6 @@ async function parseProviderResponse(
   }
 
   try {
-    if (captionRevision === PET_VISION_CAPTION_REVISION_V1) {
-      return parsePetVisionCaption(captionRevision, JSON.parse(content));
-    }
     return parsePetVisionCaption(captionRevision, JSON.parse(content));
   } catch (error) {
     if (error instanceof VisionCaptionProviderError) throw error;

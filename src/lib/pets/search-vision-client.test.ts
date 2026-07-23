@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import * as visionContract from "@/lib/pets/search-vision-contract";
 import {
   PET_VISION_RESPONSE_JSON_SCHEMA,
   PET_VISION_SYSTEM_PROMPT,
@@ -28,6 +29,8 @@ const providerCaption: PetVisionCaption = {
 
 const v2CaptionRevision =
   "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v2";
+const v3CaptionRevision =
+  "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v3";
 const providerV2Caption = {
   ...providerCaption,
   accessories: {
@@ -35,6 +38,45 @@ const providerV2Caption = {
     ru: "чёрная повязка и меч",
   },
 };
+
+const providerV3Caption = {
+  subject: providerCaption.subject,
+  appearance: providerCaption.appearance,
+  visual_attributes: {
+    hair_and_headwear: {
+      present: true,
+      en: "silver hair",
+      ru: "серебряные волосы",
+    },
+    face_and_eye_coverings: {
+      present: true,
+      en: "black blindfold",
+      ru: "чёрная повязка",
+    },
+    clothing_and_armor: {
+      present: true,
+      en: "black dress",
+      ru: "чёрное платье",
+    },
+    weapons_and_objects: { present: false, en: "", ru: "" },
+    visible_effects: { present: false, en: "", ru: "" },
+    other_distinguishing_features: { present: false, en: "", ru: "" },
+  },
+  style: providerCaption.style,
+  mood: providerCaption.mood,
+  colors: providerCaption.colors,
+  search_terms_en: providerCaption.search_terms_en,
+  search_terms_ru: providerCaption.search_terms_ru,
+};
+
+const v3AttributeSlots = [
+  "hair_and_headwear",
+  "face_and_eye_coverings",
+  "clothing_and_armor",
+  "weapons_and_objects",
+  "visible_effects",
+  "other_distinguishing_features",
+] as const;
 
 const frames: PetVisionFrame[] = PET_VISION_FRAME_POLICY.frames.map(
   ({ state, row, frame }, index) => ({
@@ -65,6 +107,7 @@ describe("Yandex vision caption client", () => {
       providerV2Caption,
     );
     const body = JSON.parse(String(requests[0]?.body));
+    expect(body.max_tokens).toBe(900);
     expect(body.response_format.json_schema).toMatchObject({
       name: "pet_visual_caption_v2",
       strict: true,
@@ -80,6 +123,71 @@ describe("Yandex vision caption client", () => {
     );
     expect(JSON.stringify(body).match(/data:image\/png;base64/g)).toHaveLength(4);
     expect(JSON.stringify(body)).not.toContain("SECRET_PET_NAME");
+  });
+
+  it("selects the strict v3 schema, prompts, parser, and token limit", async () => {
+    const requests: RequestInit[] = [];
+    const client = createYandexVisionCaptionClient({
+      folderId: "folder-1",
+      apiKey: "secret-key",
+      modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+      captionRevision: v3CaptionRevision,
+      timeoutMs: 30_000,
+      fetchImpl: async (_url, init) => {
+        requests.push(init ?? {});
+        return providerResponse(providerV3Caption);
+      },
+    });
+
+    await expect(client.createCaption(frames)).resolves.toEqual(
+      providerV3Caption,
+    );
+    const body = JSON.parse(String(requests[0]?.body));
+    expect(body.max_tokens).toBe(1200);
+    expect(body.response_format.json_schema).toMatchObject({
+      name: "pet_visual_caption_v3",
+      strict: true,
+      schema: {
+        required: [
+          "subject",
+          "appearance",
+          "visual_attributes",
+          "style",
+          "mood",
+          "colors",
+          "search_terms_en",
+          "search_terms_ru",
+        ],
+        properties: {
+          visual_attributes: {
+            required: v3AttributeSlots,
+          },
+        },
+      },
+    });
+    const systemPrompt = String(body.messages[0].content);
+    const userPrompt = String(body.messages[1].content[0].text);
+    for (const slot of v3AttributeSlots) {
+      expect(systemPrompt).toContain(slot);
+      expect(userPrompt).toContain(slot);
+    }
+    expect(systemPrompt).toContain("all four frames");
+    expect(systemPrompt).toContain("present: true");
+    expect(systemPrompt).toContain("present: false");
+    expect(systemPrompt).toContain("identity");
+    expect(systemPrompt).toContain("name");
+    expect(systemPrompt).toContain("slug");
+    expect(systemPrompt).toContain("tags");
+    expect(systemPrompt).toContain("description");
+    expect(systemPrompt).toContain("catalog");
+    expect(systemPrompt).toContain("provenance");
+    expect(userPrompt).toContain(
+      "idle, running-right, waving, and review",
+    );
+    expect(JSON.stringify(body).match(/data:image\/png;base64/g)).toHaveLength(4);
+    expect(JSON.stringify(body)).not.toContain("SECRET_PET_NAME");
+    expect(visionContract).toHaveProperty("PET_VISION_SYSTEM_PROMPT_V3");
+    expect(visionContract).toHaveProperty("PET_VISION_USER_PROMPT_V3");
   });
 
   it("sends exactly four ordered images and no catalog metadata", async () => {
