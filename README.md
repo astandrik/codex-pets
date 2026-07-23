@@ -117,13 +117,19 @@ from four fixed sprite frames. Captions and their provenance remain internal;
 public JSON, TOON, homepage, MCP, and WebMCP shapes do not change. Configure
 `YANDEX_AI_STUDIO_FOLDER_ID`,
 `YANDEX_AI_STUDIO_API_KEY_FILE`, and
-`PET_SEARCH_MODEL_REVISION=yandex-text-search-2026-07`. Vision v2 uses
-`PET_SEARCH_VISION_CAPTION_REVISION=yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v2`
-and
-`PET_SEARCH_VISUAL_MODEL_REVISION=yandex-text-search-2026-07-pet-vision-v2`.
-The v1 pair remains a pinned rollback path. The API key is accepted only
-through the secret-file setting. Provider failures and timeouts fall back to
-lexical results; visual-only failures preserve the text-hybrid order.
+`PET_SEARCH_MODEL_REVISION=yandex-text-search-2026-07`. The current bounded
+vision canary pair is
+`PET_SEARCH_VISION_CAPTION_REVISION=yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v3`
+with
+`PET_SEARCH_VISUAL_MODEL_REVISION=yandex-text-search-2026-07-pet-vision-v3`.
+It has 256 dimensions and `profile: null`; keep
+`PET_SEARCH_VISUAL_MODE=off`. V3 retains the same four frames and adds six
+internal structured `{present,en,ru}` slots. Captions and provenance remain
+private: public homepage, JSON, TOON, MCP, and WebMCP DTOs do not change. The
+v1 pair remains the calibrated matching search rollback. The API key is
+accepted only through the secret-file setting. Provider failures and timeouts
+fall back to lexical results; visual-only failures preserve the text-hybrid
+order.
 
 To run without YDB on generated sample data:
 
@@ -267,68 +273,55 @@ Apply migrations to an existing database:
 npm run db:migrate
 ```
 
-Preview and apply the approved-pet text and visual backfills after the
-migrations:
+The approved-pet text backfill is independent of the v3 visual stage:
 
 ```bash
 npm run search:backfill -- --dry-run
 npm run search:backfill -- --apply
 npm run search:backfill -- --apply --slug orbit-otter --force
-npm run search:backfill-vision -- --dry-run
-npm run search:backfill-vision -- --apply --force --slug fischl-detailed
-npm run search:backfill-vision -- --apply --force --slug 2b-2
-npm run search:backfill-vision -- --apply --force --slug master-of-terra
-npm run search:backfill-vision -- --apply --force --slug vi
-npm run search:backfill-vision -- --apply
-npm run search:eval:label-pool
-npm run search:eval:text-regression
-npm run search:eval:calibrate
-npm run search:eval:holdout
+```
+
+The current visual work is a bounded v3 canary only:
+
+```bash
+npm run search:backfill-vision -- --dry-run --canaries
+npm run search:backfill-vision -- --apply --force --canaries
 ```
 
 Both backfills require an explicit `--dry-run` or `--apply`; visual `--force`
-is valid only with `--apply`. They never print document text, captions, images,
-embeddings, prompts, or secrets. Dry-run still reads and hashes spritesheets
-but never calls either AI provider and never writes YDB. V2 full backfill is
-blocked until the four canaries pass in the frozen order shown above.
+is valid only with `--apply`. The v3 `--canaries` selector is exactly
+`fischl-detailed`, `2b-2`, `master-of-terra`, and `vi`; individual v3 canary
+`--slug` execution is forbidden. Dry-run still reads and hashes spritesheets
+but never calls either AI provider and never writes YDB.
 
-Generate the blinded label bundle into a new or empty directory (default:
-`/private/tmp/codex-pets-v2-labels`), review every candidate, and replace
-`src/lib/pets/search-eval-judgments-v2.json` with the exported JSON before
-running any v2 eval command. Each pool includes the first ten results from
-every raw ranker, the deterministic catalog sample, and every candidate that
-can enter the fused top five anywhere in the frozen calibration grid. Eval
-refuses a pooled ranking whose raw top five is absent from that pool. Freeze
-those labels in
-`test(search): freeze v2 pooled search judgments`; do not inspect model metrics
-while labeling. `search:eval:text-regression` owns the 20% text lift gate.
-Calibration independently requires overall non-regression and at least 15%
-visual-subset lift, then the selected threshold/weight is pinned to the exact
-v2 visual revision. Visual v2 eval refuses any configured v1 or mixed revision
-pair. Run `search:eval:holdout` exactly once only after rebuilding that exact
-commit, with `PET_SEARCH_EVAL_COMMIT_SHA` set to its full lowercase SHA and
-`PET_SEARCH_EVAL_HOLDOUT_RECEIPT_FILE` set to a new absolute path on durable
-storage. The command atomically creates a read-only receipt before collecting
-rankings and refuses a second run. A failed run consumes the holdout; it is not
-a tuning set and requires a new revision and holdout.
+The v3 apply batch prepares all four captions, slot-aware canary checks, and
+embeddings before its first write. This is an all-or-nothing pre-persistence
+guarantee, not a YDB transaction: persistence is not transactional, and the
+readback/durable gate remains closed after a partial YDB write. This stage ends
+after exactly four fresh v3 caption/vector rows and source-hash readback.
+Ordinary/full v3 backfill and v3 approval refresh remain blocked until all four
+current v3 caption rows and their associated visual vector metadata are fresh,
+with matching source hashes and 256 dimensions. A missing, stale, or mismatched
+vector keeps the durable gate closed.
 
-A safe rollout is base `lexical` and visual `off` → v2 canaries and backfill →
-visual `shadow` → blinded-label freeze → text regression → calibration →
-exact-SHA rebuild → one-time holdout → human review of the combined `sexy` top
-five → both modes `hybrid`.
+A canary miss freezes v3: do not weaken terms or retry/tune the same revision.
+The next design is v4 with a deterministic detail crop. New
+`visual-calibration-v3` and `visual-holdout-v3` work is deferred to a separate
+approved plan; never reuse v2 visual suites for v3. Do not run a full v3
+backfill, label pool, calibration, holdout, shadow/hybrid enablement, or
+production cutover in this implementation stage.
 
-The first rollback is `PET_SEARCH_VISUAL_MODE=off`; use
-`PET_SEARCH_MODE=lexical` to disable the text-semantic contour too. The additive
-caption and embeddings rows may remain. To restore the already calibrated v1
-ranker, select the matching pair
+Backfill logs must not contain document text, captions, frames, prompts,
+hashes, embeddings, or secrets. Keep the AI Studio key in the configured
+secret file rather than an environment value.
+
+V1/v2 rows are immutable and additive. The first rollback is
+`PET_SEARCH_VISUAL_MODE=off`; use `PET_SEARCH_MODE=lexical` to disable the
+text-semantic contour too. The caption and embedding rows may remain. To
+restore the already calibrated v1 ranker, select the matching pair
 `yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1` and
 `yandex-text-search-2026-07-pet-vision-v1`; never mix revision pairs.
-Legacy labels remain diagnostic-only in
-`src/lib/pets/search-eval-fixtures.json`; the frozen v2 query manifest is
-`src/lib/pets/search-eval-queries-v2.json`. Run
-`npm run search:eval:diagnostic-v1` only for explanatory comparisons. Live eval
-requires configured YDB and AI Studio access and prints aggregate results plus
-the public slugs in the final `sexy` review list.
+Historical v2 material is rollback/diagnostic state only.
 
 Seed local development data after the schema exists:
 
