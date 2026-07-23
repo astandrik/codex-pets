@@ -4,6 +4,10 @@ import {
   embeddingToBuffer as runtimeEmbeddingToBuffer,
 } from "../src/lib/pets/search-embeddings";
 import {
+  PET_VISION_V2_CANARIES as RUNTIME_VISION_CANARIES,
+  evaluatePetVisionCanary as evaluateRuntimeCanary,
+} from "../src/lib/pets/search-vision-canaries";
+import {
   PET_VISION_CAPTION_CONTRACTS as RUNTIME_CAPTION_CONTRACTS,
   PET_VISION_CAPTION_REVISION,
   PET_VISION_CAPTION_REVISION_V2,
@@ -21,6 +25,7 @@ import {
 
 const {
   PET_VISION_CAPTION_CONTRACTS,
+  PET_VISION_V2_CANARIES,
   PET_VISUAL_MODEL_REVISIONS,
   PET_VISION_FRAME_POLICY,
   buildPetVisionCaptionText,
@@ -28,6 +33,7 @@ const {
   createPetVisionCaptionSourceHash,
   createPetVisualEmbeddingSourceHash,
   embeddingToBuffer,
+  evaluatePetVisionCanary,
   extractPetVisionFrames,
   parseVisionBackfillArgs,
   resolvePetVisionRevisionConfig,
@@ -61,6 +67,29 @@ const v2Caption = {
     en: "black blindfold and sword",
     ru: "чёрная повязка и меч",
   },
+};
+const passingFischlCaption = {
+  ...caption,
+  appearance: {
+    en: "blonde hair and one eye covered",
+    ru: "светлые волосы и закрытый глаз",
+  },
+  clothing: {
+    en: "purple outfit with black clothing",
+    ru: "фиолетовый наряд и чёрная одежда",
+  },
+  accessories: {
+    en: "dark eye covering",
+    ru: "чёрная повязка на глаз",
+  },
+};
+const failingFischlCaption = {
+  ...passingFischlCaption,
+  appearance: {
+    en: "blonde hair",
+    ru: "светлые волосы",
+  },
+  accessories: { en: "", ru: "" },
 };
 const spritesheetSha256 = "a".repeat(64);
 const frames = PET_VISION_FRAME_POLICY.frames.map(
@@ -124,6 +153,97 @@ function freshCaption() {
 }
 
 describe("pet vision search backfill", () => {
+  it("keeps the frozen canary registry and evaluator in runtime parity", () => {
+    expect(PET_VISION_V2_CANARIES).toEqual(RUNTIME_VISION_CANARIES);
+    const captionText = buildPetVisionCaptionText(
+      PET_VISION_CAPTION_REVISION_V2,
+      passingFischlCaption,
+    );
+    expect(
+      evaluatePetVisionCanary("fischl-detailed", captionText),
+    ).toEqual(evaluateRuntimeCanary("fischl-detailed", captionText));
+  });
+
+  it("checks v2 canaries before writes and logs booleans only", async () => {
+    const canaryPet = {
+      slug: "fischl-detailed",
+      status: "approved",
+      spritesheetUrl: "/api/assets/asset-fischl/spritesheet.webp",
+    };
+    const input = dependencies({
+      options: {
+        mode: "apply" as const,
+        slug: canaryPet.slug,
+        force: true,
+      },
+      config: {
+        ...visualConfig,
+        captionRevision: PET_VISION_CAPTION_REVISION_V2,
+        visualRevision: PET_VISUAL_MODEL_REVISION_V2,
+      },
+      pets: [canaryPet],
+      createCaption: vi.fn(async () => failingFischlCaption),
+      log: vi.fn(),
+    });
+
+    await expect(runPetVisionSearchBackfill(input)).rejects.toMatchObject({
+      reason: "canary_failed",
+    });
+    expect(input.upsertCaption).not.toHaveBeenCalled();
+    expect(input.upsertEmbedding).not.toHaveBeenCalled();
+    const output = JSON.stringify(input.log.mock.calls);
+    expect(output).toContain("dark_eye_covering");
+    expect(output).toContain('"passed":false');
+    expect(output).not.toContain("blonde hair");
+    expect(output).not.toContain("data:image");
+  });
+
+  it("runs all v2 canaries before any non-canary full-backfill write", async () => {
+    const readSpritesheet = vi.fn(async () => Buffer.from("atlas"));
+    const input = dependencies({
+      config: {
+        ...visualConfig,
+        captionRevision: PET_VISION_CAPTION_REVISION_V2,
+        visualRevision: PET_VISUAL_MODEL_REVISION_V2,
+      },
+      pets: [
+        pet,
+        {
+          slug: "fischl-detailed",
+          status: "approved",
+          spritesheetUrl:
+            "/api/assets/asset-fischl/spritesheet.webp",
+        },
+        {
+          slug: "2b-2",
+          status: "approved",
+          spritesheetUrl: "/api/assets/asset-2b/spritesheet.webp",
+        },
+        {
+          slug: "master-of-terra",
+          status: "approved",
+          spritesheetUrl:
+            "/api/assets/asset-master/spritesheet.webp",
+        },
+        {
+          slug: "vi",
+          status: "approved",
+          spritesheetUrl: "/api/assets/asset-vi/spritesheet.webp",
+        },
+      ],
+      readSpritesheet,
+      createCaption: vi.fn(async () => failingFischlCaption),
+      log: vi.fn(),
+    });
+
+    await expect(runPetVisionSearchBackfill(input)).rejects.toMatchObject({
+      reason: "canary_failed",
+    });
+    expect(readSpritesheet).toHaveBeenCalledTimes(1);
+    expect(readSpritesheet).toHaveBeenCalledWith("asset-fischl");
+    expect(input.upsertCaption).not.toHaveBeenCalled();
+  });
+
   it("accepts only registered matching caption and visual revisions", () => {
     expect(
       resolvePetVisionRevisionConfig(

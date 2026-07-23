@@ -69,9 +69,21 @@ export const PET_VISUAL_MODEL_REVISIONS: Record<
   string,
   { captionRevision: VisionBackfillCaptionRevision; dimensions: number }
 >;
+export const PET_VISION_V2_CANARIES: Array<{
+  slug: string;
+  expectations: Array<{
+    id: string;
+    expectedAnyTerms: string[];
+  }>;
+}>;
 
 export class PetVisionBackfillError extends Error {
   reason: string;
+  canary: {
+    slug: string;
+    passed: boolean;
+    checks: Array<{ id: string; passed: boolean }>;
+  } | null;
 }
 
 export function parseVisionBackfillArgs(
@@ -130,6 +142,14 @@ export function resolvePetVisionRevisionConfig(
   dimensions: number;
   captionContract: (typeof PET_VISION_CAPTION_CONTRACTS)[VisionBackfillCaptionRevision];
 };
+export function evaluatePetVisionCanary(
+  slug: string,
+  captionText: string,
+): {
+  slug: string;
+  passed: boolean;
+  checks: Array<{ id: string; passed: boolean }>;
+} | null;
 export function createPetVisionCaptionSourceHash(input: {
   captionRevision: string;
   modelUri: string;

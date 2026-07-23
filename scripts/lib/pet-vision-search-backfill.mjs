@@ -193,6 +193,183 @@ export const PET_VISUAL_MODEL_REVISIONS = {
   },
 };
 
+const DARK_EYE_COVERING_TERMS = [
+  "dark eye covering",
+  "black eye covering",
+  "eye covering",
+  "one eye covered",
+  "covered eye",
+  "eye patch",
+  "eyepatch",
+  "blindfold",
+  "повязка на глаз",
+  "чёрная повязка",
+  "черная повязка",
+  "закрытый глаз",
+  "один глаз закрыт",
+];
+
+const DARK_OUTFIT_TERMS = [
+  "black outfit",
+  "dark outfit",
+  "black clothing",
+  "dark clothing",
+  "black dress",
+  "чёрный наряд",
+  "черный наряд",
+  "тёмный наряд",
+  "темный наряд",
+  "чёрная одежда",
+  "черная одежда",
+  "чёрное платье",
+  "черное платье",
+];
+
+export const PET_VISION_V2_CANARIES = [
+  {
+    slug: "fischl-detailed",
+    expectations: [
+      {
+        id: "blonde_hair",
+        expectedAnyTerms: [
+          "blonde hair",
+          "blond hair",
+          "fair hair",
+          "белокурые волосы",
+          "светлые волосы",
+          "волосы блонд",
+        ],
+      },
+      {
+        id: "dark_eye_covering",
+        expectedAnyTerms: DARK_EYE_COVERING_TERMS,
+      },
+      {
+        id: "purple_outfit",
+        expectedAnyTerms: [
+          "purple outfit",
+          "violet outfit",
+          "purple clothing",
+          "violet clothing",
+          "purple dress",
+          "фиолетовый наряд",
+          "фиолетовая одежда",
+          "фиолетовое платье",
+          "пурпурный наряд",
+        ],
+      },
+      {
+        id: "dark_outfit",
+        expectedAnyTerms: DARK_OUTFIT_TERMS,
+      },
+    ],
+  },
+  {
+    slug: "2b-2",
+    expectations: [
+      {
+        id: "silver_hair",
+        expectedAnyTerms: [
+          "silver hair",
+          "silver white hair",
+          "white silver hair",
+          "серебристые волосы",
+          "серебряные волосы",
+          "серебристо белые волосы",
+        ],
+      },
+      {
+        id: "dark_eye_covering",
+        expectedAnyTerms: DARK_EYE_COVERING_TERMS,
+      },
+      {
+        id: "dark_outfit",
+        expectedAnyTerms: DARK_OUTFIT_TERMS,
+      },
+      {
+        id: "sword",
+        expectedAnyTerms: [
+          "sword",
+          "blade",
+          "katana",
+          "меч",
+          "клинок",
+          "катана",
+        ],
+      },
+    ],
+  },
+  {
+    slug: "master-of-terra",
+    expectations: [
+      {
+        id: "golden_armor",
+        expectedAnyTerms: [
+          "golden armor",
+          "gold armor",
+          "ornate golden armour",
+          "золотая броня",
+          "золотые доспехи",
+        ],
+      },
+      {
+        id: "red_cloak",
+        expectedAnyTerms: [
+          "red cloak",
+          "red cape",
+          "red mantle",
+          "красный плащ",
+          "красная мантия",
+          "красная накидка",
+        ],
+      },
+      {
+        id: "flaming_sword",
+        expectedAnyTerms: [
+          "flaming sword",
+          "burning sword",
+          "fiery sword",
+          "sword in flames",
+          "огненный меч",
+          "пылающий меч",
+          "горящий меч",
+          "меч в огне",
+        ],
+      },
+    ],
+  },
+  {
+    slug: "vi",
+    expectations: [
+      {
+        id: "magenta_hair",
+        expectedAnyTerms: [
+          "magenta hair",
+          "fuchsia hair",
+          "pink hair",
+          "пурпурные волосы",
+          "малиновые волосы",
+          "розовые волосы",
+        ],
+      },
+      {
+        id: "oversized_gauntlets",
+        expectedAnyTerms: [
+          "oversized gauntlets",
+          "massive gauntlets",
+          "huge gauntlets",
+          "large gauntlets",
+          "oversized mechanical gauntlets",
+          "массивные перчатки",
+          "огромные перчатки",
+          "большие рукавицы",
+          "массивные рукавицы",
+        ],
+      },
+    ],
+  },
+];
+
 export const PET_VISION_SYSTEM_PROMPT = PET_VISION_SYSTEM_PROMPT_V1;
 export const PET_VISION_RESPONSE_JSON_SCHEMA =
   PET_VISION_RESPONSE_JSON_SCHEMA_V1;
@@ -225,6 +402,7 @@ const CAPTION_FIELDS_V2 = [
 const SAFE_FAILURE_REASONS = new Set([
   "asset_error",
   "authentication_error",
+  "canary_failed",
   "configuration_missing",
   "embedding_error",
   "invalid_request",
@@ -237,10 +415,11 @@ const SAFE_FAILURE_REASONS = new Set([
 ]);
 
 export class PetVisionBackfillError extends Error {
-  constructor(reason) {
+  constructor(reason, canary = null) {
     super("Pet vision search backfill failed.");
     this.name = "PetVisionBackfillError";
     this.reason = reason;
+    this.canary = canary;
   }
 }
 
@@ -264,6 +443,29 @@ export function resolvePetVisionRevisionConfig(
     visualRevision,
     dimensions: visualConfig.dimensions,
     captionContract,
+  };
+}
+
+export function evaluatePetVisionCanary(slug, captionText) {
+  const canary = PET_VISION_V2_CANARIES.find(
+    (candidate) => candidate.slug === slug,
+  );
+  if (!canary) return null;
+
+  const normalizedCaption = normalizeCanaryText(captionText);
+  const checks = canary.expectations.map((expectation) => ({
+    id: expectation.id,
+    passed: expectation.expectedAnyTerms.some((term) =>
+      containsCanaryTerm(
+        normalizedCaption,
+        normalizeCanaryText(term),
+      ),
+    ),
+  }));
+  return {
+    slug,
+    passed: checks.every((check) => check.passed),
+    checks,
   };
 }
 
@@ -549,6 +751,7 @@ export async function runPetVisionSearchBackfill(input) {
   if (input.options.slug && selectedPets.length === 0) {
     throw new Error(`Approved pet slug not found: ${input.options.slug}`);
   }
+  const orderedPets = orderPetsForCanaryGate(input, selectedPets);
 
   const summary = {
     scanned: selectedPets.length,
@@ -557,7 +760,7 @@ export async function runPetVisionSearchBackfill(input) {
     captionAndVector: 0,
   };
 
-  for (const pet of selectedPets) {
+  for (const pet of orderedPets) {
     try {
       const action = await processPet(input, pet);
       if (action === "unchanged") summary.unchanged += 1;
@@ -619,6 +822,7 @@ async function processPet(input, pet) {
   });
 
   if (freshCaption) {
+    assertV2Canary(input, pet.slug, freshCaption.captionText);
     const visualSourceHash = createPetVisualEmbeddingSourceHash({
       visualRevision: input.config.visualRevision,
       captionRevision: input.config.captionRevision,
@@ -670,6 +874,7 @@ async function processPet(input, pet) {
     input.config.captionRevision,
     caption,
   );
+  assertV2Canary(input, pet.slug, captionText);
   const captionJson = JSON.stringify(
     createPetVisionCaptionEnvelope({
       captionRevision: input.config.captionRevision,
@@ -713,6 +918,61 @@ async function processPet(input, pet) {
     throw new PetVisionBackfillError("persistence_error");
   }
   return "caption-and-vector";
+}
+
+function orderPetsForCanaryGate(input, selectedPets) {
+  if (
+    input.options.mode !== "apply" ||
+    input.options.slug ||
+    input.config.captionRevision !== PET_VISION_CAPTION_REVISION_V2
+  ) {
+    return selectedPets;
+  }
+
+  const petsBySlug = new Map(
+    selectedPets.map((candidate) => [candidate.slug, candidate]),
+  );
+  for (const canary of PET_VISION_V2_CANARIES) {
+    if (petsBySlug.has(canary.slug)) continue;
+    const result = {
+      slug: canary.slug,
+      passed: false,
+      checks: [{ id: "approved_pet_present", passed: false }],
+    };
+    input.log({
+      slug: canary.slug,
+      action: "canary",
+      canary: result,
+    });
+    throw new PetVisionBackfillError("canary_failed", result);
+  }
+
+  const canarySlugs = new Set(
+    PET_VISION_V2_CANARIES.map((canary) => canary.slug),
+  );
+  return [
+    ...PET_VISION_V2_CANARIES.map(
+      (canary) => petsBySlug.get(canary.slug),
+    ),
+    ...selectedPets.filter(
+      (candidate) => !canarySlugs.has(candidate.slug),
+    ),
+  ];
+}
+
+function assertV2Canary(input, slug, captionText) {
+  if (
+    input.options.mode !== "apply" ||
+    input.config.captionRevision !== PET_VISION_CAPTION_REVISION_V2
+  ) {
+    return;
+  }
+  const result = evaluatePetVisionCanary(slug, captionText);
+  if (!result) return;
+  input.log({ slug, action: "canary", canary: result });
+  if (!result.passed) {
+    throw new PetVisionBackfillError("canary_failed", result);
+  }
 }
 
 async function callProvider(callback) {
@@ -841,6 +1101,21 @@ function assertCaptionRevision(value) {
     throw new Error("Unsupported pet vision caption revision.");
   }
   return value;
+}
+
+function containsCanaryTerm(caption, term) {
+  if (!term) return false;
+  if (term.includes(" ")) return caption.includes(term);
+  return caption.split(" ").includes(term);
+}
+
+function normalizeCanaryText(value) {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase("und")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function bilingualText(input, path, maxLength, required) {
