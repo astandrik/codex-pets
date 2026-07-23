@@ -25,6 +25,12 @@ export type SemanticPetMatch = {
   score: number;
 };
 
+export type WeightedSemanticPetRank = {
+  matches: readonly SemanticPetMatch[];
+  minScore: number;
+  weight: number;
+};
+
 export function normalizeSearchQuery(value: unknown): NormalizedSearchQuery {
   if (typeof value !== "string") return { text: "", tokens: [] };
 
@@ -74,8 +80,7 @@ export function rankPetsLexically<T extends SearchablePet>(
 export function fuseRankedPets<T extends SearchablePet>(input: {
   pets: readonly T[];
   lexical: readonly LexicalPetMatch<T>[];
-  semantic: readonly SemanticPetMatch[];
-  minSemanticScore: number;
+  semanticRanks: readonly WeightedSemanticPetRank[];
 }): T[] {
   const petBySlug = new Map(input.pets.map((pet) => [pet.slug, pet]));
   const originalIndex = new Map(
@@ -93,20 +98,26 @@ export function fuseRankedPets<T extends SearchablePet>(input: {
     });
   });
 
-  input.semantic
-    .filter((match) => match.score >= input.minSemanticScore)
-    .sort((left, right) => right.score - left.score)
-    .forEach((match, index) => {
-      if (!petBySlug.has(match.slug)) return;
-      const current = ranks.get(match.slug) ?? {
-        score: 0,
-        exactIdentifier: false,
-      };
-      ranks.set(match.slug, {
-        ...current,
-        score: current.score + reciprocalRank(index),
+  input.semanticRanks.forEach((semanticRank) => {
+    if (!Number.isFinite(semanticRank.weight) || semanticRank.weight <= 0) {
+      return;
+    }
+    semanticRank.matches
+      .filter((match) => match.score >= semanticRank.minScore)
+      .toSorted((left, right) => right.score - left.score)
+      .forEach((match, index) => {
+        if (!petBySlug.has(match.slug)) return;
+        const current = ranks.get(match.slug) ?? {
+          score: 0,
+          exactIdentifier: false,
+        };
+        ranks.set(match.slug, {
+          ...current,
+          score:
+            current.score + semanticRank.weight * reciprocalRank(index),
+        });
       });
-    });
+  });
 
   return Array.from(ranks, ([slug, rank]) => ({
     pet: petBySlug.get(slug),

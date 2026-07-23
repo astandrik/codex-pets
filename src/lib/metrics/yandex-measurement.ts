@@ -1,6 +1,10 @@
 import { toPublicUrl } from "@/lib/base-path";
 import { YANDEX_METRIKA_ID } from "@/lib/metrics/yandex";
 import type {
+  PetSearchVisualMode,
+  PetVisualSearchFallbackReason,
+} from "@/lib/pets/search-config";
+import type {
   PetSearchFallbackReason,
   PetSearchResultMode,
 } from "@/lib/pets/search-service";
@@ -74,6 +78,8 @@ export async function trackMcpToolCall(
 export async function trackPetSearch(payload: {
   mode: PetSearchResultMode;
   fallbackReason: PetSearchFallbackReason | null;
+  visualMode: PetSearchVisualMode;
+  visualFallbackReason: PetVisualSearchFallbackReason | null;
   durationMs: number;
   resultCount: number;
 }): Promise<void> {
@@ -95,6 +101,9 @@ export async function trackPetSearch(payload: {
           durationBucket: durationBucket(payload.durationMs),
           resultCountBucket: resultCountBucket(payload.resultCount),
           fallbackReason: payload.fallbackReason ?? "none",
+          visualMode: payload.visualMode,
+          visualFallbackReason:
+            payload.visualFallbackReason ?? "none",
         },
       }),
     });

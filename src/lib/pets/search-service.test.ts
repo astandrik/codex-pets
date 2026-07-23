@@ -37,7 +37,11 @@ describe("approved pet search service", () => {
   it("keeps newest-first order for an empty query and applies explicit filters", async () => {
     const search = createPetSearchService({
       listApprovedPets: async () => catalog,
-      semanticSearch: async () => [],
+      semanticSearch: async () => ({
+        text: [],
+        visual: [],
+        visualFallbackReason: null,
+      }),
       mode: "hybrid",
     });
 
@@ -51,7 +55,11 @@ describe("approved pet search service", () => {
   it("uses lexical relevance and respects author and limit", async () => {
     const search = createPetSearchService({
       listApprovedPets: async () => catalog,
-      semanticSearch: async () => [],
+      semanticSearch: async () => ({
+        text: [],
+        visual: [],
+        visualFallbackReason: null,
+      }),
       mode: "lexical",
     });
 
@@ -65,10 +73,14 @@ describe("approved pet search service", () => {
   it("adds semantic-only candidates in hybrid mode", async () => {
     const search = createPetSearchService({
       listApprovedPets: async () => catalog,
-      semanticSearch: async () => [
-        { slug: "velvet-byte", score: 0.87 },
-        { slug: "terminal-cube", score: 0.2 },
-      ],
+      semanticSearch: async () => ({
+        text: [
+          { slug: "velvet-byte", score: 0.87 },
+          { slug: "terminal-cube", score: 0.2 },
+        ],
+        visual: [],
+        visualFallbackReason: null,
+      }),
       mode: "hybrid",
       minSemanticScore: 0.5,
     });
@@ -83,7 +95,11 @@ describe("approved pet search service", () => {
   it("computes semantic candidates but returns lexical order in shadow mode", async () => {
     const search = createPetSearchService({
       listApprovedPets: async () => catalog,
-      semanticSearch: async () => [{ slug: "velvet-byte", score: 0.87 }],
+      semanticSearch: async () => ({
+        text: [{ slug: "velvet-byte", score: 0.87 }],
+        visual: [],
+        visualFallbackReason: null,
+      }),
       mode: "shadow",
     });
 
@@ -130,7 +146,7 @@ describe("approved pet search service", () => {
       listApprovedPets: async () => catalog,
       semanticSearch: async () => {
         semanticCalls += 1;
-        return [];
+        return { text: [], visual: [], visualFallbackReason: null };
       },
       mode: "hybrid",
     });
@@ -146,7 +162,7 @@ describe("approved pet search service", () => {
       listApprovedPets: async () => catalog,
       semanticSearch: async (_query, candidates) => {
         semanticCandidates = candidates;
-        return [];
+        return { text: [], visual: [], visualFallbackReason: null };
       },
       mode: "hybrid",
     });
@@ -154,5 +170,60 @@ describe("approved pet search service", () => {
     await search({ q: "coding", kind: "object", author: "alice" });
 
     expect(semanticCandidates).toEqual([catalog[2]]);
+  });
+
+  it("applies visual ranks only when both base and visual modes are hybrid", async () => {
+    const semanticSearch = async () => ({
+      text: [{ slug: "orbit-otter", score: 0.9 }],
+      visual: [{ slug: "velvet-byte", score: 0.95 }],
+      visualFallbackReason: null,
+    });
+    const textOnly = createPetSearchService({
+      listApprovedPets: async () => catalog,
+      semanticSearch,
+      mode: "hybrid",
+      minSemanticScore: 0.5,
+      visualMode: "shadow",
+      visualProfile: { minSemanticScore: 0.9, weight: 0.5 },
+    });
+    const combined = createPetSearchService({
+      listApprovedPets: async () => catalog,
+      semanticSearch,
+      mode: "hybrid",
+      minSemanticScore: 0.5,
+      visualMode: "hybrid",
+      visualProfile: { minSemanticScore: 0.9, weight: 0.5 },
+    });
+
+    expect((await textOnly({ q: "unrelated" })).pets).toEqual([catalog[1]]);
+    expect((await combined({ q: "unrelated" })).pets).toEqual([
+      catalog[1],
+      catalog[0],
+    ]);
+  });
+
+  it("preserves text-hybrid order and diagnostics on visual failure or missing calibration", async () => {
+    const search = createPetSearchService({
+      listApprovedPets: async () => catalog,
+      semanticSearch: async () => ({
+        text: [{ slug: "orbit-otter", score: 0.9 }],
+        visual: [],
+        visualFallbackReason: "visual_caption_lookup_error",
+      }),
+      mode: "hybrid",
+      minSemanticScore: 0.5,
+      visualMode: "hybrid",
+      visualProfile: null,
+      configuredVisualFallbackReason: "visual_calibration_missing",
+    });
+
+    await expect(search({ q: "unrelated" })).resolves.toMatchObject({
+      pets: [catalog[1]],
+      mode: "hybrid",
+      fallbackReason: null,
+      visualMode: "hybrid",
+      visualFallbackReason: "visual_caption_lookup_error",
+      visualCandidateCount: 0,
+    });
   });
 });

@@ -81,8 +81,13 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live pet search rollout evaluation", () => 
           const hybridSlugs = fuseRankedPets({
             pets: catalog,
             lexical,
-            semantic: semanticMatches,
-            minSemanticScore: threshold,
+            semanticRanks: [
+              {
+                matches: semanticMatches,
+                minScore: threshold,
+                weight: 1,
+              },
+            ],
           }).map((pet) => pet.slug);
 
           return {

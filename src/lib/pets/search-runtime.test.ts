@@ -3,6 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 import { PET_SEARCH_MODEL_REVISIONS } from "@/lib/pets/search-config";
 import { createPetSearchSourceHash } from "@/lib/pets/search-embeddings";
 import { createApprovedPetSearchRuntime } from "@/lib/pets/search-runtime";
+import {
+  PET_VISION_CAPTION_REVISION,
+  PET_VISUAL_MODEL_REVISION,
+  buildPetVisionCaptionText,
+  createPetVisionCaptionEnvelope,
+  createPetVisionCaptionSourceHash,
+  createPetVisualEmbeddingSourceHash,
+  type PetVisionCaption,
+} from "@/lib/pets/search-vision-contract";
 import type { ApprovalStatus } from "@/lib/pets/types";
 
 const revision = Object.keys(PET_SEARCH_MODEL_REVISIONS)[0] as keyof typeof PET_SEARCH_MODEL_REVISIONS;
@@ -23,6 +32,7 @@ const catalog = [
     tags: ["gothic", "night"],
     ownerName: "Alice",
     status: "approved" as ApprovalStatus,
+    spritesheetUrl: "/api/assets/asset-velvet/spritesheet.webp",
   },
   {
     slug: "orbit-otter",
@@ -32,6 +42,7 @@ const catalog = [
     tags: ["space", "friendly"],
     ownerName: "Bob",
     status: "approved" as ApprovalStatus,
+    spritesheetUrl: "/api/assets/asset-orbit/spritesheet.webp",
   },
 ];
 
@@ -53,6 +64,7 @@ function dependencies(overrides = {}) {
       embedDocument: vi.fn(async () => Array(256).fill(0.2)),
     },
     findSimilar: vi.fn(async () => []),
+    listCaptions: vi.fn(async () => []),
     getMetadata: vi.fn(async () => null),
     upsert: vi.fn(async () => undefined),
     ...overrides,
@@ -185,5 +197,140 @@ describe("approved pet search runtime", () => {
         status: "rejected",
       }),
     ).toBe("skipped");
+  });
+
+  it("uses one query embedding for parallel text and visual ranks", async () => {
+    const visualConfig = {
+      folderId: "folder-1",
+      apiKey: "secret",
+      captionRevision: PET_VISION_CAPTION_REVISION,
+      visualRevision: PET_VISUAL_MODEL_REVISION,
+      dimensions: 256,
+      profile: null,
+      visionTimeoutMs: 30_000,
+      modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+    } as const;
+    const visualCaption: PetVisionCaption = {
+      subject: { en: "woman", ru: "женщина" },
+      appearance: { en: "silver hair", ru: "серебряные волосы" },
+      clothing: { en: "black dress", ru: "чёрное платье" },
+      style: { en: "pixel art", ru: "пиксель-арт" },
+      mood: { en: "confident", ru: "уверенная" },
+      colors: { en: ["black"], ru: ["чёрный"] },
+      search_terms_en: ["anime woman", "gothic", "elegant"],
+      search_terms_ru: ["аниме девушка", "готика", "элегантная"],
+    };
+    const captionText = buildPetVisionCaptionText(visualCaption);
+    const captionSourceHash = createPetVisionCaptionSourceHash({
+      captionRevision: visualConfig.captionRevision,
+      modelUri: visualConfig.modelUri,
+      assetId: "asset-velvet",
+      spritesheetSha256: "a".repeat(64),
+    });
+    const queryEmbedding = vi.fn(async () => Array(256).fill(0.1));
+    const findSimilar = vi.fn(async (input: { modelRevision: string }) =>
+      input.modelRevision === revision
+        ? [
+            {
+              slug: "orbit-otter",
+              sourceHash: createPetSearchSourceHash(catalog[1], revision),
+              score: 0.9,
+            },
+          ]
+        : [
+            {
+              slug: "velvet-byte",
+              sourceHash: createPetVisualEmbeddingSourceHash({
+                visualRevision: visualConfig.visualRevision,
+                captionRevision: visualConfig.captionRevision,
+                captionSourceHash,
+                captionText,
+              }),
+              score: 0.95,
+            },
+          ],
+    );
+    const runtime = createApprovedPetSearchRuntime(
+      dependencies({
+        config: {
+          mode: "hybrid",
+          semantic: semanticConfig,
+          fallbackReason: null,
+          visualMode: "shadow",
+          visual: visualConfig,
+          visualFallbackReason: null,
+        },
+        embeddingClient: {
+          ...dependencies().embeddingClient,
+          embedQuery: queryEmbedding,
+        },
+        findSimilar,
+        listCaptions: vi.fn(async () => [
+          {
+            slug: "velvet-byte",
+            sourceHash: captionSourceHash,
+            captionJson: JSON.stringify(
+              createPetVisionCaptionEnvelope({
+                assetId: "asset-velvet",
+                spritesheetSha256: "a".repeat(64),
+                caption: visualCaption,
+              }),
+            ),
+            captionText,
+            updatedAt: "2026-07-22T12:00:00.000Z",
+          },
+        ]),
+      }),
+    );
+
+    await expect(runtime.searchApprovedPets({ q: "unrelated" })).resolves.toMatchObject({
+      pets: [catalog[1]],
+      mode: "hybrid",
+      visualMode: "shadow",
+      visualFallbackReason: null,
+      visualCandidateCount: 1,
+    });
+    expect(queryEmbedding).toHaveBeenCalledTimes(1);
+    expect(findSimilar).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps text-hybrid results when visual storage fails", async () => {
+    const runtime = createApprovedPetSearchRuntime(
+      dependencies({
+        config: {
+          ...dependencies().config,
+          visualMode: "hybrid",
+          visual: {
+            folderId: "folder-1",
+            apiKey: "secret",
+            captionRevision: PET_VISION_CAPTION_REVISION,
+            visualRevision: PET_VISUAL_MODEL_REVISION,
+            dimensions: 256,
+            profile: { minSemanticScore: 0.9, weight: 0.5 },
+            visionTimeoutMs: 30_000,
+            modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+          },
+        },
+        findSimilar: async ({ modelRevision }: { modelRevision: string }) => {
+          if (modelRevision === PET_VISUAL_MODEL_REVISION) {
+            throw new Error("visual table unavailable");
+          }
+          return [
+            {
+              slug: "orbit-otter",
+              sourceHash: createPetSearchSourceHash(catalog[1], revision),
+              score: 0.9,
+            },
+          ];
+        },
+      }),
+    );
+
+    await expect(runtime.searchApprovedPets({ q: "unrelated" })).resolves.toMatchObject({
+      pets: [catalog[1]],
+      mode: "hybrid",
+      fallbackReason: null,
+      visualFallbackReason: "visual_vector_search_error",
+    });
   });
 });

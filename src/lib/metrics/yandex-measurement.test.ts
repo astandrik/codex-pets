@@ -142,6 +142,8 @@ describe("trackMcpToolCall", () => {
     await trackPetSearch({
       mode: "lexical_fallback",
       fallbackReason: "timeout",
+      visualMode: "hybrid",
+      visualFallbackReason: "visual_vector_search_error",
       durationMs: 843,
       resultCount: 7,
     });
@@ -155,6 +157,8 @@ describe("trackMcpToolCall", () => {
         durationBucket: "500_999_ms",
         resultCountBucket: "6_20",
         fallbackReason: "timeout",
+        visualMode: "hybrid",
+        visualFallbackReason: "visual_vector_search_error",
       },
     });
     expect(event.get("params")).not.toMatch(/query|sexy|slug|author/i);

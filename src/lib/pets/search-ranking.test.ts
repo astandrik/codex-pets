@@ -94,17 +94,52 @@ describe("pet search ranking", () => {
     const fused = fuseRankedPets({
       pets,
       lexical,
-      semantic: [
-        { slug: "newest-glamour", score: 0.86 },
-        { slug: "description-match", score: 0.82 },
-        { slug: "tag-match", score: 0.2 },
+      semanticRanks: [
+        {
+          matches: [
+            { slug: "newest-glamour", score: 0.86 },
+            { slug: "description-match", score: 0.82 },
+            { slug: "tag-match", score: 0.2 },
+          ],
+          minScore: 0.5,
+          weight: 1,
+        },
       ],
-      minSemanticScore: 0.5,
     });
 
     expect(fused[0]?.slug).toBe("sexy-fox");
     expect(fused).toContainEqual(pets[0]);
     expect(fused).toContainEqual(pets[4]);
     expect(fused.filter((pet) => pet.slug === "tag-match")).toHaveLength(1);
+  });
+
+  it("fuses independently thresholded text and weighted visual ranks", () => {
+    const fused = fuseRankedPets({
+      pets,
+      lexical: [],
+      semanticRanks: [
+        {
+          matches: [
+            { slug: "newest-glamour", score: 0.9 },
+            { slug: "description-match", score: 0.8 },
+          ],
+          minScore: 0.5,
+          weight: 1,
+        },
+        {
+          matches: [
+            { slug: "description-match", score: 0.95 },
+            { slug: "tag-match", score: 0.4 },
+          ],
+          minScore: 0.9,
+          weight: 0.5,
+        },
+      ],
+    });
+
+    expect(fused.map((pet) => pet.slug)).toEqual([
+      "description-match",
+      "newest-glamour",
+    ]);
   });
 });

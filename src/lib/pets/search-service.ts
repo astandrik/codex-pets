@@ -5,6 +5,11 @@ import {
   rankPetsLexically,
   type SemanticPetMatch,
 } from "@/lib/pets/search-ranking";
+import type {
+  PetSearchVisualMode,
+  PetVisualCalibrationProfile,
+  PetVisualSearchFallbackReason,
+} from "@/lib/pets/search-config";
 import type { PetKind } from "@/lib/pets/types";
 
 const DEFAULT_RESULT_LIMIT = 200;
@@ -55,7 +60,16 @@ export type PetSearchResult<T extends PetSearchCatalogItem> = {
   total: number;
   mode: PetSearchResultMode;
   fallbackReason: PetSearchFallbackReason | null;
+  visualMode: PetSearchVisualMode;
+  visualFallbackReason: PetVisualSearchFallbackReason | null;
+  visualCandidateCount: number;
   durationMs: number;
+};
+
+export type PetSemanticSearchResult = {
+  text: SemanticPetMatch[];
+  visual: SemanticPetMatch[];
+  visualFallbackReason: PetVisualSearchFallbackReason | null;
 };
 
 type PetSearchDependencies<T extends PetSearchCatalogItem> = {
@@ -63,9 +77,12 @@ type PetSearchDependencies<T extends PetSearchCatalogItem> = {
   semanticSearch: (
     query: string,
     candidates: readonly T[],
-  ) => Promise<SemanticPetMatch[]>;
+  ) => Promise<PetSemanticSearchResult>;
   mode: PetSearchMode;
   minSemanticScore?: number;
+  visualMode?: PetSearchVisualMode;
+  visualProfile?: PetVisualCalibrationProfile | null;
+  configuredVisualFallbackReason?: PetVisualSearchFallbackReason | null;
   now?: () => number;
 };
 
@@ -75,6 +92,7 @@ export function createPetSearchService<T extends PetSearchCatalogItem>(
   return async (input = {}) => {
     const now = dependencies.now ?? Date.now;
     const startedAt = now();
+    const visualMode = dependencies.visualMode ?? "off";
     const filters = normalizeGalleryFilters(input);
     const author = normalizeSearchQuery(input.author).text;
     const limit = normalizeLimit(input.limit);
@@ -104,16 +122,55 @@ export function createPetSearchService<T extends PetSearchCatalogItem>(
       const fused = fuseRankedPets({
         pets: candidates,
         lexical,
-        semantic,
-        minSemanticScore:
-          dependencies.minSemanticScore ?? DEFAULT_MIN_SEMANTIC_SCORE,
+        semanticRanks: [
+          {
+            matches: semantic.text,
+            minScore:
+              dependencies.minSemanticScore ?? DEFAULT_MIN_SEMANTIC_SCORE,
+            weight: 1,
+          },
+          ...(dependencies.mode === "hybrid" &&
+          visualMode === "hybrid" &&
+          dependencies.visualProfile
+            ? [
+                {
+                  matches: semantic.visual,
+                  minScore:
+                    dependencies.visualProfile.minSemanticScore,
+                  weight: dependencies.visualProfile.weight,
+                },
+              ]
+            : []),
+        ],
       });
+      const visualFallbackReason =
+        visualMode === "off"
+          ? null
+          : (semantic.visualFallbackReason ??
+            dependencies.configuredVisualFallbackReason ??
+            null);
+      const visualCandidateCount =
+        visualMode === "off" ? 0 : semantic.visual.length;
 
       if (dependencies.mode === "shadow") {
-        return result(lexicalPets, lexicalPets.length, "shadow", null);
+        return result(
+          lexicalPets,
+          lexicalPets.length,
+          "shadow",
+          null,
+          visualFallbackReason,
+          visualCandidateCount,
+        );
       }
 
-      return result(fused, fused.length, "hybrid", null);
+      return result(
+        fused,
+        fused.length,
+        "hybrid",
+        null,
+        visualFallbackReason,
+        visualCandidateCount,
+      );
     } catch (error) {
       return result(
         lexicalPets,
@@ -130,12 +187,17 @@ export function createPetSearchService<T extends PetSearchCatalogItem>(
       total: number,
       mode: PetSearchResultMode,
       fallbackReason: PetSearchFallbackReason | null,
+      visualFallbackReason: PetVisualSearchFallbackReason | null = null,
+      visualCandidateCount = 0,
     ): PetSearchResult<T> {
       return {
         pets: pets.slice(0, limit),
         total,
         mode,
         fallbackReason,
+        visualMode,
+        visualFallbackReason,
+        visualCandidateCount,
         durationMs: Math.max(0, now() - startedAt),
       };
     }
