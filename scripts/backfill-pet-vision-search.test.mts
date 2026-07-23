@@ -12,6 +12,7 @@ import {
 } from "../src/lib/pets/search-vision-contract";
 import {
   PET_VISION_FRAME_POLICY as RUNTIME_FRAME_POLICY,
+  extractPetVisionFrames as extractRuntimeFrames,
 } from "../src/lib/pets/search-vision-frames";
 
 const {
@@ -21,6 +22,7 @@ const {
   createPetVisionCaptionSourceHash,
   createPetVisualEmbeddingSourceHash,
   embeddingToBuffer,
+  extractPetVisionFrames,
   parseVisionBackfillArgs,
   runPetVisionSearchBackfill,
 } = await import("./lib/pet-vision-search-backfill.mjs");
@@ -164,6 +166,17 @@ describe("pet vision search backfill", () => {
     );
     expect(embeddingToBuffer([1.5, -2.25])).toEqual(
       runtimeEmbeddingToBuffer([1.5, -2.25]),
+    );
+  });
+
+  it("keeps non-PNG/WebP rejection in runtime parity", async () => {
+    const gif = Buffer.from("GIF89a", "ascii");
+
+    await expect(extractPetVisionFrames(gif)).rejects.toThrow(
+      /sprite image format/i,
+    );
+    await expect(extractRuntimeFrames(gif)).rejects.toThrow(
+      /sprite image format/i,
     );
   });
 

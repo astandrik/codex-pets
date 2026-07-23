@@ -6,12 +6,19 @@ import {
   evaluateSearchRolloutGate,
   evaluateSearchQuality,
   evaluateVisualSearchRolloutGate,
+  resolveVisualSearchEvalSplit,
   selectSemanticThreshold,
 } from "@/lib/pets/search-eval";
 import { PET_SEARCH_MODEL_REVISIONS } from "@/lib/pets/search-config";
 import { rankPetsLexically } from "@/lib/pets/search-ranking";
 
 describe("pet search evaluation", () => {
+  it("maps the calibrate command to the frozen calibration split", () => {
+    expect(resolveVisualSearchEvalSplit("calibrate")).toBe("calibration");
+    expect(resolveVisualSearchEvalSplit("holdout")).toBe("holdout");
+    expect(resolveVisualSearchEvalSplit(undefined)).toBeNull();
+  });
+
   it("covers every required query family without claiming unfinished human review", () => {
     expect(new Set(fixtures.map((fixture) => fixture.category))).toEqual(
       new Set(["exact", "multi-token", "typo", "style", "russian", "negative"]),

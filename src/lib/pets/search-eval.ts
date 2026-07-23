@@ -71,6 +71,16 @@ export type VisualSearchProfileReport = {
   }>;
 };
 
+export type VisualSearchEvalSplit = "calibration" | "holdout";
+
+export function resolveVisualSearchEvalSplit(
+  mode: string | undefined,
+): VisualSearchEvalSplit | null {
+  if (mode === "calibrate") return "calibration";
+  if (mode === "holdout") return "holdout";
+  return null;
+}
+
 export function calibrateVisualSearchProfile<T extends SearchablePet>(
   observations: readonly VisualSearchObservation<T>[],
   textMinSemanticScore: number,

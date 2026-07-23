@@ -35,6 +35,10 @@ export type ExtractedPetVisionFrames = {
 export async function extractPetVisionFrames(
   spritesheet: Buffer,
 ): Promise<ExtractedPetVisionFrames> {
+  if (!hasSupportedSpriteSignature(spritesheet)) {
+    throw new Error("Unsupported sprite image format; expected PNG or WebP.");
+  }
+
   const metadata = await sharp(spritesheet).metadata();
   const width = metadata.width ?? 0;
   const height = metadata.height ?? 0;
@@ -74,4 +78,18 @@ export async function extractPetVisionFrames(
       .digest("hex"),
     frames,
   };
+}
+
+function hasSupportedSpriteSignature(buffer: Buffer): boolean {
+  const isPng =
+    buffer.length >= 8 &&
+    buffer.subarray(0, 8).equals(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    );
+  const isWebp =
+    buffer.length >= 12 &&
+    buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+    buffer.subarray(8, 12).toString("ascii") === "WEBP";
+
+  return isPng || isWebp;
 }

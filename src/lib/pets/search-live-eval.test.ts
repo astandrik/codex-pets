@@ -16,6 +16,7 @@ import {
   evaluateSearchQuality,
   evaluateVisualSearchProfile,
   evaluateVisualSearchRolloutGate,
+  resolveVisualSearchEvalSplit,
   type RankedSearchObservation,
   type VisualSearchObservation,
   type VisualSearchProfileReport,
@@ -31,8 +32,8 @@ import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 import type { PublicPet } from "@/lib/pets/types";
 
 const LIVE_EVAL_MODE = process.env.PET_SEARCH_LIVE_EVAL;
-const LIVE_EVAL_ENABLED =
-  LIVE_EVAL_MODE === "calibrate" || LIVE_EVAL_MODE === "holdout";
+const LIVE_EVAL_SPLIT = resolveVisualSearchEvalSplit(LIVE_EVAL_MODE);
+const LIVE_EVAL_ENABLED = LIVE_EVAL_SPLIT !== null;
 
 describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
   it(
@@ -48,10 +49,13 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
           "Live visual search eval configuration is unavailable.",
         );
       }
+      if (!LIVE_EVAL_SPLIT) {
+        throw new Error("Live visual search eval mode is invalid.");
+      }
       const semanticConfig = config.semantic;
       const visualConfig = config.visual;
       const embeddingClient = createYandexEmbeddingClient(semanticConfig);
-      const split = LIVE_EVAL_MODE as "calibration" | "holdout";
+      const split = LIVE_EVAL_SPLIT;
       const selectedFixtures = fixtures.filter(
         (fixture) => fixture.split === split,
       );

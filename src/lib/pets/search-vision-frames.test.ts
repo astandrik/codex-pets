@@ -75,6 +75,24 @@ describe("pet vision frame extraction", () => {
     );
   });
 
+  it("rejects non-PNG/WebP bytes before Sharp decodes the atlas", async () => {
+    const sheet = PET_SHEETS[2];
+    const gif = await sharp({
+      create: {
+        width: sheet.width,
+        height: sheet.height,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .gif()
+      .toBuffer();
+
+    await expect(extractPetVisionFrames(gif)).rejects.toThrow(
+      /sprite image format/i,
+    );
+  });
+
   it("freezes the frame policy identifier and central-frame table", () => {
     expect(PET_VISION_FRAME_POLICY).toEqual({
       id: "pet-vision-central-frames-v1",
