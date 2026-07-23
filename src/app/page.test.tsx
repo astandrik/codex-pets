@@ -21,7 +21,7 @@ vi.mock("@/components/HomePage/HomePage", () => ({
 }));
 
 const newestPet = createPet("orbit-otter", "Orbit Otter");
-const semanticPet = createPet("velvet-byte", "Velvet Byte");
+const semanticPet = createPet("velvet-luma", "Velvet Luma");
 
 describe("homepage pet search", () => {
   beforeEach(() => {
@@ -36,6 +36,9 @@ describe("homepage pet search", () => {
       total: 2,
       mode: "hybrid",
       fallbackReason: null,
+      visualMode: "hybrid",
+      visualFallbackReason: null,
+      visualCandidateCount: 1,
       durationMs: 10,
     });
   });
@@ -57,13 +60,16 @@ describe("homepage pet search", () => {
     });
     expect(
       (homePage?.props.pets as Array<{ slug: string }>).map((pet) => pet.slug),
-    ).toEqual(["orbit-otter", "velvet-byte"]);
+    ).toEqual(["orbit-otter", "velvet-luma"]);
     expect(
       (homePage?.props.filteredPets as Array<{ slug: string }>).map(
         (pet) => pet.slug,
       ),
-    ).toEqual(["velvet-byte", "orbit-otter"]);
+    ).toEqual(["velvet-luma", "orbit-otter"]);
     expect(homePage?.props.filteredTotal).toBe(2);
+    expect(JSON.stringify(homePage?.props)).not.toMatch(
+      /captionJson|captionText|sourceHash|visualMode|visualFallbackReason/,
+    );
   });
 });
 
@@ -89,5 +95,8 @@ function createPet(slug: string, displayName: string) {
     downloadCount: 0,
     installCount: 0,
     likeCount: 0,
+    captionJson: '{"internal":true}',
+    captionText: "internal visual caption",
+    sourceHash: "internal-source-hash",
   };
 }

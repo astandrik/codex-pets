@@ -51,6 +51,9 @@ const semanticPet = {
   slug: "velvet-luma",
   displayName: "Velvet Luma",
   description: "A gothic character with no literal query token.",
+  captionJson: '{"internal":true}',
+  captionText: "internal visual caption",
+  sourceHash: "internal-source-hash",
 };
 
 describe("POST /mcp", () => {
@@ -196,6 +199,9 @@ describe("POST /mcp", () => {
       total: 2,
       mode: "hybrid",
       fallbackReason: null,
+      visualMode: "hybrid",
+      visualFallbackReason: null,
+      visualCandidateCount: 1,
       durationMs: 12,
     });
 
@@ -218,6 +224,9 @@ describe("POST /mcp", () => {
     ).toEqual(["velvet-luma", "orbit-otter"]);
     expect(JSON.stringify(body.result.structuredContent)).not.toContain(
       "private@example.com",
+    );
+    expect(JSON.stringify(body.result.structuredContent)).not.toMatch(
+      /captionJson|captionText|sourceHash|visualMode|visualFallbackReason/,
     );
     expect(body.result.content[0].text).toContain('"orbit-otter"');
     expect(searchMocks.searchApprovedPets).toHaveBeenCalledWith({

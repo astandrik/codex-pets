@@ -175,7 +175,7 @@ export function createApprovedPetSearchRuntime<T extends ApprovedSearchPet>(
     try {
       return {
         text,
-        visual: currentVisualMatches({
+        visual: filterCurrentVisualMatches({
           candidates: candidateBySlug,
           storedMatches: visualResult.value,
           storedCaptions: captionsResult.value,
@@ -233,7 +233,7 @@ export function createApprovedPetSearchRuntime<T extends ApprovedSearchPet>(
   }
 }
 
-function currentVisualMatches<T extends ApprovedSearchPet>(input: {
+export function filterCurrentVisualMatches<T extends ApprovedSearchPet>(input: {
   candidates: ReadonlyMap<string, T>;
   storedMatches: readonly StoredSemanticPetMatch[];
   storedCaptions: readonly StoredPetSearchCaption[];

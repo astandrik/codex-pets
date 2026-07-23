@@ -83,6 +83,7 @@ The schema currently includes:
 - `codex_pets`
 - `codex_pet_assets`
 - `codex_pet_search_embeddings`
+- `codex_pet_search_captions`
 - `codex_users`
 - `codex_sessions`
 - `codex_email_verification_tokens`
@@ -96,22 +97,41 @@ The schema currently includes:
 `codex_pet_upload_sessions` is legacy and may remain present if it already
 exists.
 
-For semantic search, deploy with `PET_SEARCH_MODE=lexical`, apply the additive
-migration, and run:
+For hybrid search, deploy with `PET_SEARCH_MODE=lexical` and
+`PET_SEARCH_VISUAL_MODE=off`, apply both additive migrations, and run:
 
 ```bash
 npm run search:backfill -- --dry-run
 npm run search:backfill -- --apply
-npm run search:eval
+npm run search:backfill-vision -- --dry-run
+npm run search:backfill-vision -- --apply --slug PET_SLUG
+npm run search:backfill-vision -- --apply
 ```
 
-The live eval uses the checked-in fixtures and configured YDB/AI Studio access;
-it emits aggregate threshold/quality/gate results without document text. Then
-use `shadow` while evaluating relevance and aggregate latency/fallback metrics
-before enabling `hybrid`. Switch back to `lexical` for rollback; the embeddings
-table can remain. The AI Studio API key must be mounted as a read-only file and
-referenced by `YANDEX_AI_STUDIO_API_KEY_FILE`; do not place it directly in the
-environment file.
+The visual dry-run reads and hashes spritesheets but does not call providers or
+write YDB. After the full paced backfill, enable visual `shadow`, inspect only
+aggregate latency/fallback metrics, and run:
+
+```bash
+npm run search:eval:calibrate
+```
+
+Pin the selected threshold and weight to the exact visual revision in code,
+repeat the full verification chain and candidate build, then run the untouched
+holdout exactly once:
+
+```bash
+npm run search:eval:holdout
+```
+
+Do not tune on holdout results. Stop if any gate fails, and require explicit
+human review of the printed combined `sexy` top five before enabling both base
+and visual `hybrid`. The first rollback is `PET_SEARCH_VISUAL_MODE=off`; switch
+`PET_SEARCH_MODE=lexical` only if the text contour must also be disabled.
+Caption and embedding tables can remain. The AI Studio API key must be mounted
+as a read-only file and referenced by `YANDEX_AI_STUDIO_API_KEY_FILE`; do not
+place it directly in the environment file. Captions, images, prompts, and
+embeddings must not be copied into deployment logs.
 
 ## Build and run
 

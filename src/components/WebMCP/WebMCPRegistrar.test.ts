@@ -32,6 +32,9 @@ describe("WebMCP search tool", () => {
       "velvet-luma",
       "orbit-otter",
     ]);
+    expect(JSON.stringify(result?.structuredContent)).not.toMatch(
+      /captionJson|captionText|sourceHash|visualMode|visualFallbackReason/,
+    );
   });
 });
 
@@ -50,5 +53,8 @@ function createPet(slug: string, displayName: string) {
     ownerProfileSlug: "creator",
     createdAt: "2026-07-01T00:00:00.000Z",
     approvedAt: "2026-07-02T00:00:00.000Z",
+    captionJson: '{"internal":true}',
+    captionText: "internal visual caption",
+    sourceHash: "internal-source-hash",
   };
 }

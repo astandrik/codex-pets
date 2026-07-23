@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import fixtures from "@/lib/pets/search-eval-fixtures.json";
 import {
+  calibrateVisualSearchProfile,
   evaluateSearchRolloutGate,
   evaluateSearchQuality,
+  evaluateVisualSearchRolloutGate,
   selectSemanticThreshold,
 } from "@/lib/pets/search-eval";
 import { PET_SEARCH_MODEL_REVISIONS } from "@/lib/pets/search-config";
+import { rankPetsLexically } from "@/lib/pets/search-ranking";
 
 describe("pet search evaluation", () => {
   it("covers every required query family without claiming unfinished human review", () => {
@@ -19,6 +22,21 @@ describe("pet search evaluation", () => {
     expect(
       fixtures.find((fixture) => fixture.query === "sexy")?.reviewedBy,
     ).toBeNull();
+    expect(new Set(fixtures.map((fixture) => fixture.split))).toEqual(
+      new Set(["calibration", "holdout"]),
+    );
+    expect(fixtures.every((fixture) => fixture.labelsFrozenBy.length > 0))
+      .toBe(true);
+    expect(
+      fixtures.filter((fixture) => fixture.visualSubset).length,
+    ).toBeGreaterThanOrEqual(5);
+    expect(
+      new Set(
+        fixtures.flatMap((fixture) => fixture.visualAspects),
+      ),
+    ).toEqual(
+      new Set(["appearance", "clothing", "accessory", "color", "mood", "style"]),
+    );
   });
 
   it("selects the fixed model threshold from labeled semantic scores", () => {
@@ -128,4 +146,102 @@ describe("pet search evaluation", () => {
       evaluateSearchRolloutGate(report, [200, 200, 200]),
     ).toMatchObject({ passed: true });
   });
+
+  it("calibrates visual threshold and weight deterministically with safety gates", () => {
+    const exactPet = searchablePet("zero-two", "Zero Two");
+    const relevantPet = searchablePet("nozomi-2", "Nozomi");
+    const unrelatedPet = searchablePet("unrelated", "Unrelated");
+    const catalog = [exactPet, relevantPet, unrelatedPet];
+
+    const result = calibrateVisualSearchProfile(
+      [
+        {
+          category: "exact",
+          query: "Zero Two",
+          relevantSlugs: ["zero-two"],
+          visualSubset: false,
+          pets: catalog,
+          lexical: rankPetsLexically(catalog, "Zero Two"),
+          textMatches: [],
+          visualMatches: [],
+          durationMs: 100,
+        },
+        {
+          category: "style",
+          query: "sexy",
+          relevantSlugs: ["nozomi-2"],
+          visualSubset: true,
+          pets: catalog,
+          lexical: [],
+          textMatches: [],
+          visualMatches: [{ slug: "nozomi-2", score: 0.9 }],
+          durationMs: 120,
+        },
+        {
+          category: "negative",
+          query: "quantum banana compiler",
+          relevantSlugs: [],
+          visualSubset: false,
+          pets: catalog,
+          lexical: [],
+          textMatches: [],
+          visualMatches: [{ slug: "unrelated", score: 0.7 }],
+          durationMs: 80,
+        },
+      ],
+      0.31,
+    );
+
+    expect(result.profile).toEqual({
+      minSemanticScore: 0.9,
+      weight: 0.25,
+    });
+    expect(result.report.exactNameMrrAt5).toBe(1);
+    expect(result.report.negativeVisualOnlySafe).toBe(true);
+    expect(result.report.visualSubsetCombinedNdcgAt5).toBe(1);
+    expect(result.evaluatedProfileCount).toBe(8);
+  });
+
+  it("evaluates combined holdout gates independently from calibration", () => {
+    expect(
+      evaluateVisualSearchRolloutGate(
+        {
+          exactNameMrrAt5: 1,
+          textHybridNdcgAt5: 0.7,
+          combinedNdcgAt5: 0.8,
+          visualSubsetTextHybridNdcgAt5: 0.6,
+          visualSubsetCombinedNdcgAt5: 0.72,
+          visualSubsetLift: 0.2,
+          sexyHasRelevantTop5: true,
+          negativeVisualOnlySafe: true,
+          p95DurationMs: 900,
+          rankings: [],
+        },
+        {
+          exactNameMrrAt5: 1,
+          lexicalNdcgAt5: 0.5,
+          hybridNdcgAt5: 0.7,
+          hybridNdcgLift: 0.4,
+          sexyHasRelevantTop5: true,
+          sexyHumanReviewedTop5: false,
+          negativeSemanticOnlySafe: true,
+          p95DurationMs: 900,
+        },
+        {
+          providerFallbackHttpStatuses: [200, 200, 200],
+          visualFallbackHttpStatuses: [200, 200],
+          captionsAbsentFromPublicContracts: true,
+        },
+      ),
+    ).toMatchObject({ passed: true });
+  });
 });
+
+function searchablePet(slug: string, displayName: string) {
+  return {
+    slug,
+    displayName,
+    description: "",
+    tags: [],
+  };
+}

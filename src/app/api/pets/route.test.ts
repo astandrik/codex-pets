@@ -61,6 +61,9 @@ const semanticPet = {
   slug: "velvet-luma",
   displayName: "Velvet Luma",
   description: "A gothic character with no literal query token.",
+  captionJson: '{"internal":true}',
+  captionText: "internal visual caption",
+  sourceHash: "internal-source-hash",
 };
 
 describe("GET /api/pets", () => {
@@ -77,6 +80,9 @@ describe("GET /api/pets", () => {
       total: 1,
       mode: "hybrid",
       fallbackReason: null,
+      visualMode: "hybrid",
+      visualFallbackReason: null,
+      visualCandidateCount: 1,
       durationMs: 12,
     });
     const { GET } = await import("@/app/api/pets/route");
@@ -118,6 +124,9 @@ describe("GET /api/pets", () => {
       total: 2,
       mode: "hybrid",
       fallbackReason: null,
+      visualMode: "hybrid",
+      visualFallbackReason: null,
+      visualCandidateCount: 1,
       durationMs: 12,
     });
     const { GET: getJson } = await import("@/app/api/pets/route");
@@ -129,6 +138,9 @@ describe("GET /api/pets", () => {
       total: 2,
       mode: "hybrid",
       fallbackReason: null,
+      visualMode: "hybrid",
+      visualFallbackReason: null,
+      visualCandidateCount: 1,
       durationMs: 12,
     });
     const { GET: getToon } = await import("@/app/api/pets.toon/route");
@@ -147,6 +159,9 @@ describe("GET /api/pets", () => {
       "velvet-luma",
       "orbit-otter",
     ]);
+    expect(JSON.stringify(jsonBody)).not.toMatch(
+      /captionJson|captionText|sourceHash|visualMode|visualFallbackReason/,
+    );
   });
 
   it.each(["timeout", "rate_limited", "provider_error"] as const)(
@@ -157,6 +172,9 @@ describe("GET /api/pets", () => {
         total: 1,
         mode: "lexical_fallback",
         fallbackReason,
+        visualMode: "off",
+        visualFallbackReason: null,
+        visualCandidateCount: 0,
         durationMs: 800,
       });
       const { GET } = await import("@/app/api/pets/route");
@@ -171,6 +189,40 @@ describe("GET /api/pets", () => {
       expect(body).not.toHaveProperty("mode");
       expect(body).not.toHaveProperty("fallbackReason");
       expect(body).not.toHaveProperty("durationMs");
+    },
+  );
+
+  it.each([
+    "visual_vector_search_error",
+    "visual_caption_lookup_error",
+  ] as const)(
+    "returns HTTP 200 text-hybrid payloads for %s visual fallbacks",
+    async (visualFallbackReason) => {
+      searchMocks.searchApprovedPets.mockResolvedValueOnce({
+        pets: [semanticPet, approvedPet],
+        total: 2,
+        mode: "hybrid",
+        fallbackReason: null,
+        visualMode: "hybrid",
+        visualFallbackReason,
+        visualCandidateCount: 0,
+        durationMs: 45,
+      });
+      const { GET } = await import("@/app/api/pets/route");
+
+      const response = await GET(
+        new Request("https://pets.example/api/pets?q=sexy"),
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.pets.map((pet: { slug: string }) => pet.slug)).toEqual([
+        "velvet-luma",
+        "orbit-otter",
+      ]);
+      expect(JSON.stringify(body)).not.toMatch(
+        /caption|sourceHash|visualFallbackReason/,
+      );
     },
   );
 });

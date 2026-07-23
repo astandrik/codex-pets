@@ -226,4 +226,37 @@ describe("approved pet search service", () => {
       visualCandidateCount: 0,
     });
   });
+
+  it.each([
+    ["lexical", "off", []],
+    ["lexical", "shadow", []],
+    ["lexical", "hybrid", []],
+    ["shadow", "off", []],
+    ["shadow", "shadow", []],
+    ["shadow", "hybrid", []],
+    ["hybrid", "off", ["orbit-otter"]],
+    ["hybrid", "shadow", ["orbit-otter"]],
+    ["hybrid", "hybrid", ["orbit-otter", "velvet-byte"]],
+  ] as const)(
+    "keeps the %s × %s mode ordering contract",
+    async (mode, visualMode, expectedSlugs) => {
+      const search = createPetSearchService({
+        listApprovedPets: async () => catalog,
+        semanticSearch: async () => ({
+          text: [{ slug: "orbit-otter", score: 0.9 }],
+          visual: [{ slug: "velvet-byte", score: 0.95 }],
+          visualFallbackReason: null,
+        }),
+        mode,
+        minSemanticScore: 0.5,
+        visualMode,
+        visualProfile: { minSemanticScore: 0.9, weight: 0.5 },
+      });
+
+      const result = await search({ q: "unrelated" });
+
+      expect(result.pets.map((pet) => pet.slug)).toEqual(expectedSlugs);
+      expect(result.visualMode).toBe(visualMode);
+    },
+  );
 });

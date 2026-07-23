@@ -1,3 +1,18 @@
+import type { PetVisualCalibrationProfile } from "@/lib/pets/search-config";
+import {
+  fuseRankedPets,
+  type LexicalPetMatch,
+  type SearchablePet,
+  type SemanticPetMatch,
+} from "@/lib/pets/search-ranking";
+
+export const VISUAL_SEARCH_CALIBRATION_WEIGHTS = [
+  0.25,
+  0.5,
+  0.75,
+  1,
+] as const;
+
 export type SemanticThresholdFixture = {
   relevantSlugs: string[];
   negative: boolean;
@@ -25,6 +40,254 @@ export type SearchQualityReport = {
   negativeSemanticOnlySafe: boolean;
   p95DurationMs: number;
 };
+
+export type VisualSearchObservation<T extends SearchablePet> = {
+  category: string;
+  query: string;
+  relevantSlugs: string[];
+  visualSubset: boolean;
+  pets: readonly T[];
+  lexical: readonly LexicalPetMatch<T>[];
+  textMatches: readonly SemanticPetMatch[];
+  visualMatches: readonly SemanticPetMatch[];
+  durationMs: number;
+};
+
+export type VisualSearchProfileReport = {
+  exactNameMrrAt5: number;
+  textHybridNdcgAt5: number;
+  combinedNdcgAt5: number;
+  visualSubsetTextHybridNdcgAt5: number;
+  visualSubsetCombinedNdcgAt5: number;
+  visualSubsetLift: number;
+  sexyHasRelevantTop5: boolean;
+  negativeVisualOnlySafe: boolean;
+  p95DurationMs: number;
+  rankings: Array<{
+    query: string;
+    textHybridSlugs: string[];
+    combinedSlugs: string[];
+    visualOnlySlugs: string[];
+  }>;
+};
+
+export function calibrateVisualSearchProfile<T extends SearchablePet>(
+  observations: readonly VisualSearchObservation<T>[],
+  textMinSemanticScore: number,
+): {
+  profile: PetVisualCalibrationProfile;
+  report: VisualSearchProfileReport;
+  evaluatedProfileCount: number;
+} {
+  const thresholds = Array.from(
+    new Set(
+      observations.flatMap((observation) =>
+        observation.visualMatches
+          .map((match) => match.score)
+          .filter(Number.isFinite),
+      ),
+    ),
+  ).sort((left, right) => right - left);
+  if (thresholds.length === 0) {
+    throw new Error("Visual calibration needs observed visual scores.");
+  }
+
+  let selected:
+    | {
+        profile: PetVisualCalibrationProfile;
+        report: VisualSearchProfileReport;
+      }
+    | undefined;
+  for (const minSemanticScore of thresholds) {
+    for (const weight of VISUAL_SEARCH_CALIBRATION_WEIGHTS) {
+      const profile = { minSemanticScore, weight };
+      const report = evaluateVisualSearchProfile(
+        observations,
+        textMinSemanticScore,
+        profile,
+      );
+      if (!passesVisualCalibrationSafety(report)) continue;
+      if (!selected || isBetterVisualProfile(profile, report, selected)) {
+        selected = { profile, report };
+      }
+    }
+  }
+  if (!selected) {
+    throw new Error("No visual calibration profile passes safety gates.");
+  }
+
+  return {
+    ...selected,
+    evaluatedProfileCount:
+      thresholds.length * VISUAL_SEARCH_CALIBRATION_WEIGHTS.length,
+  };
+}
+
+export function evaluateVisualSearchProfile<T extends SearchablePet>(
+  observations: readonly VisualSearchObservation<T>[],
+  textMinSemanticScore: number,
+  profile: PetVisualCalibrationProfile,
+): VisualSearchProfileReport {
+  const rankings = observations.map((observation) => {
+    const textHybridSlugs = fuseRankedPets({
+      pets: observation.pets,
+      lexical: observation.lexical,
+      semanticRanks: [
+        {
+          matches: observation.textMatches,
+          minScore: textMinSemanticScore,
+          weight: 1,
+        },
+      ],
+    }).map((pet) => pet.slug);
+    const combinedSlugs = fuseRankedPets({
+      pets: observation.pets,
+      lexical: observation.lexical,
+      semanticRanks: [
+        {
+          matches: observation.textMatches,
+          minScore: textMinSemanticScore,
+          weight: 1,
+        },
+        {
+          matches: observation.visualMatches,
+          minScore: profile.minSemanticScore,
+          weight: profile.weight,
+        },
+      ],
+    }).map((pet) => pet.slug);
+    const textHybrid = new Set(textHybridSlugs);
+    return {
+      query: observation.query,
+      textHybridSlugs,
+      combinedSlugs,
+      visualOnlySlugs: combinedSlugs
+        .slice(0, 5)
+        .filter((slug) => !textHybrid.has(slug)),
+    };
+  });
+  const positives = observations
+    .map((observation, index) => ({ observation, ranking: rankings[index] }))
+    .filter(({ observation }) => observation.relevantSlugs.length > 0);
+  const exact = positives.filter(
+    ({ observation }) => observation.category === "exact",
+  );
+  const visualSubset = positives.filter(
+    ({ observation }) => observation.visualSubset,
+  );
+  const negatives = observations
+    .map((observation, index) => ({ observation, ranking: rankings[index] }))
+    .filter(({ observation }) => observation.category === "negative");
+  const textHybridNdcgAt5 = mean(
+    positives.map(({ observation, ranking }) =>
+      ndcgAtFive(
+        ranking?.textHybridSlugs ?? [],
+        observation.relevantSlugs,
+      ),
+    ),
+  );
+  const combinedNdcgAt5 = mean(
+    positives.map(({ observation, ranking }) =>
+      ndcgAtFive(
+        ranking?.combinedSlugs ?? [],
+        observation.relevantSlugs,
+      ),
+    ),
+  );
+  const visualSubsetTextHybridNdcgAt5 = mean(
+    visualSubset.map(({ observation, ranking }) =>
+      ndcgAtFive(
+        ranking?.textHybridSlugs ?? [],
+        observation.relevantSlugs,
+      ),
+    ),
+  );
+  const visualSubsetCombinedNdcgAt5 = mean(
+    visualSubset.map(({ observation, ranking }) =>
+      ndcgAtFive(
+        ranking?.combinedSlugs ?? [],
+        observation.relevantSlugs,
+      ),
+    ),
+  );
+
+  return {
+    exactNameMrrAt5: mean(
+      exact.map(({ observation, ranking }) =>
+        reciprocalRankAtFive(
+          ranking?.combinedSlugs ?? [],
+          observation.relevantSlugs,
+        ),
+      ),
+    ),
+    textHybridNdcgAt5,
+    combinedNdcgAt5,
+    visualSubsetTextHybridNdcgAt5,
+    visualSubsetCombinedNdcgAt5,
+    visualSubsetLift: relativeLift(
+      visualSubsetTextHybridNdcgAt5,
+      visualSubsetCombinedNdcgAt5,
+    ),
+    sexyHasRelevantTop5: positives
+      .filter(
+        ({ observation }) => observation.query.toLowerCase() === "sexy",
+      )
+      .some(({ observation, ranking }) =>
+        reciprocalRankAtFive(
+          ranking?.combinedSlugs ?? [],
+          observation.relevantSlugs,
+        ) > 0
+      ),
+    negativeVisualOnlySafe:
+      negatives.length > 0 &&
+      negatives.every(
+        ({ ranking }) => (ranking?.visualOnlySlugs.length ?? 0) === 0,
+      ),
+    p95DurationMs: percentile95(
+      observations.map((observation) => observation.durationMs),
+    ),
+    rankings,
+  };
+}
+
+export function evaluateVisualSearchRolloutGate(
+  report: VisualSearchProfileReport,
+  textReport: SearchQualityReport,
+  evidence: {
+    providerFallbackHttpStatuses: readonly number[];
+    visualFallbackHttpStatuses: readonly number[];
+    captionsAbsentFromPublicContracts: boolean;
+    sexyHasRelevantTop5?: boolean;
+  },
+) {
+  const checks = {
+    exactNameMrrAt5: report.exactNameMrrAt5 === 1,
+    textHybridNdcgLift: textReport.hybridNdcgLift >= 0.2,
+    combinedOverallNonRegression:
+      report.combinedNdcgAt5 >= report.textHybridNdcgAt5,
+    visualSubsetNdcgLift: report.visualSubsetLift >= 0.15,
+    sexyHasRelevantTop5:
+      evidence.sexyHasRelevantTop5 ?? report.sexyHasRelevantTop5,
+    negativeVisualOnlySafe: report.negativeVisualOnlySafe,
+    p95Duration: report.p95DurationMs < 1_000,
+    providerFallbackHttp200:
+      evidence.providerFallbackHttpStatuses.length >= 3 &&
+      evidence.providerFallbackHttpStatuses.every(
+        (status) => status === 200,
+      ),
+    visualFallbackHttp200:
+      evidence.visualFallbackHttpStatuses.length >= 2 &&
+      evidence.visualFallbackHttpStatuses.every(
+        (status) => status === 200,
+      ),
+    captionsAbsentFromPublicContracts:
+      evidence.captionsAbsentFromPublicContracts,
+  };
+  return {
+    passed: Object.values(checks).every(Boolean),
+    checks,
+  };
+}
 
 export function selectSemanticThreshold(
   fixtures: readonly SemanticThresholdFixture[],
@@ -67,6 +330,45 @@ export function selectSemanticThreshold(
     throw new Error("No semantic threshold satisfies negative fixtures.");
   }
   return selected;
+}
+
+function passesVisualCalibrationSafety(
+  report: VisualSearchProfileReport,
+): boolean {
+  return (
+    report.exactNameMrrAt5 === 1 &&
+    report.negativeVisualOnlySafe &&
+    report.combinedNdcgAt5 >= report.textHybridNdcgAt5 &&
+    report.sexyHasRelevantTop5
+  );
+}
+
+function isBetterVisualProfile(
+  profile: PetVisualCalibrationProfile,
+  report: VisualSearchProfileReport,
+  selected: {
+    profile: PetVisualCalibrationProfile;
+    report: VisualSearchProfileReport;
+  },
+): boolean {
+  if (
+    report.visualSubsetCombinedNdcgAt5 !==
+    selected.report.visualSubsetCombinedNdcgAt5
+  ) {
+    return (
+      report.visualSubsetCombinedNdcgAt5 >
+      selected.report.visualSubsetCombinedNdcgAt5
+    );
+  }
+  if (profile.weight !== selected.profile.weight) {
+    return profile.weight < selected.profile.weight;
+  }
+  return profile.minSemanticScore > selected.profile.minSemanticScore;
+}
+
+function relativeLift(baseline: number, candidate: number): number {
+  if (baseline > 0) return (candidate - baseline) / baseline;
+  return candidate > 0 ? Number.POSITIVE_INFINITY : 0;
 }
 
 export function evaluateSearchQuality(
