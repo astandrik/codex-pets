@@ -2,8 +2,11 @@ import { readFileSync } from "node:fs";
 
 import type { PetSearchMode } from "@/lib/pets/search-service";
 import {
+  PET_VISION_CAPTION_CONTRACTS,
   PET_VISION_CAPTION_REVISION,
+  PET_VISION_CAPTION_REVISION_V2,
   PET_VISUAL_MODEL_REVISION,
+  PET_VISUAL_MODEL_REVISION_V2,
 } from "@/lib/pets/search-vision-contract";
 
 const DEFAULT_EMBEDDING_TIMEOUT_MS = 800;
@@ -31,11 +34,8 @@ type PetVisualModelRevisionDefinition = {
   profile: PetVisualCalibrationProfile | null;
 };
 
-export const PET_VISION_CAPTION_REVISIONS = {
-  [PET_VISION_CAPTION_REVISION]: {
-    modelName: "qwen3.6-35b-a3b",
-  },
-} as const;
+export const PET_VISION_CAPTION_REVISIONS =
+  PET_VISION_CAPTION_CONTRACTS;
 
 export const PET_VISUAL_MODEL_REVISIONS = {
   [PET_VISUAL_MODEL_REVISION]: {
@@ -45,6 +45,11 @@ export const PET_VISUAL_MODEL_REVISIONS = {
       minSemanticScore: 0.3455384373664856,
       weight: 0.25,
     },
+  },
+  [PET_VISUAL_MODEL_REVISION_V2]: {
+    dimensions: 256,
+    captionRevision: PET_VISION_CAPTION_REVISION_V2,
+    profile: null,
   },
 } as const satisfies Record<string, PetVisualModelRevisionDefinition>;
 

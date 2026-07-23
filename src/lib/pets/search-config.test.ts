@@ -10,6 +10,9 @@ import { PET_VISION_CAPTION_REVISION } from "@/lib/pets/search-vision-contract";
 const supportedRevision = Object.keys(PET_SEARCH_MODEL_REVISIONS)[0] ?? "";
 const supportedVisualRevision =
   Object.keys(PET_VISUAL_MODEL_REVISIONS)[0] ?? "";
+const v2CaptionRevision =
+  "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v2";
+const v2VisualRevision = "yandex-text-search-2026-07-pet-vision-v2";
 const calibratedVisualProfile = {
   minSemanticScore: 0.3455384373664856,
   weight: 0.25,
@@ -188,6 +191,48 @@ describe("pet search runtime configuration", () => {
         profile: calibratedVisualProfile,
       },
       visualFallbackReason: null,
+    });
+  });
+
+  it("loads v2 for indexing but fails hybrid closed until calibration", () => {
+    const config = loadPetSearchConfig(
+      {
+        PET_SEARCH_VISUAL_MODE: "hybrid",
+        PET_SEARCH_VISION_CAPTION_REVISION: v2CaptionRevision,
+        PET_SEARCH_VISUAL_MODEL_REVISION: v2VisualRevision,
+        YANDEX_AI_STUDIO_FOLDER_ID: "folder-1",
+        YANDEX_AI_STUDIO_API_KEY_FILE: "/run/secrets/key",
+      },
+      () => "secret",
+    );
+
+    expect(config).toMatchObject({
+      visualMode: "hybrid",
+      visual: {
+        captionRevision: v2CaptionRevision,
+        visualRevision: v2VisualRevision,
+        dimensions: 256,
+        profile: null,
+      },
+      visualFallbackReason: "visual_calibration_missing",
+    });
+  });
+
+  it("rejects mismatched v1 and v2 caption/vector revisions", () => {
+    expect(
+      loadPetSearchConfig(
+        {
+          PET_SEARCH_VISUAL_MODE: "shadow",
+          PET_SEARCH_VISION_CAPTION_REVISION: v2CaptionRevision,
+          PET_SEARCH_VISUAL_MODEL_REVISION: supportedVisualRevision,
+          YANDEX_AI_STUDIO_FOLDER_ID: "folder-1",
+          YANDEX_AI_STUDIO_API_KEY_FILE: "/run/secrets/key",
+        },
+        () => "secret",
+      ),
+    ).toMatchObject({
+      visual: null,
+      visualFallbackReason: "visual_configuration_missing",
     });
   });
 

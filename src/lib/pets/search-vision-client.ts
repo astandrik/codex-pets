@@ -1,9 +1,9 @@
 import {
-  PET_VISION_RESPONSE_JSON_SCHEMA,
-  PET_VISION_SYSTEM_PROMPT,
-  PET_VISION_USER_PROMPT,
+  PET_VISION_CAPTION_REVISION_V1,
+  getPetVisionCaptionContract,
   parsePetVisionCaption,
   type PetVisionCaption,
+  type PetVisionCaptionRevision,
 } from "@/lib/pets/search-vision-contract";
 import {
   PET_VISION_FRAME_POLICY,
@@ -43,6 +43,7 @@ type YandexVisionCaptionClientOptions = {
   folderId: string;
   apiKey: string;
   modelUri: string;
+  captionRevision?: PetVisionCaptionRevision;
   timeoutMs: number;
   fetchImpl?: typeof fetch;
   now?: () => number;
@@ -52,6 +53,9 @@ type YandexVisionCaptionClientOptions = {
 export function createYandexVisionCaptionClient(
   options: YandexVisionCaptionClientOptions,
 ): YandexVisionCaptionClient {
+  const captionRevision =
+    options.captionRevision ?? PET_VISION_CAPTION_REVISION_V1;
+  const contract = getPetVisionCaptionContract(captionRevision);
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? Date.now;
   const sleep =
@@ -94,7 +98,7 @@ export function createYandexVisionCaptionClient(
     if (!response.ok) {
       throw new VisionCaptionProviderError(httpFailureReason(response.status));
     }
-    return parseProviderResponse(response);
+    return parseProviderResponse(response, captionRevision);
   }
 
   async function startRequest(
@@ -118,11 +122,11 @@ export function createYandexVisionCaptionClient(
         body: JSON.stringify({
           model: options.modelUri,
           messages: [
-            { role: "system", content: PET_VISION_SYSTEM_PROMPT },
+            { role: "system", content: contract.systemPrompt },
             {
               role: "user",
               content: [
-                { type: "text", text: PET_VISION_USER_PROMPT },
+                { type: "text", text: contract.userPrompt },
                 ...frames.map((frame) => ({
                   type: "image_url",
                   image_url: { url: frame.dataUrl },
@@ -136,9 +140,9 @@ export function createYandexVisionCaptionClient(
           response_format: {
             type: "json_schema",
             json_schema: {
-              name: "pet_visual_caption_v1",
+              name: contract.responseSchemaName,
               strict: true,
-              schema: PET_VISION_RESPONSE_JSON_SCHEMA,
+              schema: contract.responseJsonSchema,
             },
           },
         }),
@@ -176,6 +180,7 @@ function validateFrames(frames: readonly PetVisionFrame[]): void {
 
 async function parseProviderResponse(
   response: Response,
+  captionRevision: PetVisionCaptionRevision,
 ): Promise<PetVisionCaption> {
   let payload: unknown;
   try {
@@ -209,7 +214,10 @@ async function parseProviderResponse(
   }
 
   try {
-    return parsePetVisionCaption(JSON.parse(content));
+    if (captionRevision === PET_VISION_CAPTION_REVISION_V1) {
+      return parsePetVisionCaption(captionRevision, JSON.parse(content));
+    }
+    return parsePetVisionCaption(captionRevision, JSON.parse(content));
   } catch (error) {
     if (error instanceof VisionCaptionProviderError) throw error;
     throw new VisionCaptionProviderError("invalid_response", { cause: error });

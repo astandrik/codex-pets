@@ -25,6 +25,7 @@ export const petVisionCaptionClient = petSearchRuntimeConfig.visual
       folderId: petSearchRuntimeConfig.visual.folderId,
       apiKey: petSearchRuntimeConfig.visual.apiKey,
       modelUri: petSearchRuntimeConfig.visual.modelUri,
+      captionRevision: petSearchRuntimeConfig.visual.captionRevision,
       timeoutMs: petSearchRuntimeConfig.visual.visionTimeoutMs,
     })
   : null;

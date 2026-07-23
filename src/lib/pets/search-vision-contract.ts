@@ -2,18 +2,30 @@ import { createHash } from "node:crypto";
 
 import { PET_VISION_FRAME_POLICY } from "@/lib/pets/search-vision-frames";
 
-export const PET_VISION_CAPTION_REVISION =
+export const PET_VISION_CAPTION_REVISION_V1 =
   "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1";
-export const PET_VISUAL_MODEL_REVISION =
+export const PET_VISION_CAPTION_REVISION_V2 =
+  "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v2";
+export const PET_VISUAL_MODEL_REVISION_V1 =
   "yandex-text-search-2026-07-pet-vision-v1";
+export const PET_VISUAL_MODEL_REVISION_V2 =
+  "yandex-text-search-2026-07-pet-vision-v2";
 
-export const PET_VISION_SYSTEM_PROMPT =
+// Backward-compatible aliases remain pinned to v1. New deployments select v2
+// explicitly until its revision-bound calibration profile is committed.
+export const PET_VISION_CAPTION_REVISION =
+  PET_VISION_CAPTION_REVISION_V1;
+export const PET_VISUAL_MODEL_REVISION = PET_VISUAL_MODEL_REVISION_V1;
+
+export const PET_VISION_SYSTEM_PROMPT_V1 =
   "You create internal search metadata for an animated software companion from four sprite frames. Describe only visible evidence. Do not infer or use identity, a character name, existing catalog metadata, hidden backstory, protected attributes, or an exact age. Use neutral language when uncertain. Describe visible subject type, appearance, clothing or accessories, art style, mood or pose, dominant colors, and concrete search concepts. Apply the same descriptive standard to every visual style; do not apply catalog-category or audience filters. English and Russian fields must be semantic equivalents. Output only JSON matching the supplied schema.";
+export const PET_VISION_SYSTEM_PROMPT_V2 =
+  "You create internal search metadata for an animated software companion from four sprite frames. Inspect every frame before answering and describe only visible evidence. Explicitly check the face and eyes, hair and headwear, clothing, handheld or worn objects, weapons, masks or other face and eye coverings, jewelry, horns, wings, tails, and other distinguishing accessories. Put every visible distinguishing object or covering in accessories even if it also appears in appearance or clothing. If a small detail is uncertain, describe it cautiously instead of inferring identity. Do not infer or use a character name, existing catalog metadata, hidden backstory, protected attributes, or an exact age. Use neutral language when uncertain. Describe visible subject type, appearance, clothing, accessories, art style, mood or pose, dominant colors, and concrete search concepts. Apply the same descriptive standard to every visual style; do not apply catalog-category or audience filters. English and Russian fields must be semantic equivalents. Output only JSON matching the supplied schema.";
 
 export const PET_VISION_USER_PROMPT =
   "The four images are ordered as idle, running-right, waving, and review. Produce the bilingual visual-search caption.";
 
-export const PET_VISION_RESPONSE_JSON_SCHEMA = {
+export const PET_VISION_RESPONSE_JSON_SCHEMA_V1 = {
   type: "object",
   additionalProperties: false,
   required: [
@@ -78,12 +90,106 @@ export const PET_VISION_RESPONSE_JSON_SCHEMA = {
   },
 } as const;
 
+export const PET_VISION_RESPONSE_JSON_SCHEMA_V2 = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "subject",
+    "appearance",
+    "clothing",
+    "accessories",
+    "style",
+    "mood",
+    "colors",
+    "search_terms_en",
+    "search_terms_ru",
+  ],
+  properties: {
+    subject: { $ref: "#/$defs/bilingualRequired" },
+    appearance: { $ref: "#/$defs/bilingualRequired" },
+    clothing: { $ref: "#/$defs/bilingualOptional" },
+    accessories: { $ref: "#/$defs/bilingualOptional" },
+    style: { $ref: "#/$defs/bilingualRequired" },
+    mood: { $ref: "#/$defs/bilingualRequired" },
+    colors: {
+      type: "object",
+      additionalProperties: false,
+      required: ["en", "ru"],
+      properties: {
+        en: { $ref: "#/$defs/termList" },
+        ru: { $ref: "#/$defs/termList" },
+      },
+    },
+    search_terms_en: { $ref: "#/$defs/searchTermList" },
+    search_terms_ru: { $ref: "#/$defs/searchTermList" },
+  },
+  $defs: {
+    bilingualRequired: {
+      type: "object",
+      additionalProperties: false,
+      required: ["en", "ru"],
+      properties: {
+        en: { type: "string", minLength: 1, maxLength: 320 },
+        ru: { type: "string", minLength: 1, maxLength: 320 },
+      },
+    },
+    bilingualOptional: {
+      type: "object",
+      additionalProperties: false,
+      required: ["en", "ru"],
+      properties: {
+        en: { type: "string", maxLength: 240 },
+        ru: { type: "string", maxLength: 240 },
+      },
+    },
+    termList: {
+      type: "array",
+      minItems: 1,
+      maxItems: 8,
+      items: { type: "string", minLength: 1, maxLength: 40 },
+    },
+    searchTermList: {
+      type: "array",
+      minItems: 3,
+      maxItems: 20,
+      items: { type: "string", minLength: 1, maxLength: 60 },
+    },
+  },
+} as const;
+
+export const PET_VISION_CAPTION_CONTRACTS = {
+  [PET_VISION_CAPTION_REVISION_V1]: {
+    modelName: "qwen3.6-35b-a3b",
+    schemaVersion: 1,
+    responseSchemaName: "pet_visual_caption_v1",
+    systemPrompt: PET_VISION_SYSTEM_PROMPT_V1,
+    userPrompt: PET_VISION_USER_PROMPT,
+    responseJsonSchema: PET_VISION_RESPONSE_JSON_SCHEMA_V1,
+  },
+  [PET_VISION_CAPTION_REVISION_V2]: {
+    modelName: "qwen3.6-35b-a3b",
+    schemaVersion: 2,
+    responseSchemaName: "pet_visual_caption_v2",
+    systemPrompt: PET_VISION_SYSTEM_PROMPT_V2,
+    userPrompt: PET_VISION_USER_PROMPT,
+    responseJsonSchema: PET_VISION_RESPONSE_JSON_SCHEMA_V2,
+  },
+} as const;
+
+export type PetVisionCaptionRevision =
+  keyof typeof PET_VISION_CAPTION_CONTRACTS;
+
+// Legacy exports keep v1 consumers source-compatible.
+export const PET_VISION_SYSTEM_PROMPT = PET_VISION_SYSTEM_PROMPT_V1;
+export const PET_VISION_RESPONSE_JSON_SCHEMA =
+  PET_VISION_RESPONSE_JSON_SCHEMA_V1;
+
 export type BilingualText = {
   en: string;
   ru: string;
 };
 
-export type PetVisionCaption = {
+export type PetVisionCaptionV1 = {
   subject: BilingualText;
   appearance: BilingualText;
   clothing: BilingualText;
@@ -94,16 +200,35 @@ export type PetVisionCaption = {
   search_terms_ru: string[];
 };
 
-export type PetVisionCaptionEnvelope = {
+export type PetVisionCaptionV2 = PetVisionCaptionV1 & {
+  accessories: BilingualText;
+};
+
+export type PetVisionCaption = PetVisionCaptionV1 | PetVisionCaptionV2;
+
+export type PetVisionCaptionEnvelopeV1 = {
   schemaVersion: 1;
   source: {
     assetId: string;
     spritesheetSha256: string;
   };
-  caption: PetVisionCaption;
+  caption: PetVisionCaptionV1;
 };
 
-const CAPTION_FIELDS = [
+export type PetVisionCaptionEnvelopeV2 = {
+  schemaVersion: 2;
+  source: {
+    assetId: string;
+    spritesheetSha256: string;
+  };
+  caption: PetVisionCaptionV2;
+};
+
+export type PetVisionCaptionEnvelope =
+  | PetVisionCaptionEnvelopeV1
+  | PetVisionCaptionEnvelopeV2;
+
+const CAPTION_FIELDS_V1 = [
   "subject",
   "appearance",
   "clothing",
@@ -114,9 +239,55 @@ const CAPTION_FIELDS = [
   "search_terms_ru",
 ] as const;
 
-export function parsePetVisionCaption(input: unknown): PetVisionCaption {
-  const value = strictObject(input, "caption", CAPTION_FIELDS);
-  return {
+const CAPTION_FIELDS_V2 = [
+  "subject",
+  "appearance",
+  "clothing",
+  "accessories",
+  "style",
+  "mood",
+  "colors",
+  "search_terms_en",
+  "search_terms_ru",
+] as const;
+
+export function getPetVisionCaptionContract(
+  revision: string,
+): (typeof PET_VISION_CAPTION_CONTRACTS)[PetVisionCaptionRevision] {
+  if (!Object.hasOwn(PET_VISION_CAPTION_CONTRACTS, revision)) {
+    throw new Error("Unsupported pet vision caption revision.");
+  }
+  return PET_VISION_CAPTION_CONTRACTS[
+    revision as PetVisionCaptionRevision
+  ];
+}
+
+export function parsePetVisionCaption(input: unknown): PetVisionCaptionV1;
+export function parsePetVisionCaption(
+  revision: typeof PET_VISION_CAPTION_REVISION_V1,
+  input: unknown,
+): PetVisionCaptionV1;
+export function parsePetVisionCaption(
+  revision: typeof PET_VISION_CAPTION_REVISION_V2,
+  input: unknown,
+): PetVisionCaptionV2;
+export function parsePetVisionCaption(
+  revisionOrInput: PetVisionCaptionRevision | unknown,
+  input?: unknown,
+): PetVisionCaption {
+  const explicitRevision = arguments.length > 1;
+  const revision = explicitRevision
+    ? assertPetVisionCaptionRevision(revisionOrInput)
+    : PET_VISION_CAPTION_REVISION_V1;
+  const raw = explicitRevision ? input : revisionOrInput;
+  const value = strictObject(
+    raw,
+    "caption",
+    revision === PET_VISION_CAPTION_REVISION_V2
+      ? CAPTION_FIELDS_V2
+      : CAPTION_FIELDS_V1,
+  );
+  const caption: PetVisionCaptionV1 = {
     subject: bilingualText(value.subject, "subject", 320, true),
     appearance: bilingualText(value.appearance, "appearance", 320, true),
     clothing: bilingualText(value.clothing, "clothing", 240, false),
@@ -153,15 +324,43 @@ export function parsePetVisionCaption(input: unknown): PetVisionCaption {
       60,
     ),
   };
+  if (revision === PET_VISION_CAPTION_REVISION_V2) {
+    return {
+      ...caption,
+      accessories: bilingualText(
+        value.accessories,
+        "accessories",
+        240,
+        false,
+      ),
+    };
+  }
+  return caption;
 }
 
 export function createPetVisionCaptionEnvelope(input: {
+  captionRevision?: typeof PET_VISION_CAPTION_REVISION_V1;
+  assetId: string;
+  spritesheetSha256: string;
+  caption: PetVisionCaptionV1;
+}): PetVisionCaptionEnvelopeV1;
+export function createPetVisionCaptionEnvelope(input: {
+  captionRevision: typeof PET_VISION_CAPTION_REVISION_V2;
+  assetId: string;
+  spritesheetSha256: string;
+  caption: PetVisionCaptionV2;
+}): PetVisionCaptionEnvelopeV2;
+export function createPetVisionCaptionEnvelope(input: {
+  captionRevision?: PetVisionCaptionRevision;
   assetId: string;
   spritesheetSha256: string;
   caption: PetVisionCaption;
 }): PetVisionCaptionEnvelope {
-  return parseEnvelopeValue({
-    schemaVersion: 1,
+  const revision =
+    input.captionRevision ?? PET_VISION_CAPTION_REVISION_V1;
+  const contract = getPetVisionCaptionContract(revision);
+  return parseEnvelopeValue(revision, {
+    schemaVersion: contract.schemaVersion,
     source: {
       assetId: input.assetId,
       spritesheetSha256: input.spritesheetSha256,
@@ -172,35 +371,83 @@ export function createPetVisionCaptionEnvelope(input: {
 
 export function parsePetVisionCaptionEnvelope(
   value: string,
+): PetVisionCaptionEnvelopeV1;
+export function parsePetVisionCaptionEnvelope(
+  revision: typeof PET_VISION_CAPTION_REVISION_V1,
+  value: string,
+): PetVisionCaptionEnvelopeV1;
+export function parsePetVisionCaptionEnvelope(
+  revision: typeof PET_VISION_CAPTION_REVISION_V2,
+  value: string,
+): PetVisionCaptionEnvelopeV2;
+export function parsePetVisionCaptionEnvelope(
+  revisionOrValue: PetVisionCaptionRevision | string,
+  value?: string,
 ): PetVisionCaptionEnvelope {
+  const explicitRevision = arguments.length > 1;
+  const revision = explicitRevision
+    ? assertPetVisionCaptionRevision(revisionOrValue)
+    : PET_VISION_CAPTION_REVISION_V1;
+  const json = explicitRevision ? value : revisionOrValue;
   let parsed: unknown;
   try {
-    parsed = JSON.parse(value);
+    parsed = JSON.parse(json ?? "");
   } catch {
     throw new Error("Caption envelope must contain one JSON object.");
   }
-  return parseEnvelopeValue(parsed);
+  return parseEnvelopeValue(revision, parsed);
 }
 
 export function buildPetVisionCaptionText(
-  caption: PetVisionCaption,
+  caption: PetVisionCaptionV1,
+): string;
+export function buildPetVisionCaptionText(
+  revision: typeof PET_VISION_CAPTION_REVISION_V1,
+  caption: PetVisionCaptionV1,
+): string;
+export function buildPetVisionCaptionText(
+  revision: typeof PET_VISION_CAPTION_REVISION_V2,
+  caption: PetVisionCaptionV2,
+): string;
+export function buildPetVisionCaptionText(
+  revisionOrCaption: PetVisionCaptionRevision | PetVisionCaption,
+  caption?: PetVisionCaption,
 ): string {
-  return [
-    `subject_en: ${caption.subject.en}`,
-    `subject_ru: ${caption.subject.ru}`,
-    `appearance_en: ${caption.appearance.en}`,
-    `appearance_ru: ${caption.appearance.ru}`,
-    `clothing_en: ${caption.clothing.en}`,
-    `clothing_ru: ${caption.clothing.ru}`,
-    `style_en: ${caption.style.en}`,
-    `style_ru: ${caption.style.ru}`,
-    `mood_en: ${caption.mood.en}`,
-    `mood_ru: ${caption.mood.ru}`,
-    `colors_en: ${caption.colors.en.join(", ")}`,
-    `colors_ru: ${caption.colors.ru.join(", ")}`,
-    `search_terms_en: ${caption.search_terms_en.join(", ")}`,
-    `search_terms_ru: ${caption.search_terms_ru.join(", ")}`,
-  ].join("\n");
+  const explicitRevision = arguments.length > 1;
+  const revision = explicitRevision
+    ? assertPetVisionCaptionRevision(revisionOrCaption)
+    : PET_VISION_CAPTION_REVISION_V1;
+  const value = (explicitRevision ? caption : revisionOrCaption) as
+    | PetVisionCaptionV1
+    | PetVisionCaptionV2;
+  const lines = [
+    `subject_en: ${value.subject.en}`,
+    `subject_ru: ${value.subject.ru}`,
+    `appearance_en: ${value.appearance.en}`,
+    `appearance_ru: ${value.appearance.ru}`,
+    `clothing_en: ${value.clothing.en}`,
+    `clothing_ru: ${value.clothing.ru}`,
+  ];
+  if (revision === PET_VISION_CAPTION_REVISION_V2) {
+    if (!("accessories" in value)) {
+      throw new Error("V2 caption must contain accessories.");
+    }
+    lines.push(
+      `accessories_en: ${value.accessories.en}`,
+      `accessories_ru: ${value.accessories.ru}`,
+    );
+  }
+  lines.push(
+    `style_en: ${value.style.en}`,
+    `style_ru: ${value.style.ru}`,
+    `mood_en: ${value.mood.en}`,
+    `mood_ru: ${value.mood.ru}`,
+    `colors_en: ${value.colors.en.join(", ")}`,
+    `colors_ru: ${value.colors.ru.join(", ")}`,
+    `search_terms_en: ${value.search_terms_en.join(", ")}`,
+    `search_terms_ru: ${value.search_terms_ru.join(", ")}`,
+  );
+  return lines.join("\n");
 }
 
 export function createPetVisionCaptionSourceHash(input: {
@@ -209,12 +456,13 @@ export function createPetVisionCaptionSourceHash(input: {
   assetId: string;
   spritesheetSha256: string;
 }): string {
+  const contract = getPetVisionCaptionContract(input.captionRevision);
   return lengthPrefixedSha256([
     input.captionRevision,
     input.modelUri,
-    PET_VISION_SYSTEM_PROMPT,
-    PET_VISION_USER_PROMPT,
-    JSON.stringify(PET_VISION_RESPONSE_JSON_SCHEMA),
+    contract.systemPrompt,
+    contract.userPrompt,
+    JSON.stringify(contract.responseJsonSchema),
     PET_VISION_FRAME_POLICY.id,
     JSON.stringify(PET_VISION_FRAME_POLICY.frames),
     input.assetId,
@@ -236,14 +484,20 @@ export function createPetVisualEmbeddingSourceHash(input: {
   ]);
 }
 
-function parseEnvelopeValue(input: unknown): PetVisionCaptionEnvelope {
+function parseEnvelopeValue(
+  revision: PetVisionCaptionRevision,
+  input: unknown,
+): PetVisionCaptionEnvelope {
+  const contract = getPetVisionCaptionContract(revision);
   const envelope = strictObject(input, "caption envelope", [
     "schemaVersion",
     "source",
     "caption",
   ]);
-  if (envelope.schemaVersion !== 1) {
-    throw new Error("Caption envelope schemaVersion must be 1.");
+  if (envelope.schemaVersion !== contract.schemaVersion) {
+    throw new Error(
+      `Caption envelope schemaVersion must be ${contract.schemaVersion}.`,
+    );
   }
   const source = strictObject(envelope.source, "source", [
     "assetId",
@@ -260,11 +514,30 @@ function parseEnvelopeValue(input: unknown): PetVisionCaptionEnvelope {
     throw new Error("source.spritesheetSha256 must be lowercase SHA-256.");
   }
 
+  if (revision === PET_VISION_CAPTION_REVISION_V2) {
+    return {
+      schemaVersion: 2,
+      source: { assetId, spritesheetSha256 },
+      caption: parsePetVisionCaption(revision, envelope.caption),
+    };
+  }
   return {
     schemaVersion: 1,
     source: { assetId, spritesheetSha256 },
-    caption: parsePetVisionCaption(envelope.caption),
+    caption: parsePetVisionCaption(revision, envelope.caption),
   };
+}
+
+function assertPetVisionCaptionRevision(
+  value: unknown,
+): PetVisionCaptionRevision {
+  if (
+    typeof value !== "string" ||
+    !Object.hasOwn(PET_VISION_CAPTION_CONTRACTS, value)
+  ) {
+    throw new Error("Unsupported pet vision caption revision.");
+  }
+  return value as PetVisionCaptionRevision;
 }
 
 function bilingualText(

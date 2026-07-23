@@ -26,6 +26,16 @@ const providerCaption: PetVisionCaption = {
   search_terms_ru: ["аниме девушка", "готика", "элегантная"],
 };
 
+const v2CaptionRevision =
+  "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v2";
+const providerV2Caption = {
+  ...providerCaption,
+  accessories: {
+    en: "black blindfold and sword",
+    ru: "чёрная повязка и меч",
+  },
+};
+
 const frames: PetVisionFrame[] = PET_VISION_FRAME_POLICY.frames.map(
   ({ state, row, frame }, index) => ({
     state,
@@ -37,6 +47,41 @@ const frames: PetVisionFrame[] = PET_VISION_FRAME_POLICY.frames.map(
 );
 
 describe("Yandex vision caption client", () => {
+  it("selects the strict v2 schema and parser by caption revision", async () => {
+    const requests: RequestInit[] = [];
+    const client = createYandexVisionCaptionClient({
+      folderId: "folder-1",
+      apiKey: "secret-key",
+      modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+      captionRevision: v2CaptionRevision,
+      timeoutMs: 30_000,
+      fetchImpl: async (_url, init) => {
+        requests.push(init ?? {});
+        return providerResponse(providerV2Caption);
+      },
+    });
+
+    await expect(client.createCaption(frames)).resolves.toEqual(
+      providerV2Caption,
+    );
+    const body = JSON.parse(String(requests[0]?.body));
+    expect(body.response_format.json_schema).toMatchObject({
+      name: "pet_visual_caption_v2",
+      strict: true,
+      schema: {
+        required: expect.arrayContaining(["accessories"]),
+        properties: {
+          accessories: { $ref: "#/$defs/bilingualOptional" },
+        },
+      },
+    });
+    expect(body.messages[0].content).toContain(
+      "Put every visible distinguishing object or covering in accessories",
+    );
+    expect(JSON.stringify(body).match(/data:image\/png;base64/g)).toHaveLength(4);
+    expect(JSON.stringify(body)).not.toContain("SECRET_PET_NAME");
+  });
+
   it("sends exactly four ordered images and no catalog metadata", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     const client = createYandexVisionCaptionClient({
