@@ -1,11 +1,7 @@
-import {
-  loadPetSearchConfig,
-  type PetSearchConfig,
-} from "@/lib/pets/search-config";
+import type { PetSearchConfig } from "@/lib/pets/search-config";
 import {
   buildPetSearchDocument,
   createPetSearchSourceHash,
-  createYandexEmbeddingClient,
   type YandexEmbeddingClient,
 } from "@/lib/pets/search-embeddings";
 import {
@@ -23,6 +19,10 @@ import {
   type PetSearchInput,
   type PetSearchResult,
 } from "@/lib/pets/search-service";
+import {
+  petSearchEmbeddingClient,
+  petSearchRuntimeConfig,
+} from "@/lib/pets/search-provider-runtime";
 import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 import type { ApprovalStatus, PublicPet } from "@/lib/pets/types";
 import { trackPetSearch } from "@/lib/metrics/yandex-measurement";
@@ -179,14 +179,10 @@ function providerFallbackReason(error: unknown): PetSearchFallbackReason {
   return "provider_error";
 }
 
-const runtimeConfig = loadPetSearchConfig();
-const runtimeEmbeddingClient = runtimeConfig.semantic
-  ? createYandexEmbeddingClient(runtimeConfig.semantic)
-  : null;
 const runtime = createApprovedPetSearchRuntime<PublicPet>({
-  config: runtimeConfig,
+  config: petSearchRuntimeConfig,
   listApprovedPets: listApprovedPetsForSearch,
-  embeddingClient: runtimeEmbeddingClient,
+  embeddingClient: petSearchEmbeddingClient,
   findSimilar: findSimilarPetEmbeddings,
   getMetadata: getPetSearchEmbeddingMetadata,
   upsert: upsertPetSearchEmbedding,

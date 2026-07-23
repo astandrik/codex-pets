@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const maintenanceMocks = vi.hoisted(() => ({
-  deletePetSearchEmbeddingsBestEffort: vi.fn(async () => true),
+  deletePetSearchIndexBestEffort: vi.fn(async () => true),
 }));
 
 vi.mock("@/lib/pets/search-maintenance", () => maintenanceMocks);
@@ -24,7 +24,7 @@ describe("pet repository search maintenance", () => {
 
     expect(pet?.status).toBe("rejected");
     expect(
-      maintenanceMocks.deletePetSearchEmbeddingsBestEffort,
+      maintenanceMocks.deletePetSearchIndexBestEffort,
     ).toHaveBeenCalledWith("pending-pixel");
   });
 
@@ -39,7 +39,7 @@ describe("pet repository search maintenance", () => {
       }),
     ).resolves.toBe(true);
     expect(
-      maintenanceMocks.deletePetSearchEmbeddingsBestEffort,
+      maintenanceMocks.deletePetSearchIndexBestEffort,
     ).toHaveBeenCalledWith("orbit-otter");
   });
 });

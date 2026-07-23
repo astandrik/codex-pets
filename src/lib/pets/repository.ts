@@ -18,7 +18,7 @@ import {
   matchesGalleryFilters,
   normalizeGalleryFilters,
 } from "@/lib/pets/gallery-filters";
-import { deletePetSearchEmbeddingsBestEffort } from "@/lib/pets/search-maintenance";
+import { deletePetSearchIndexBestEffort } from "@/lib/pets/search-maintenance";
 import {
   createMockPetRecord,
   getMockPetById,
@@ -452,7 +452,7 @@ export async function moderatePet(input: {
   if (isMockPetsDataSource()) {
     const pet = moderateMockPet(input);
     if (pet?.status === "rejected") {
-      await deletePetSearchEmbeddingsBestEffort(pet.slug);
+      await deletePetSearchIndexBestEffort(pet.slug);
     }
     return pet
       ? toPublicPet(pet, pet.metrics, mockOwnerReference(pet))
@@ -505,7 +505,7 @@ WHERE slug = $slug;
   });
 
   if (nextStatus === "rejected") {
-    await deletePetSearchEmbeddingsBestEffort(pet.slug);
+    await deletePetSearchIndexBestEffort(pet.slug);
   }
 
   const updatedPet = {
@@ -543,7 +543,7 @@ export async function softDeletePetById(input: {
     const pet = getMockPetById(input.petId);
     const deleted = softDeleteMockPetById(input);
     if (deleted && pet) {
-      await deletePetSearchEmbeddingsBestEffort(pet.slug);
+      await deletePetSearchIndexBestEffort(pet.slug);
     }
     return deleted;
   }
@@ -576,7 +576,7 @@ WHERE slug = $slug;
     ),
   );
 
-  await deletePetSearchEmbeddingsBestEffort(pet.slug);
+  await deletePetSearchIndexBestEffort(pet.slug);
 
   return true;
 }

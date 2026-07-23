@@ -1,27 +1,37 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { deletePetSearchEmbeddingsBestEffort } from "@/lib/pets/search-maintenance";
+import { deletePetSearchIndexBestEffort } from "@/lib/pets/search-maintenance";
 
-describe("pet search embedding maintenance", () => {
-  it("removes every model revision for a pet slug", async () => {
-    const remove = vi.fn(async () => undefined);
+describe("pet search index maintenance", () => {
+  it("removes every vector revision and caption for a pet slug", async () => {
+    const removeEmbeddings = vi.fn(async () => undefined);
+    const removeCaptions = vi.fn(async () => undefined);
 
     await expect(
-      deletePetSearchEmbeddingsBestEffort("velvet-byte", remove),
+      deletePetSearchIndexBestEffort("velvet-byte", {
+        removeEmbeddings,
+        removeCaptions,
+      }),
     ).resolves.toBe(true);
-    expect(remove).toHaveBeenCalledWith("velvet-byte");
+    expect(removeEmbeddings).toHaveBeenCalledWith("velvet-byte");
+    expect(removeCaptions).toHaveBeenCalledWith("velvet-byte");
   });
 
-  it("does not propagate vector cleanup failures", async () => {
+  it("attempts both removals and does not propagate cleanup failures", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const removeCaptions = vi.fn(async () => undefined);
 
     await expect(
-      deletePetSearchEmbeddingsBestEffort("velvet-byte", async () => {
-        throw new Error("database unavailable");
+      deletePetSearchIndexBestEffort("velvet-byte", {
+        removeEmbeddings: async () => {
+          throw new Error("database unavailable");
+        },
+        removeCaptions,
       }),
     ).resolves.toBe(false);
+    expect(removeCaptions).toHaveBeenCalledWith("velvet-byte");
     expect(warn).toHaveBeenCalledWith(
-      "[codex-pets][pet-search-embedding]",
+      "[codex-pets][pet-search-index]",
       { operation: "delete", status: "failed" },
     );
     expect(JSON.stringify(warn.mock.calls)).not.toContain("velvet-byte");
