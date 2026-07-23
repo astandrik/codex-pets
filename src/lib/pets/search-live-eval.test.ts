@@ -15,7 +15,7 @@ import {
   calibrateVisualSearchProfile,
   evaluateSearchQuality,
   evaluateVisualSearchProfile,
-  evaluateVisualSearchRolloutGate,
+  evaluateVisualSearchQualityGate,
   resolveVisualSearchEvalSplit,
   type RankedSearchObservation,
   type VisualSearchObservation,
@@ -91,6 +91,7 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
         });
         expect(calibration.report.exactNameMrrAt5).toBe(1);
         expect(calibration.report.negativeVisualOnlySafe).toBe(true);
+        expect(textReport.hybridNdcgLift).toBeGreaterThanOrEqual(0.2);
         return;
       }
 
@@ -119,13 +120,13 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
       const sexyRelevant = sexyTop5.some((slug) =>
         sexyFixture.relevantSlugs.includes(slug)
       );
-      const gate = evaluateVisualSearchRolloutGate(
+      // HTTP fallback and public DTO redaction are verified by the hermetic
+      // search-service, search-runtime, API, homepage, MCP, and WebMCP suites.
+      // They are deliberately not represented as live measurements here.
+      const gate = evaluateVisualSearchQualityGate(
         holdoutReport,
         textReport,
         {
-          providerFallbackHttpStatuses: [200, 200, 200],
-          visualFallbackHttpStatuses: [200, 200],
-          captionsAbsentFromPublicContracts: true,
           sexyHasRelevantTop5: sexyRelevant,
         },
       );

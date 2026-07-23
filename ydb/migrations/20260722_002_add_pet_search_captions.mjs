@@ -19,12 +19,12 @@ export async function up({ sdk, withSession }) {
     session.createTable(
       TABLE_NAME,
       new TableDescription()
-        .withColumn(new Column("caption_revision", Types.optional(Types.UTF8)))
-        .withColumn(new Column("pet_slug", Types.optional(Types.UTF8)))
-        .withColumn(new Column("source_hash", Types.optional(Types.UTF8)))
-        .withColumn(new Column("caption_json", Types.optional(Types.UTF8)))
-        .withColumn(new Column("caption_text", Types.optional(Types.UTF8)))
-        .withColumn(new Column("updated_at", Types.optional(Types.UTF8)))
+        .withColumn(new Column("caption_revision", Types.UTF8))
+        .withColumn(new Column("pet_slug", Types.UTF8))
+        .withColumn(new Column("source_hash", Types.UTF8))
+        .withColumn(new Column("caption_json", Types.UTF8))
+        .withColumn(new Column("caption_text", Types.UTF8))
+        .withColumn(new Column("updated_at", Types.UTF8))
         .withPrimaryKey("caption_revision")
         .withPrimaryKey("pet_slug"),
     ),

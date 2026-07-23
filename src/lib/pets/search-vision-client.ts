@@ -84,22 +84,49 @@ export function createYandexVisionCaptionClient(
   async function requestWithRetry(
     frames: readonly PetVisionFrame[],
   ): Promise<PetVisionCaption> {
-    let response = await startRequest(frames);
-    if (response.status === 429 || response.status >= 500) {
-      const retryDelayMs = retryAfterMs(response.headers.get("Retry-After"), now());
-      if (retryDelayMs > 0) await sleep(retryDelayMs);
-      response = await startRequest(frames);
-    }
+    let request = await startRequest(frames);
+    try {
+      if (request.response.status === 429 || request.response.status >= 500) {
+        const retryDelayMs = retryAfterMs(
+          request.response.headers.get("Retry-After"),
+          now(),
+        );
+        await cancelResponseBody(request.response);
+        request.finish();
+        if (retryDelayMs > 0) await sleep(retryDelayMs);
+        request = await startRequest(frames);
+      }
 
-    if (!response.ok) {
-      throw new VisionCaptionProviderError(httpFailureReason(response.status));
+      if (!request.response.ok) {
+        await cancelResponseBody(request.response);
+        throw new VisionCaptionProviderError(
+          httpFailureReason(request.response.status),
+        );
+      }
+      try {
+        const caption = await parseProviderResponse(request.response);
+        if (request.signal.aborted) {
+          throw new VisionCaptionProviderError("timeout");
+        }
+        return caption;
+      } catch (error) {
+        if (request.signal.aborted) {
+          throw new VisionCaptionProviderError("timeout");
+        }
+        throw error;
+      }
+    } finally {
+      request.finish();
     }
-    return parseProviderResponse(response);
   }
 
   async function startRequest(
     frames: readonly PetVisionFrame[],
-  ): Promise<Response> {
+  ): Promise<{
+    response: Response;
+    signal: AbortSignal;
+    finish: () => void;
+  }> {
     const waitMs = Math.max(0, nextStartAt - now());
     if (waitMs > 0) await sleep(waitMs);
     const startedAt = now();
@@ -108,7 +135,7 @@ export function createYandexVisionCaptionClient(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
     try {
-      return await fetchImpl(VISION_ENDPOINT, {
+      const response = await fetchImpl(VISION_ENDPOINT, {
         method: "POST",
         headers: {
           Authorization: `Api-Key ${options.apiKey}`,
@@ -144,14 +171,18 @@ export function createYandexVisionCaptionClient(
         }),
         signal: controller.signal,
       });
+      return {
+        response,
+        signal: controller.signal,
+        finish: () => clearTimeout(timeout),
+      };
     } catch (error) {
+      clearTimeout(timeout);
       if (controller.signal.aborted) {
         throw new VisionCaptionProviderError("timeout", { cause: error });
       }
       if (error instanceof VisionCaptionProviderError) throw error;
       throw new VisionCaptionProviderError("provider_error", { cause: error });
-    } finally {
-      clearTimeout(timeout);
     }
   }
 }
@@ -180,8 +211,8 @@ async function parseProviderResponse(
   let payload: unknown;
   try {
     payload = await response.json();
-  } catch (error) {
-    throw new VisionCaptionProviderError("invalid_response", { cause: error });
+  } catch {
+    throw new VisionCaptionProviderError("invalid_response");
   }
   if (!payload || typeof payload !== "object") {
     throw new VisionCaptionProviderError("invalid_response");
@@ -210,9 +241,16 @@ async function parseProviderResponse(
 
   try {
     return parsePetVisionCaption(JSON.parse(content));
-  } catch (error) {
-    if (error instanceof VisionCaptionProviderError) throw error;
-    throw new VisionCaptionProviderError("invalid_response", { cause: error });
+  } catch {
+    throw new VisionCaptionProviderError("invalid_response");
+  }
+}
+
+async function cancelResponseBody(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // Cancellation is best-effort and must not replace the provider outcome.
   }
 }
 

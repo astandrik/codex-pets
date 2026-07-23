@@ -44,6 +44,12 @@ describe("pet search embeddings backfill", () => {
     expect(() => parseBackfillArgs(["--apply", "--slug", "../bad"])).toThrow(
       /slug/i,
     );
+    expect(() => parseBackfillArgs(["--dry-run", "--force"])).toThrow(
+      /force.*apply/i,
+    );
+    expect(() => parseBackfillArgs(["--apply", "--unknown"])).toThrow(
+      /unknown argument/i,
+    );
   });
 
   it("keeps the command canonical document and source hash in sync with runtime", () => {

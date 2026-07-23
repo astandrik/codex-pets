@@ -37,6 +37,9 @@ export function parseBackfillArgs(argv) {
   if (!mode) {
     throw new Error("Pass exactly one of --dry-run or --apply.");
   }
+  if (force && mode !== "apply") {
+    throw new Error("--force requires --apply.");
+  }
 
   return { mode, slug, force };
 }

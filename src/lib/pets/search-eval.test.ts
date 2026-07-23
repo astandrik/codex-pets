@@ -5,6 +5,7 @@ import {
   calibrateVisualSearchProfile,
   evaluateSearchRolloutGate,
   evaluateSearchQuality,
+  evaluateVisualSearchQualityGate,
   evaluateVisualSearchRolloutGate,
   resolveVisualSearchEvalSplit,
   selectSemanticThreshold,
@@ -244,6 +245,51 @@ describe("pet search evaluation", () => {
       passed: true,
       checks: { textNegativeSemanticOnlySafe: true },
     });
+  });
+
+  it("keeps live quality checks separate from operational contract evidence", () => {
+    const visualReport = {
+      exactNameMrrAt5: 1,
+      textHybridNdcgAt5: 0.7,
+      combinedNdcgAt5: 0.8,
+      visualSubsetTextHybridNdcgAt5: 0.6,
+      visualSubsetCombinedNdcgAt5: 0.72,
+      visualSubsetLift: 0.2,
+      sexyHasRelevantTop5: true,
+      negativeVisualOnlySafe: true,
+      p95DurationMs: 900,
+      rankings: [],
+    };
+    const textReport = {
+      exactNameMrrAt5: 1,
+      lexicalNdcgAt5: 0.5,
+      hybridNdcgAt5: 0.7,
+      hybridNdcgLift: 0.2,
+      sexyHasRelevantTop5: true,
+      sexyHumanReviewedTop5: false,
+      negativeSemanticOnlySafe: true,
+      p95DurationMs: 900,
+    };
+
+    const gate = evaluateVisualSearchQualityGate(
+      visualReport,
+      textReport,
+      { sexyHasRelevantTop5: true },
+    );
+
+    expect(gate.passed).toBe(true);
+    expect(gate.checks).not.toHaveProperty("providerFallbackHttp200");
+    expect(gate.checks).not.toHaveProperty("visualFallbackHttp200");
+    expect(gate.checks).not.toHaveProperty(
+      "captionsAbsentFromPublicContracts",
+    );
+    expect(
+      evaluateVisualSearchQualityGate(
+        visualReport,
+        { ...textReport, hybridNdcgLift: 0.199 },
+        { sexyHasRelevantTop5: true },
+      ).checks.textHybridNdcgLift,
+    ).toBe(false);
   });
 });
 

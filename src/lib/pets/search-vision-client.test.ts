@@ -1,3 +1,5 @@
+import { inspect } from "node:util";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -132,11 +134,17 @@ describe("Yandex vision caption client", () => {
   it("retries one 429/5xx response and honors bounded Retry-After", async () => {
     let currentTime = 0;
     const waits: number[] = [];
+    const cancelFirstBody = vi.fn();
     const responses = [
-      new Response(null, {
-        status: 429,
-        headers: { "Retry-After": "2" },
-      }),
+      new Response(
+        new ReadableStream({
+          cancel: cancelFirstBody,
+        }),
+        {
+          status: 429,
+          headers: { "Retry-After": "2" },
+        },
+      ),
       providerResponse(providerCaption),
     ];
     const client = createYandexVisionCaptionClient({
@@ -154,6 +162,7 @@ describe("Yandex vision caption client", () => {
 
     await expect(client.createCaption(frames)).resolves.toEqual(providerCaption);
     expect(waits).toEqual([2_000, 4_000]);
+    expect(cancelFirstBody).toHaveBeenCalledOnce();
   });
 
   it("classifies timeout, refusal, and malformed responses without leaking bodies", async () => {
@@ -178,14 +187,30 @@ describe("Yandex vision caption client", () => {
     await timeoutExpectation;
     vi.useRealTimers();
 
-    for (const [response, reason] of [
+    for (const [response, reason, secret] of [
       [
         Response.json({
           choices: [{ message: { refusal: "SECRET_REFUSAL" } }],
         }),
         "refused",
+        "SECRET_REFUSAL",
       ],
-      [Response.json({ choices: [{ message: { content: "not json" } }] }), "invalid_response"],
+      [
+        new Response("SECRET_RESPONSE_FRAGMENT", {
+          headers: { "Content-Type": "application/json" },
+        }),
+        "invalid_response",
+        "SECRET_RESPONSE_FRAGMENT",
+      ],
+      [
+        Response.json({
+          choices: [
+            { message: { content: "SECRET_CAPTION_FRAGMENT not json" } },
+          ],
+        }),
+        "invalid_response",
+        "SECRET_CAPTION_FRAGMENT",
+      ],
     ] as const) {
       const client = createYandexVisionCaptionClient({
         folderId: "folder-1",
@@ -198,8 +223,58 @@ describe("Yandex vision caption client", () => {
       expect(error).toEqual(
         expect.objectContaining<Partial<VisionCaptionProviderError>>({ reason }),
       );
-      expect(String(error)).not.toContain("SECRET");
-      expect(String(error)).not.toContain("not json");
+      expect((error as Error & { cause?: unknown }).cause).toBeUndefined();
+      expect(inspect(error)).not.toContain(secret);
+    }
+  });
+
+  it("keeps the request timeout active while reading the response body", async () => {
+    vi.useFakeTimers();
+    try {
+      let requestSignal: AbortSignal | undefined;
+      let bodyController:
+        | ReadableStreamDefaultController<Uint8Array>
+        | undefined;
+      const client = createYandexVisionCaptionClient({
+        folderId: "folder-1",
+        apiKey: "secret-key",
+        modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+        timeoutMs: 50,
+        fetchImpl: async (_url, init) => {
+          requestSignal = init?.signal ?? undefined;
+          const signal = requestSignal;
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                bodyController = controller;
+                signal?.addEventListener("abort", () => {
+                  controller.error(new DOMException("Aborted", "AbortError"));
+                });
+              },
+            }),
+            { headers: { "Content-Type": "application/json" } },
+          );
+        },
+      });
+
+      const resultPromise = client.createCaption(frames).catch((error) => error);
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(50);
+      const aborted = requestSignal?.aborted ?? false;
+      if (!aborted) {
+        bodyController?.error(new Error("test cleanup"));
+      }
+      const result = await resultPromise;
+
+      expect(aborted).toBe(true);
+      expect(result).toEqual(
+        expect.objectContaining<Partial<VisionCaptionProviderError>>({
+          reason: "timeout",
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
     }
   });
 

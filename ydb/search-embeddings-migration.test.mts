@@ -67,12 +67,12 @@ describe("pet search embeddings migration", () => {
       "updated_at",
     ]);
     expect(description.columns.map((column: FakeColumn) => column.type)).toEqual([
-      Types.optional(Types.UTF8),
-      Types.optional(Types.UTF8),
-      Types.optional(Types.UTF8),
-      Types.optional(Types.UINT32),
-      Types.optional(Types.BYTES),
-      Types.optional(Types.UTF8),
+      Types.UTF8,
+      Types.UTF8,
+      Types.UTF8,
+      Types.UINT32,
+      Types.BYTES,
+      Types.UTF8,
     ]);
     expect(description.primaryKeys).toEqual(["model_revision", "pet_slug"]);
 

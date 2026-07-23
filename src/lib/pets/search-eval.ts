@@ -270,18 +270,13 @@ export function evaluateVisualSearchRolloutGate(
     sexyHasRelevantTop5?: boolean;
   },
 ) {
+  const qualityGate = evaluateVisualSearchQualityGate(
+    report,
+    textReport,
+    evidence,
+  );
   const checks = {
-    exactNameMrrAt5: report.exactNameMrrAt5 === 1,
-    textHybridNdcgLift: textReport.hybridNdcgLift >= 0.2,
-    textNegativeSemanticOnlySafe:
-      textReport.negativeSemanticOnlySafe,
-    combinedOverallNonRegression:
-      report.combinedNdcgAt5 >= report.textHybridNdcgAt5,
-    visualSubsetNdcgLift: report.visualSubsetLift >= 0.15,
-    sexyHasRelevantTop5:
-      evidence.sexyHasRelevantTop5 ?? report.sexyHasRelevantTop5,
-    negativeVisualOnlySafe: report.negativeVisualOnlySafe,
-    p95Duration: report.p95DurationMs < 1_000,
+    ...qualityGate.checks,
     providerFallbackHttp200:
       evidence.providerFallbackHttpStatuses.length >= 3 &&
       evidence.providerFallbackHttpStatuses.every(
@@ -294,6 +289,32 @@ export function evaluateVisualSearchRolloutGate(
       ),
     captionsAbsentFromPublicContracts:
       evidence.captionsAbsentFromPublicContracts,
+  };
+  return {
+    passed: Object.values(checks).every(Boolean),
+    checks,
+  };
+}
+
+export function evaluateVisualSearchQualityGate(
+  report: VisualSearchProfileReport,
+  textReport: SearchQualityReport,
+  evidence: {
+    sexyHasRelevantTop5?: boolean;
+  } = {},
+) {
+  const checks = {
+    exactNameMrrAt5: report.exactNameMrrAt5 === 1,
+    textHybridNdcgLift: textReport.hybridNdcgLift >= 0.2,
+    textNegativeSemanticOnlySafe:
+      textReport.negativeSemanticOnlySafe,
+    combinedOverallNonRegression:
+      report.combinedNdcgAt5 >= report.textHybridNdcgAt5,
+    visualSubsetNdcgLift: report.visualSubsetLift >= 0.15,
+    sexyHasRelevantTop5:
+      evidence.sexyHasRelevantTop5 ?? report.sexyHasRelevantTop5,
+    negativeVisualOnlySafe: report.negativeVisualOnlySafe,
+    p95Duration: report.p95DurationMs < 1_000,
   };
   return {
     passed: Object.values(checks).every(Boolean),

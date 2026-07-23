@@ -63,7 +63,7 @@ describe("pet search captions migration", () => {
       "updated_at",
     ]);
     expect(description.columns.map((column: FakeColumn) => column.type)).toEqual(
-      Array.from({ length: 6 }, () => Types.optional(Types.UTF8)),
+      Array.from({ length: 6 }, () => Types.UTF8),
     );
     expect(description.primaryKeys).toEqual(["caption_revision", "pet_slug"]);
 

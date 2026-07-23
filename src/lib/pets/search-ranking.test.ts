@@ -57,6 +57,16 @@ describe("pet search ranking", () => {
     expect(normalized.text.match(/[\p{L}\p{N}]+/gu)).toHaveLength(12);
   });
 
+  it("does not split an astral character at the query length boundary", () => {
+    const normalized = normalizeSearchQuery(
+      `${"a".repeat(119)}😀trailing`,
+    );
+
+    expect(normalized.text).toBe(`${"a".repeat(119)}😀`);
+    expect(Array.from(normalized.text)).toHaveLength(120);
+    expect(() => encodeURIComponent(normalized.text)).not.toThrow();
+  });
+
   it("ranks exact identifiers before name prefixes, tags, and descriptions", () => {
     expect(
       rankPetsLexically(pets, "sexy fox").map((match) => match.pet.slug),
@@ -140,6 +150,30 @@ describe("pet search ranking", () => {
     expect(fused.map((pet) => pet.slug)).toEqual([
       "description-match",
       "newest-glamour",
+    ]);
+  });
+
+  it("uses original newest-first catalog order to break equal RRF scores", () => {
+    const fused = fuseRankedPets({
+      pets,
+      lexical: [],
+      semanticRanks: [
+        {
+          matches: [{ slug: "sexy-fox", score: 0.9 }],
+          minScore: 0.5,
+          weight: 1,
+        },
+        {
+          matches: [{ slug: "newest-glamour", score: 0.9 }],
+          minScore: 0.5,
+          weight: 1,
+        },
+      ],
+    });
+
+    expect(fused.map((pet) => pet.slug)).toEqual([
+      "newest-glamour",
+      "sexy-fox",
     ]);
   });
 });

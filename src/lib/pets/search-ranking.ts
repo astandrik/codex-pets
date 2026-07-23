@@ -34,12 +34,14 @@ export type WeightedSemanticPetRank = {
 export function normalizeSearchQuery(value: unknown): NormalizedSearchQuery {
   if (typeof value !== "string") return { text: "", tokens: [] };
 
-  let text = value
+  const normalizedText = value
     .normalize("NFKC")
     .toLowerCase()
     .replace(/\s+/g, " ")
-    .trim()
+    .trim();
+  let text = Array.from(normalizedText)
     .slice(0, MAX_QUERY_LENGTH)
+    .join("")
     .trim();
   const tokenMatches = Array.from(text.matchAll(/[\p{L}\p{N}]+/gu));
   if (tokenMatches.length > MAX_QUERY_TOKENS) {
