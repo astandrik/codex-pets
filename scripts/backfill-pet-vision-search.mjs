@@ -248,7 +248,7 @@ function createVisionProvider(config) {
             ],
             temperature: 0,
             stream: false,
-            max_tokens: 900,
+            max_tokens: config.captionContract.maxTokens,
             response_format: {
               type: "json_schema",
               json_schema: {

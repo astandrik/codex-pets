@@ -2,23 +2,57 @@ export type VisionBackfillOptions = {
   mode: "dry-run" | "apply";
   slug: string | null;
   force: boolean;
+  canaries: boolean;
 };
 
-export type VisionBackfillCaption = {
+export type VisionBackfillBilingualText = { en: string; ru: string };
+
+export type VisionBackfillCaptionV1 = {
+  subject: VisionBackfillBilingualText;
+  appearance: VisionBackfillBilingualText;
+  clothing: VisionBackfillBilingualText;
+  style: VisionBackfillBilingualText;
+  mood: VisionBackfillBilingualText;
+  colors: { en: string[]; ru: string[] };
+  search_terms_en: string[];
+  search_terms_ru: string[];
+};
+
+export type VisionBackfillCaptionV2 = VisionBackfillCaptionV1 & {
+  accessories: VisionBackfillBilingualText;
+};
+
+export type VisionBackfillAttributeSlotV3 =
+  | "hair_and_headwear"
+  | "face_and_eye_coverings"
+  | "clothing_and_armor"
+  | "weapons_and_objects"
+  | "visible_effects"
+  | "other_distinguishing_features";
+
+export type VisionBackfillCaptionV3 = {
   subject: { en: string; ru: string };
   appearance: { en: string; ru: string };
-  clothing: { en: string; ru: string };
   style: { en: string; ru: string };
   mood: { en: string; ru: string };
   colors: { en: string[]; ru: string[] };
   search_terms_en: string[];
   search_terms_ru: string[];
-  accessories?: { en: string; ru: string };
+  visual_attributes: Record<
+    VisionBackfillAttributeSlotV3,
+    { present: boolean; en: string; ru: string }
+  >;
 };
+
+export type VisionBackfillCaption =
+  | VisionBackfillCaptionV1
+  | VisionBackfillCaptionV2
+  | VisionBackfillCaptionV3;
 
 export type VisionBackfillCaptionRevision =
   | "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1"
-  | "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v2";
+  | "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v2"
+  | "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v3";
 
 export type VisionBackfillFrame = {
   state: string;
@@ -45,10 +79,18 @@ export const PET_VISION_FRAME_POLICY: {
     frame: number;
   }>;
 };
-export const PET_VISION_CAPTION_REVISION_V1: VisionBackfillCaptionRevision;
-export const PET_VISION_CAPTION_REVISION_V2: VisionBackfillCaptionRevision;
-export const PET_VISUAL_MODEL_REVISION_V1: string;
-export const PET_VISUAL_MODEL_REVISION_V2: string;
+export const PET_VISION_CAPTION_REVISION_V1:
+  "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1";
+export const PET_VISION_CAPTION_REVISION_V2:
+  "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v2";
+export const PET_VISION_CAPTION_REVISION_V3:
+  "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v3";
+export const PET_VISUAL_MODEL_REVISION_V1:
+  "yandex-text-search-2026-07-pet-vision-v1";
+export const PET_VISUAL_MODEL_REVISION_V2:
+  "yandex-text-search-2026-07-pet-vision-v2";
+export const PET_VISUAL_MODEL_REVISION_V3:
+  "yandex-text-search-2026-07-pet-vision-v3";
 export const PET_VISION_SYSTEM_PROMPT: string;
 export const PET_VISION_USER_PROMPT: string;
 export const PET_VISION_RESPONSE_JSON_SCHEMA: Readonly<
@@ -58,8 +100,9 @@ export const PET_VISION_CAPTION_CONTRACTS: Record<
   VisionBackfillCaptionRevision,
   {
     modelName: string;
-    schemaVersion: 1 | 2;
+    schemaVersion: 1 | 2 | 3;
     responseSchemaName: string;
+    maxTokens: number;
     systemPrompt: string;
     userPrompt: string;
     responseJsonSchema: Readonly<Record<string, unknown>>;
@@ -74,6 +117,21 @@ export const PET_VISION_V2_CANARIES: Array<{
   expectations: Array<{
     id: string;
     expectedAnyTerms: string[];
+  }>;
+}>;
+export const PET_VISION_V3_CANARIES: Array<{
+  slug: string;
+  expectations: Array<{
+    id: string;
+    slot:
+      | "hair_and_headwear"
+      | "face_and_eye_coverings"
+      | "clothing_and_armor"
+      | "weapons_and_objects"
+      | "visible_effects"
+      | "other_distinguishing_features";
+    expectedAnyTermsEn: string[];
+    expectedAnyTermsRu: string[];
   }>;
 }>;
 
@@ -98,36 +156,101 @@ export function extractPetVisionFrames(
 }>;
 export function parsePetVisionCaption(
   input: unknown,
-): VisionBackfillCaption;
+): VisionBackfillCaptionV1;
+export function parsePetVisionCaption(
+  revision: typeof PET_VISION_CAPTION_REVISION_V1,
+  input: unknown,
+): VisionBackfillCaptionV1;
+export function parsePetVisionCaption(
+  revision: typeof PET_VISION_CAPTION_REVISION_V2,
+  input: unknown,
+): VisionBackfillCaptionV2;
+export function parsePetVisionCaption(
+  revision: typeof PET_VISION_CAPTION_REVISION_V3,
+  input: unknown,
+): VisionBackfillCaptionV3;
 export function parsePetVisionCaption(
   revision: VisionBackfillCaptionRevision,
   input: unknown,
 ): VisionBackfillCaption;
+
+export type VisionBackfillCaptionEnvelopeV1 = {
+  schemaVersion: 1;
+  source: { assetId: string; spritesheetSha256: string };
+  caption: VisionBackfillCaptionV1;
+};
+export type VisionBackfillCaptionEnvelopeV2 = {
+  schemaVersion: 2;
+  source: { assetId: string; spritesheetSha256: string };
+  caption: VisionBackfillCaptionV2;
+};
+export type VisionBackfillCaptionEnvelopeV3 = {
+  schemaVersion: 3;
+  source: { assetId: string; spritesheetSha256: string };
+  caption: VisionBackfillCaptionV3;
+};
+export type VisionBackfillCaptionEnvelope =
+  | VisionBackfillCaptionEnvelopeV1
+  | VisionBackfillCaptionEnvelopeV2
+  | VisionBackfillCaptionEnvelopeV3;
+
 export function createPetVisionCaptionEnvelope(input: {
-  captionRevision?: VisionBackfillCaptionRevision;
+  captionRevision?: typeof PET_VISION_CAPTION_REVISION_V1;
+  assetId: string;
+  spritesheetSha256: string;
+  caption: VisionBackfillCaptionV1;
+}): VisionBackfillCaptionEnvelopeV1;
+export function createPetVisionCaptionEnvelope(input: {
+  captionRevision: typeof PET_VISION_CAPTION_REVISION_V2;
+  assetId: string;
+  spritesheetSha256: string;
+  caption: VisionBackfillCaptionV2;
+}): VisionBackfillCaptionEnvelopeV2;
+export function createPetVisionCaptionEnvelope(input: {
+  captionRevision: typeof PET_VISION_CAPTION_REVISION_V3;
+  assetId: string;
+  spritesheetSha256: string;
+  caption: VisionBackfillCaptionV3;
+}): VisionBackfillCaptionEnvelopeV3;
+export function createPetVisionCaptionEnvelope(input: {
+  captionRevision: VisionBackfillCaptionRevision;
   assetId: string;
   spritesheetSha256: string;
   caption: VisionBackfillCaption;
-}): {
-  schemaVersion: 1 | 2;
-  source: { assetId: string; spritesheetSha256: string };
-  caption: VisionBackfillCaption;
-};
-export function parsePetVisionCaptionEnvelope(value: string): {
-  schemaVersion: 1 | 2;
-  source: { assetId: string; spritesheetSha256: string };
-  caption: VisionBackfillCaption;
-};
+}): VisionBackfillCaptionEnvelope;
+export function parsePetVisionCaptionEnvelope(
+  value: string,
+): VisionBackfillCaptionEnvelopeV1;
+export function parsePetVisionCaptionEnvelope(
+  revision: typeof PET_VISION_CAPTION_REVISION_V1,
+  value: string,
+): VisionBackfillCaptionEnvelopeV1;
+export function parsePetVisionCaptionEnvelope(
+  revision: typeof PET_VISION_CAPTION_REVISION_V2,
+  value: string,
+): VisionBackfillCaptionEnvelopeV2;
+export function parsePetVisionCaptionEnvelope(
+  revision: typeof PET_VISION_CAPTION_REVISION_V3,
+  value: string,
+): VisionBackfillCaptionEnvelopeV3;
 export function parsePetVisionCaptionEnvelope(
   revision: VisionBackfillCaptionRevision,
   value: string,
-): {
-  schemaVersion: 1 | 2;
-  source: { assetId: string; spritesheetSha256: string };
-  caption: VisionBackfillCaption;
-};
+): VisionBackfillCaptionEnvelope;
 export function buildPetVisionCaptionText(
-  caption: VisionBackfillCaption,
+  caption: VisionBackfillCaptionV1,
+): string;
+export function buildPetVisionCaptionText(
+  revision: typeof PET_VISION_CAPTION_REVISION_V1,
+  caption: VisionBackfillCaptionV1,
+): string;
+export function buildPetVisionCaptionText(
+  revision: typeof PET_VISION_CAPTION_REVISION_V2,
+  caption: VisionBackfillCaptionV2,
+): string;
+export function buildPetVisionCaptionText(
+  revision: typeof PET_VISION_CAPTION_REVISION_V3,
+  caption: VisionBackfillCaptionV3,
 ): string;
 export function buildPetVisionCaptionText(
   revision: VisionBackfillCaptionRevision,
@@ -145,6 +268,14 @@ export function resolvePetVisionRevisionConfig(
 export function evaluatePetVisionCanary(
   slug: string,
   captionText: string,
+): {
+  slug: string;
+  passed: boolean;
+  checks: Array<{ id: string; passed: boolean }>;
+} | null;
+export function evaluatePetVisionV3Canary(
+  slug: string,
+  caption: VisionBackfillCaptionV3,
 ): {
   slug: string;
   passed: boolean;

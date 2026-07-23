@@ -17,7 +17,13 @@ import {
   petSearchRuntimeConfig,
   petVisionCaptionClient,
 } from "@/lib/pets/search-provider-runtime";
+import { getApprovedPetBySlug } from "@/lib/pets/repository";
 import {
+  PET_VISION_V3_CANARIES,
+  evaluatePetVisionV3Canary,
+} from "@/lib/pets/search-vision-canaries";
+import {
+  PET_VISION_CAPTION_REVISION_V3,
   buildPetVisionCaptionText,
   createPetVisionCaptionEnvelope,
   createPetVisionCaptionSourceHash,
@@ -60,6 +66,7 @@ type PetVisionSearchRuntimeDependencies = {
     slug: string,
   ) => Promise<StoredEmbeddingMetadata | null>;
   upsertEmbedding: typeof upsertPetSearchEmbedding;
+  getApprovedPet: (slug: string) => Promise<VisionSearchPet | null>;
   now?: () => Date;
 };
 
@@ -77,6 +84,12 @@ export function createPetVisionSearchRuntime(
     const visual = dependencies.config.visual;
     const embeddingClient = dependencies.embeddingClient;
     if (!visual || !embeddingClient) return "skipped";
+    if (
+      visual.captionRevision === PET_VISION_CAPTION_REVISION_V3 &&
+      !(await isV3CanaryGateOpen())
+    ) {
+      return "skipped";
+    }
 
     const assetId = getPetAssetIdFromSpritesheetUrl(pet.spritesheetUrl);
     if (!assetId) {
@@ -189,6 +202,74 @@ export function createPetVisionSearchRuntime(
   function currentTimestamp(): string {
     return (dependencies.now ?? (() => new Date()))().toISOString();
   }
+
+  async function isV3CanaryGateOpen(): Promise<boolean> {
+    const visual = dependencies.config.visual;
+    if (!visual) return false;
+
+    try {
+      for (const canary of PET_VISION_V3_CANARIES) {
+        const pet = await dependencies.getApprovedPet(canary.slug);
+        if (!pet || pet.status !== "approved") return false;
+        const assetId = getPetAssetIdFromSpritesheetUrl(
+          pet.spritesheetUrl,
+        );
+        if (!assetId) return false;
+
+        const asset = await dependencies.readSpritesheet({ assetId });
+        const extracted = await dependencies.extractFrames(asset.buffer);
+        const expectedSourceHash = createPetVisionCaptionSourceHash({
+          captionRevision: PET_VISION_CAPTION_REVISION_V3,
+          modelUri: visual.modelUri,
+          assetId,
+          spritesheetSha256: extracted.spritesheetSha256,
+        });
+        const storedCaption = await dependencies.getCaption(
+          PET_VISION_CAPTION_REVISION_V3,
+          canary.slug,
+        );
+        if (storedCaption?.sourceHash !== expectedSourceHash) return false;
+
+        const envelope = parsePetVisionCaptionEnvelope(
+          PET_VISION_CAPTION_REVISION_V3,
+          storedCaption.captionJson,
+        );
+        const captionText = buildPetVisionCaptionText(
+          PET_VISION_CAPTION_REVISION_V3,
+          envelope.caption,
+        );
+        if (
+          envelope.source.assetId !== assetId ||
+          envelope.source.spritesheetSha256 !==
+            extracted.spritesheetSha256 ||
+          storedCaption.captionText !== captionText ||
+          !evaluatePetVisionV3Canary(canary.slug, envelope.caption)?.passed
+        ) {
+          return false;
+        }
+        const expectedVisualSourceHash =
+          createPetVisualEmbeddingSourceHash({
+            visualRevision: visual.visualRevision,
+            captionRevision: visual.captionRevision,
+            captionSourceHash: expectedSourceHash,
+            captionText,
+          });
+        const metadata = await dependencies.getEmbeddingMetadata(
+          visual.visualRevision,
+          canary.slug,
+        );
+        if (
+          metadata?.sourceHash !== expectedVisualSourceHash ||
+          metadata.dimensions !== visual.dimensions
+        ) {
+          return false;
+        }
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 
 type PetVisionIndexingFailureReason =
@@ -261,6 +342,7 @@ const productionRuntime = createPetVisionSearchRuntime({
   upsertCaption: upsertPetSearchCaption,
   getEmbeddingMetadata: getPetSearchEmbeddingMetadata,
   upsertEmbedding: upsertPetSearchEmbedding,
+  getApprovedPet: getApprovedPetBySlug,
 });
 
 export function refreshApprovedPetVisionSearch(

@@ -3,14 +3,18 @@ import { describe, expect, it, vi } from "vitest";
 import type { PetSearchConfig } from "@/lib/pets/search-config";
 import {
   PET_VISION_CAPTION_REVISION_V2,
+  PET_VISION_CAPTION_REVISION_V3,
   PET_VISUAL_MODEL_REVISION_V2,
+  PET_VISUAL_MODEL_REVISION_V3,
   buildPetVisionCaptionText,
   createPetVisionCaptionEnvelope,
   createPetVisionCaptionSourceHash,
   createPetVisualEmbeddingSourceHash,
   type PetVisionCaption,
   type PetVisionCaptionV2,
+  type PetVisionCaptionV3,
 } from "@/lib/pets/search-vision-contract";
+import { PET_VISION_V3_CANARIES } from "@/lib/pets/search-vision-canaries";
 import {
   createPetVisionSearchRuntime,
   type PetVisionRefreshResult,
@@ -72,6 +76,198 @@ const visualSourceHash = createPetVisualEmbeddingSourceHash({
   captionText,
 });
 
+const v3Config: PetSearchConfig = {
+  ...config,
+  visual: {
+    ...config.visual!,
+    captionRevision: PET_VISION_CAPTION_REVISION_V3,
+    visualRevision: PET_VISUAL_MODEL_REVISION_V3,
+  },
+};
+
+const v3BaseCaption: PetVisionCaptionV3 = {
+  subject: { en: "animated companion", ru: "анимированный спутник" },
+  appearance: { en: "detailed sprite", ru: "детализированный спрайт" },
+  visual_attributes: {
+    hair_and_headwear: { present: false, en: "", ru: "" },
+    face_and_eye_coverings: { present: false, en: "", ru: "" },
+    clothing_and_armor: { present: false, en: "", ru: "" },
+    weapons_and_objects: { present: false, en: "", ru: "" },
+    visible_effects: { present: false, en: "", ru: "" },
+    other_distinguishing_features: { present: false, en: "", ru: "" },
+  },
+  style: { en: "pixel art", ru: "пиксель-арт" },
+  mood: { en: "confident", ru: "уверенный" },
+  colors: { en: ["black"], ru: ["чёрный"] },
+  search_terms_en: ["animated pet", "pixel companion", "sprite art"],
+  search_terms_ru: ["анимированный питомец", "пиксельный спутник", "спрайт"],
+};
+
+const v3CanaryCaptions: Record<string, PetVisionCaptionV3> = {
+  "fischl-detailed": {
+    ...v3BaseCaption,
+    visual_attributes: {
+      ...v3BaseCaption.visual_attributes,
+      hair_and_headwear: {
+        present: true,
+        en: "blonde hair",
+        ru: "светлые волосы",
+      },
+      face_and_eye_coverings: {
+        present: true,
+        en: "black eye patch",
+        ru: "чёрная повязка на глаз",
+      },
+      clothing_and_armor: {
+        present: true,
+        en: "purple outfit and black clothing",
+        ru: "фиолетовый наряд и чёрная одежда",
+      },
+    },
+  },
+  "2b-2": {
+    ...v3BaseCaption,
+    visual_attributes: {
+      ...v3BaseCaption.visual_attributes,
+      hair_and_headwear: {
+        present: true,
+        en: "silver hair",
+        ru: "серебряные волосы",
+      },
+      face_and_eye_coverings: {
+        present: true,
+        en: "black blindfold",
+        ru: "чёрная повязка на глаз",
+      },
+      clothing_and_armor: {
+        present: true,
+        en: "black clothing",
+        ru: "чёрная одежда",
+      },
+      weapons_and_objects: {
+        present: true,
+        en: "sword",
+        ru: "меч",
+      },
+    },
+  },
+  "master-of-terra": {
+    ...v3BaseCaption,
+    visual_attributes: {
+      ...v3BaseCaption.visual_attributes,
+      clothing_and_armor: {
+        present: true,
+        en: "golden armor and red cloak",
+        ru: "золотая броня и красный плащ",
+      },
+      weapons_and_objects: {
+        present: true,
+        en: "sword",
+        ru: "меч",
+      },
+      visible_effects: {
+        present: true,
+        en: "flames",
+        ru: "пламя",
+      },
+    },
+  },
+  vi: {
+    ...v3BaseCaption,
+    visual_attributes: {
+      ...v3BaseCaption.visual_attributes,
+      hair_and_headwear: {
+        present: true,
+        en: "pink hair",
+        ru: "розовые волосы",
+      },
+      weapons_and_objects: {
+        present: true,
+        en: "massive gauntlets",
+        ru: "массивные перчатки",
+      },
+    },
+  },
+};
+
+function v3CanaryPet(slug: string) {
+  return {
+    slug,
+    status: "approved" as const,
+    spritesheetUrl: `/api/assets/asset-${slug}/spritesheet.webp`,
+  };
+}
+
+function v3StoredCaption(
+  slug: string,
+  spritesheetSha256 = "b".repeat(64),
+) {
+  const assetId = `asset-${slug}`;
+  const caption = v3CanaryCaptions[slug];
+  const captionText = buildPetVisionCaptionText(
+    PET_VISION_CAPTION_REVISION_V3,
+    caption,
+  );
+  return {
+    slug,
+    sourceHash: createPetVisionCaptionSourceHash({
+      captionRevision: PET_VISION_CAPTION_REVISION_V3,
+      modelUri: v3Config.visual!.modelUri,
+      assetId,
+      spritesheetSha256,
+    }),
+    captionJson: JSON.stringify(
+      createPetVisionCaptionEnvelope({
+        captionRevision: PET_VISION_CAPTION_REVISION_V3,
+        assetId,
+        spritesheetSha256,
+        caption,
+      }),
+    ),
+    captionText,
+    updatedAt: "2026-07-22T11:00:00.000Z",
+  };
+}
+
+function v3StoredVector(slug: string) {
+  const storedCaption = v3StoredCaption(slug);
+  return {
+    sourceHash: createPetVisualEmbeddingSourceHash({
+      visualRevision: PET_VISUAL_MODEL_REVISION_V3,
+      captionRevision: PET_VISION_CAPTION_REVISION_V3,
+      captionSourceHash: storedCaption.sourceHash,
+      captionText: storedCaption.captionText,
+    }),
+    dimensions: 256,
+  };
+}
+
+function v3Dependencies(overrides: Record<string, unknown> = {}) {
+  return dependencies({
+    config: v3Config,
+    visionClient: {
+      createCaption: vi.fn(async () => v3BaseCaption),
+    },
+    extractFrames: vi.fn(async () => ({
+      spriteVersion: 1 as const,
+      spritesheetSha256: "b".repeat(64),
+      frames: [],
+    })),
+    getApprovedPet: vi.fn(async (slug: string) => v3CanaryPet(slug)),
+    getCaption: vi.fn(async (_revision: string, slug: string) =>
+      PET_VISION_V3_CANARIES.some((canary) => canary.slug === slug)
+        ? v3StoredCaption(slug)
+        : null,
+    ),
+    getEmbeddingMetadata: vi.fn(async (_revision: string, slug: string) =>
+      PET_VISION_V3_CANARIES.some((canary) => canary.slug === slug)
+        ? v3StoredVector(slug)
+        : null,
+    ),
+    ...overrides,
+  });
+}
+
 function dependencies(overrides: Record<string, unknown> = {}) {
   return {
     config,
@@ -95,12 +291,93 @@ function dependencies(overrides: Record<string, unknown> = {}) {
     upsertCaption: vi.fn(async () => undefined),
     getEmbeddingMetadata: vi.fn(async () => null),
     upsertEmbedding: vi.fn(async () => undefined),
+    getApprovedPet: vi.fn(async () => null),
     now: () => new Date("2026-07-22T12:00:00.000Z"),
     ...overrides,
   };
 }
 
 describe("pet vision search indexing runtime", () => {
+  it("fails the v3 gate closed before reading or writing the target", async () => {
+    const deps = v3Dependencies({
+      getApprovedPet: vi.fn(async () => null),
+    });
+
+    await expect(
+      createPetVisionSearchRuntime(deps).refresh(pet),
+    ).resolves.toBe("skipped");
+    expect(deps.getApprovedPet).toHaveBeenCalledWith("fischl-detailed");
+    expect(deps.readSpritesheet).not.toHaveBeenCalled();
+    expect(deps.visionClient.createCaption).not.toHaveBeenCalled();
+    expect(deps.embeddingClient.embedDocument).not.toHaveBeenCalled();
+    expect(deps.upsertCaption).not.toHaveBeenCalled();
+    expect(deps.upsertEmbedding).not.toHaveBeenCalled();
+  });
+
+  it("opens the v3 refresh only after all four current rows pass", async () => {
+    const deps = v3Dependencies();
+
+    await expect(
+      createPetVisionSearchRuntime(deps).refresh(pet),
+    ).resolves.toBe("caption-and-vector");
+    expect(deps.getApprovedPet).toHaveBeenCalledTimes(4);
+    expect(
+      (
+        deps.getApprovedPet.mock.calls as unknown as Array<[string]>
+      ).map(([slug]) => slug),
+    ).toEqual(PET_VISION_V3_CANARIES.map(({ slug }) => slug));
+    expect(deps.visionClient.createCaption).toHaveBeenCalledOnce();
+    expect(deps.upsertCaption).toHaveBeenCalledOnce();
+    expect(deps.upsertEmbedding).toHaveBeenCalledOnce();
+  });
+
+  it("closes the v3 gate on current asset/source mismatch", async () => {
+    const deps = v3Dependencies({
+      getCaption: vi.fn(async (_revision: string, slug: string) =>
+        PET_VISION_V3_CANARIES.some((canary) => canary.slug === slug)
+          ? v3StoredCaption(
+              slug,
+              slug === "master-of-terra"
+                ? "c".repeat(64)
+                : "b".repeat(64),
+            )
+          : null,
+      ),
+    });
+
+    await expect(
+      createPetVisionSearchRuntime(deps).refresh(pet),
+    ).resolves.toBe("skipped");
+    expect(deps.getApprovedPet).toHaveBeenCalledTimes(3);
+    expect(deps.visionClient.createCaption).not.toHaveBeenCalled();
+    expect(deps.upsertCaption).not.toHaveBeenCalled();
+    expect(deps.upsertEmbedding).not.toHaveBeenCalled();
+  });
+
+  it("closes the v3 gate when the fourth vector metadata is stale", async () => {
+    const deps = v3Dependencies({
+      getEmbeddingMetadata: vi.fn(
+        async (_revision: string, slug: string) =>
+          slug === "vi"
+            ? {
+                sourceHash: "d".repeat(64),
+                dimensions: 256,
+              }
+            : v3StoredVector(slug),
+      ),
+    });
+
+    await expect(
+      createPetVisionSearchRuntime(deps).refresh(pet),
+    ).resolves.toBe("skipped");
+    expect(deps.getApprovedPet).toHaveBeenCalledTimes(4);
+    expect(deps.getEmbeddingMetadata).toHaveBeenCalledTimes(4);
+    expect(deps.visionClient.createCaption).not.toHaveBeenCalled();
+    expect(deps.embeddingClient.embedDocument).not.toHaveBeenCalled();
+    expect(deps.upsertCaption).not.toHaveBeenCalled();
+    expect(deps.upsertEmbedding).not.toHaveBeenCalled();
+  });
+
   it("writes and reuses only envelopes matching the configured v2 revision", async () => {
     const v2Config: PetSearchConfig = {
       ...config,
