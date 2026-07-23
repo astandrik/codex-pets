@@ -142,6 +142,8 @@ are fresh, with matching source hashes and 256 dimensions. A missing, stale, or
 mismatched vector keeps the durable gate closed. A canary miss freezes v3: do
 not weaken terms or retry/tune the same revision. The next design is v4 with a
 deterministic detail crop.
+The CLI rejects bare v3 `--apply`; use `--canaries` or an explicit non-canary
+`--slug` after the durable gate opens.
 
 `visual-calibration-v3` and `visual-holdout-v3` are deferred to a separate
 approved plan; never reuse v2 visual suites for v3. Do not run a full v3

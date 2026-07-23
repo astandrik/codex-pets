@@ -8,6 +8,7 @@ import { createRequestStartLimiter } from "./lib/pet-search-backfill.mjs";
 import {
   PET_VISION_CAPTION_REVISION_V1,
   PET_VISUAL_MODEL_REVISION_V1,
+  assertPetVisionBackfillInvocationPolicy,
   embeddingToBuffer,
   extractPetVisionFrames,
   parsePetVisionCaption,
@@ -40,7 +41,14 @@ const EMBEDDING_ENDPOINT =
 
 export async function main(argv = process.argv.slice(2)) {
   const options = parseVisionBackfillArgs(argv);
-  const providerConfig = readProviderConfig(options.mode);
+  const revisionSelection = preflightPetVisionBackfillInvocation(
+    options,
+    process.env,
+  );
+  const providerConfig = readProviderConfig(
+    options.mode,
+    revisionSelection,
+  );
   const endpoint =
     process.env.YDB_PETS_ENDPOINT?.trim() || "grpc://127.0.0.1:2136";
   const database = process.env.YDB_PETS_DATABASE?.trim() || "/local";
@@ -79,6 +87,7 @@ export async function main(argv = process.argv.slice(2)) {
         modelUri: providerConfig.modelUri,
       },
       pets,
+      listApprovedPets: () => listApprovedPets(driver),
       readSpritesheet: (assetId) => readSpritesheet(driver, assetId),
       extractFrames: extractPetVisionFrames,
       getCaption: (captionRevision, slug) =>
@@ -97,18 +106,25 @@ export async function main(argv = process.argv.slice(2)) {
   }
 }
 
-function readProviderConfig(mode) {
+export function preflightPetVisionBackfillInvocation(
+  options,
+  environment,
+) {
   const captionRevision =
-    process.env.PET_SEARCH_VISION_CAPTION_REVISION?.trim() ||
+    environment.PET_SEARCH_VISION_CAPTION_REVISION?.trim() ||
     CAPTION_REVISION;
   const visualRevision =
-    process.env.PET_SEARCH_VISUAL_MODEL_REVISION?.trim() ||
+    environment.PET_SEARCH_VISUAL_MODEL_REVISION?.trim() ||
     VISUAL_REVISION;
-  const revisionConfig = resolvePetVisionRevisionConfig(
+  const revisionSelection = resolvePetVisionRevisionConfig(
     captionRevision,
     visualRevision,
   );
+  assertPetVisionBackfillInvocationPolicy(options, revisionSelection);
+  return revisionSelection;
+}
 
+function readProviderConfig(mode, revisionConfig) {
   const folderId = process.env.YANDEX_AI_STUDIO_FOLDER_ID?.trim();
   if (!folderId) {
     throw new Error("YANDEX_AI_STUDIO_FOLDER_ID is required.");

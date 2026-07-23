@@ -299,6 +299,8 @@ embeddings before its first write. This is an all-or-nothing pre-persistence
 guarantee, not a YDB transaction: persistence is not transactional, and the
 readback/durable gate remains closed after a partial YDB write. This stage ends
 after exactly four fresh v3 caption/vector rows and source-hash readback.
+The CLI rejects bare v3 `--apply`; use `--canaries` or an explicit non-canary
+`--slug` after the durable gate opens.
 Ordinary/full v3 backfill and v3 approval refresh remain blocked until all four
 current v3 caption rows and their associated visual vector metadata are fresh,
 with matching source hashes and 256 dimensions. A missing, stale, or mismatched

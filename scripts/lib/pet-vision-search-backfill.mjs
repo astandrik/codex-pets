@@ -724,6 +724,7 @@ const SAFE_FAILURE_REASONS = new Set([
   "canary_failed",
   "configuration_missing",
   "embedding_error",
+  "full_backfill_deferred",
   "invalid_request",
   "invalid_response",
   "persistence_error",
@@ -763,6 +764,17 @@ export function resolvePetVisionRevisionConfig(
     dimensions: visualConfig.dimensions,
     captionContract,
   };
+}
+
+export function assertPetVisionBackfillInvocationPolicy(options, config) {
+  if (
+    isRegisteredV3BackfillConfig(config) &&
+    options.mode === "apply" &&
+    !options.canaries &&
+    !options.slug
+  ) {
+    throw new PetVisionBackfillError("full_backfill_deferred");
+  }
 }
 
 export function evaluatePetVisionCanary(slug, captionText) {
@@ -1175,14 +1187,11 @@ export function embeddingToBuffer(embedding) {
 }
 
 export async function runPetVisionSearchBackfill(input) {
+  assertPetVisionBackfillInvocationPolicy(input.options, input.config);
+  const isV3 = isRegisteredV3BackfillConfig(input.config);
   const approvedPets = input.pets.filter(
     (candidate) => !candidate.status || candidate.status === "approved",
   );
-  const isV3 =
-    input.config.captionRevision === PET_VISION_CAPTION_REVISION_V3 &&
-    input.config.visualRevision === PET_VISUAL_MODEL_REVISION_V3 &&
-    input.config.dimensions ===
-      PET_VISUAL_MODEL_REVISIONS[PET_VISUAL_MODEL_REVISION_V3].dimensions;
   if (input.options.canaries && !isV3) {
     throw new Error("--canaries is valid only for the registered v3 pair.");
   }
@@ -1195,7 +1204,6 @@ export async function runPetVisionSearchBackfill(input) {
   ) {
     throw new Error("Individual v3 canary slug execution is not allowed.");
   }
-
   if (input.options.canaries) {
     const canaryPets = selectV3CanaryPets(input, approvedPets);
     if (input.options.mode === "dry-run") {
@@ -1212,23 +1220,26 @@ export async function runPetVisionSearchBackfill(input) {
       input.log({ action: "summary", ...summary });
       return summary;
     }
-    return runV3CanaryBatch(input, canaryPets, approvedPets);
+    return runV3CanaryBatch(input, canaryPets);
   }
 
+  let currentApprovedPets = approvedPets;
   if (
     isV3 &&
-    input.options.mode === "apply" &&
-    !(await isV3DurableGateOpen(input, approvedPets))
+    input.options.mode === "apply"
   ) {
-    throw new PetVisionBackfillError("canary_failed", {
-      slug: "v3-canary-gate",
-      passed: false,
-      checks: [{ id: "durable_gate", passed: false }],
-    });
+    currentApprovedPets = await listCurrentApprovedPets(input);
+    if (!(await isV3DurableGateOpen(input, currentApprovedPets))) {
+      throw new PetVisionBackfillError("canary_failed", {
+        slug: "v3-canary-gate",
+        passed: false,
+        checks: [{ id: "durable_gate", passed: false }],
+      });
+    }
   }
 
   const ordinaryApprovedPets = isV3
-    ? approvedPets.filter(
+    ? currentApprovedPets.filter(
         (candidate) =>
           !PET_VISION_V3_CANARIES.some(
             (canary) => canary.slug === candidate.slug,
@@ -1276,6 +1287,15 @@ export async function runPetVisionSearchBackfill(input) {
   return summary;
 }
 
+function isRegisteredV3BackfillConfig(config) {
+  return (
+    config.captionRevision === PET_VISION_CAPTION_REVISION_V3 &&
+    config.visualRevision === PET_VISUAL_MODEL_REVISION_V3 &&
+    config.dimensions ===
+      PET_VISUAL_MODEL_REVISIONS[PET_VISUAL_MODEL_REVISION_V3].dimensions
+  );
+}
+
 function selectV3CanaryPets(input, approvedPets) {
   const petsBySlug = new Map(
     approvedPets.map((candidate) => [candidate.slug, candidate]),
@@ -1293,7 +1313,11 @@ function selectV3CanaryPets(input, approvedPets) {
   });
 }
 
-async function prepareV3CanarySources(input, canaryPets) {
+async function prepareV3CanarySources(
+  input,
+  canaryPets,
+  readFailureReason = "asset_error",
+) {
   const prepared = [];
   for (const pet of canaryPets) {
     const assetId = petAssetId(pet.spritesheetUrl);
@@ -1303,7 +1327,7 @@ async function prepareV3CanarySources(input, canaryPets) {
       const spritesheet = await input.readSpritesheet(assetId);
       extracted = await input.extractFrames(spritesheet);
     } catch {
-      throw new PetVisionBackfillError("asset_error");
+      throw new PetVisionBackfillError(readFailureReason);
     }
     prepared.push({
       pet,
@@ -1320,7 +1344,7 @@ async function prepareV3CanarySources(input, canaryPets) {
   return prepared;
 }
 
-async function runV3CanaryBatch(input, canaryPets, approvedPets) {
+async function runV3CanaryBatch(input, canaryPets) {
   try {
     const prepared = await prepareV3CanarySources(input, canaryPets);
     const captionStages = [];
@@ -1400,6 +1424,43 @@ async function runV3CanaryBatch(input, canaryPets, approvedPets) {
       });
     }
 
+    const currentApprovedPets = await listCurrentApprovedPets(input);
+    const currentCanaryPets = selectV3CanaryPets(
+      input,
+      currentApprovedPets,
+    );
+    const currentSources = await prepareV3CanarySources(
+      input,
+      currentCanaryPets,
+      "persistence_error",
+    );
+    const stagedBySlug = new Map(
+      staged.map((stage) => [stage.pet.slug, stage]),
+    );
+    for (const current of currentSources) {
+      const stage = stagedBySlug.get(current.pet.slug);
+      if (
+        stage?.pet.slug === current.pet.slug &&
+        stage.assetId === current.assetId &&
+        stage.extracted.spritesheetSha256 ===
+          current.extracted.spritesheetSha256 &&
+        stage.captionSourceHash === current.captionSourceHash
+      ) {
+        continue;
+      }
+      const result = {
+        slug: current.pet.slug,
+        passed: false,
+        checks: [{ id: "source_unchanged", passed: false }],
+      };
+      input.log({
+        slug: current.pet.slug,
+        action: "canary",
+        canary: result,
+      });
+      throw new PetVisionBackfillError("canary_failed", result);
+    }
+
     const updatedAt = input.now().toISOString();
     for (const stage of staged) {
       try {
@@ -1424,35 +1485,8 @@ async function runV3CanaryBatch(input, canaryPets, approvedPets) {
       }
     }
 
-    for (const stage of staged) {
-      let captionRow;
-      let vectorRow;
-      try {
-        captionRow = await input.getCaption(
-          PET_VISION_CAPTION_REVISION_V3,
-          stage.pet.slug,
-        );
-        vectorRow = await input.getEmbeddingMetadata(
-          PET_VISUAL_MODEL_REVISION_V3,
-          stage.pet.slug,
-        );
-      } catch {
-        throw new PetVisionBackfillError("persistence_error");
-      }
-      if (
-        captionRow?.sourceHash !== stage.captionSourceHash ||
-        captionRow.captionText !== stage.captionText ||
-        vectorRow?.sourceHash !== stage.visualSourceHash ||
-        vectorRow.dimensions !== input.config.dimensions
-      ) {
-        throw new PetVisionBackfillError("canary_failed", {
-          slug: stage.pet.slug,
-          passed: false,
-          checks: [{ id: "durable_readback", passed: false }],
-        });
-      }
-    }
-    if (!(await isV3DurableGateOpen(input, approvedPets))) {
+    const finalApprovedPets = await listCurrentApprovedPets(input);
+    if (!(await isV3DurableGateOpen(input, finalApprovedPets))) {
       throw new PetVisionBackfillError("canary_failed", {
         slug: "v3-canary-gate",
         passed: false,
@@ -1477,50 +1511,72 @@ async function runV3CanaryBatch(input, canaryPets, approvedPets) {
 }
 
 async function isV3DurableGateOpen(input, approvedPets) {
-  try {
-    const canaryPets = selectV3CanaryPets(input, approvedPets);
-    const prepared = await prepareV3CanarySources(input, canaryPets);
-    for (const source of prepared) {
-      const storedCaption = await input.getCaption(
+  const canaryPets = selectV3CanaryPets(input, approvedPets);
+  const prepared = await prepareV3CanarySources(
+    input,
+    canaryPets,
+    "persistence_error",
+  );
+  for (const source of prepared) {
+    let storedCaption;
+    let metadata;
+    try {
+      storedCaption = await input.getCaption(
         PET_VISION_CAPTION_REVISION_V3,
         source.pet.slug,
       );
-      const freshCaption = readFreshCaption({
-        storedCaption,
-        expectedSourceHash: source.captionSourceHash,
-        captionRevision: PET_VISION_CAPTION_REVISION_V3,
-        assetId: source.assetId,
-        spritesheetSha256: source.extracted.spritesheetSha256,
-      });
-      if (
-        !freshCaption ||
-        !evaluatePetVisionV3Canary(
-          source.pet.slug,
-          freshCaption.caption,
-        )?.passed
-      ) {
-        return false;
-      }
-      const visualSourceHash = createPetVisualEmbeddingSourceHash({
-        visualRevision: PET_VISUAL_MODEL_REVISION_V3,
-        captionRevision: PET_VISION_CAPTION_REVISION_V3,
-        captionSourceHash: source.captionSourceHash,
-        captionText: freshCaption.captionText,
-      });
-      const metadata = await input.getEmbeddingMetadata(
+    } catch {
+      throw new PetVisionBackfillError("persistence_error");
+    }
+    const freshCaption = readFreshCaption({
+      storedCaption,
+      expectedSourceHash: source.captionSourceHash,
+      captionRevision: PET_VISION_CAPTION_REVISION_V3,
+      assetId: source.assetId,
+      spritesheetSha256: source.extracted.spritesheetSha256,
+    });
+    if (
+      !freshCaption ||
+      !evaluatePetVisionV3Canary(
+        source.pet.slug,
+        freshCaption.caption,
+      )?.passed
+    ) {
+      return false;
+    }
+    const visualSourceHash = createPetVisualEmbeddingSourceHash({
+      visualRevision: PET_VISUAL_MODEL_REVISION_V3,
+      captionRevision: PET_VISION_CAPTION_REVISION_V3,
+      captionSourceHash: source.captionSourceHash,
+      captionText: freshCaption.captionText,
+    });
+    try {
+      metadata = await input.getEmbeddingMetadata(
         PET_VISUAL_MODEL_REVISION_V3,
         source.pet.slug,
       );
-      if (
-        metadata?.sourceHash !== visualSourceHash ||
-        metadata.dimensions !== input.config.dimensions
-      ) {
-        return false;
-      }
+    } catch {
+      throw new PetVisionBackfillError("persistence_error");
     }
-    return true;
+    if (
+      metadata?.sourceHash !== visualSourceHash ||
+      metadata.dimensions !== input.config.dimensions
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function listCurrentApprovedPets(input) {
+  try {
+    const pets = await input.listApprovedPets();
+    return pets.filter(
+      (candidate) =>
+        !candidate.status || candidate.status === "approved",
+    );
   } catch {
-    return false;
+    throw new PetVisionBackfillError("persistence_error");
   }
 }
 

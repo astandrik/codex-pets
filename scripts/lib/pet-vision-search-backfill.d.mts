@@ -92,10 +92,25 @@ export const PET_VISUAL_MODEL_REVISION_V2:
 export const PET_VISUAL_MODEL_REVISION_V3:
   "yandex-text-search-2026-07-pet-vision-v3";
 export const PET_VISION_SYSTEM_PROMPT: string;
+export const PET_VISION_SYSTEM_PROMPT_V1: string;
+export const PET_VISION_SYSTEM_PROMPT_V2: string;
+export const PET_VISION_SYSTEM_PROMPT_V3: string;
 export const PET_VISION_USER_PROMPT: string;
+export const PET_VISION_USER_PROMPT_V3: string;
 export const PET_VISION_RESPONSE_JSON_SCHEMA: Readonly<
   Record<string, unknown>
 >;
+export const PET_VISION_RESPONSE_JSON_SCHEMA_V1: Readonly<
+  Record<string, unknown>
+>;
+export const PET_VISION_RESPONSE_JSON_SCHEMA_V2: Readonly<
+  Record<string, unknown>
+>;
+export const PET_VISION_RESPONSE_JSON_SCHEMA_V3: Readonly<
+  Record<string, unknown>
+>;
+export const PET_VISION_ATTRIBUTE_SLOTS_V3:
+  VisionBackfillAttributeSlotV3[];
 export const PET_VISION_CAPTION_CONTRACTS: Record<
   VisionBackfillCaptionRevision,
   {
@@ -265,6 +280,14 @@ export function resolvePetVisionRevisionConfig(
   dimensions: number;
   captionContract: (typeof PET_VISION_CAPTION_CONTRACTS)[VisionBackfillCaptionRevision];
 };
+export function assertPetVisionBackfillInvocationPolicy(
+  options: VisionBackfillOptions,
+  config: {
+    captionRevision: string;
+    visualRevision: string;
+    dimensions: number;
+  },
+): void;
 export function evaluatePetVisionCanary(
   slug: string,
   captionText: string,
@@ -307,6 +330,11 @@ export function runPetVisionSearchBackfill(input: {
     status?: string;
     spritesheetUrl: string;
   }>;
+  listApprovedPets: () => Promise<Array<{
+    slug: string;
+    status?: string;
+    spritesheetUrl: string;
+  }>>;
   readSpritesheet: (assetId: string) => Promise<Buffer>;
   extractFrames: typeof extractPetVisionFrames;
   getCaption: (

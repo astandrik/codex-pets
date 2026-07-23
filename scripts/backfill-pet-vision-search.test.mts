@@ -1,3 +1,6 @@
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import {
@@ -27,11 +30,20 @@ import {
   PET_VISION_FRAME_POLICY as RUNTIME_FRAME_POLICY,
   extractPetVisionFrames as extractRuntimeFrames,
 } from "../src/lib/pets/search-vision-frames";
-import type {
-  VisionBackfillCaption,
-  VisionBackfillCaptionV1,
-  VisionBackfillCaptionV2,
-  VisionBackfillCaptionV3,
+import {
+  PET_VISION_ATTRIBUTE_SLOTS_V3 as DECLARED_ATTRIBUTE_SLOTS_V3,
+  PET_VISION_RESPONSE_JSON_SCHEMA_V1 as DECLARED_SCHEMA_V1,
+  PET_VISION_RESPONSE_JSON_SCHEMA_V2 as DECLARED_SCHEMA_V2,
+  PET_VISION_RESPONSE_JSON_SCHEMA_V3 as DECLARED_SCHEMA_V3,
+  PET_VISION_SYSTEM_PROMPT_V1 as DECLARED_SYSTEM_PROMPT_V1,
+  PET_VISION_SYSTEM_PROMPT_V2 as DECLARED_SYSTEM_PROMPT_V2,
+  PET_VISION_SYSTEM_PROMPT_V3 as DECLARED_SYSTEM_PROMPT_V3,
+  PET_VISION_USER_PROMPT_V3 as DECLARED_USER_PROMPT_V3,
+  type VisionBackfillAttributeSlotV3,
+  type VisionBackfillCaption,
+  type VisionBackfillCaptionV1,
+  type VisionBackfillCaptionV2,
+  type VisionBackfillCaptionV3,
 } from "./lib/pet-vision-search-backfill.mjs";
 
 const {
@@ -53,6 +65,7 @@ const {
   resolvePetVisionRevisionConfig,
   runPetVisionSearchBackfill,
 } = await import("./lib/pet-vision-search-backfill.mjs");
+const visionBackfillCli = await import("./backfill-pet-vision-search.mjs");
 
 const visualConfig = {
   captionRevision: PET_VISION_CAPTION_REVISION,
@@ -236,6 +249,8 @@ const frames = PET_VISION_FRAME_POLICY.frames.map(
 );
 
 function dependencies(overrides: Record<string, unknown> = {}) {
+  const approvedPets =
+    (overrides.pets as Array<typeof pet> | undefined) ?? [pet];
   return {
     options: {
       mode: "apply" as const,
@@ -244,7 +259,8 @@ function dependencies(overrides: Record<string, unknown> = {}) {
       canaries: false,
     },
     config: visualConfig,
-    pets: [pet],
+    pets: approvedPets,
+    listApprovedPets: vi.fn(async () => approvedPets),
     readSpritesheet: vi.fn(async () => Buffer.from("atlas")),
     extractFrames: vi.fn(async () => ({
       spriteVersion: 1,
@@ -326,6 +342,8 @@ function storedV3Caption(
 
 function v3Dependencies(overrides: Record<string, unknown> = {}) {
   const captions = v3CanaryPets.map(({ slug }) => v3Captions[slug]);
+  const approvedPets =
+    (overrides.pets as Array<typeof pet> | undefined) ?? v3CanaryPets;
   return dependencies({
     options: {
       mode: "apply" as const,
@@ -335,6 +353,7 @@ function v3Dependencies(overrides: Record<string, unknown> = {}) {
     },
     config: v3VisualConfig,
     pets: v3CanaryPets,
+    listApprovedPets: vi.fn(async () => approvedPets),
     createCaption: vi.fn(async () => captions.shift() ?? v3BaseCaption),
     ...overrides,
   });
@@ -383,6 +402,18 @@ describe("pet vision search backfill", () => {
         | VisionBackfillCaptionV2
         | VisionBackfillCaptionV3
       >();
+    expectTypeOf(DECLARED_SYSTEM_PROMPT_V1).toEqualTypeOf<string>();
+    expectTypeOf(DECLARED_SYSTEM_PROMPT_V2).toEqualTypeOf<string>();
+    expectTypeOf(DECLARED_SYSTEM_PROMPT_V3).toEqualTypeOf<string>();
+    expectTypeOf(DECLARED_USER_PROMPT_V3).toEqualTypeOf<string>();
+    expectTypeOf(DECLARED_SCHEMA_V1)
+      .toEqualTypeOf<Readonly<Record<string, unknown>>>();
+    expectTypeOf(DECLARED_SCHEMA_V2)
+      .toEqualTypeOf<Readonly<Record<string, unknown>>>();
+    expectTypeOf(DECLARED_SCHEMA_V3)
+      .toEqualTypeOf<Readonly<Record<string, unknown>>>();
+    expectTypeOf(DECLARED_ATTRIBUTE_SLOTS_V3)
+      .toEqualTypeOf<VisionBackfillAttributeSlotV3[]>();
   });
 
   it("keeps the frozen v3 contract, canaries, and evaluator in runtime parity", () => {
@@ -407,6 +438,108 @@ describe("pet vision search backfill", () => {
         PET_VISUAL_MODEL_REVISION_V3,
       ).captionContract.maxTokens,
     ).toBe(1200);
+    expect(DECLARED_SYSTEM_PROMPT_V1).toBe(
+      PET_VISION_CAPTION_CONTRACTS[PET_VISION_CAPTION_REVISION]
+        .systemPrompt,
+    );
+    expect(DECLARED_SYSTEM_PROMPT_V2).toBe(
+      PET_VISION_CAPTION_CONTRACTS[PET_VISION_CAPTION_REVISION_V2]
+        .systemPrompt,
+    );
+    expect(DECLARED_SYSTEM_PROMPT_V3).toBe(
+      PET_VISION_CAPTION_CONTRACTS[PET_VISION_CAPTION_REVISION_V3]
+        .systemPrompt,
+    );
+    expect(DECLARED_USER_PROMPT_V3).toBe(
+      PET_VISION_CAPTION_CONTRACTS[PET_VISION_CAPTION_REVISION_V3]
+        .userPrompt,
+    );
+    expect(DECLARED_SCHEMA_V1).toBe(
+      PET_VISION_CAPTION_CONTRACTS[PET_VISION_CAPTION_REVISION]
+        .responseJsonSchema,
+    );
+    expect(DECLARED_SCHEMA_V2).toBe(
+      PET_VISION_CAPTION_CONTRACTS[PET_VISION_CAPTION_REVISION_V2]
+        .responseJsonSchema,
+    );
+    expect(DECLARED_SCHEMA_V3).toBe(
+      PET_VISION_CAPTION_CONTRACTS[PET_VISION_CAPTION_REVISION_V3]
+        .responseJsonSchema,
+    );
+    expect(DECLARED_ATTRIBUTE_SLOTS_V3).toEqual([
+      "hair_and_headwear",
+      "face_and_eye_coverings",
+      "clothing_and_armor",
+      "weapons_and_objects",
+      "visible_effects",
+      "other_distinguishing_features",
+    ]);
+  });
+
+  it("preflights bare v3 apply without credentials or YDB configuration", () => {
+    expect(() =>
+      visionBackfillCli.preflightPetVisionBackfillInvocation(
+        parseVisionBackfillArgs(["--apply"]),
+        {
+          NODE_ENV: "test",
+          PET_SEARCH_VISION_CAPTION_REVISION:
+            PET_VISION_CAPTION_REVISION_V3,
+          PET_SEARCH_VISUAL_MODEL_REVISION:
+            PET_VISUAL_MODEL_REVISION_V3,
+        },
+      )
+    ).toThrow(
+      expect.objectContaining({ reason: "full_backfill_deferred" }),
+    );
+  });
+
+  it("runs the v3 bare-apply preflight before main requires credentials or YDB", async () => {
+    vi.stubEnv(
+      "PET_SEARCH_VISION_CAPTION_REVISION",
+      PET_VISION_CAPTION_REVISION_V3,
+    );
+    vi.stubEnv(
+      "PET_SEARCH_VISUAL_MODEL_REVISION",
+      PET_VISUAL_MODEL_REVISION_V3,
+    );
+    vi.stubEnv("YANDEX_AI_STUDIO_FOLDER_ID", "");
+    vi.stubEnv("YANDEX_AI_STUDIO_API_KEY_FILE", "");
+    vi.stubEnv("YDB_PETS_ENDPOINT", "");
+    vi.stubEnv("YDB_PETS_DATABASE", "");
+    try {
+      await expect(visionBackfillCli.main(["--apply"])).rejects.toMatchObject({
+        reason: "full_backfill_deferred",
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("reports the v3 bare-apply policy from the executable path first", () => {
+    const result = spawnSync(
+      process.execPath,
+      [
+        fileURLToPath(
+          new URL("./backfill-pet-vision-search.mjs", import.meta.url),
+        ),
+        "--apply",
+      ],
+      {
+        encoding: "utf8",
+        env: {
+          NODE_ENV: "test",
+          PET_SEARCH_VISION_CAPTION_REVISION:
+            PET_VISION_CAPTION_REVISION_V3,
+          PET_SEARCH_VISUAL_MODEL_REVISION:
+            PET_VISUAL_MODEL_REVISION_V3,
+        },
+      },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr.trim()).toBe(
+      "Vision backfill failed: full_backfill_deferred.",
+    );
   });
 
   it("keeps the frozen canary registry and evaluator in runtime parity", () => {
@@ -924,6 +1057,9 @@ describe("pet vision search backfill", () => {
     >();
     const events: string[] = [];
     let captionCall = 0;
+    const listApprovedPets = vi.fn(async () =>
+      v3CanaryPets.map((candidate) => ({ ...candidate })),
+    );
     const input = v3Dependencies({
       options: {
         mode: "apply" as const,
@@ -939,6 +1075,7 @@ describe("pet vision search backfill", () => {
         events.push("embedding-provider");
         return Array(256).fill(0.25);
       }),
+      listApprovedPets,
       getCaption: vi.fn(async (_revision: string, slug: string) =>
         captionRows.get(slug) ?? null,
       ),
@@ -975,6 +1112,8 @@ describe("pet vision search backfill", () => {
     expect(input.embedDocument).toHaveBeenCalledTimes(4);
     expect(input.upsertCaption).toHaveBeenCalledTimes(4);
     expect(input.upsertEmbedding).toHaveBeenCalledTimes(4);
+    expect(listApprovedPets).toHaveBeenCalledTimes(2);
+    expect(input.readSpritesheet).toHaveBeenCalledTimes(12);
     expect(input.getCaption.mock.calls.length).toBeGreaterThanOrEqual(4);
     expect(input.getEmbeddingMetadata.mock.calls.length).toBeGreaterThanOrEqual(
       4,
@@ -994,6 +1133,131 @@ describe("pet vision search backfill", () => {
     }
   });
 
+  it("rejects a current v3 canary source change before the first upsert", async () => {
+    const currentPets = v3CanaryPets.map((candidate, index) =>
+      index === 0
+        ? {
+            ...candidate,
+            spritesheetUrl:
+              "/api/assets/asset-fischl-current/spritesheet.webp",
+          }
+        : candidate,
+    );
+    const input = v3Dependencies({
+      options: {
+        mode: "apply" as const,
+        slug: null,
+        force: true,
+        canaries: true,
+      },
+      listApprovedPets: vi.fn(async () => currentPets),
+    });
+
+    await expect(runPetVisionSearchBackfill(input)).rejects.toMatchObject({
+      reason: "canary_failed",
+      canary: {
+        slug: "fischl-detailed",
+        passed: false,
+        checks: [{ id: "source_unchanged", passed: false }],
+      },
+    });
+    expect(input.listApprovedPets).toHaveBeenCalledOnce();
+    expect(input.upsertCaption).not.toHaveBeenCalled();
+    expect(input.upsertEmbedding).not.toHaveBeenCalled();
+    expect(JSON.stringify(input.log.mock.calls)).not.toContain(
+      "asset-fischl-current",
+    );
+    expect(input.log).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "summary" }),
+    );
+  });
+
+  it("keeps the durable gate closed after a partial v3 persistence failure", async () => {
+    const captionRows = new Map<string, ReturnType<typeof storedV3Caption>>();
+    const vectorRows = new Map<
+      string,
+      { sourceHash: string; dimensions: number }
+    >();
+    const events: string[] = [];
+    let captionCall = 0;
+    const canaryBatch = v3Dependencies({
+      options: {
+        mode: "apply" as const,
+        slug: null,
+        force: true,
+        canaries: true,
+      },
+      createCaption: vi.fn(async () =>
+        v3Captions[v3CanaryPets[captionCall++].slug]
+      ),
+      getCaption: vi.fn(async (_revision: string, slug: string) =>
+        captionRows.get(slug) ?? null,
+      ),
+      getEmbeddingMetadata: vi.fn(async (_revision: string, slug: string) =>
+        vectorRows.get(slug) ?? null,
+      ),
+      upsertCaption: vi.fn(async (row) => {
+        events.push(`caption:${row.slug}`);
+        captionRows.set(row.slug, row);
+      }),
+      upsertEmbedding: vi.fn(async (row) => {
+        events.push(`vector:${row.slug}`);
+        if (row.slug === "vi") {
+          throw new Error("private persistence detail");
+        }
+        vectorRows.set(row.slug, {
+          sourceHash: row.sourceHash,
+          dimensions: row.dimensions,
+        });
+      }),
+    });
+
+    await expect(runPetVisionSearchBackfill(canaryBatch)).rejects.toMatchObject({
+      reason: "persistence_error",
+    });
+    expect(events).toEqual([
+      "caption:fischl-detailed",
+      "vector:fischl-detailed",
+      "caption:2b-2",
+      "vector:2b-2",
+      "caption:master-of-terra",
+      "vector:master-of-terra",
+      "caption:vi",
+      "vector:vi",
+    ]);
+    expect(captionRows.size).toBe(4);
+    expect(vectorRows.size).toBe(3);
+    expect(canaryBatch.log).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "summary" }),
+    );
+
+    const currentPets = [...v3CanaryPets, pet];
+    const targetApply = v3Dependencies({
+      options: {
+        mode: "apply" as const,
+        slug: pet.slug,
+        force: true,
+        canaries: false,
+      },
+      pets: currentPets,
+      listApprovedPets: vi.fn(async () => currentPets),
+      getCaption: vi.fn(async (_revision: string, slug: string) =>
+        captionRows.get(slug) ?? null,
+      ),
+      getEmbeddingMetadata: vi.fn(async (_revision: string, slug: string) =>
+        vectorRows.get(slug) ?? null,
+      ),
+    });
+
+    await expect(runPetVisionSearchBackfill(targetApply)).rejects.toMatchObject({
+      reason: "canary_failed",
+    });
+    expect(targetApply.createCaption).not.toHaveBeenCalled();
+    expect(targetApply.embedDocument).not.toHaveBeenCalled();
+    expect(targetApply.upsertCaption).not.toHaveBeenCalled();
+    expect(targetApply.upsertEmbedding).not.toHaveBeenCalled();
+  });
+
   it("blocks ordinary v3 apply until the durable gate is open", async () => {
     const closed = v3Dependencies({
       options: {
@@ -1003,6 +1267,7 @@ describe("pet vision search backfill", () => {
         canaries: false,
       },
       pets: [...v3CanaryPets, pet],
+      listApprovedPets: vi.fn(async () => [...v3CanaryPets, pet]),
       getCaption: vi.fn(async () => null),
     });
     await expect(runPetVisionSearchBackfill(closed)).rejects.toMatchObject({
@@ -1048,6 +1313,7 @@ describe("pet vision search backfill", () => {
         canaries: false,
       },
       pets: [...v3CanaryPets, pet],
+      listApprovedPets: vi.fn(async () => [...v3CanaryPets, pet]),
       getCaption: vi.fn(async (_revision: string, slug: string) =>
         rows.get(slug) ?? null,
       ),
@@ -1077,12 +1343,7 @@ describe("pet vision search backfill", () => {
     expect(open.upsertEmbedding).not.toHaveBeenCalled();
   });
 
-  it("keeps v3 canary mutation exclusive to --canaries after the gate opens", async () => {
-    const rows = new Map(
-      v3CanaryPets.map(
-        ({ slug }) => [slug, storedV3Caption(slug)] as const,
-      ),
-    );
+  it("rejects bare v3 apply before durable reads, providers, or writes", async () => {
     const input = v3Dependencies({
       options: {
         mode: "apply" as const,
@@ -1091,39 +1352,18 @@ describe("pet vision search backfill", () => {
         canaries: false,
       },
       pets: [...v3CanaryPets, pet],
-      createCaption: vi.fn(async () => v3BaseCaption),
-      getCaption: vi.fn(async (_revision: string, slug: string) =>
-        rows.get(slug) ?? null,
-      ),
-      getEmbeddingMetadata: vi.fn(async (_revision: string, slug: string) => {
-        const row = rows.get(slug);
-        return row
-          ? {
-              sourceHash: createPetVisualEmbeddingSourceHash({
-                visualRevision: PET_VISUAL_MODEL_REVISION_V3,
-                captionRevision: PET_VISION_CAPTION_REVISION_V3,
-                captionSourceHash: row.sourceHash,
-                captionText: row.captionText,
-              }),
-              dimensions: 256,
-            }
-          : null;
-      }),
     });
 
-    await expect(runPetVisionSearchBackfill(input)).resolves.toMatchObject({
-      scanned: 1,
-      captionAndVector: 1,
+    await expect(runPetVisionSearchBackfill(input)).rejects.toMatchObject({
+      reason: "full_backfill_deferred",
     });
-    expect(input.createCaption).toHaveBeenCalledOnce();
-    expect(input.embedDocument).toHaveBeenCalledOnce();
-    expect(input.upsertCaption).toHaveBeenCalledOnce();
-    expect(input.upsertEmbedding).toHaveBeenCalledOnce();
-    expect(input.upsertCaption).toHaveBeenCalledWith(
-      expect.objectContaining({ slug: pet.slug }),
-    );
-    expect(input.upsertEmbedding).toHaveBeenCalledWith(
-      expect.objectContaining({ slug: pet.slug }),
-    );
+    expect(input.listApprovedPets).not.toHaveBeenCalled();
+    expect(input.readSpritesheet).not.toHaveBeenCalled();
+    expect(input.getCaption).not.toHaveBeenCalled();
+    expect(input.getEmbeddingMetadata).not.toHaveBeenCalled();
+    expect(input.createCaption).not.toHaveBeenCalled();
+    expect(input.embedDocument).not.toHaveBeenCalled();
+    expect(input.upsertCaption).not.toHaveBeenCalled();
+    expect(input.upsertEmbedding).not.toHaveBeenCalled();
   });
 });
