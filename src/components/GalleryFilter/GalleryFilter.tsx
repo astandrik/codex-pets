@@ -69,6 +69,10 @@ export function GalleryFilter({
   });
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastNavigatedHref = useRef(appliedHref);
+  // How lastNavigatedHref was reached: "push" means the current URL is its
+  // own history entry (mounted on, pushed, or arrived at via back/forward);
+  // "replace" means it shares an entry with the previous state.
+  const lastNavigatedMode = useRef<"push" | "replace">("push");
 
   function cancelScheduledSearch() {
     if (debounceTimer.current !== null) {
@@ -86,6 +90,7 @@ export function GalleryFilter({
   useEffect(() => {
     if (appliedHref !== lastNavigatedHref.current) {
       lastNavigatedHref.current = appliedHref;
+      lastNavigatedMode.current = "push";
       cancelScheduledSearch();
       setQuery(defaultQuery);
       setKind(defaultKind);
@@ -108,6 +113,7 @@ export function GalleryFilter({
   function navigate(targetHref: string, mode: "push" | "replace") {
     cancelScheduledSearch();
     lastNavigatedHref.current = targetHref;
+    lastNavigatedMode.current = mode;
     startTransition(() => {
       if (mode === "push") {
         router.push(targetHref, { scroll: false });
@@ -140,15 +146,24 @@ export function GalleryFilter({
     navigate(targetHref, "replace");
   }
 
-  function submitCurrentFilters(mode: "push" | "replace") {
+  // Enter (or form submit) means "commit this search to history". Skip only
+  // when the current URL already is its own history entry for these filters;
+  // after a debounced replace the entry belongs to the previous state, so
+  // Enter still pushes a new one.
+  function submitCurrentFilters() {
     const targetHref = buildGalleryHref({ query, kind, tags });
-    if (targetHref === lastNavigatedHref.current) return;
-    navigate(targetHref, mode);
+    if (
+      targetHref === lastNavigatedHref.current &&
+      lastNavigatedMode.current === "push"
+    ) {
+      return;
+    }
+    navigate(targetHref, "push");
   }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    submitCurrentFilters("push");
+    submitCurrentFilters();
   }
 
   // The form has no submit button, so implicit Enter submission is not
@@ -156,7 +171,7 @@ export function GalleryFilter({
   function onQueryKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
     event.preventDefault();
-    submitCurrentFilters("push");
+    submitCurrentFilters();
   }
 
   function onClear() {

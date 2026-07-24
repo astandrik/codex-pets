@@ -249,4 +249,22 @@ describe("GalleryFilter", () => {
     expect(router.push).not.toHaveBeenCalled();
     expect(rendered.input.value).toBe("dog");
   });
+
+  it("pushes a history entry when Enter follows a debounced replace", () => {
+    const { input } = renderFilter();
+
+    setInputValue(input, "cat");
+    advancePastDebounce();
+    expect(router.replace).toHaveBeenCalledWith("/?q=cat", { scroll: false });
+
+    // The replace shared the previous history entry, so Enter still commits
+    // the search as its own entry.
+    pressEnter(input);
+    expect(router.push).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith("/?q=cat", { scroll: false });
+
+    // A repeated Enter is a no-op: the current URL is already its own entry.
+    pressEnter(input);
+    expect(router.push).toHaveBeenCalledTimes(1);
+  });
 });
