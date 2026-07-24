@@ -2,6 +2,7 @@
 
 import {
   FormEvent,
+  KeyboardEvent,
   useEffect,
   useRef,
   useState,
@@ -105,7 +106,7 @@ export function GalleryFilter({
   function scheduleSearch(nextQuery: string) {
     cancelScheduledSearch();
     const targetHref = buildGalleryHref({ query: nextQuery, kind, tags });
-    if (targetHref === appliedHref) return;
+    if (targetHref === lastNavigatedHref.current) return;
     debounceTimer.current = setTimeout(() => {
       debounceTimer.current = null;
       navigate(targetHref, "replace");
@@ -121,22 +122,34 @@ export function GalleryFilter({
     const nextKind = parseGalleryKind(values[0]);
     setKind(nextKind);
     const targetHref = buildGalleryHref({ query, kind: nextKind, tags });
-    if (targetHref === appliedHref) return;
+    if (targetHref === lastNavigatedHref.current) return;
     navigate(targetHref, "replace");
+  }
+
+  function submitCurrentFilters(mode: "push" | "replace") {
+    const targetHref = buildGalleryHref({ query, kind, tags });
+    if (targetHref === lastNavigatedHref.current) return;
+    navigate(targetHref, mode);
   }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const targetHref = buildGalleryHref({ query, kind, tags });
-    if (targetHref === appliedHref) return;
-    navigate(targetHref, "push");
+    submitCurrentFilters("push");
+  }
+
+  // The form has no submit button, so implicit Enter submission is not
+  // guaranteed; handle it explicitly. IME composition Enter must not submit.
+  function onQueryKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    submitCurrentFilters("push");
   }
 
   function onClear() {
     setQuery("");
     setKind("all");
     setTags([]);
-    if (appliedHref === "/") {
+    if (lastNavigatedHref.current === "/") {
       cancelScheduledSearch();
       return;
     }
@@ -168,6 +181,7 @@ export function GalleryFilter({
             <TextInput
               value={query}
               onUpdate={onQueryUpdate}
+              onKeyDown={onQueryKeyDown}
               placeholder="Search by name, tag, or vibe"
               hasClear
               size="l"
