@@ -79,7 +79,7 @@ export function WebMCPRegistrar() {
   return null;
 }
 
-function createSiteTools(): WebMCPTool[] {
+export function createSiteTools(): WebMCPTool[] {
   return [
     {
       name: "search_codex_pets",

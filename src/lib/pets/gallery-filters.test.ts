@@ -4,6 +4,7 @@ import {
   buildGalleryHref,
   hasGalleryFilters,
   matchesGalleryFilters,
+  normalizeGalleryQuery,
   normalizeGalleryTags,
   parseGalleryFilters,
   pickSuggestedGalleryTags,
@@ -70,6 +71,12 @@ describe("gallery filters", () => {
       "iota",
       "theta",
     ]);
+  });
+
+  it("normalizes Unicode and bounds public search queries", () => {
+    expect(normalizeGalleryQuery(`  ＳＥＸＹ   ${"x".repeat(200)}`)).toBe(
+      `sexy ${"x".repeat(115)}`,
+    );
   });
 
   it("serializes canonical gallery URLs", () => {

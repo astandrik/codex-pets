@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const repositoryMocks = vi.hoisted(() => ({
-  listApprovedPets: vi.fn(),
   getApprovedPetBySlug: vi.fn(),
+}));
+
+const searchMocks = vi.hoisted(() => ({
+  searchApprovedPets: vi.fn(),
 }));
 
 const metricsMocks = vi.hoisted(() => ({
@@ -10,8 +13,11 @@ const metricsMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/pets/repository", () => ({
-  listApprovedPets: repositoryMocks.listApprovedPets,
   getApprovedPetBySlug: repositoryMocks.getApprovedPetBySlug,
+}));
+
+vi.mock("@/lib/pets/search-runtime", () => ({
+  searchApprovedPets: searchMocks.searchApprovedPets,
 }));
 
 vi.mock("@/lib/metrics/yandex-measurement", () => ({
@@ -37,6 +43,17 @@ const approvedPet = {
   downloadCount: 7,
   installCount: 3,
   likeCount: 1,
+};
+
+const semanticPet = {
+  ...approvedPet,
+  id: "pet_2",
+  slug: "velvet-luma",
+  displayName: "Velvet Luma",
+  description: "A gothic character with no literal query token.",
+  captionJson: '{"internal":true}',
+  captionText: "internal visual caption",
+  sourceHash: "internal-source-hash",
 };
 
 describe("POST /mcp", () => {
@@ -177,7 +194,16 @@ describe("POST /mcp", () => {
   });
 
   it("calls search_pets", async () => {
-    repositoryMocks.listApprovedPets.mockResolvedValueOnce([approvedPet]);
+    searchMocks.searchApprovedPets.mockResolvedValueOnce({
+      pets: [semanticPet, approvedPet],
+      total: 2,
+      mode: "hybrid",
+      fallbackReason: null,
+      visualMode: "hybrid",
+      visualFallbackReason: null,
+      visualCandidateCount: 1,
+      durationMs: 12,
+    });
 
     const body = await callMcp({
       id: 3,
@@ -185,25 +211,37 @@ describe("POST /mcp", () => {
       params: {
         name: "search_pets",
         arguments: {
-          query: "space",
+          query: "sexy",
           tags: ["friendly"],
           limit: 5,
         },
       },
     });
 
-    expect(body.result.structuredContent.total).toBe(1);
-    expect(body.result.structuredContent.pets[0].slug).toBe("orbit-otter");
+    expect(body.result.structuredContent.total).toBe(2);
+    expect(
+      body.result.structuredContent.pets.map((pet: { slug: string }) => pet.slug),
+    ).toEqual(["velvet-luma", "orbit-otter"]);
     expect(JSON.stringify(body.result.structuredContent)).not.toContain(
       "private@example.com",
     );
+    expect(JSON.stringify(body.result.structuredContent)).not.toMatch(
+      /captionJson|captionText|sourceHash|visualMode|visualFallbackReason/,
+    );
     expect(body.result.content[0].text).toContain('"orbit-otter"');
+    expect(searchMocks.searchApprovedPets).toHaveBeenCalledWith({
+      q: "sexy",
+      kind: "all",
+      tags: ["friendly"],
+      author: undefined,
+      limit: 5,
+    });
     expect(metricsMocks.trackMcpToolCall).toHaveBeenCalledWith({
       tool: "search_pets",
       status: "success",
       kind: "all",
       hasQuery: true,
-      resultCount: 1,
+      resultCount: 2,
       limit: 5,
     });
   });

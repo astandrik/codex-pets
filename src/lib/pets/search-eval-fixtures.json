@@ -1,0 +1,156 @@
+[
+  {
+    "id": "exact-name-zero-two",
+    "split": "calibration",
+    "category": "exact",
+    "query": "Zero Two",
+    "relevantSlugs": ["zero-two"],
+    "visualSubset": false,
+    "visualAspects": [],
+    "labelsFrozenBy": "deterministic-exact-match",
+    "reviewedBy": "deterministic-exact-match"
+  },
+  {
+    "id": "exact-slug-velvet-luma",
+    "split": "holdout",
+    "category": "exact",
+    "query": "velvet-luma",
+    "relevantSlugs": ["velvet-luma"],
+    "visualSubset": false,
+    "visualAspects": [],
+    "labelsFrozenBy": "deterministic-exact-match",
+    "reviewedBy": "deterministic-exact-match"
+  },
+  {
+    "id": "multi-token-gothic-anime",
+    "split": "calibration",
+    "category": "multi-token",
+    "query": "gothic anime",
+    "relevantSlugs": ["velvet-luma", "nightshade-2", "fischl-detailed"],
+    "visualSubset": true,
+    "visualAspects": ["style"],
+    "labelsFrozenBy": "pre-vision-human-label-freeze-2026-07-22",
+    "reviewedBy": null
+  },
+  {
+    "id": "typo-gigachad",
+    "split": "calibration",
+    "category": "typo",
+    "query": "gigachd",
+    "relevantSlugs": ["gigachad-2"],
+    "visualSubset": false,
+    "visualAspects": [],
+    "labelsFrozenBy": "deterministic-typo-fixture",
+    "reviewedBy": "deterministic-typo-fixture"
+  },
+  {
+    "id": "style-cute",
+    "split": "calibration",
+    "category": "style",
+    "query": "cute",
+    "relevantSlugs": ["cheburashka", "crawlstack-polished", "foggy-hedgehog"],
+    "visualSubset": true,
+    "visualAspects": ["mood", "style"],
+    "labelsFrozenBy": "pre-vision-human-label-freeze-2026-07-22",
+    "reviewedBy": null
+  },
+  {
+    "id": "style-badass",
+    "split": "holdout",
+    "category": "style",
+    "query": "badass",
+    "relevantSlugs": ["vi", "jinx-2", "master-of-terra", "primaris"],
+    "visualSubset": true,
+    "visualAspects": ["mood", "style"],
+    "labelsFrozenBy": "pre-vision-human-label-freeze-2026-07-22",
+    "reviewedBy": null
+  },
+  {
+    "id": "style-sexy",
+    "split": "calibration",
+    "category": "style",
+    "query": "sexy",
+    "relevantSlugs": ["nozomi-2", "pink-catgirl", "2b-2", "lady-d-2"],
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "style"],
+    "labelsFrozenBy": "pre-vision-human-label-freeze-2026-07-22",
+    "reviewedBy": null
+  },
+  {
+    "id": "russian-green-giant",
+    "split": "calibration",
+    "category": "russian",
+    "query": "большой зелёный гигант",
+    "relevantSlugs": ["bolshoy-tyll"],
+    "visualSubset": true,
+    "visualAspects": ["appearance", "color"],
+    "labelsFrozenBy": "pre-vision-human-label-freeze-2026-07-22",
+    "reviewedBy": null
+  },
+  {
+    "id": "clothing-black-gothic-dress",
+    "split": "calibration",
+    "category": "style",
+    "query": "black gothic dress and blindfold",
+    "relevantSlugs": ["2b-2"],
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "style"],
+    "labelsFrozenBy": "pre-vision-human-label-freeze-2026-07-22",
+    "reviewedBy": null
+  },
+  {
+    "id": "accessory-blonde-eyepatch",
+    "split": "holdout",
+    "category": "style",
+    "query": "blonde woman with eyepatch",
+    "relevantSlugs": ["fischl-detailed"],
+    "visualSubset": true,
+    "visualAspects": ["appearance", "accessory"],
+    "labelsFrozenBy": "pre-vision-human-label-freeze-2026-07-22",
+    "reviewedBy": null
+  },
+  {
+    "id": "color-pink-hair-red-bodysuit",
+    "split": "holdout",
+    "category": "style",
+    "query": "pink hair red bodysuit",
+    "relevantSlugs": ["zero-two-2"],
+    "visualSubset": true,
+    "visualAspects": ["appearance", "clothing", "color"],
+    "labelsFrozenBy": "pre-vision-human-label-freeze-2026-07-22",
+    "reviewedBy": null
+  },
+  {
+    "id": "mood-friendly-focused-wolf",
+    "split": "holdout",
+    "category": "style",
+    "query": "friendly focused wolf",
+    "relevantSlugs": ["luna"],
+    "visualSubset": true,
+    "visualAspects": ["appearance", "mood"],
+    "labelsFrozenBy": "pre-vision-human-label-freeze-2026-07-22",
+    "reviewedBy": null
+  },
+  {
+    "id": "negative-quantum-banana",
+    "split": "calibration",
+    "category": "negative",
+    "query": "quantum banana compiler",
+    "relevantSlugs": [],
+    "visualSubset": false,
+    "visualAspects": [],
+    "labelsFrozenBy": "deterministic-negative-fixture",
+    "reviewedBy": "deterministic-negative-fixture"
+  },
+  {
+    "id": "negative-tax-invoice",
+    "split": "holdout",
+    "category": "negative",
+    "query": "tax invoice spreadsheet",
+    "relevantSlugs": [],
+    "visualSubset": false,
+    "visualAspects": [],
+    "labelsFrozenBy": "deterministic-negative-fixture",
+    "reviewedBy": "deterministic-negative-fixture"
+  }
+]

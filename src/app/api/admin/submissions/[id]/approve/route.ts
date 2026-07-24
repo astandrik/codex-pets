@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
 import { moderatePet } from "@/lib/pets/repository";
+import { refreshApprovedPetSearchEmbedding } from "@/lib/pets/search-runtime";
+import { refreshApprovedPetVisionSearchBestEffort } from "@/lib/pets/search-vision-runtime";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 export const runtime = "nodejs";
@@ -28,6 +30,17 @@ export async function POST(
   }
 
   revalidateSitemapCache();
+
+  try {
+    await refreshApprovedPetSearchEmbedding(pet);
+  } catch {
+    console.warn("[codex-pets][pet-search-embedding]", {
+      operation: "refresh",
+      status: "failed",
+    });
+  }
+
+  void refreshApprovedPetVisionSearchBestEffort(pet).catch(() => undefined);
 
   const indexNow = await notifyIndexNowOfApprovedPet(pet.slug);
   if (indexNow.status === "submitted") {

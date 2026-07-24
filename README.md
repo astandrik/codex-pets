@@ -108,6 +108,19 @@ Optional server-side MCP metrics also need `YANDEX_METRIKA_MP_TOKEN` and
 Optional IndexNow notifications are enabled by `INDEXNOW_KEY`; the app serves
 `/<key>.txt` and pings IndexNow after an admin approves a pet.
 
+Optional semantic search uses Yandex AI Studio text embeddings and exact cosine
+ranking in YDB. Query mode defaults to `PET_SEARCH_MODE=lexical`; `shadow`
+computes semantic ranking without changing public order, and `hybrid` combines
+lexical and text-semantic ranks. An independent
+`PET_SEARCH_VISUAL_MODE=off|shadow|hybrid` adds an offline visual-caption rank
+from four fixed sprite frames. Captions and their provenance remain internal;
+public JSON, TOON, homepage, MCP, and WebMCP shapes do not change. Configure
+`YANDEX_AI_STUDIO_FOLDER_ID`,
+`YANDEX_AI_STUDIO_API_KEY_FILE`, and
+`PET_SEARCH_MODEL_REVISION=yandex-text-search-2026-07`. The API key is accepted
+only through the secret-file setting. Provider failures and timeouts fall back
+to lexical results; visual-only failures preserve the text-hybrid order.
+
 To run without YDB on generated sample data:
 
 ```bash
@@ -249,6 +262,39 @@ Apply migrations to an existing database:
 ```bash
 npm run db:migrate
 ```
+
+Preview and apply the approved-pet text and visual backfills after the
+migrations:
+
+```bash
+npm run search:backfill -- --dry-run
+npm run search:backfill -- --apply
+npm run search:backfill -- --apply --slug orbit-otter --force
+npm run search:backfill-vision -- --dry-run
+npm run search:backfill-vision -- --apply --slug orbit-otter
+npm run search:backfill-vision -- --apply
+npm run search:eval:calibrate
+npm run search:eval:holdout
+```
+
+Both backfills require an explicit `--dry-run` or `--apply`; visual `--force`
+is valid only with `--apply`. They never print document text, captions, images,
+embeddings, prompts, or secrets. Dry-run still reads and hashes spritesheets
+but never calls either AI provider and never writes YDB. A safe rollout is
+base `lexical` and visual `off` → additive migrations → backfills → visual
+`shadow` → calibration → untouched holdout → human review of the combined
+`sexy` top five → both modes `hybrid`.
+
+The first rollback is `PET_SEARCH_VISUAL_MODE=off`; use
+`PET_SEARCH_MODE=lexical` to disable the text-semantic contour too. The additive
+caption and embeddings tables may remain.
+The checked-in eval queries live in
+`src/lib/pets/search-eval-fixtures.json` with frozen `calibration` and
+`holdout` splits. Calibration evaluates all observed visual scores against
+weights `0.25`, `0.50`, `0.75`, and `1.00`; the holdout command requires a
+committed revision-bound profile and must not be used for tuning. Live eval
+requires configured YDB and AI Studio access and prints aggregate results plus
+the public slugs in the final `sexy` review list.
 
 Seed local development data after the schema exists:
 

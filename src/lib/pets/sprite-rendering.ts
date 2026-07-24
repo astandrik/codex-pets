@@ -1,5 +1,6 @@
 import sharp from "sharp";
 
+import { getPetAssetIdFromSpritesheetUrl } from "@/lib/pets/asset-urls";
 import { readPetSpritesheetAsset } from "@/lib/pets/assets-repository";
 import { PET_SHEET, PET_STATES, type PublicPet } from "@/lib/pets/types";
 
@@ -28,7 +29,7 @@ export async function renderAnimatedSpriteGif(input: {
   state: PetAnimationState;
   scale: number;
 }): Promise<Buffer> {
-  const assetId = assetIdFromSpritesheetUrl(input.pet.spritesheetUrl);
+  const assetId = getPetAssetIdFromSpritesheetUrl(input.pet.spritesheetUrl);
   if (!assetId) {
     throw new Error("Unsupported spritesheet URL.");
   }
@@ -114,24 +115,4 @@ function renderSpriteFrame(input: {
     })
     .png()
     .toBuffer();
-}
-
-function assetIdFromSpritesheetUrl(value: string): string | null {
-  const pathname = getPathname(value);
-  const match = pathname.match(
-    /\/api\/assets\/([^/]+)\/spritesheet\.(?:webp|png)$/,
-  );
-  return match ? decodeURIComponent(match[1]) : null;
-}
-
-function getPathname(value: string): string {
-  if (!value.startsWith("http://") && !value.startsWith("https://")) {
-    return value;
-  }
-
-  try {
-    return new URL(value).pathname;
-  } catch {
-    return value;
-  }
 }

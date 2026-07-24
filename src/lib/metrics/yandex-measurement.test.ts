@@ -128,6 +128,41 @@ describe("trackMcpToolCall", () => {
     await expect(promise).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("sends only bucketed aggregate pet-search diagnostics", async () => {
+    const fetchMock = vi.fn<typeof fetch>(
+      async () => new Response(null, { status: 204 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    stubConfiguredMeasurementEnv();
+    const { trackPetSearch } = await import(
+      "@/lib/metrics/yandex-measurement"
+    );
+
+    await trackPetSearch({
+      mode: "lexical_fallback",
+      fallbackReason: "timeout",
+      visualMode: "hybrid",
+      visualFallbackReason: "visual_vector_search_error",
+      durationMs: 843,
+      resultCount: 7,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const event = collectBody(fetchMock, 0);
+    expect(event.get("ea")).toBe("pet_search");
+    expect(JSON.parse(event.get("params") ?? "{}")).toEqual({
+      petSearch: {
+        mode: "lexical_fallback",
+        durationBucket: "500_999_ms",
+        resultCountBucket: "6_20",
+        fallbackReason: "timeout",
+        visualMode: "hybrid",
+        visualFallbackReason: "visual_vector_search_error",
+      },
+    });
+    expect(event.get("params")).not.toMatch(/query|sexy|slug|author/i);
+  });
 });
 
 function stubConfiguredMeasurementEnv(): void {

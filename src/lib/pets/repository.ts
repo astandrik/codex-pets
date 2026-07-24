@@ -18,6 +18,7 @@ import {
   matchesGalleryFilters,
   normalizeGalleryFilters,
 } from "@/lib/pets/gallery-filters";
+import { deletePetSearchIndexBestEffort } from "@/lib/pets/search-maintenance";
 import {
   createMockPetRecord,
   getMockPetById,
@@ -88,8 +89,37 @@ export type PetFilters = {
   tags?: string[];
 };
 
+export function approvedPetsCatalogQuery(): string {
+  return approvedPetsQuery("");
+}
+
+export function approvedPetsNewestQuery(): string {
+  return approvedPetsQuery("LIMIT 200");
+}
+
+function approvedPetsQuery(limitClause: "" | "LIMIT 200"): string {
+  return `
+DECLARE $status AS Utf8;
+SELECT ${petColumns()}
+FROM ${TABLES.pets}
+WHERE status = $status
+ORDER BY created_at DESC${limitClause ? `\n${limitClause}` : ""};
+  `;
+}
+
 export async function listApprovedPets(
   filters: PetFilters = {},
+): Promise<PublicPet[]> {
+  return listApprovedPetsWithQuery(filters, approvedPetsNewestQuery());
+}
+
+export async function listApprovedPetsForSearch(): Promise<PublicPet[]> {
+  return listApprovedPetsWithQuery({}, approvedPetsCatalogQuery());
+}
+
+async function listApprovedPetsWithQuery(
+  filters: PetFilters,
+  query: string,
 ): Promise<PublicPet[]> {
   if (isMockPetsDataSource()) {
     return listMockPets(filters, "approved");
@@ -99,14 +129,7 @@ export async function listApprovedPets(
 
   const result = await withSession((session) =>
     session.executeQuery(
-      `
-DECLARE $status AS Utf8;
-SELECT ${petColumns()}
-FROM ${TABLES.pets}
-WHERE status = $status
-ORDER BY created_at DESC
-LIMIT 200;
-      `,
+      query,
       { $status: TypedValues.utf8("approved") },
     ),
   );
@@ -428,6 +451,9 @@ export async function moderatePet(input: {
 }): Promise<PublicPet | null> {
   if (isMockPetsDataSource()) {
     const pet = moderateMockPet(input);
+    if (pet?.status === "rejected") {
+      await deletePetSearchIndexBestEffort(pet.slug);
+    }
     return pet
       ? toPublicPet(pet, pet.metrics, mockOwnerReference(pet))
       : null;
@@ -478,6 +504,10 @@ WHERE slug = $slug;
     reason,
   });
 
+  if (nextStatus === "rejected") {
+    await deletePetSearchIndexBestEffort(pet.slug);
+  }
+
   const updatedPet = {
     ...pet,
     status: nextStatus,
@@ -510,7 +540,12 @@ export async function softDeletePetById(input: {
   actorRole: "user" | "admin";
 }): Promise<boolean> {
   if (isMockPetsDataSource()) {
-    return softDeleteMockPetById(input);
+    const pet = getMockPetById(input.petId);
+    const deleted = softDeleteMockPetById(input);
+    if (deleted && pet) {
+      await deletePetSearchIndexBestEffort(pet.slug);
+    }
+    return deleted;
   }
 
   const pet = await getPetById(input.petId);
@@ -540,6 +575,8 @@ WHERE slug = $slug;
       },
     ),
   );
+
+  await deletePetSearchIndexBestEffort(pet.slug);
 
   return true;
 }

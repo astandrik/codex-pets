@@ -32,6 +32,26 @@ CREATE TABLE codex_pet_assets (
   PRIMARY KEY (asset_id)
 );
 
+CREATE TABLE codex_pet_search_embeddings (
+  model_revision Utf8 NOT NULL,
+  pet_slug Utf8 NOT NULL,
+  source_hash Utf8 NOT NULL,
+  dimensions Uint32 NOT NULL,
+  embedding String NOT NULL,
+  updated_at Utf8 NOT NULL,
+  PRIMARY KEY (model_revision, pet_slug)
+);
+
+CREATE TABLE codex_pet_search_captions (
+  caption_revision Utf8 NOT NULL,
+  pet_slug Utf8 NOT NULL,
+  source_hash Utf8 NOT NULL,
+  caption_json Utf8 NOT NULL,
+  caption_text Utf8 NOT NULL,
+  updated_at Utf8 NOT NULL,
+  PRIMARY KEY (caption_revision, pet_slug)
+);
+
 CREATE TABLE codex_users (
   user_id Utf8 NOT NULL,
   email Utf8 NOT NULL,
