@@ -237,7 +237,6 @@ export function HomePage({
         ) : null}
 
         <GalleryFilter
-          key={`${query}:${kind}:${selectedTags.join(",")}`}
           defaultQuery={query}
           defaultKind={kind}
           defaultTags={selectedTags}
