@@ -69,10 +69,11 @@ export function GalleryFilter({
   });
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastNavigatedHref = useRef(appliedHref);
-  // How lastNavigatedHref was reached: "push" means the current URL is its
-  // own history entry (mounted on, pushed, or arrived at via back/forward);
-  // "replace" means it shares an entry with the previous state.
-  const lastNavigatedMode = useRef<"push" | "replace">("push");
+  // Whether the current history entry was created by auto-apply (typing or
+  // kind change). Auto entries are rewritten via replace; leaving a
+  // committed entry must preserve it, so the first auto-apply pushes and
+  // Back still returns to the pre-search state.
+  const currentEntryIsAuto = useRef(false);
 
   function cancelScheduledSearch() {
     if (debounceTimer.current !== null) {
@@ -90,7 +91,7 @@ export function GalleryFilter({
   useEffect(() => {
     if (appliedHref !== lastNavigatedHref.current) {
       lastNavigatedHref.current = appliedHref;
-      lastNavigatedMode.current = "push";
+      currentEntryIsAuto.current = false;
       cancelScheduledSearch();
       setQuery(defaultQuery);
       setKind(defaultKind);
@@ -110,10 +111,14 @@ export function GalleryFilter({
     };
   }, []);
 
-  function navigate(targetHref: string, mode: "push" | "replace") {
+  function navigate(
+    targetHref: string,
+    mode: "push" | "replace",
+    opts?: { auto?: boolean },
+  ) {
     cancelScheduledSearch();
     lastNavigatedHref.current = targetHref;
-    lastNavigatedMode.current = mode;
+    currentEntryIsAuto.current = opts?.auto ?? false;
     startTransition(() => {
       if (mode === "push") {
         router.push(targetHref, { scroll: false });
@@ -123,13 +128,22 @@ export function GalleryFilter({
     });
   }
 
+  // Auto-apply (typing, kind change) rewrites the current entry once the
+  // search session owns it, but the first auto-apply after a committed
+  // entry pushes so the pre-search state stays reachable via Back.
+  function navigateAuto(targetHref: string) {
+    navigate(targetHref, currentEntryIsAuto.current ? "replace" : "push", {
+      auto: true,
+    });
+  }
+
   function scheduleSearch(nextQuery: string) {
     cancelScheduledSearch();
     const targetHref = buildGalleryHref({ query: nextQuery, kind, tags });
     if (targetHref === lastNavigatedHref.current) return;
     debounceTimer.current = setTimeout(() => {
       debounceTimer.current = null;
-      navigate(targetHref, "replace");
+      navigateAuto(targetHref);
     }, SEARCH_DEBOUNCE_MS);
   }
 
@@ -143,21 +157,15 @@ export function GalleryFilter({
     setKind(nextKind);
     const targetHref = buildGalleryHref({ query, kind: nextKind, tags });
     if (targetHref === lastNavigatedHref.current) return;
-    navigate(targetHref, "replace");
+    navigateAuto(targetHref);
   }
 
-  // Enter (or form submit) means "commit this search to history". Skip only
-  // when the current URL already is its own history entry for these filters;
-  // after a debounced replace the entry belongs to the previous state, so
-  // Enter still pushes a new one.
+  // Enter (or form submit) means "commit this search to history". When the
+  // current URL already matches, the search entry already exists — the
+  // first auto-apply pushed it — so there is nothing left to commit.
   function submitCurrentFilters() {
     const targetHref = buildGalleryHref({ query, kind, tags });
-    if (
-      targetHref === lastNavigatedHref.current &&
-      lastNavigatedMode.current === "push"
-    ) {
-      return;
-    }
+    if (targetHref === lastNavigatedHref.current) return;
     navigate(targetHref, "push");
   }
 

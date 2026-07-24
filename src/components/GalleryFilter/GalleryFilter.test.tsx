@@ -130,17 +130,26 @@ describe("GalleryFilter", () => {
     document.body.innerHTML = "";
   });
 
-  it("applies the query automatically after the debounce via replace", () => {
+  it("pushes the first auto-applied search and replaces within the session", () => {
     const { input } = renderFilter();
 
     setInputValue(input, "cat");
     expect(router.replace).not.toHaveBeenCalled();
     expect(router.push).not.toHaveBeenCalled();
 
+    // The first auto-apply leaves the committed entry, so it pushes to keep
+    // the pre-search state reachable via Back.
+    advancePastDebounce();
+    expect(router.push).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith("/?q=cat", { scroll: false });
+    expect(router.replace).not.toHaveBeenCalled();
+
+    // Continued typing stays in the same history entry via replace.
+    setInputValue(input, "cate");
     advancePastDebounce();
     expect(router.replace).toHaveBeenCalledTimes(1);
-    expect(router.replace).toHaveBeenCalledWith("/?q=cat", { scroll: false });
-    expect(router.push).not.toHaveBeenCalled();
+    expect(router.replace).toHaveBeenCalledWith("/?q=cate", { scroll: false });
+    expect(router.push).toHaveBeenCalledTimes(1);
   });
 
   it("Enter submits immediately via push and cancels the pending debounce", () => {
@@ -167,25 +176,28 @@ describe("GalleryFilter", () => {
     expect(router.push).not.toHaveBeenCalled();
 
     advancePastDebounce();
-    expect(router.replace).toHaveBeenCalledTimes(1);
-    expect(router.replace).toHaveBeenCalledWith("/?q=cat", { scroll: false });
+    expect(router.push).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith("/?q=cat", { scroll: false });
+    expect(router.replace).not.toHaveBeenCalled();
   });
 
-  it("reverting the input supersedes an in-flight debounced replace", () => {
+  it("reverting the input supersedes an in-flight debounced navigation", () => {
     const { input } = renderFilter();
 
     setInputValue(input, "cat");
     advancePastDebounce();
-    expect(router.replace).toHaveBeenCalledWith("/?q=cat", { scroll: false });
+    expect(router.push).toHaveBeenCalledWith("/?q=cat", { scroll: false });
 
     // The navigation to ?q=cat is still in flight (server props have not
     // updated yet) when the user clears the box back to the applied URL.
     setInputValue(input, "");
     advancePastDebounce();
 
-    // The latest intent must win over the already-started replace.
-    expect(router.replace).toHaveBeenCalledTimes(2);
+    // The latest intent must win over the already-started navigation: the
+    // auto entry is rewritten to "/" via replace.
+    expect(router.replace).toHaveBeenCalledTimes(1);
     expect(router.replace).toHaveBeenLastCalledWith("/", { scroll: false });
+    expect(router.push).toHaveBeenCalledTimes(1);
   });
 
   it("keeps focus on the same input node when applied filters update from the server", () => {
@@ -195,7 +207,7 @@ describe("GalleryFilter", () => {
 
     setInputValue(input, "n");
     advancePastDebounce();
-    expect(router.replace).toHaveBeenCalledWith("/?q=n", { scroll: false });
+    expect(router.push).toHaveBeenCalledWith("/?q=n", { scroll: false });
 
     // The navigation commits and HomePage re-renders with the applied
     // filters. The filter must not be remounted: the same input node keeps
@@ -220,7 +232,7 @@ describe("GalleryFilter", () => {
 
     setInputValue(rendered.input, "cat");
     advancePastDebounce();
-    expect(router.replace).toHaveBeenCalledWith("/?q=cat", { scroll: false });
+    expect(router.push).toHaveBeenCalledWith("/?q=cat", { scroll: false });
 
     // The user clears the box, scheduling a replace to "/", while the
     // ?q=cat navigation is still in flight.
@@ -231,7 +243,7 @@ describe("GalleryFilter", () => {
     rerenderFilter(rendered, { defaultQuery: "cat" });
 
     advancePastDebounce();
-    expect(router.replace).toHaveBeenCalledTimes(2);
+    expect(router.replace).toHaveBeenCalledTimes(1);
     expect(router.replace).toHaveBeenLastCalledWith("/", { scroll: false });
   });
 
@@ -250,21 +262,18 @@ describe("GalleryFilter", () => {
     expect(rendered.input.value).toBe("dog");
   });
 
-  it("pushes a history entry when Enter follows a debounced replace", () => {
+  it("Enter is a no-op once the debounce already created the search entry", () => {
     const { input } = renderFilter();
 
     setInputValue(input, "cat");
     advancePastDebounce();
-    expect(router.replace).toHaveBeenCalledWith("/?q=cat", { scroll: false });
-
-    // The replace shared the previous history entry, so Enter still commits
-    // the search as its own entry.
-    pressEnter(input);
     expect(router.push).toHaveBeenCalledTimes(1);
     expect(router.push).toHaveBeenCalledWith("/?q=cat", { scroll: false });
 
-    // A repeated Enter is a no-op: the current URL is already its own entry.
+    // The auto-apply already pushed ?q=cat as its own history entry, so
+    // Enter has nothing left to commit and must not add a duplicate.
     pressEnter(input);
     expect(router.push).toHaveBeenCalledTimes(1);
+    expect(router.replace).not.toHaveBeenCalled();
   });
 });
