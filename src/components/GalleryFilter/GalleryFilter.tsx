@@ -78,18 +78,32 @@ export function GalleryFilter({
   }
 
   // Sync local state from the URL on external navigation (back/forward).
-  // URLs this component navigated to itself are skipped so in-progress
-  // typing is not clobbered. The cleanup drops a pending debounce when
-  // the applied URL changes or the component unmounts.
+  // Self-navigations (appliedHref === lastNavigatedHref) skip the sync so
+  // in-progress typing is not clobbered — and must not cancel a newer
+  // debounce scheduled after that navigation was requested. External
+  // navigations do cancel pending typing: the navigated-to URL wins over
+  // an unsubmitted draft.
   useEffect(() => {
     if (appliedHref !== lastNavigatedHref.current) {
       lastNavigatedHref.current = appliedHref;
+      cancelScheduledSearch();
       setQuery(defaultQuery);
       setKind(defaultKind);
       setTags(defaultTags);
     }
-    return cancelScheduledSearch;
   }, [appliedHref, defaultQuery, defaultKind, defaultTags]);
+
+  // A pending debounce is dropped only when the component goes away;
+  // canceling it on every props update would kill newer searches that
+  // outlived a committing self-navigation.
+  useEffect(() => {
+    return () => {
+      if (debounceTimer.current !== null) {
+        clearTimeout(debounceTimer.current);
+        debounceTimer.current = null;
+      }
+    };
+  }, []);
 
   function navigate(targetHref: string, mode: "push" | "replace") {
     cancelScheduledSearch();

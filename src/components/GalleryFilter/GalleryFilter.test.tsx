@@ -214,4 +214,39 @@ describe("GalleryFilter", () => {
       scroll: false,
     });
   });
+
+  it("keeps a newer scheduled search when an earlier navigation commits", () => {
+    const rendered = renderFilter();
+
+    setInputValue(rendered.input, "cat");
+    advancePastDebounce();
+    expect(router.replace).toHaveBeenCalledWith("/?q=cat", { scroll: false });
+
+    // The user clears the box, scheduling a replace to "/", while the
+    // ?q=cat navigation is still in flight.
+    setInputValue(rendered.input, "");
+
+    // The ?q=cat navigation commits before the second debounce fires.
+    // This props update must not cancel the newer scheduled search.
+    rerenderFilter(rendered, { defaultQuery: "cat" });
+
+    advancePastDebounce();
+    expect(router.replace).toHaveBeenCalledTimes(2);
+    expect(router.replace).toHaveBeenLastCalledWith("/", { scroll: false });
+  });
+
+  it("cancels a pending debounce when an external navigation arrives", () => {
+    const rendered = renderFilter();
+
+    setInputValue(rendered.input, "cat");
+
+    // An external navigation (back/forward) lands before the debounce:
+    // the navigated-to URL wins over the unsubmitted draft.
+    rerenderFilter(rendered, { defaultQuery: "dog" });
+
+    advancePastDebounce();
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(rendered.input.value).toBe("dog");
+  });
 });
