@@ -10,6 +10,10 @@ import {
   parseBackfillArgs,
   runPetSearchBackfill,
 } from "./lib/pet-search-backfill.mjs";
+import {
+  createEmbeddingRequest,
+  requirePetSearchBackfillRevision,
+} from "./lib/pet-search-provider-config.mjs";
 
 const require = createRequire(import.meta.url);
 const {
@@ -22,8 +26,6 @@ const {
 
 const PETS_TABLE = "codex_pets";
 const EMBEDDINGS_TABLE = "codex_pet_search_embeddings";
-const SUPPORTED_REVISION = "yandex-text-search-2026-07";
-const DIMENSIONS = 256;
 const DEFAULT_TIMEOUT_MS = 800;
 const REQUESTS_PER_MINUTE = 60;
 const EMBEDDING_ENDPOINT =
@@ -32,11 +34,8 @@ const EMBEDDING_ENDPOINT =
 export async function main(argv = process.argv.slice(2)) {
   const options = parseBackfillArgs(argv);
   const revision = process.env.PET_SEARCH_MODEL_REVISION?.trim();
-  if (revision !== SUPPORTED_REVISION) {
-    throw new Error(
-      `PET_SEARCH_MODEL_REVISION must be ${SUPPORTED_REVISION}.`,
-    );
-  }
+  const revisionDefinition =
+    requirePetSearchBackfillRevision(revision);
 
   const endpoint =
     process.env.YDB_PETS_ENDPOINT?.trim() || "grpc://127.0.0.1:2136";
@@ -54,7 +53,10 @@ export async function main(argv = process.argv.slice(2)) {
     }
 
     const embedDocument = options.mode === "apply"
-      ? createEmbeddingProvider(readEmbeddingProviderConfig())
+      ? createEmbeddingProvider(
+          readEmbeddingProviderConfig(),
+          revisionDefinition,
+        )
       : async () => {
           throw new Error("Dry-run must not call the embedding provider.");
         };
@@ -62,7 +64,7 @@ export async function main(argv = process.argv.slice(2)) {
     return await runPetSearchBackfill({
       options,
       revision,
-      dimensions: DIMENSIONS,
+      dimensions: revisionDefinition.dimensions,
       pets,
       getMetadata: (modelRevision, slug) =>
         getEmbeddingMetadata(driver, modelRevision, slug),
@@ -139,7 +141,10 @@ function readEmbeddingProviderConfig() {
   return { folderId, apiKey, timeoutMs };
 }
 
-function createEmbeddingProvider({ folderId, apiKey, timeoutMs }) {
+function createEmbeddingProvider(
+  { folderId, apiKey, timeoutMs },
+  revisionDefinition,
+) {
   const reserveRateLimitSlot = createRequestStartLimiter({
     requestsPerMinute: REQUESTS_PER_MINUTE,
     sleep: delay,
@@ -158,10 +163,13 @@ function createEmbeddingProvider({ folderId, apiKey, timeoutMs }) {
           "Content-Type": "application/json",
           "x-folder-id": folderId,
         },
-        body: JSON.stringify({
-          modelUri: `emb://${folderId}/text-search-doc/latest`,
-          text: document,
-        }),
+        body: JSON.stringify(
+          createEmbeddingRequest({
+            folderId,
+            definition: revisionDefinition,
+            text: document,
+          }),
+        ),
         signal: controller.signal,
       });
       if (!response.ok) {

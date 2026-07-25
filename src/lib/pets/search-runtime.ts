@@ -116,7 +116,9 @@ export function createApprovedPetSearchRuntime<T extends ApprovedSearchPet>(
 
     const visualConfig = dependencies.config.visual;
     const readVisual =
-      dependencies.config.visualMode !== "off" && visualConfig !== null;
+      dependencies.config.visualMode !== "off" &&
+      visualConfig !== null &&
+      visualConfig.embeddingModelId === semanticConfig.embeddingModelId;
     const [textResult, visualResult, captionsResult] =
       await Promise.allSettled([
         dependencies.findSimilar({

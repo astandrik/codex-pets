@@ -5,6 +5,10 @@ import {
   createPetSearchSourceHash as createRuntimeHash,
   embeddingToBuffer as runtimeEmbeddingToBuffer,
 } from "../src/lib/pets/search-embeddings";
+import {
+  PET_SEARCH_EMBEDDING_MODELS,
+  PET_SEARCH_MODEL_REVISIONS,
+} from "../src/lib/pets/search-config";
 
 const {
   buildPetSearchDocument,
@@ -14,6 +18,10 @@ const {
   parseBackfillArgs,
   runPetSearchBackfill,
 } = await import("./lib/pet-search-backfill.mjs");
+const {
+  PET_SEARCH_BACKFILL_REVISIONS,
+  createEmbeddingRequest,
+} = await import("./lib/pet-search-provider-config.mjs");
 
 const pet = {
   slug: "velvet-byte",
@@ -24,6 +32,34 @@ const pet = {
 };
 
 describe("pet search embeddings backfill", () => {
+  it("keeps legacy and v2 provider definitions in runtime parity", () => {
+    for (const [revision, definition] of Object.entries(
+      PET_SEARCH_MODEL_REVISIONS,
+    )) {
+      const runtimeModel =
+        PET_SEARCH_EMBEDDING_MODELS[definition.embeddingModelId];
+      expect(PET_SEARCH_BACKFILL_REVISIONS[revision]).toEqual({
+        dimensions: runtimeModel.dimensions,
+        documentModelPath: runtimeModel.documentModelPath,
+        requestDimensions: runtimeModel.requestDimensions,
+      });
+    }
+    expect(
+      createEmbeddingRequest({
+        folderId: "folder-1",
+        definition:
+          PET_SEARCH_BACKFILL_REVISIONS[
+            "yandex-text-embeddings-v2-768-2026-07"
+          ],
+        text: "document",
+      }),
+    ).toEqual({
+      modelUri: "emb://folder-1/text-embeddings-v2-doc",
+      text: "document",
+      dim: "768",
+    });
+  });
+
   it("parses explicit dry-run/apply modes and optional flags", () => {
     expect(parseBackfillArgs(["--dry-run"])).toEqual({
       mode: "dry-run",

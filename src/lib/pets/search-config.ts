@@ -15,10 +15,32 @@ const MAX_VISION_TIMEOUT_MS = 60_000;
 
 export const PET_SEARCH_MODEL_REVISIONS = {
   "yandex-text-search-2026-07": {
-    dimensions: 256,
+    embeddingModelId: "yandex-text-search-v1-256",
     minSemanticScore: 0.31,
   },
+  "yandex-text-embeddings-v2-768-2026-07": {
+    embeddingModelId: "yandex-text-embeddings-v2-768",
+    minSemanticScore: 0.28,
+  },
 } as const;
+
+export const PET_SEARCH_EMBEDDING_MODELS = {
+  "yandex-text-search-v1-256": {
+    dimensions: 256,
+    queryModelPath: "text-search-query/latest",
+    documentModelPath: "text-search-doc/latest",
+    requestDimensions: null,
+  },
+  "yandex-text-embeddings-v2-768": {
+    dimensions: 768,
+    queryModelPath: "text-embeddings-v2-query",
+    documentModelPath: "text-embeddings-v2-doc",
+    requestDimensions: 768,
+  },
+} as const;
+
+export type PetSearchEmbeddingModelId =
+  keyof typeof PET_SEARCH_EMBEDDING_MODELS;
 
 export type PetVisualCalibrationProfile = {
   minSemanticScore: number;
@@ -26,7 +48,7 @@ export type PetVisualCalibrationProfile = {
 };
 
 type PetVisualModelRevisionDefinition = {
-  dimensions: number;
+  embeddingModelId: PetSearchEmbeddingModelId;
   captionRevision: string;
   profile: PetVisualCalibrationProfile | null;
 };
@@ -39,10 +61,18 @@ export const PET_VISION_CAPTION_REVISIONS = {
 
 export const PET_VISUAL_MODEL_REVISIONS = {
   [PET_VISUAL_MODEL_REVISION]: {
-    dimensions: 256,
+    embeddingModelId: "yandex-text-search-v1-256",
     captionRevision: PET_VISION_CAPTION_REVISION,
     profile: {
       minSemanticScore: 0.3455384373664856,
+      weight: 0.25,
+    },
+  },
+  "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1": {
+    embeddingModelId: "yandex-text-embeddings-v2-768",
+    captionRevision: PET_VISION_CAPTION_REVISION,
+    profile: {
+      minSemanticScore: 0.3574455678462982,
       weight: 0.25,
     },
   },
@@ -57,6 +87,7 @@ export type PetSearchConfigurationFallbackReason =
 
 export type PetVisualSearchFallbackReason =
   | "visual_configuration_missing"
+  | "visual_embedding_incompatible"
   | "visual_calibration_missing"
   | "visual_vector_search_error"
   | "visual_caption_lookup_error"
@@ -66,6 +97,7 @@ export type PetSearchSemanticConfig = {
   folderId: string;
   apiKey: string;
   revision: keyof typeof PET_SEARCH_MODEL_REVISIONS;
+  embeddingModelId: PetSearchEmbeddingModelId;
   dimensions: number;
   minSemanticScore: number;
   timeoutMs: number;
@@ -76,6 +108,7 @@ export type PetSearchVisualConfig = {
   apiKey: string;
   captionRevision: keyof typeof PET_VISION_CAPTION_REVISIONS;
   visualRevision: keyof typeof PET_VISUAL_MODEL_REVISIONS;
+  embeddingModelId: PetSearchEmbeddingModelId;
   dimensions: number;
   profile: PetVisualCalibrationProfile | null;
   visionTimeoutMs: number;
@@ -176,6 +209,7 @@ export function loadPetSearchConfig(
     visualFallbackReason: visualFallbackReason({
       visualMode,
       visual: credentialFailure.reason ? null : visual,
+      semantic: credentialFailure.reason ? null : semantic.config,
     }),
   };
 }
@@ -204,12 +238,15 @@ function createSemanticConfig(input: {
   }
 
   const revision = PET_SEARCH_MODEL_REVISIONS[input.textRevisionValue];
+  const embeddingModel =
+    PET_SEARCH_EMBEDDING_MODELS[revision.embeddingModelId];
   return {
     config: {
       folderId: input.folderId,
       apiKey: input.apiKey,
       revision: input.textRevisionValue,
-      dimensions: revision.dimensions,
+      embeddingModelId: revision.embeddingModelId,
+      dimensions: embeddingModel.dimensions,
       minSemanticScore: revision.minSemanticScore,
       timeoutMs: input.timeoutMs,
     },
@@ -237,6 +274,8 @@ function createVisualConfig(input: {
     PET_VISION_CAPTION_REVISIONS[input.captionRevisionValue];
   const visualRevision: PetVisualModelRevisionDefinition =
     PET_VISUAL_MODEL_REVISIONS[input.visualRevisionValue];
+  const embeddingModel =
+    PET_SEARCH_EMBEDDING_MODELS[visualRevision.embeddingModelId];
   if (visualRevision.captionRevision !== input.captionRevisionValue) {
     return null;
   }
@@ -246,7 +285,8 @@ function createVisualConfig(input: {
     apiKey: input.apiKey,
     captionRevision: input.captionRevisionValue,
     visualRevision: input.visualRevisionValue,
-    dimensions: visualRevision.dimensions,
+    embeddingModelId: visualRevision.embeddingModelId,
+    dimensions: embeddingModel.dimensions,
     profile: visualRevision.profile,
     visionTimeoutMs: input.visionTimeoutMs,
     modelUri: `gpt://${input.folderId}/${captionRevision.modelName}`,
@@ -277,9 +317,16 @@ function readCredentialFailure(
 function visualFallbackReason(input: {
   visualMode: PetSearchVisualMode;
   visual: PetSearchVisualConfig | null;
+  semantic: PetSearchSemanticConfig | null;
 }): PetVisualSearchFallbackReason | null {
   if (input.visualMode === "off") return null;
   if (!input.visual) return "visual_configuration_missing";
+  if (
+    input.semantic &&
+    input.semantic.embeddingModelId !== input.visual.embeddingModelId
+  ) {
+    return "visual_embedding_incompatible";
+  }
   if (input.visualMode === "hybrid" && !input.visual.profile) {
     return "visual_calibration_missing";
   }

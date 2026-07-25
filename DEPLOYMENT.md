@@ -49,8 +49,10 @@ INDEXNOW_KEY=
 INDEXNOW_ENDPOINT=
 
 PET_SEARCH_MODE=lexical
-PET_SEARCH_MODEL_REVISION=yandex-text-search-2026-07
+PET_SEARCH_MODEL_REVISION=yandex-text-embeddings-v2-768-2026-07
 PET_SEARCH_EMBEDDING_TIMEOUT_MS=800
+PET_SEARCH_VISUAL_MODE=off
+PET_SEARCH_VISUAL_MODEL_REVISION=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1
 YANDEX_AI_STUDIO_FOLDER_ID=
 YANDEX_AI_STUDIO_API_KEY_FILE=/run/secrets/yandex-ai-studio.key
 
@@ -107,6 +109,10 @@ npm run search:backfill-vision -- --dry-run
 npm run search:backfill-vision -- --apply --slug PET_SLUG
 npm run search:backfill-vision -- --apply
 ```
+
+The v2 text and Qwen visual revisions both use managed Yandex Text Embeddings
+v2 at 768 dimensions. Keep the legacy 256-dimensional rows for rollback; the
+backfills add revision-scoped rows and do not overwrite them.
 
 The visual dry-run reads and hashes spritesheets but does not call providers or
 write YDB. After the full paced backfill, enable visual `shadow`, inspect only
