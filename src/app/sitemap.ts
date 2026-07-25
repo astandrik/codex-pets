@@ -1,7 +1,6 @@
 import type { MetadataRoute } from "next";
 import { unstable_cache } from "next/cache";
 
-import { listPublicUserProfiles } from "@/lib/auth/repository";
 import { toPublicUrl } from "@/lib/base-path";
 import { listApprovedPets } from "@/lib/pets/repository";
 import {
@@ -33,10 +32,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 }
 
 async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
-  const [pets, profiles] = await Promise.all([
-    listApprovedPets(),
-    listPublicUserProfiles(),
-  ]);
+  const pets = await listApprovedPets();
   const staticEntries: MetadataRoute.Sitemap = [
     {
       url: toPublicUrl("/"),
@@ -116,14 +112,7 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
     };
   });
 
-  const profileEntries: MetadataRoute.Sitemap = profiles.map((profile) => ({
-    url: toPublicUrl(`/users/${profile.profileSlug}`),
-    lastModified: toIsoDateTime(profile.updatedAt || profile.createdAt),
-    changeFrequency: "weekly",
-    priority: 0.6,
-  }));
-
-  return [...staticEntries, ...petEntries, ...profileEntries];
+  return [...staticEntries, ...petEntries];
 }
 
 function toIsoDateTime(value: string): string {
