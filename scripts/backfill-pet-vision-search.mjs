@@ -10,6 +10,8 @@ import {
   requirePetVisualBackfillRevision,
 } from "./lib/pet-search-provider-config.mjs";
 import {
+  PET_CAPTION_REWRITE_RESPONSE_JSON_SCHEMA,
+  PET_CAPTION_REWRITE_SYSTEM_PROMPT,
   PET_VISION_RESPONSE_JSON_SCHEMA,
   PET_VISION_SYSTEM_PROMPT,
   PET_VISION_USER_PROMPT,
@@ -63,7 +65,14 @@ export async function main(argv = process.argv.slice(2)) {
 
     const applyProviders = options.mode === "apply"
       ? {
-          createCaption: createVisionProvider(providerConfig),
+          createCaption: createVisionProvider({
+            ...providerConfig,
+            modelUri:
+              providerConfig.captionDefinition.kind === "rewrite"
+                ? providerConfig.upstreamModelUri
+                : providerConfig.modelUri,
+          }),
+          rewriteCaption: createRewriteProvider(providerConfig),
           embedDocument: createEmbeddingProvider(
             providerConfig,
             providerConfig.visualDefinition,
@@ -72,6 +81,9 @@ export async function main(argv = process.argv.slice(2)) {
       : {
           createCaption: async () => {
             throw new Error("Dry-run must not call the vision provider.");
+          },
+          rewriteCaption: async () => {
+            throw new Error("Dry-run must not call the rewrite provider.");
           },
           embedDocument: async () => {
             throw new Error("Dry-run must not call the embedding provider.");
@@ -85,6 +97,16 @@ export async function main(argv = process.argv.slice(2)) {
         visualRevision: providerConfig.visualRevision,
         dimensions: providerConfig.visualDefinition.dimensions,
         modelUri: providerConfig.modelUri,
+        captionDefinition:
+          providerConfig.captionDefinition.kind === "rewrite"
+            ? {
+                kind: "rewrite",
+                upstreamCaptionRevision:
+                  providerConfig.captionDefinition
+                    .upstreamCaptionRevision,
+                upstreamModelUri: providerConfig.upstreamModelUri,
+              }
+            : { kind: "vision" },
       },
       pets,
       readSpritesheet: (assetId) => readSpritesheet(driver, assetId),
@@ -94,6 +116,7 @@ export async function main(argv = process.argv.slice(2)) {
       getEmbeddingMetadata: (modelRevision, slug) =>
         getEmbeddingMetadata(driver, modelRevision, slug),
       createCaption: applyProviders.createCaption,
+      rewriteCaption: applyProviders.rewriteCaption,
       embedDocument: applyProviders.embedDocument,
       upsertCaption: (input) => upsertCaption(driver, input),
       upsertEmbedding: (input) => upsertEmbedding(driver, input),
@@ -123,6 +146,10 @@ function readProviderConfig(mode) {
     throw new Error("YANDEX_AI_STUDIO_FOLDER_ID is required.");
   }
   const modelUri = `gpt://${folderId}/${captionDefinition.modelName}`;
+  const upstreamModelUri =
+    captionDefinition.kind === "rewrite"
+      ? `gpt://${folderId}/${captionDefinition.upstreamModelName}`
+      : null;
   if (mode === "dry-run") {
     return {
       folderId,
@@ -130,6 +157,8 @@ function readProviderConfig(mode) {
       captionRevision,
       visualRevision,
       modelUri,
+      upstreamModelUri,
+      captionDefinition,
       visualDefinition,
       embeddingTimeoutMs: DEFAULT_EMBEDDING_TIMEOUT_MS,
       visionTimeoutMs: DEFAULT_VISION_TIMEOUT_MS,
@@ -153,6 +182,8 @@ function readProviderConfig(mode) {
     captionRevision,
     visualRevision,
     modelUri,
+    upstreamModelUri,
+    captionDefinition,
     visualDefinition,
     embeddingTimeoutMs: boundedTimeout(
       process.env.PET_SEARCH_EMBEDDING_TIMEOUT_MS,
@@ -274,6 +305,112 @@ function createVisionProvider(config) {
   };
 }
 
+function createRewriteProvider(config) {
+  const reserveStart = createRequestStartLimiter({
+    requestsPerMinute: 10,
+    sleep: delay,
+  });
+
+  return async function rewriteCaption(upstreamCaption) {
+    if (config.captionDefinition.kind !== "rewrite") {
+      throw providerError("invalid_request");
+    }
+    const validatedCaption = parsePetVisionCaption(upstreamCaption);
+    let response = await request();
+    if (response.status === 429 || response.status >= 500) {
+      const retryDelay = retryAfterMs(
+        response.headers.get("Retry-After"),
+      );
+      if (retryDelay > 0) await delay(retryDelay);
+      response = await request();
+    }
+    if (!response.ok) {
+      throw providerError(rewriteHttpFailureReason(response.status));
+    }
+
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      throw providerError("invalid_response");
+    }
+    const choices = payload?.choices;
+    const message =
+      Array.isArray(choices) && choices.length === 1
+        ? choices[0]?.message
+        : null;
+    if (
+      message &&
+      typeof message === "object" &&
+      typeof message.refusal === "string"
+    ) {
+      throw providerError("refused");
+    }
+    if (
+      !message ||
+      typeof message !== "object" ||
+      typeof message.content !== "string"
+    ) {
+      throw providerError("invalid_response");
+    }
+    try {
+      return parsePetVisionCaption(JSON.parse(message.content));
+    } catch {
+      throw providerError("invalid_response");
+    }
+
+    async function request() {
+      await reserveStart();
+      const controller = new AbortController();
+      const timeout = setTimeout(
+        () => controller.abort(),
+        config.visionTimeoutMs,
+      );
+      try {
+        return await fetch(VISION_ENDPOINT, {
+          method: "POST",
+          headers: {
+            Authorization: `Api-Key ${config.apiKey}`,
+            "Content-Type": "application/json",
+            "OpenAI-Project": config.folderId,
+          },
+          body: JSON.stringify({
+            model: config.modelUri,
+            messages: [
+              {
+                role: "system",
+                content: PET_CAPTION_REWRITE_SYSTEM_PROMPT,
+              },
+              {
+                role: "user",
+                content: JSON.stringify(validatedCaption),
+              },
+            ],
+            temperature: 0,
+            stream: false,
+            max_tokens: 900,
+            response_format: {
+              type: "json_schema",
+              json_schema: {
+                name: "pet_visual_caption_rewrite_v1",
+                strict: true,
+                schema: PET_CAPTION_REWRITE_RESPONSE_JSON_SCHEMA,
+              },
+            },
+          }),
+          signal: controller.signal,
+        });
+      } catch {
+        throw providerError(
+          controller.signal.aborted ? "timeout" : "provider_error",
+        );
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+  };
+}
+
 function createEmbeddingProvider(config, visualDefinition) {
   const reserveStart = createRequestStartLimiter({
     requestsPerMinute: 60,
@@ -334,6 +471,13 @@ function httpFailureReason(status) {
   if (status === 429) return "rate_limited";
   if (status >= 400 && status < 500) return "invalid_request";
   return "provider_error";
+}
+
+function rewriteHttpFailureReason(status) {
+  if (status === 400 || status === 422) {
+    return "structured_output_unsupported";
+  }
+  return httpFailureReason(status);
 }
 
 function retryAfterMs(value) {

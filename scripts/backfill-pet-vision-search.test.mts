@@ -9,9 +9,13 @@ import {
   PET_VISUAL_MODEL_REVISIONS,
 } from "../src/lib/pets/search-config";
 import {
+  PET_DERIVED_VISION_CAPTION_REVISION,
   PET_VISION_CAPTION_REVISION,
   PET_VISUAL_MODEL_REVISION,
   buildPetVisionCaptionText as buildRuntimeCaptionText,
+  createPetDerivedVisionCaptionEnvelope as createRuntimeDerivedEnvelope,
+  createPetDerivedVisionCaptionSourceHash as createRuntimeDerivedHash,
+  createPetVisionCaptionTextHash as createRuntimeCaptionTextHash,
   createPetVisionCaptionSourceHash as createRuntimeCaptionHash,
   createPetVisualEmbeddingSourceHash as createRuntimeVisualHash,
 } from "../src/lib/pets/search-vision-contract";
@@ -23,6 +27,9 @@ import {
 const {
   PET_VISION_FRAME_POLICY,
   buildPetVisionCaptionText,
+  createPetDerivedVisionCaptionEnvelope,
+  createPetDerivedVisionCaptionSourceHash,
+  createPetVisionCaptionTextHash,
   createPetVisionCaptionEnvelope,
   createPetVisionCaptionSourceHash,
   createPetVisualEmbeddingSourceHash,
@@ -41,6 +48,18 @@ const visualConfig = {
   visualRevision: PET_VISUAL_MODEL_REVISION,
   dimensions: 256,
   modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+};
+const derivedVisualConfig = {
+  captionRevision: PET_DERIVED_VISION_CAPTION_REVISION,
+  visualRevision:
+    "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-deepseek-v4-v1",
+  dimensions: 768,
+  modelUri: "gpt://folder-1/deepseek-v4-flash",
+  captionDefinition: {
+    kind: "rewrite",
+    upstreamCaptionRevision: PET_VISION_CAPTION_REVISION,
+    upstreamModelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+  },
 };
 const pet = {
   slug: "velvet-byte",
@@ -86,6 +105,7 @@ function dependencies(overrides: Record<string, unknown> = {}) {
     getCaption: vi.fn(async () => null),
     getEmbeddingMetadata: vi.fn(async () => null),
     createCaption: vi.fn(async () => caption),
+    rewriteCaption: vi.fn(async () => caption),
     embedDocument: vi.fn(async () => Array(256).fill(0.25)),
     upsertCaption: vi.fn(async () => undefined),
     upsertEmbedding: vi.fn(async () => undefined),
@@ -119,20 +139,20 @@ function freshCaption() {
 }
 
 describe("pet vision search backfill", () => {
-  it("keeps Qwen visual provider definitions in runtime parity", () => {
+  it("keeps managed caption and visual provider definitions in runtime parity", () => {
     expect(PET_VISION_BACKFILL_CAPTION_REVISIONS).toEqual(
       PET_VISION_CAPTION_REVISIONS,
     );
     for (const [revision, definition] of Object.entries(
       PET_VISUAL_MODEL_REVISIONS,
     )) {
-      const runtimeModel =
+      const model =
         PET_SEARCH_EMBEDDING_MODELS[definition.embeddingModelId];
       expect(PET_VISUAL_BACKFILL_REVISIONS[revision]).toEqual({
         captionRevision: definition.captionRevision,
-        dimensions: runtimeModel.dimensions,
-        documentModelPath: runtimeModel.documentModelPath,
-        requestDimensions: runtimeModel.requestDimensions,
+        dimensions: model.dimensions,
+        documentModelPath: model.documentModelPath,
+        requestDimensions: model.requestDimensions,
       });
     }
   });
@@ -193,6 +213,33 @@ describe("pet vision search backfill", () => {
     );
     expect(embeddingToBuffer([1.5, -2.25])).toEqual(
       runtimeEmbeddingToBuffer([1.5, -2.25]),
+    );
+  });
+
+  it("keeps derived provenance and hash construction in runtime parity", () => {
+    const upstreamCaptionText = buildPetVisionCaptionText(caption);
+    const input = {
+      captionRevision: PET_DERIVED_VISION_CAPTION_REVISION,
+      modelUri: "gpt://folder-1/deepseek-v4-flash",
+      upstreamCaptionRevision: PET_VISION_CAPTION_REVISION,
+      upstreamSourceHash: "a".repeat(64),
+      upstreamCaptionText,
+    };
+    expect(createPetDerivedVisionCaptionSourceHash(input)).toBe(
+      createRuntimeDerivedHash(input),
+    );
+    expect(createPetVisionCaptionTextHash(upstreamCaptionText)).toBe(
+      createRuntimeCaptionTextHash(upstreamCaptionText),
+    );
+    const envelopeInput = {
+      upstreamCaptionRevision: PET_VISION_CAPTION_REVISION,
+      upstreamSourceHash: "a".repeat(64),
+      upstreamCaptionTextSha256:
+        createPetVisionCaptionTextHash(upstreamCaptionText),
+      caption,
+    };
+    expect(createPetDerivedVisionCaptionEnvelope(envelopeInput)).toEqual(
+      createRuntimeDerivedEnvelope(envelopeInput),
     );
   });
 
@@ -300,5 +347,77 @@ describe("pet vision search backfill", () => {
     const summary = await runPetVisionSearchBackfill(resumed);
     expect(summary.vectorOnly).toBe(1);
     expect(resumed.createCaption).not.toHaveBeenCalled();
+  });
+
+  it("derives from a fresh Qwen row and writes additive 768 artifacts", async () => {
+    const upstream = freshCaption();
+    const rewritten = {
+      ...caption,
+      search_terms_en: ["silver-haired woman", "gothic", "pixel art"],
+    };
+    const input = dependencies({
+      config: derivedVisualConfig,
+      getCaption: vi.fn(async (revision: string) =>
+        revision === PET_VISION_CAPTION_REVISION ? upstream : null
+      ),
+      rewriteCaption: vi.fn(async () => rewritten),
+      embedDocument: vi.fn(async () => Array(768).fill(0.5)),
+    });
+
+    const summary = await runPetVisionSearchBackfill(input);
+
+    expect(summary.captionAndVector).toBe(1);
+    expect(input.createCaption).not.toHaveBeenCalled();
+    expect(input.rewriteCaption).toHaveBeenCalledWith(caption);
+    const derivedSourceHash = createPetDerivedVisionCaptionSourceHash({
+      captionRevision: derivedVisualConfig.captionRevision,
+      modelUri: derivedVisualConfig.modelUri,
+      upstreamCaptionRevision: PET_VISION_CAPTION_REVISION,
+      upstreamSourceHash: upstream.sourceHash,
+      upstreamCaptionText: upstream.captionText,
+    });
+    expect(input.upsertCaption).toHaveBeenCalledWith({
+      captionRevision: derivedVisualConfig.captionRevision,
+      slug: pet.slug,
+      sourceHash: derivedSourceHash,
+      captionJson: JSON.stringify(
+        createPetDerivedVisionCaptionEnvelope({
+          upstreamCaptionRevision: PET_VISION_CAPTION_REVISION,
+          upstreamSourceHash: upstream.sourceHash,
+          upstreamCaptionTextSha256:
+            createPetVisionCaptionTextHash(upstream.captionText),
+          caption: rewritten,
+        }),
+      ),
+      captionText: buildPetVisionCaptionText(rewritten),
+      updatedAt: "2026-07-23T00:00:00.000Z",
+    });
+    expect(input.upsertEmbedding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelRevision: derivedVisualConfig.visualRevision,
+        dimensions: 768,
+        embedding: Array(768).fill(0.5),
+      }),
+    );
+  });
+
+  it("materializes the missing Qwen row before calling the rewriter", async () => {
+    const writes: string[] = [];
+    const input = dependencies({
+      config: derivedVisualConfig,
+      embedDocument: vi.fn(async () => Array(768).fill(0.5)),
+      upsertCaption: vi.fn(async (value: { captionRevision: string }) => {
+        writes.push(value.captionRevision);
+      }),
+    });
+
+    await runPetVisionSearchBackfill(input);
+
+    expect(writes).toEqual([
+      PET_VISION_CAPTION_REVISION,
+      PET_DERIVED_VISION_CAPTION_REVISION,
+    ]);
+    expect(input.createCaption).toHaveBeenCalledOnce();
+    expect(input.rewriteCaption).toHaveBeenCalledOnce();
   });
 });

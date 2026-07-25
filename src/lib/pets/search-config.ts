@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 
 import type { PetSearchMode } from "@/lib/pets/search-service";
 import {
+  PET_DERIVED_VISION_CAPTION_REVISION,
   PET_VISION_CAPTION_REVISION,
   PET_VISUAL_MODEL_REVISION,
 } from "@/lib/pets/search-vision-contract";
@@ -33,6 +34,7 @@ export const PET_SEARCH_EMBEDDING_MODELS = {
   },
   "yandex-text-embeddings-v2-768": {
     dimensions: 768,
+    // The REST textEmbedding endpoint rejects a trailing slash for v2 URIs.
     queryModelPath: "text-embeddings-v2-query",
     documentModelPath: "text-embeddings-v2-doc",
     requestDimensions: 768,
@@ -55,7 +57,14 @@ type PetVisualModelRevisionDefinition = {
 
 export const PET_VISION_CAPTION_REVISIONS = {
   [PET_VISION_CAPTION_REVISION]: {
+    kind: "vision",
     modelName: "qwen3.6-35b-a3b",
+  },
+  [PET_DERIVED_VISION_CAPTION_REVISION]: {
+    kind: "rewrite",
+    modelName: "deepseek-v4-flash",
+    upstreamCaptionRevision: PET_VISION_CAPTION_REVISION,
+    upstreamModelName: "qwen3.6-35b-a3b",
   },
 } as const;
 
@@ -76,12 +85,18 @@ export const PET_VISUAL_MODEL_REVISIONS = {
       weight: 0.25,
     },
   },
+  "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-deepseek-v4-v1": {
+    embeddingModelId: "yandex-text-embeddings-v2-768",
+    captionRevision: PET_DERIVED_VISION_CAPTION_REVISION,
+    profile: null,
+  },
 } as const satisfies Record<string, PetVisualModelRevisionDefinition>;
 
 export type PetSearchVisualMode = "off" | "shadow" | "hybrid";
 
 export type PetSearchConfigurationFallbackReason =
   | "configuration_missing"
+  | "semantic_calibration_missing"
   | "secret_unavailable"
   | "unsupported_model_revision";
 
@@ -99,7 +114,7 @@ export type PetSearchSemanticConfig = {
   revision: keyof typeof PET_SEARCH_MODEL_REVISIONS;
   embeddingModelId: PetSearchEmbeddingModelId;
   dimensions: number;
-  minSemanticScore: number;
+  minSemanticScore: number | null;
   timeoutMs: number;
 };
 
@@ -201,6 +216,10 @@ export function loadPetSearchConfig(
     fallbackReason:
       credentialFailure.reason ??
       semantic.reason ??
+      (mode === "hybrid" &&
+      semantic.config?.minSemanticScore === null
+        ? "semantic_calibration_missing"
+        : null) ??
       (mode !== "lexical" && !semantic.config
         ? "configuration_missing"
         : null),

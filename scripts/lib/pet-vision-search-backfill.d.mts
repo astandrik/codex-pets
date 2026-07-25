@@ -45,6 +45,10 @@ export const PET_VISION_USER_PROMPT: string;
 export const PET_VISION_RESPONSE_JSON_SCHEMA: Readonly<
   Record<string, unknown>
 >;
+export const PET_CAPTION_REWRITE_SYSTEM_PROMPT: string;
+export const PET_CAPTION_REWRITE_RESPONSE_JSON_SCHEMA: Readonly<
+  Record<string, unknown>
+>;
 
 export class PetVisionBackfillError extends Error {
   reason: string;
@@ -73,6 +77,29 @@ export function parsePetVisionCaptionEnvelope(value: string): {
   source: { assetId: string; spritesheetSha256: string };
   caption: VisionBackfillCaption;
 };
+export function createPetDerivedVisionCaptionEnvelope(input: {
+  upstreamCaptionRevision: string;
+  upstreamSourceHash: string;
+  upstreamCaptionTextSha256: string;
+  caption: VisionBackfillCaption;
+}): {
+  schemaVersion: 2;
+  source: {
+    upstreamCaptionRevision: string;
+    upstreamSourceHash: string;
+    upstreamCaptionTextSha256: string;
+  };
+  caption: VisionBackfillCaption;
+};
+export function parsePetDerivedVisionCaptionEnvelope(value: string): {
+  schemaVersion: 2;
+  source: {
+    upstreamCaptionRevision: string;
+    upstreamSourceHash: string;
+    upstreamCaptionTextSha256: string;
+  };
+  caption: VisionBackfillCaption;
+};
 export function buildPetVisionCaptionText(
   caption: VisionBackfillCaption,
 ): string;
@@ -81,6 +108,14 @@ export function createPetVisionCaptionSourceHash(input: {
   modelUri: string;
   assetId: string;
   spritesheetSha256: string;
+}): string;
+export function createPetVisionCaptionTextHash(captionText: string): string;
+export function createPetDerivedVisionCaptionSourceHash(input: {
+  captionRevision: string;
+  modelUri: string;
+  upstreamCaptionRevision: string;
+  upstreamSourceHash: string;
+  upstreamCaptionText: string;
 }): string;
 export function createPetVisualEmbeddingSourceHash(input: {
   visualRevision: string;
@@ -96,6 +131,13 @@ export function runPetVisionSearchBackfill(input: {
     visualRevision: string;
     dimensions: number;
     modelUri: string;
+    captionDefinition?:
+      | { kind: "vision" }
+      | {
+          kind: "rewrite";
+          upstreamCaptionRevision: string;
+          upstreamModelUri: string;
+        };
   };
   pets: Array<{
     slug: string;
@@ -114,6 +156,9 @@ export function runPetVisionSearchBackfill(input: {
   ) => Promise<{ sourceHash: string; dimensions: number } | null>;
   createCaption: (
     frames: readonly VisionBackfillFrame[],
+  ) => Promise<VisionBackfillCaption>;
+  rewriteCaption: (
+    upstreamCaption: VisionBackfillCaption,
   ) => Promise<VisionBackfillCaption>;
   embedDocument: (text: string) => Promise<number[]>;
   upsertCaption: (input: {

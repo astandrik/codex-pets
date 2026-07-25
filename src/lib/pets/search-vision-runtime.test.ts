@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { PetSearchConfig } from "@/lib/pets/search-config";
 import {
+  PET_DERIVED_VISION_CAPTION_REVISION,
+  PET_VISION_CAPTION_REVISION,
   buildPetVisionCaptionText,
+  createPetDerivedVisionCaptionEnvelope,
+  createPetDerivedVisionCaptionSourceHash,
+  createPetVisionCaptionTextHash,
   createPetVisionCaptionEnvelope,
   createPetVisionCaptionSourceHash,
   createPetVisualEmbeddingSourceHash,
@@ -17,7 +22,7 @@ const config: PetSearchConfig = {
   mode: "hybrid",
   semantic: null,
   fallbackReason: null,
-  visualMode: "off",
+  visualMode: "shadow",
   visual: {
     folderId: "folder-1",
     apiKey: "secret",
@@ -79,6 +84,7 @@ function dependencies(overrides: Record<string, unknown> = {}) {
     visionClient: {
       createCaption: vi.fn(async () => caption),
     },
+    rewriteClient: null,
     readSpritesheet: vi.fn(async () => ({
       buffer: Buffer.from("spritesheet"),
       contentType: "image/webp",
@@ -99,6 +105,20 @@ function dependencies(overrides: Record<string, unknown> = {}) {
 }
 
 describe("pet vision search indexing runtime", () => {
+  it("does not write captions or vectors while visual rollout is off", async () => {
+    const deps = dependencies({
+      config: { ...config, visualMode: "off" },
+    });
+    const runtime = createPetVisionSearchRuntime(deps);
+
+    await expect(runtime.refresh(pet)).resolves.toBe("skipped");
+    expect(deps.readSpritesheet).not.toHaveBeenCalled();
+    expect(deps.visionClient.createCaption).not.toHaveBeenCalled();
+    expect(deps.embeddingClient.embedDocument).not.toHaveBeenCalled();
+    expect(deps.upsertCaption).not.toHaveBeenCalled();
+    expect(deps.upsertEmbedding).not.toHaveBeenCalled();
+  });
+
   it("skips non-approved pets without reading assets", async () => {
     const deps = dependencies();
     const runtime = createPetVisionSearchRuntime(deps);
@@ -219,4 +239,115 @@ describe("pet vision search indexing runtime", () => {
       expect(deps.upsertEmbedding).toHaveBeenCalledTimes(1);
     },
   );
+
+  it("derives a caption only from the validated current Qwen caption", async () => {
+    const rewrittenCaption: PetVisionCaption = {
+      ...caption,
+      search_terms_en: ["silver-haired woman", "gothic", "pixel art"],
+    };
+    const derivedConfig: PetSearchConfig = {
+      ...config,
+      visual: {
+        ...config.visual!,
+        captionRevision: PET_DERIVED_VISION_CAPTION_REVISION,
+        visualRevision:
+          "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-deepseek-v4-v1",
+        embeddingModelId: "yandex-text-embeddings-v2-768",
+        dimensions: 768,
+        modelUri: "gpt://folder-1/deepseek-v4-flash",
+      },
+    };
+    const upstreamStoredCaption = {
+      slug: pet.slug,
+      sourceHash: captionSourceHash,
+      captionJson,
+      captionText,
+      updatedAt: "2026-07-22T11:00:00.000Z",
+    };
+    const derivedSourceHash = createPetDerivedVisionCaptionSourceHash({
+      captionRevision: PET_DERIVED_VISION_CAPTION_REVISION,
+      modelUri: derivedConfig.visual!.modelUri,
+      upstreamCaptionRevision: PET_VISION_CAPTION_REVISION,
+      upstreamSourceHash: captionSourceHash,
+      upstreamCaptionText: captionText,
+    });
+    const rewriteClient = {
+      rewriteCaption: vi.fn(async () => rewrittenCaption),
+    };
+    const deps = dependencies({
+      config: derivedConfig,
+      embeddingClient: {
+        embedDocument: vi.fn(async () => Array(768).fill(0.25)),
+      },
+      rewriteClient,
+      getCaption: vi.fn(async (revision: string) =>
+        revision === PET_VISION_CAPTION_REVISION
+          ? upstreamStoredCaption
+          : null
+      ),
+    });
+    const runtime = createPetVisionSearchRuntime(deps);
+
+    await expect(runtime.refresh(pet)).resolves.toBe("caption-and-vector");
+    expect(deps.visionClient.createCaption).not.toHaveBeenCalled();
+    expect(rewriteClient.rewriteCaption).toHaveBeenCalledWith(caption);
+    expect(deps.upsertCaption).toHaveBeenCalledWith({
+      captionRevision: PET_DERIVED_VISION_CAPTION_REVISION,
+      slug: pet.slug,
+      sourceHash: derivedSourceHash,
+      captionJson: JSON.stringify(
+        createPetDerivedVisionCaptionEnvelope({
+          upstreamCaptionRevision: PET_VISION_CAPTION_REVISION,
+          upstreamSourceHash: captionSourceHash,
+          upstreamCaptionTextSha256:
+            createPetVisionCaptionTextHash(captionText),
+          caption: rewrittenCaption,
+        }),
+      ),
+      captionText: buildPetVisionCaptionText(rewrittenCaption),
+      updatedAt: "2026-07-22T12:00:00.000Z",
+    });
+    expect(deps.upsertEmbedding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelRevision: derivedConfig.visual!.visualRevision,
+        dimensions: 768,
+        embedding: Array(768).fill(0.25),
+      }),
+    );
+  });
+
+  it("creates the Qwen upstream row before a missing derived caption", async () => {
+    const writes: string[] = [];
+    const derivedConfig: PetSearchConfig = {
+      ...config,
+      visual: {
+        ...config.visual!,
+        captionRevision: PET_DERIVED_VISION_CAPTION_REVISION,
+        visualRevision:
+          "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-deepseek-v4-v1",
+        embeddingModelId: "yandex-text-embeddings-v2-768",
+        dimensions: 768,
+        modelUri: "gpt://folder-1/deepseek-v4-flash",
+      },
+    };
+    const deps = dependencies({
+      config: derivedConfig,
+      embeddingClient: {
+        embedDocument: vi.fn(async () => Array(768).fill(0.25)),
+      },
+      rewriteClient: {
+        rewriteCaption: vi.fn(async () => caption),
+      },
+      upsertCaption: vi.fn(async (input: { captionRevision: string }) => {
+        writes.push(input.captionRevision);
+      }),
+    });
+    const runtime = createPetVisionSearchRuntime(deps);
+
+    await expect(runtime.refresh(pet)).resolves.toBe("caption-and-vector");
+    expect(writes).toEqual([
+      PET_VISION_CAPTION_REVISION,
+      PET_DERIVED_VISION_CAPTION_REVISION,
+    ]);
+  });
 });

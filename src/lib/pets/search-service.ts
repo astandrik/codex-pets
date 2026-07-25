@@ -43,6 +43,7 @@ export type PetSearchFallbackReason =
   | "provider_error"
   | "rate_limited"
   | "secret_unavailable"
+  | "semantic_calibration_missing"
   | "semantic_error"
   | "timeout"
   | "unsupported_model_revision"

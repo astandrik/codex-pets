@@ -85,6 +85,15 @@ export const PET_VISION_RESPONSE_JSON_SCHEMA = {
   },
 };
 
+export const PET_CAPTION_REWRITE_SYSTEM_PROMPT =
+  "Rewrite one validated bilingual visual-search caption using only facts already present in the input. Never add or infer identity, a character name, catalog metadata, hidden backstory, protected attributes, an exact age, or any unseen detail. Improve concrete visible coverage and search utility while keeping English and Russian fields semantic equivalents. Output only JSON matching the supplied schema.";
+
+export const PET_CAPTION_REWRITE_RESPONSE_JSON_SCHEMA =
+  PET_VISION_RESPONSE_JSON_SCHEMA;
+
+export const PET_CAPTION_OUTPUT_NORMALIZATION_REVISION =
+  "pet-vision-caption-nfkc-whitespace-dedupe-v1";
+
 const SHEETS = {
   1: { width: 1536, height: 1872, cellWidth: 192, cellHeight: 208 },
   2: { width: 1536, height: 2288, cellWidth: 192, cellHeight: 208 },
@@ -110,6 +119,7 @@ const SAFE_FAILURE_REASONS = new Set([
   "provider_error",
   "rate_limited",
   "refused",
+  "structured_output_unsupported",
   "timeout",
 ]);
 
@@ -289,6 +299,28 @@ export function parsePetVisionCaptionEnvelope(value) {
   return parseEnvelopeValue(parsed);
 }
 
+export function createPetDerivedVisionCaptionEnvelope(input) {
+  return parseDerivedEnvelopeValue({
+    schemaVersion: 2,
+    source: {
+      upstreamCaptionRevision: input.upstreamCaptionRevision,
+      upstreamSourceHash: input.upstreamSourceHash,
+      upstreamCaptionTextSha256: input.upstreamCaptionTextSha256,
+    },
+    caption: input.caption,
+  });
+}
+
+export function parsePetDerivedVisionCaptionEnvelope(value) {
+  let parsed;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("Derived caption envelope must contain one JSON object.");
+  }
+  return parseDerivedEnvelopeValue(parsed);
+}
+
 export function buildPetVisionCaptionText(caption) {
   return [
     `subject_en: ${caption.subject.en}`,
@@ -319,6 +351,23 @@ export function createPetVisionCaptionSourceHash(input) {
     JSON.stringify(PET_VISION_FRAME_POLICY.frames),
     input.assetId,
     input.spritesheetSha256,
+  ]);
+}
+
+export function createPetVisionCaptionTextHash(captionText) {
+  return createHash("sha256").update(captionText, "utf8").digest("hex");
+}
+
+export function createPetDerivedVisionCaptionSourceHash(input) {
+  return lengthPrefixedSha256([
+    input.captionRevision,
+    input.modelUri,
+    PET_CAPTION_REWRITE_SYSTEM_PROMPT,
+    JSON.stringify(PET_CAPTION_REWRITE_RESPONSE_JSON_SCHEMA),
+    PET_CAPTION_OUTPUT_NORMALIZATION_REVISION,
+    input.upstreamCaptionRevision,
+    input.upstreamSourceHash,
+    createPetVisionCaptionTextHash(input.upstreamCaptionText),
   ]);
 }
 
@@ -398,113 +447,65 @@ async function processPet(input, pet) {
     throw new PetVisionBackfillError("asset_error");
   }
 
-  const captionSourceHash = createPetVisionCaptionSourceHash({
+  const captionDefinition =
+    input.config.captionDefinition ?? { kind: "vision" };
+  const resolvedCaption =
+    captionDefinition.kind === "rewrite"
+      ? await resolveDerivedCaption({
+          input,
+          pet,
+          assetId,
+          extracted,
+          upstreamCaptionRevision:
+            captionDefinition.upstreamCaptionRevision,
+          upstreamModelUri: captionDefinition.upstreamModelUri,
+        })
+      : await resolveVisionCaption({
+          input,
+          pet,
+          assetId,
+          extracted,
+          captionRevision: input.config.captionRevision,
+          modelUri: input.config.modelUri,
+        });
+  if (!resolvedCaption) return "caption-and-vector";
+
+  const visualSourceHash = createPetVisualEmbeddingSourceHash({
+    visualRevision: input.config.visualRevision,
     captionRevision: input.config.captionRevision,
-    modelUri: input.config.modelUri,
-    assetId,
-    spritesheetSha256: extracted.spritesheetSha256,
+    captionSourceHash: resolvedCaption.sourceHash,
+    captionText: resolvedCaption.captionText,
   });
-  let storedCaption = null;
-  if (!input.options.force) {
-    try {
-      storedCaption = await input.getCaption(
-        input.config.captionRevision,
-        pet.slug,
-      );
-    } catch {
-      throw new PetVisionBackfillError("persistence_error");
-    }
-  }
-  const freshCaption = readFreshCaption({
-    storedCaption,
-    expectedSourceHash: captionSourceHash,
-    assetId,
-    spritesheetSha256: extracted.spritesheetSha256,
-  });
-
-  if (freshCaption) {
-    const visualSourceHash = createPetVisualEmbeddingSourceHash({
-      visualRevision: input.config.visualRevision,
-      captionRevision: input.config.captionRevision,
-      captionSourceHash,
-      captionText: freshCaption.captionText,
-    });
-    let metadata;
-    try {
-      metadata = await input.getEmbeddingMetadata(
-        input.config.visualRevision,
-        pet.slug,
-      );
-    } catch {
-      throw new PetVisionBackfillError("persistence_error");
-    }
-    if (
-      metadata?.sourceHash === visualSourceHash &&
-      metadata.dimensions === input.config.dimensions
-    ) {
-      return "unchanged";
-    }
-    if (input.options.mode === "dry-run") return "vector-only";
-
-    const embedding = await callProvider(
-      () => input.embedDocument(freshCaption.captionText),
-    );
-    validateEmbedding(embedding, input.config.dimensions);
-    try {
-      await input.upsertEmbedding({
-        modelRevision: input.config.visualRevision,
-        slug: pet.slug,
-        sourceHash: visualSourceHash,
-        dimensions: input.config.dimensions,
-        embedding,
-        updatedAt: input.now().toISOString(),
-      });
-    } catch {
-      throw new PetVisionBackfillError("persistence_error");
-    }
-    return "vector-only";
-  }
-
-  if (input.options.mode === "dry-run") return "caption-and-vector";
-
-  const caption = await callProvider(
-    () => input.createCaption(extracted.frames),
-  );
-  const captionText = buildPetVisionCaptionText(caption);
-  const captionJson = JSON.stringify(
-    createPetVisionCaptionEnvelope({
-      assetId,
-      spritesheetSha256: extracted.spritesheetSha256,
-      caption,
-    }),
-  );
+  let metadata;
   try {
-    await input.upsertCaption({
-      captionRevision: input.config.captionRevision,
-      slug: pet.slug,
-      sourceHash: captionSourceHash,
-      captionJson,
-      captionText,
-      updatedAt: input.now().toISOString(),
-    });
+    metadata = input.options.force
+      ? null
+      : await input.getEmbeddingMetadata(
+          input.config.visualRevision,
+          pet.slug,
+        );
   } catch {
     throw new PetVisionBackfillError("persistence_error");
   }
+  if (
+    metadata?.sourceHash === visualSourceHash &&
+    metadata.dimensions === input.config.dimensions
+  ) {
+    return resolvedCaption.created ? "caption-and-vector" : "unchanged";
+  }
+  if (input.options.mode === "dry-run") {
+    return resolvedCaption.created ? "caption-and-vector" : "vector-only";
+  }
 
   const embedding = await callProvider(
-    () => input.embedDocument(captionText),
+    () => input.embedDocument(resolvedCaption.captionText),
   );
   validateEmbedding(embedding, input.config.dimensions);
   try {
     await input.upsertEmbedding({
       modelRevision: input.config.visualRevision,
       slug: pet.slug,
-      sourceHash: createPetVisualEmbeddingSourceHash({
-        visualRevision: input.config.visualRevision,
-        captionRevision: input.config.captionRevision,
-        captionSourceHash,
-        captionText,
-      }),
+      sourceHash: visualSourceHash,
       dimensions: input.config.dimensions,
       embedding,
       updatedAt: input.now().toISOString(),
@@ -512,7 +513,144 @@ async function processPet(input, pet) {
   } catch {
     throw new PetVisionBackfillError("persistence_error");
   }
-  return "caption-and-vector";
+  return resolvedCaption.created ? "caption-and-vector" : "vector-only";
+}
+
+async function resolveVisionCaption({
+  input,
+  pet,
+  assetId,
+  extracted,
+  captionRevision,
+  modelUri,
+}) {
+  const sourceHash = createPetVisionCaptionSourceHash({
+    captionRevision,
+    modelUri,
+    assetId,
+    spritesheetSha256: extracted.spritesheetSha256,
+  });
+  const storedCaption = await readStoredCaption(
+    input,
+    captionRevision,
+    pet.slug,
+  );
+  const freshCaption = readFreshCaption({
+    storedCaption,
+    expectedSourceHash: sourceHash,
+    assetId,
+    spritesheetSha256: extracted.spritesheetSha256,
+  });
+  if (freshCaption) {
+    return { ...freshCaption, sourceHash, created: false };
+  }
+  if (input.options.mode === "dry-run") return null;
+
+  const caption = await callProvider(
+    () => input.createCaption(extracted.frames),
+  );
+  const captionText = buildPetVisionCaptionText(caption);
+  await writeCaption(input, {
+    captionRevision,
+    slug: pet.slug,
+    sourceHash,
+    captionJson: JSON.stringify(
+      createPetVisionCaptionEnvelope({
+        assetId,
+        spritesheetSha256: extracted.spritesheetSha256,
+        caption,
+      }),
+    ),
+    captionText,
+    updatedAt: input.now().toISOString(),
+  });
+  return { caption, captionText, sourceHash, created: true };
+}
+
+async function resolveDerivedCaption({
+  input,
+  pet,
+  assetId,
+  extracted,
+  upstreamCaptionRevision,
+  upstreamModelUri,
+}) {
+  const upstream = await resolveVisionCaption({
+    input,
+    pet,
+    assetId,
+    extracted,
+    captionRevision: upstreamCaptionRevision,
+    modelUri: upstreamModelUri,
+  });
+  if (!upstream) return null;
+
+  const sourceHash = createPetDerivedVisionCaptionSourceHash({
+    captionRevision: input.config.captionRevision,
+    modelUri: input.config.modelUri,
+    upstreamCaptionRevision,
+    upstreamSourceHash: upstream.sourceHash,
+    upstreamCaptionText: upstream.captionText,
+  });
+  const storedCaption = await readStoredCaption(
+    input,
+    input.config.captionRevision,
+    pet.slug,
+  );
+  const freshCaption = readFreshDerivedCaption({
+    storedCaption,
+    expectedSourceHash: sourceHash,
+    upstreamCaptionRevision,
+    upstreamSourceHash: upstream.sourceHash,
+    upstreamCaptionText: upstream.captionText,
+  });
+  if (freshCaption) {
+    return {
+      ...freshCaption,
+      sourceHash,
+      created: upstream.created,
+    };
+  }
+  if (input.options.mode === "dry-run") return null;
+
+  const caption = await callProvider(
+    () => input.rewriteCaption(upstream.caption),
+  );
+  const captionText = buildPetVisionCaptionText(caption);
+  await writeCaption(input, {
+    captionRevision: input.config.captionRevision,
+    slug: pet.slug,
+    sourceHash,
+    captionJson: JSON.stringify(
+      createPetDerivedVisionCaptionEnvelope({
+        upstreamCaptionRevision,
+        upstreamSourceHash: upstream.sourceHash,
+        upstreamCaptionTextSha256:
+          createPetVisionCaptionTextHash(upstream.captionText),
+        caption,
+      }),
+    ),
+    captionText,
+    updatedAt: input.now().toISOString(),
+  });
+  return { caption, captionText, sourceHash, created: true };
+}
+
+async function readStoredCaption(input, captionRevision, slug) {
+  if (input.options.force) return null;
+  try {
+    return await input.getCaption(captionRevision, slug);
+  } catch {
+    throw new PetVisionBackfillError("persistence_error");
+  }
+}
+
+async function writeCaption(input, value) {
+  try {
+    await input.upsertCaption(value);
+  } catch {
+    throw new PetVisionBackfillError("persistence_error");
+  }
 }
 
 async function callProvider(callback) {
@@ -552,7 +690,32 @@ function readFreshCaption(input) {
     ) {
       return null;
     }
-    return { captionText };
+    return { caption: envelope.caption, captionText };
+  } catch {
+    return null;
+  }
+}
+
+function readFreshDerivedCaption(input) {
+  if (input.storedCaption?.sourceHash !== input.expectedSourceHash) {
+    return null;
+  }
+  try {
+    const envelope = parsePetDerivedVisionCaptionEnvelope(
+      input.storedCaption.captionJson,
+    );
+    const captionText = buildPetVisionCaptionText(envelope.caption);
+    if (
+      envelope.source.upstreamCaptionRevision !==
+        input.upstreamCaptionRevision ||
+      envelope.source.upstreamSourceHash !== input.upstreamSourceHash ||
+      envelope.source.upstreamCaptionTextSha256 !==
+        createPetVisionCaptionTextHash(input.upstreamCaptionText) ||
+      captionText !== input.storedCaption.captionText
+    ) {
+      return null;
+    }
+    return { caption: envelope.caption, captionText };
   } catch {
     return null;
   }
@@ -618,6 +781,42 @@ function parseEnvelopeValue(input) {
   };
 }
 
+function parseDerivedEnvelopeValue(input) {
+  const envelope = strictObject(input, "derived caption envelope", [
+    "schemaVersion",
+    "source",
+    "caption",
+  ]);
+  if (envelope.schemaVersion !== 2) {
+    throw new Error("Derived caption envelope schemaVersion must be 2.");
+  }
+  const source = strictObject(envelope.source, "source", [
+    "upstreamCaptionRevision",
+    "upstreamSourceHash",
+    "upstreamCaptionTextSha256",
+  ]);
+  return {
+    schemaVersion: 2,
+    source: {
+      upstreamCaptionRevision: normalizedString(
+        source.upstreamCaptionRevision,
+        "source.upstreamCaptionRevision",
+        1,
+        256,
+      ),
+      upstreamSourceHash: normalizedSha256(
+        source.upstreamSourceHash,
+        "source.upstreamSourceHash",
+      ),
+      upstreamCaptionTextSha256: normalizedSha256(
+        source.upstreamCaptionTextSha256,
+        "source.upstreamCaptionTextSha256",
+      ),
+    },
+    caption: parsePetVisionCaption(envelope.caption),
+  };
+}
+
 function bilingualText(input, path, maxLength, required) {
   const value = strictObject(input, path, ["en", "ru"]);
   return {
@@ -662,6 +861,14 @@ function normalizedString(input, path, minLength, maxLength) {
     throw new Error(
       `${path} must contain between ${minLength} and ${maxLength} characters.`,
     );
+  }
+  return value;
+}
+
+function normalizedSha256(input, path) {
+  const value = normalizedString(input, path, 64, 64).toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(value)) {
+    throw new Error(`${path} must be lowercase SHA-256.`);
   }
   return value;
 }

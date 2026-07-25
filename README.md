@@ -108,23 +108,34 @@ Optional server-side MCP metrics also need `YANDEX_METRIKA_MP_TOKEN` and
 Optional IndexNow notifications are enabled by `INDEXNOW_KEY`; the app serves
 `/<key>.txt` and pings IndexNow after an admin approves a pet.
 
-Optional semantic search uses Yandex AI Studio text embeddings and exact cosine
-ranking in YDB. Query mode defaults to `PET_SEARCH_MODE=lexical`; `shadow`
-computes semantic ranking without changing public order, and `hybrid` combines
-lexical and text-semantic ranks. An independent
-`PET_SEARCH_VISUAL_MODE=off|shadow|hybrid` adds an offline visual-caption rank
-from four fixed sprite frames. Captions and their provenance remain internal;
-public JSON, TOON, homepage, MCP, and WebMCP shapes do not change. Configure
-`YANDEX_AI_STUDIO_FOLDER_ID`,
-`YANDEX_AI_STUDIO_API_KEY_FILE`, and
-`PET_SEARCH_MODEL_REVISION=yandex-text-embeddings-v2-768-2026-07`. The v2
-runtime uses the managed `text-embeddings-v2-doc/query` models at 768
-dimensions. Set
-`PET_SEARCH_VISUAL_MODEL_REVISION=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1`
-for the compatible Qwen visual rank. Legacy 256-dimensional revisions remain
-registered for rollback. The API key is accepted only through the secret-file
-setting. Provider failures and timeouts fall back to lexical results;
-visual-only failures preserve the text-hybrid order.
+Optional semantic search uses managed Yandex AI Studio Text Embeddings v2
+`doc/query` vectors with 768 dimensions and exact cosine ranking in YDB. Query
+mode defaults to `PET_SEARCH_MODE=lexical`; `shadow` computes semantic ranking
+without changing public order, and `hybrid` combines lexical and text-semantic
+ranks. An independent `PET_SEARCH_VISUAL_MODE=off|shadow|hybrid` adds an
+offline visual-caption rank from four fixed sprite frames. Qwen3.6 is the
+image-capable extractor; the optional DeepSeek V4 Flash candidate receives
+only the validated Qwen caption and rewrites it as strict structured text.
+Captions and their provenance remain internal; public JSON, TOON, homepage,
+MCP, and WebMCP shapes do not change. Configure
+`YANDEX_AI_STUDIO_FOLDER_ID`, `YANDEX_AI_STUDIO_API_KEY_FILE`, and
+`PET_SEARCH_MODEL_REVISION=yandex-text-embeddings-v2-768-2026-07`. The API key
+is accepted only through the secret-file setting. Provider failures and
+timeouts fall back to lexical results. An uncalibrated text revision also
+fails closed to lexical, while an incompatible text/visual provider pair
+disables visual ranking and preserves the text result order.
+
+When no visual candidate passes, text v2 can roll out independently with
+`PET_SEARCH_VISUAL_MODE=off`: backfill text only, run
+`npm run search:eval:text-calibrate`, deploy `PET_SEARCH_MODE=shadow`, inspect
+aggregate metrics and repeat calibration readback, then run the one-shot
+`npm run search:eval:text-holdout`. The holdout requires an absolute durable
+`PET_SEARCH_TEXT_HOLDOUT_MARKER_PATH`, a
+`PET_SEARCH_TEXT_HOLDOUT_ROLLOUT_ID`, three externally measured
+`PET_SEARCH_TEXT_FALLBACK_HTTP_STATUSES`, and
+`PET_SEARCH_TEXT_HOLDOUT_REVIEWED_BY`; only then may text switch to `hybrid`
+while visual remains off. Managed-model preflight calls provider APIs and may
+be billable.
 
 To run without YDB on generated sample data:
 
@@ -268,42 +279,106 @@ Apply migrations to an existing database:
 npm run db:migrate
 ```
 
-Preview and apply the approved-pet text and visual backfills after the
-migrations:
+Managed search v2 is an additive revision-only upgrade: it does not require a
+YDB schema migration. Deploy it inactive with `PET_SEARCH_MODE=lexical` and
+`PET_SEARCH_VISUAL_MODE=off`, then preflight the managed models, both v2
+embedding endpoints at 768 dimensions, and DeepSeek strict structured output:
 
 ```bash
+npm run search:preflight-v2
 npm run search:backfill -- --dry-run
-npm run search:backfill -- --apply
-npm run search:backfill -- --apply --slug orbit-otter --force
 npm run search:backfill-vision -- --dry-run
-npm run search:backfill-vision -- --apply --slug orbit-otter
+# Only when the preflight reports deepSeekEligible=true:
+PET_SEARCH_VISION_CAPTION_REVISION=yandex-qwen3.6-35b-a3b-deepseek-v4-flash-pet-caption-2026-07-v1 \
+PET_SEARCH_VISUAL_MODEL_REVISION=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-deepseek-v4-v1 \
+  npm run search:backfill-vision -- --dry-run
+```
+
+If preflight reports `deepSeekEligible: false` because strict output is
+unsupported or invalid, exclude that candidate; do not fall back to
+unstructured output or another provider. Both backfills require
+exactly one of `--dry-run` or `--apply`. They never print document text,
+captions, images, embeddings, prompts, or secrets. Dry-run reads the approved
+catalog and hashes spritesheets, but calls no AI provider and writes neither
+YDB nor local candidate data.
+
+Stop after dry-run and present its exact counts for explicit production-write
+approval. Only after approval, create the additive rows in this order:
+
+```bash
+npm run search:backfill -- --apply
 npm run search:backfill-vision -- --apply
+# Only when the preflight reports deepSeekEligible=true:
+PET_SEARCH_VISION_CAPTION_REVISION=yandex-qwen3.6-35b-a3b-deepseek-v4-flash-pet-caption-2026-07-v1 \
+PET_SEARCH_VISUAL_MODEL_REVISION=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-deepseek-v4-v1 \
+  npm run search:backfill-vision -- --apply
+```
+
+If every visual candidate failed, use the text-only path instead: keep
+`PET_SEARCH_VISUAL_MODE=off`, do not run vision backfill or bakeoff, calibrate
+with `npm run search:eval:text-calibrate`, run text `shadow` plus readback,
+then consume the text holdout exactly once with a durable absolute marker and
+explicit reviewer/evidence variables as described in
+[DEPLOYMENT.md](./DEPLOYMENT.md).
+
+Build the ignored, local blind-review artifact only after every eligible
+candidate covers every approved pet:
+
+```bash
+npm run search:bakeoff-artifact
+```
+
+Complete every review item in
+`.scratch/pet-caption-bakeoff/review.json` against its four local frame files.
+The artifact hides pet slugs and candidate revisions; its separate candidate
+key, captions, frames, prompts, and vectors must never be printed or committed.
+Each review records `unsupportedFact`, `bilingualContradiction`, `coverage`,
+and `searchUtility`.
+
+Freshly rerun the v1 calibration baseline, then calibrate v2 separately for
+Qwen and, when preflight allowed it, DeepSeek. Each calibration writes an
+aggregate-only ignored artifact:
+
+```bash
+PET_SEARCH_MODEL_REVISION=yandex-text-search-2026-07 \
+PET_SEARCH_VISUAL_MODEL_REVISION=yandex-text-search-2026-07-pet-vision-v1 \
+  npm run search:eval:calibrate
 npm run search:eval:calibrate
+# Only when the preflight reports deepSeekEligible=true:
+PET_SEARCH_VISION_CAPTION_REVISION=yandex-qwen3.6-35b-a3b-deepseek-v4-flash-pet-caption-2026-07-v1 \
+PET_SEARCH_VISUAL_MODEL_REVISION=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-deepseek-v4-v1 \
+  npm run search:eval:calibrate
+npm run search:bakeoff-select
+```
+
+Commit the selected caption revision, text threshold, and revision-bound
+visual profile before the holdout. The selector rejects incomplete or unsafe
+captions, missing approved-pet rows, failed quality/latency gates, and a v2
+text nDCG@5 regression against the fresh v1 baseline. It ranks passing
+candidates by visual-subset combined nDCG@5, overall combined nDCG@5, then
+mean human score; an exact tie selects Qwen.
+
+Enable text and visual `shadow`, inspect aggregate latency/fallback metrics,
+and rerun calibration readback. Then run the untouched holdout exactly once:
+
+```bash
 npm run search:eval:holdout
 ```
 
-Both backfills require an explicit `--dry-run` or `--apply`; visual `--force`
-is valid only with `--apply`. They never print document text, captions, images,
-embeddings, prompts, or secrets. Dry-run still reads and hashes spritesheets
-but never calls either AI provider and never writes YDB. A safe rollout is
-base `lexical` and visual `off` → additive migrations → backfills → visual
-`shadow` → calibration → untouched holdout → human review of the combined
-`sexy` top five → both modes `hybrid`.
-
-Text and visual backfills resolve their embedding provider independently from
-their active revision. Visual ranking is disabled safely when the text and
-visual revisions use incompatible embedding models.
+The holdout marker is claimed before execution, including failed execution.
+Any failure stops rollout and must not trigger candidate tuning or another
+holdout run. Human-review the combined `sexy` top five and enable both modes
+as `hybrid` only after every gate passes.
 
 The first rollback is `PET_SEARCH_VISUAL_MODE=off`; use
-`PET_SEARCH_MODE=lexical` to disable the text-semantic contour too. The additive
-caption and embeddings tables may remain.
+the legacy `PET_SEARCH_MODEL_REVISION=yandex-text-search-2026-07`, or set
+`PET_SEARCH_MODE=lexical` to disable the text-semantic contour too. All
+additive caption and embedding rows remain available for diagnosis or retry.
 The checked-in eval queries live in
 `src/lib/pets/search-eval-fixtures.json` with frozen `calibration` and
-`holdout` splits. Calibration evaluates all observed visual scores against
-weights `0.25`, `0.50`, `0.75`, and `1.00`; the holdout command requires a
-committed revision-bound profile and must not be used for tuning. Live eval
-requires configured YDB and AI Studio access and prints aggregate results plus
-the public slugs in the final `sexy` review list.
+`holdout` splits. Live eval requires configured YDB and AI Studio access and
+prints aggregate results plus the public slugs in the final `sexy` review
+list.
 
 Seed local development data after the schema exists:
 
