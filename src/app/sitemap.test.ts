@@ -5,10 +5,6 @@ const cacheMocks = vi.hoisted(() => ({
   unstableCache: vi.fn((callback: unknown) => callback),
 }));
 
-const authRepositoryMocks = vi.hoisted(() => ({
-  listPublicUserProfiles: vi.fn(),
-}));
-
 const petsRepositoryMocks = vi.hoisted(() => ({
   listApprovedPets: vi.fn(),
 }));
@@ -16,10 +12,6 @@ const petsRepositoryMocks = vi.hoisted(() => ({
 vi.mock("next/cache", () => ({
   revalidateTag: cacheMocks.revalidateTag,
   unstable_cache: cacheMocks.unstableCache,
-}));
-
-vi.mock("@/lib/auth/repository", () => ({
-  listPublicUserProfiles: authRepositoryMocks.listPublicUserProfiles,
 }));
 
 vi.mock("@/lib/pets/repository", () => ({
@@ -33,7 +25,7 @@ describe("sitemap", () => {
     vi.unstubAllEnvs();
   });
 
-  it("returns cached static, approved pet, and public profile entries", async () => {
+  it("returns cached static and approved pet entries", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-22T10:00:00.000Z"));
     vi.stubEnv("CODEX_PETS_DATA_SOURCE", "mock");
@@ -62,20 +54,6 @@ describe("sitemap", () => {
         downloadCount: 0,
         installCount: 0,
         likeCount: 0,
-      },
-    ]);
-    authRepositoryMocks.listPublicUserProfiles.mockResolvedValueOnce([
-      {
-        userId: "creator@example.com",
-        displayName: "Creator",
-        profileSlug: "creator",
-        bio: null,
-        websiteUrl: null,
-        githubUrl: null,
-        linkedinUrl: null,
-        avatarUrl: null,
-        createdAt: "2026-05-03T00:00:00.000Z",
-        updatedAt: "2026-05-04T00:00:00.000Z",
       },
     ]);
 
@@ -118,7 +96,6 @@ describe("sitemap", () => {
         "https://pets.example/codex-pets/request",
         "https://pets.example/codex-pets/submit",
         "https://pets.example/codex-pets/pets/boba",
-        "https://pets.example/codex-pets/users/creator",
       ]);
       expect(entries).toContainEqual(
         sitemapEntry(
@@ -128,14 +105,7 @@ describe("sitemap", () => {
           0.8,
         ),
       );
-      expect(entries).toContainEqual(
-        sitemapEntry(
-          "https://pets.example/codex-pets/users/creator",
-          "2026-05-04T00:00:00.000Z",
-          "weekly",
-          0.6,
-        ),
-      );
+      expect(entries.some((entry) => entry.url.includes("/users/"))).toBe(false);
       expect(entries.some((entry) => "lastModified" in entry && entry.lastModified === "2026-05-22T10:00:00.000Z")).toBe(false);
     } finally {
       vi.useRealTimers();

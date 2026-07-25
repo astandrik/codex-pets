@@ -38,7 +38,11 @@ describe("robots", () => {
       ]),
     );
     expect(firstRule.disallow).toEqual(
-      expect.arrayContaining(["/codex-pets/admin", "/codex-pets/api/admin"]),
+      expect.arrayContaining([
+        "/codex-pets/admin",
+        "/codex-pets/api/admin",
+        "/codex-pets/api/",
+      ]),
     );
     expect(result.sitemap).toBe("https://pets.example/codex-pets/sitemap.xml");
 

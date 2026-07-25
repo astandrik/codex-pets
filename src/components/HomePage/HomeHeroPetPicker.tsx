@@ -119,7 +119,7 @@ export function HomeHeroPetPicker({
             <span className="home-hero-pet__sprite-viewport" style={stripStyle}>
               <Image
                 src={idleStripUrl}
-                alt=""
+                alt={`${pet.displayName} — animated sprite preview`}
                 width={PREVIEW_STRIP_WIDTH}
                 height={PET_SHEET.cellHeight}
                 className="home-hero-pet__sprite-strip"

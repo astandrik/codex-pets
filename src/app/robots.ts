@@ -39,7 +39,7 @@ const PUBLIC_ALLOW_PATHS = [
   "/.well-known/oauth-protected-resource/mcp",
 ];
 
-const PUBLIC_DISALLOW_PATHS = ["/admin", "/api/admin"];
+const PUBLIC_DISALLOW_PATHS = ["/admin", "/api/admin", "/api/"];
 
 export default function robots(): MetadataRoute.Robots {
   return {

@@ -54,7 +54,7 @@ export function PetCard({ pet, showStatus = false }: PetCardProps) {
             <span className="pet-card__sprite-viewport" style={stripStyle}>
               <Image
                 src={idleStripUrl}
-                alt=""
+                alt={`${pet.displayName} — animated sprite preview`}
                 width={PET_SHEET.cellWidth * PREVIEW_STATE.frames}
                 height={PET_SHEET.cellHeight}
                 className="pet-card__sprite-strip"
