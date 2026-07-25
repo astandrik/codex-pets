@@ -10,6 +10,10 @@ import { PET_VISION_CAPTION_REVISION } from "@/lib/pets/search-vision-contract";
 const supportedRevision = Object.keys(PET_SEARCH_MODEL_REVISIONS)[0] ?? "";
 const supportedVisualRevision =
   Object.keys(PET_VISUAL_MODEL_REVISIONS)[0] ?? "";
+const v2TextRevision =
+  "yandex-text-embeddings-v2-768-2026-07";
+const v2VisualRevision =
+  "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1";
 const calibratedVisualProfile = {
   minSemanticScore: 0.3455384373664856,
   weight: 0.25,
@@ -46,6 +50,7 @@ describe("pet search runtime configuration", () => {
     expect(config.visual).toMatchObject({
       captionRevision: PET_VISION_CAPTION_REVISION,
       visualRevision: supportedVisualRevision,
+      embeddingModelId: "yandex-text-search-v1-256",
       dimensions: 256,
       profile: calibratedVisualProfile,
       visionTimeoutMs: 30_000,
@@ -76,6 +81,7 @@ describe("pet search runtime configuration", () => {
         folderId: "folder-1",
         apiKey: "secret-key",
         revision: supportedRevision,
+        embeddingModelId: "yandex-text-search-v1-256",
         dimensions: 256,
         minSemanticScore: 0.31,
         timeoutMs: 900,
@@ -87,6 +93,7 @@ describe("pet search runtime configuration", () => {
         apiKey: "secret-key",
         captionRevision: PET_VISION_CAPTION_REVISION,
         visualRevision: supportedVisualRevision,
+        embeddingModelId: "yandex-text-search-v1-256",
         dimensions: 256,
         profile: calibratedVisualProfile,
         visionTimeoutMs: 30_000,
@@ -94,6 +101,56 @@ describe("pet search runtime configuration", () => {
       },
       visualFallbackReason: null,
     });
+  });
+
+  it("loads compatible calibrated v2 text and Qwen visual profiles", () => {
+    const config = loadPetSearchConfig(
+      {
+        PET_SEARCH_MODE: "hybrid",
+        PET_SEARCH_MODEL_REVISION: v2TextRevision,
+        PET_SEARCH_VISUAL_MODE: "hybrid",
+        PET_SEARCH_VISUAL_MODEL_REVISION: v2VisualRevision,
+        YANDEX_AI_STUDIO_FOLDER_ID: "folder-1",
+        YANDEX_AI_STUDIO_API_KEY_FILE: "/run/secrets/key",
+      },
+      () => "secret",
+    );
+
+    expect(config.semantic).toMatchObject({
+      revision: v2TextRevision,
+      embeddingModelId: "yandex-text-embeddings-v2-768",
+      dimensions: 768,
+      minSemanticScore: 0.28,
+    });
+    expect(config.visual).toMatchObject({
+      visualRevision: v2VisualRevision,
+      embeddingModelId: "yandex-text-embeddings-v2-768",
+      dimensions: 768,
+      profile: {
+        minSemanticScore: 0.3574455678462982,
+        weight: 0.25,
+      },
+    });
+    expect(config.fallbackReason).toBeNull();
+    expect(config.visualFallbackReason).toBeNull();
+  });
+
+  it("disables visual ranking for incompatible embedding providers", () => {
+    const config = loadPetSearchConfig(
+      {
+        PET_SEARCH_MODE: "hybrid",
+        PET_SEARCH_MODEL_REVISION: supportedRevision,
+        PET_SEARCH_VISUAL_MODE: "hybrid",
+        PET_SEARCH_VISUAL_MODEL_REVISION: v2VisualRevision,
+        YANDEX_AI_STUDIO_FOLDER_ID: "folder-1",
+        YANDEX_AI_STUDIO_API_KEY_FILE: "/run/secrets/key",
+      },
+      () => "secret",
+    );
+
+    expect(config.visualFallbackReason).toBe(
+      "visual_embedding_incompatible",
+    );
   });
 
   it("keeps hybrid mode but reports a safe lexical fallback when config is incomplete", () => {

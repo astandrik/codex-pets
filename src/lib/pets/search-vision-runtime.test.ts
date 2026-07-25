@@ -23,6 +23,7 @@ const config: PetSearchConfig = {
     apiKey: "secret",
     captionRevision: "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1",
     visualRevision: "yandex-text-search-2026-07-pet-vision-v1",
+    embeddingModelId: "yandex-text-search-v1-256",
     dimensions: 256,
     profile: null,
     visionTimeoutMs: 30_000,

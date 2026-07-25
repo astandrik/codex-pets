@@ -73,6 +73,38 @@ describe("pet search embeddings", () => {
     });
   });
 
+  it("uses the managed v2 doc/query models with an explicit 768 dimension", async () => {
+    const requests: RequestInit[] = [];
+    const embedding = Array.from({ length: 768 }, (_, index) => index / 768);
+    const client = createYandexEmbeddingClient({
+      folderId: "folder-1",
+      apiKey: "secret-key",
+      revision: "yandex-text-embeddings-v2-768-2026-07",
+      dimensions: 768,
+      queryModelPath: "text-embeddings-v2-query",
+      documentModelPath: "text-embeddings-v2-doc",
+      requestDimensions: 768,
+      fetchImpl: async (_url, init) => {
+        requests.push(init ?? {});
+        return Response.json({ embedding });
+      },
+    });
+
+    await client.embedQuery("gothic pet");
+    await client.embedDocument("visual caption");
+
+    expect(JSON.parse(String(requests[0]?.body))).toEqual({
+      modelUri: "emb://folder-1/text-embeddings-v2-query",
+      text: "gothic pet",
+      dim: "768",
+    });
+    expect(JSON.parse(String(requests[1]?.body))).toEqual({
+      modelUri: "emb://folder-1/text-embeddings-v2-doc",
+      text: "visual caption",
+      dim: "768",
+    });
+  });
+
   it("caches normalized query embeddings without repeating provider calls", async () => {
     let calls = 0;
     const client = createYandexEmbeddingClient({

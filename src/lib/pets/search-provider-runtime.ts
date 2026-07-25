@@ -1,30 +1,44 @@
-import { loadPetSearchConfig } from "@/lib/pets/search-config";
+import {
+  loadPetSearchConfig,
+  PET_SEARCH_EMBEDDING_MODELS,
+} from "@/lib/pets/search-config";
 import { createYandexEmbeddingClient } from "@/lib/pets/search-embeddings";
 import { createYandexVisionCaptionClient } from "@/lib/pets/search-vision-client";
 
 export const petSearchRuntimeConfig = loadPetSearchConfig();
 
-const embeddingConfig =
-  petSearchRuntimeConfig.semantic ?? petSearchRuntimeConfig.visual;
+const semanticEmbeddingConfig = petSearchRuntimeConfig.semantic;
+const visualEmbeddingConfig = petSearchRuntimeConfig.visual;
 
-export const petSearchEmbeddingClient = embeddingConfig
+export const petSearchEmbeddingClient = semanticEmbeddingConfig
   ? createYandexEmbeddingClient({
-      folderId: embeddingConfig.folderId,
-      apiKey: embeddingConfig.apiKey,
-      revision:
-        petSearchRuntimeConfig.semantic?.revision ??
-        petSearchRuntimeConfig.visual?.visualRevision ??
-        "yandex-text-search-provider",
-      dimensions: embeddingConfig.dimensions,
-      timeoutMs: petSearchRuntimeConfig.semantic?.timeoutMs ?? 800,
+      folderId: semanticEmbeddingConfig.folderId,
+      apiKey: semanticEmbeddingConfig.apiKey,
+      revision: semanticEmbeddingConfig.revision,
+      ...PET_SEARCH_EMBEDDING_MODELS[
+        semanticEmbeddingConfig.embeddingModelId
+      ],
+      timeoutMs: semanticEmbeddingConfig.timeoutMs,
     })
   : null;
 
-export const petVisionCaptionClient = petSearchRuntimeConfig.visual
+export const petVisualEmbeddingClient = visualEmbeddingConfig
+  ? createYandexEmbeddingClient({
+      folderId: visualEmbeddingConfig.folderId,
+      apiKey: visualEmbeddingConfig.apiKey,
+      revision: visualEmbeddingConfig.visualRevision,
+      ...PET_SEARCH_EMBEDDING_MODELS[
+        visualEmbeddingConfig.embeddingModelId
+      ],
+      timeoutMs: semanticEmbeddingConfig?.timeoutMs ?? 800,
+    })
+  : null;
+
+export const petVisionCaptionClient = visualEmbeddingConfig
   ? createYandexVisionCaptionClient({
-      folderId: petSearchRuntimeConfig.visual.folderId,
-      apiKey: petSearchRuntimeConfig.visual.apiKey,
-      modelUri: petSearchRuntimeConfig.visual.modelUri,
-      timeoutMs: petSearchRuntimeConfig.visual.visionTimeoutMs,
+      folderId: visualEmbeddingConfig.folderId,
+      apiKey: visualEmbeddingConfig.apiKey,
+      modelUri: visualEmbeddingConfig.modelUri,
+      timeoutMs: visualEmbeddingConfig.visionTimeoutMs,
     })
   : null;

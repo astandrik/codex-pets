@@ -4,6 +4,11 @@ import {
   embeddingToBuffer as runtimeEmbeddingToBuffer,
 } from "../src/lib/pets/search-embeddings";
 import {
+  PET_SEARCH_EMBEDDING_MODELS,
+  PET_VISION_CAPTION_REVISIONS,
+  PET_VISUAL_MODEL_REVISIONS,
+} from "../src/lib/pets/search-config";
+import {
   PET_VISION_CAPTION_REVISION,
   PET_VISUAL_MODEL_REVISION,
   buildPetVisionCaptionText as buildRuntimeCaptionText,
@@ -26,6 +31,10 @@ const {
   parseVisionBackfillArgs,
   runPetVisionSearchBackfill,
 } = await import("./lib/pet-vision-search-backfill.mjs");
+const {
+  PET_VISION_BACKFILL_CAPTION_REVISIONS,
+  PET_VISUAL_BACKFILL_REVISIONS,
+} = await import("./lib/pet-search-provider-config.mjs");
 
 const visualConfig = {
   captionRevision: PET_VISION_CAPTION_REVISION,
@@ -110,6 +119,24 @@ function freshCaption() {
 }
 
 describe("pet vision search backfill", () => {
+  it("keeps Qwen visual provider definitions in runtime parity", () => {
+    expect(PET_VISION_BACKFILL_CAPTION_REVISIONS).toEqual(
+      PET_VISION_CAPTION_REVISIONS,
+    );
+    for (const [revision, definition] of Object.entries(
+      PET_VISUAL_MODEL_REVISIONS,
+    )) {
+      const runtimeModel =
+        PET_SEARCH_EMBEDDING_MODELS[definition.embeddingModelId];
+      expect(PET_VISUAL_BACKFILL_REVISIONS[revision]).toEqual({
+        captionRevision: definition.captionRevision,
+        dimensions: runtimeModel.dimensions,
+        documentModelPath: runtimeModel.documentModelPath,
+        requestDimensions: runtimeModel.requestDimensions,
+      });
+    }
+  });
+
   it("accepts only explicit supported modes and apply-only force", () => {
     expect(parseVisionBackfillArgs(["--dry-run"])).toEqual({
       mode: "dry-run",

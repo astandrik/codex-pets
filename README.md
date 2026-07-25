@@ -117,9 +117,14 @@ from four fixed sprite frames. Captions and their provenance remain internal;
 public JSON, TOON, homepage, MCP, and WebMCP shapes do not change. Configure
 `YANDEX_AI_STUDIO_FOLDER_ID`,
 `YANDEX_AI_STUDIO_API_KEY_FILE`, and
-`PET_SEARCH_MODEL_REVISION=yandex-text-search-2026-07`. The API key is accepted
-only through the secret-file setting. Provider failures and timeouts fall back
-to lexical results; visual-only failures preserve the text-hybrid order.
+`PET_SEARCH_MODEL_REVISION=yandex-text-embeddings-v2-768-2026-07`. The v2
+runtime uses the managed `text-embeddings-v2-doc/query` models at 768
+dimensions. Set
+`PET_SEARCH_VISUAL_MODEL_REVISION=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1`
+for the compatible Qwen visual rank. Legacy 256-dimensional revisions remain
+registered for rollback. The API key is accepted only through the secret-file
+setting. Provider failures and timeouts fall back to lexical results;
+visual-only failures preserve the text-hybrid order.
 
 To run without YDB on generated sample data:
 
@@ -284,6 +289,10 @@ but never calls either AI provider and never writes YDB. A safe rollout is
 base `lexical` and visual `off` → additive migrations → backfills → visual
 `shadow` → calibration → untouched holdout → human review of the combined
 `sexy` top five → both modes `hybrid`.
+
+Text and visual backfills resolve their embedding provider independently from
+their active revision. Visual ranking is disabled safely when the text and
+visual revisions use incompatible embedding models.
 
 The first rollback is `PET_SEARCH_VISUAL_MODE=off`; use
 `PET_SEARCH_MODE=lexical` to disable the text-semantic contour too. The additive

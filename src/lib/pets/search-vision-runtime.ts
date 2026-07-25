@@ -13,9 +13,9 @@ import {
   type StoredEmbeddingMetadata,
 } from "@/lib/pets/search-embeddings-repository";
 import {
-  petSearchEmbeddingClient,
   petSearchRuntimeConfig,
   petVisionCaptionClient,
+  petVisualEmbeddingClient,
 } from "@/lib/pets/search-provider-runtime";
 import {
   buildPetVisionCaptionText,
@@ -242,7 +242,7 @@ function validateEmbedding(
 
 const productionRuntime = createPetVisionSearchRuntime({
   config: petSearchRuntimeConfig,
-  embeddingClient: petSearchEmbeddingClient,
+  embeddingClient: petVisualEmbeddingClient,
   visionClient: petVisionCaptionClient,
   readSpritesheet: readPetSpritesheetAsset,
   extractFrames: extractPetVisionFrames,

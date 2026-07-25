@@ -51,6 +51,9 @@ type YandexEmbeddingClientOptions = {
   apiKey: string;
   revision: string;
   dimensions?: number;
+  queryModelPath?: string;
+  documentModelPath?: string;
+  requestDimensions?: number | null;
   timeoutMs?: number;
   maxConcurrent?: number;
   requestsPerMinute?: number;
@@ -167,7 +170,17 @@ export function createYandexEmbeddingClient(
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const model = kind === "query" ? "text-search-query" : "text-search-doc";
+      const modelPath =
+        kind === "query"
+          ? (options.queryModelPath ?? "text-search-query/latest")
+          : (options.documentModelPath ?? "text-search-doc/latest");
+      const requestBody = {
+        modelUri: `emb://${options.folderId}/${modelPath}`,
+        text,
+        ...(options.requestDimensions
+          ? { dim: String(options.requestDimensions) }
+          : {}),
+      };
       const response = await fetchImpl(EMBEDDING_ENDPOINT, {
         method: "POST",
         headers: {
@@ -175,10 +188,7 @@ export function createYandexEmbeddingClient(
           "Content-Type": "application/json",
           "x-folder-id": options.folderId,
         },
-        body: JSON.stringify({
-          modelUri: `emb://${options.folderId}/${model}/latest`,
-          text,
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal,
       });
 

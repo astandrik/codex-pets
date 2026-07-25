@@ -6,6 +6,10 @@ import { pathToFileURL } from "node:url";
 
 import { createRequestStartLimiter } from "./lib/pet-search-backfill.mjs";
 import {
+  createEmbeddingRequest,
+  requirePetVisualBackfillRevision,
+} from "./lib/pet-search-provider-config.mjs";
+import {
   PET_VISION_RESPONSE_JSON_SCHEMA,
   PET_VISION_SYSTEM_PROMPT,
   PET_VISION_USER_PROMPT,
@@ -32,8 +36,6 @@ const EMBEDDINGS_TABLE = "codex_pet_search_embeddings";
 const CAPTION_REVISION =
   "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1";
 const VISUAL_REVISION = "yandex-text-search-2026-07-pet-vision-v1";
-const CAPTION_MODEL_NAME = "qwen3.6-35b-a3b";
-const DIMENSIONS = 256;
 const DEFAULT_EMBEDDING_TIMEOUT_MS = 800;
 const DEFAULT_VISION_TIMEOUT_MS = 30_000;
 const VISION_ENDPOINT =
@@ -62,7 +64,10 @@ export async function main(argv = process.argv.slice(2)) {
     const applyProviders = options.mode === "apply"
       ? {
           createCaption: createVisionProvider(providerConfig),
-          embedDocument: createEmbeddingProvider(providerConfig),
+          embedDocument: createEmbeddingProvider(
+            providerConfig,
+            providerConfig.visualDefinition,
+          ),
         }
       : {
           createCaption: async () => {
@@ -76,9 +81,9 @@ export async function main(argv = process.argv.slice(2)) {
     return await runPetVisionSearchBackfill({
       options,
       config: {
-        captionRevision: CAPTION_REVISION,
-        visualRevision: VISUAL_REVISION,
-        dimensions: DIMENSIONS,
+        captionRevision: providerConfig.captionRevision,
+        visualRevision: providerConfig.visualRevision,
+        dimensions: providerConfig.visualDefinition.dimensions,
         modelUri: providerConfig.modelUri,
       },
       pets,
@@ -107,27 +112,25 @@ function readProviderConfig(mode) {
   const visualRevision =
     process.env.PET_SEARCH_VISUAL_MODEL_REVISION?.trim() ||
     VISUAL_REVISION;
-  if (captionRevision !== CAPTION_REVISION) {
-    throw new Error(
-      `PET_SEARCH_VISION_CAPTION_REVISION must be ${CAPTION_REVISION}.`,
-    );
-  }
-  if (visualRevision !== VISUAL_REVISION) {
-    throw new Error(
-      `PET_SEARCH_VISUAL_MODEL_REVISION must be ${VISUAL_REVISION}.`,
-    );
-  }
+  const { captionDefinition, visualDefinition } =
+    requirePetVisualBackfillRevision({
+      captionRevision,
+      visualRevision,
+    });
 
   const folderId = process.env.YANDEX_AI_STUDIO_FOLDER_ID?.trim();
   if (!folderId) {
     throw new Error("YANDEX_AI_STUDIO_FOLDER_ID is required.");
   }
-  const modelUri = `gpt://${folderId}/${CAPTION_MODEL_NAME}`;
+  const modelUri = `gpt://${folderId}/${captionDefinition.modelName}`;
   if (mode === "dry-run") {
     return {
       folderId,
       apiKey: "",
+      captionRevision,
+      visualRevision,
       modelUri,
+      visualDefinition,
       embeddingTimeoutMs: DEFAULT_EMBEDDING_TIMEOUT_MS,
       visionTimeoutMs: DEFAULT_VISION_TIMEOUT_MS,
     };
@@ -147,7 +150,10 @@ function readProviderConfig(mode) {
   return {
     folderId,
     apiKey,
+    captionRevision,
+    visualRevision,
     modelUri,
+    visualDefinition,
     embeddingTimeoutMs: boundedTimeout(
       process.env.PET_SEARCH_EMBEDDING_TIMEOUT_MS,
       DEFAULT_EMBEDDING_TIMEOUT_MS,
@@ -268,7 +274,7 @@ function createVisionProvider(config) {
   };
 }
 
-function createEmbeddingProvider(config) {
+function createEmbeddingProvider(config, visualDefinition) {
   const reserveStart = createRequestStartLimiter({
     requestsPerMinute: 60,
     sleep: delay,
@@ -289,10 +295,13 @@ function createEmbeddingProvider(config) {
           "Content-Type": "application/json",
           "x-folder-id": config.folderId,
         },
-        body: JSON.stringify({
-          modelUri: `emb://${config.folderId}/text-search-doc/latest`,
-          text,
-        }),
+        body: JSON.stringify(
+          createEmbeddingRequest({
+            folderId: config.folderId,
+            definition: visualDefinition,
+            text,
+          }),
+        ),
         signal: controller.signal,
       });
       if (!response.ok) {
