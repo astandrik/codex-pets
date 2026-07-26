@@ -7,6 +7,24 @@ import "./Footer.scss";
 
 const GRAVITY_UI_URL = "https://github.com/gravity-ui/uikit";
 const YDB_URL = "https://ydb.tech/";
+const LEARN_LINKS = [
+  {
+    href: "/guides/best-codex-pets-for-ai-coding-agents",
+    label: "Best Codex pets for AI coding agents",
+  },
+  {
+    href: "/guides/codex-pets-mcp-integration-guide",
+    label: "Codex Pets MCP integration guide",
+  },
+  {
+    href: "/guides/codex-pets-vs-vscode-pets",
+    label: "Codex Pets vs VS Code Pets",
+  },
+  {
+    href: "/guides/codex-pets-vs-openpets",
+    label: "Codex Pets vs OpenPets",
+  },
+] as const;
 
 export function Footer() {
   return (
@@ -55,6 +73,16 @@ export function Footer() {
             </a>
           </span>
         </div>
+        <nav className="footer__learn" aria-label="Learn">
+          <span className="footer__learn-title">Learn</span>
+          <div className="footer__learn-links">
+            {LEARN_LINKS.map(({ href, label }) => (
+              <Link key={href} href={href} className="footer__link">
+                {label}
+              </Link>
+            ))}
+          </div>
+        </nav>
         <div className="footer__links" aria-label="Footer links">
           <Link href="/about" className="footer__link">
             About
