@@ -60,11 +60,29 @@
     object-position: left center;
   }
 
-  &__links {
+  &__learn {
     order: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  &__learn-title {
+    color: var(--g-color-text-secondary);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  &__learn-links,
+  &__links {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: var(--spacing-md);
+  }
+
+  &__links {
+    order: 4;
   }
 }

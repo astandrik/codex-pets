@@ -23,6 +23,7 @@ import {
   ASK_AI_PRODUCT_NAME,
 } from "@/components/AskAI/ask-ai-content";
 import { GalleryFilter } from "@/components/GalleryFilter/GalleryFilter";
+import { BEST_CODEX_PETS_GUIDE_PATH } from "@/lib/guides/best-codex-pets";
 import {
   HomeHeroPetPicker,
   type HomeHeroPet,
@@ -100,6 +101,14 @@ export function HomePage({
               </Button>
               <Button view="outlined" size="l" href="#gallery">
                 Browse gallery
+                <ArrowRight />
+              </Button>
+              <Button
+                view="outlined"
+                size="l"
+                href={withBasePath(BEST_CODEX_PETS_GUIDE_PATH)}
+              >
+                Best Codex pets guide
                 <ArrowRight />
               </Button>
             </Flex>
