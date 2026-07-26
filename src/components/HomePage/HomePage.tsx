@@ -30,10 +30,7 @@ import {
 import { PetCard } from "@/components/PetCard/PetCard";
 import { withBasePath } from "@/lib/base-path";
 import { pickRandomHeroPetIndex } from "@/components/HomePage/home-hero-random";
-import {
-  buildHomeRecommendationEntryPoints,
-  HOME_HERO_PET_LIMIT,
-} from "@/components/HomePage/recommendation-entry-points";
+import { buildHomeRecommendationEntryPoints } from "@/components/HomePage/recommendation-entry-points";
 import type { PetKind, PublicPetSummary } from "@/lib/pets/types";
 
 type HomePageProps = {
@@ -59,7 +56,7 @@ export function HomePage({
   selectedTags,
   suggestedTags,
 }: HomePageProps) {
-  const heroPets = pets.slice(0, HOME_HERO_PET_LIMIT).map(toHomeHeroPet);
+  const heroPets = pets.map(toHomeHeroPet);
   const initialHeroPetIndex = pickRandomHeroPetIndex(heroPets.length) ?? 0;
   const hasActiveFilters =
     Boolean(query) || kind !== "all" || selectedTags.length > 0;

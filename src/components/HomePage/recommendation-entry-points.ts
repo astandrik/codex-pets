@@ -3,7 +3,6 @@ import { buildGalleryHref } from "@/lib/pets/gallery-filters";
 const STYLE_TAGS = ["cute", "pixel", "anime", "fantasy", "minimal"] as const;
 const DEFAULT_LINK_LIMIT = 3;
 export const HOME_FEATURED_PET_LIMIT = 12;
-export const HOME_HERO_PET_LIMIT = 12;
 
 type RecommendationPet = {
   slug: string;
