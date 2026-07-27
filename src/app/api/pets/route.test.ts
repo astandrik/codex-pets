@@ -178,6 +178,44 @@ describe("GET /api/pets", () => {
     expect(searchMocks.searchApprovedPets).not.toHaveBeenCalled();
   });
 
+  it("rejects a continuation request from a different ranked result", async () => {
+    const { createApprovedPetsCatalogSnapshot } = await import(
+      "@/lib/pets/catalog-snapshot-server"
+    );
+    const catalogVersion =
+      createApprovedPetsCatalogSnapshot([approvedPet]).version;
+    searchMocks.searchApprovedPets.mockResolvedValueOnce({
+      pets: [approvedPet],
+      total: 1,
+      mode: "lexical_fallback",
+      fallbackReason: "timeout",
+      visualMode: "off",
+      visualFallbackReason: null,
+      visualCandidateCount: 0,
+      durationMs: 800,
+      rankingVersion: "ranking-after-fallback",
+    });
+    const { GET } = await import("@/app/api/pets/route");
+
+    const response = await GET(
+      new Request(
+        "https://pets.example/api/pets?q=space&page=2&pageSize=24",
+        {
+          headers: {
+            "X-Codex-Pets-Catalog-Snapshot": catalogVersion,
+            "X-Codex-Pets-Catalog-Ranking": "initial-hybrid-ranking",
+          },
+        },
+      ),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      error: "catalog_ranking_changed",
+      code: "catalog_ranking_changed",
+    });
+  });
+
   it("returns an empty successful API page beyond the result set", async () => {
     searchMocks.searchApprovedPets.mockResolvedValueOnce({
       pets: [],

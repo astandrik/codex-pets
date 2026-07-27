@@ -64,6 +64,26 @@ describe("/pets compatibility redirect", () => {
     expect(searchMocks.searchApprovedPets).not.toHaveBeenCalled();
   });
 
+  it("preserves unrelated parameters while normalizing catalog parameters", async () => {
+    const { default: PetsPage } = await import("@/app/pets/page");
+
+    await expect(
+      PetsPage({
+        searchParams: Promise.resolve({
+          q: "space helper",
+          tags: ["terminal", "friendly"],
+          page: "2",
+          utm_source: "campaign",
+          experiment: ["a", "b"],
+        }),
+      }),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(navigationMocks.permanentRedirect).toHaveBeenCalledWith(
+      "/?q=space%20helper&tags=friendly,terminal&page=2&utm_source=campaign&experiment=a&experiment=b",
+    );
+  });
+
   it("drops explicit page 1 while preserving filters", async () => {
     const { default: PetsPage } = await import("@/app/pets/page");
 

@@ -13,9 +13,13 @@ import {
 import { PetCard } from "@/components/PetCard/PetCard";
 import { withBasePath } from "@/lib/base-path";
 import type { PublicPetPayload } from "@/lib/pets/api-payloads";
-import { PET_CATALOG_SNAPSHOT_HEADER } from "@/lib/pets/catalog-snapshot";
+import {
+  PET_CATALOG_RANKING_HEADER,
+  PET_CATALOG_SNAPSHOT_HEADER,
+} from "@/lib/pets/catalog-snapshot";
 import {
   buildGalleryHref,
+  hasGalleryFilters,
   serializeGalleryFilters,
   type GalleryFilters,
 } from "@/lib/pets/gallery-filters";
@@ -34,6 +38,7 @@ type PetCatalogProps = {
   totalItems: number;
   totalPages: number;
   snapshotVersion: string;
+  rankingVersion: string;
   filters: GalleryFilters;
 };
 
@@ -93,6 +98,7 @@ function PetCatalogState({
   totalItems,
   totalPages,
   snapshotVersion,
+  rankingVersion,
   filters,
 }: PetCatalogProps) {
   const router = useRouter();
@@ -157,6 +163,7 @@ function PetCatalogState({
           headers: {
             Accept: "application/json",
             [PET_CATALOG_SNAPSHOT_HEADER]: snapshotVersion,
+            [PET_CATALOG_RANKING_HEADER]: rankingVersion,
           },
           signal: controller.signal,
         },
@@ -215,6 +222,7 @@ function PetCatalogState({
     pageSize,
     pages,
     router,
+    rankingVersion,
     snapshotVersion,
   ]);
 
@@ -300,7 +308,9 @@ function PetCatalogState({
               </div>
             ) : loadedPage.page === 1 ? (
               <p className="pet-catalog__empty">
-                No approved pets match these filters.
+                {hasGalleryFilters(filters)
+                  ? "No approved pets match these filters."
+                  : "No approved pets yet."}
               </p>
             ) : null}
           </section>
@@ -401,7 +411,9 @@ function PetCatalogState({
         </div>
       ) : knownTotalItems > 0 ? (
         <p className="pet-catalog__end">
-          All {knownTotalItems} matching pets are loaded.
+          {loadedPetCount === knownTotalItems
+            ? `All ${knownTotalItems} matching pets are loaded.`
+            : `Reached the final catalog page. ${loadedPetCount} of ${knownTotalItems} matching pets shown.`}
         </p>
       ) : null}
       <p className="pet-catalog__announcement" aria-live="polite">
@@ -421,6 +433,7 @@ function createInitialCatalogStateKey(props: PetCatalogProps): string {
     totalItems: props.totalItems,
     totalPages: props.totalPages,
     snapshotVersion: props.snapshotVersion,
+    rankingVersion: props.rankingVersion,
     filters: serializeGalleryFilters(props.filters),
   });
 }

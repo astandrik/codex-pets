@@ -86,6 +86,7 @@ describe("homepage catalog", () => {
       visualFallbackReason: null,
       visualCandidateCount: 0,
       durationMs: 2,
+      rankingVersion: "default-ranking",
     });
   });
 
@@ -113,6 +114,7 @@ describe("homepage catalog", () => {
       totalItems: 30,
       totalPages: 2,
       snapshotVersion: expect.any(String),
+      rankingVersion: expect.any(String),
     });
     expect(
       (catalogMocks.props?.initialPets as Array<{ slug: string }>).map(
@@ -151,6 +153,17 @@ describe("homepage catalog", () => {
   });
 
   it("renders filters on page 1 without redirecting away from /", async () => {
+    searchMocks.searchApprovedPets.mockResolvedValueOnce({
+      pets: approvedPets.slice(0, 24),
+      total: approvedPets.length,
+      mode: "hybrid",
+      fallbackReason: null,
+      visualMode: "off",
+      visualFallbackReason: null,
+      visualCandidateCount: 0,
+      durationMs: 2,
+      rankingVersion: "filtered-ranking",
+    });
     const { default: Home } = await import("@/app/page");
 
     const output = await Home({
@@ -175,6 +188,9 @@ describe("homepage catalog", () => {
     );
     expect(homePageMocks.props).toMatchObject({
       showLandingContent: false,
+    });
+    expect(catalogMocks.props).toMatchObject({
+      rankingVersion: "filtered-ranking",
     });
   });
 

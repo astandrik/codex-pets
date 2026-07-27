@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { normalizeGalleryFilters } from "@/lib/pets/gallery-filters";
 import {
   fuseRankedPets,
@@ -59,6 +61,7 @@ export class PetSearchFallbackError extends Error {
 export type PetSearchResult<T extends PetSearchCatalogItem> = {
   pets: T[];
   total: number;
+  rankingVersion: string;
   mode: PetSearchResultMode;
   fallbackReason: PetSearchFallbackReason | null;
   visualMode: PetSearchVisualMode;
@@ -202,6 +205,7 @@ export function createPetSearchService<T extends PetSearchCatalogItem>(
       return {
         pets: pets.slice(offset, offset + limit),
         total,
+        rankingVersion: createPetSearchRankingVersion(pets, mode),
         mode,
         fallbackReason,
         visualMode,
@@ -211,6 +215,15 @@ export function createPetSearchService<T extends PetSearchCatalogItem>(
       };
     }
   };
+}
+
+export function createPetSearchRankingVersion(
+  pets: readonly Pick<PetSearchCatalogItem, "slug">[],
+  mode: PetSearchResultMode,
+): string {
+  return createHash("sha256")
+    .update(JSON.stringify({ mode, slugs: pets.map((pet) => pet.slug) }))
+    .digest("base64url");
 }
 
 function matchesHardFilters(

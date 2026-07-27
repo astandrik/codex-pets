@@ -88,6 +88,7 @@ export default async function Home({ searchParams }: HomeProps) {
   const result = searchResult ?? {
     pets: approvedPets.slice(offset, offset + CATALOG_PAGE_SIZE),
     total: approvedPets.length,
+    rankingVersion: snapshotVersion,
   };
   if (pageResult.page > 1 && result.pets.length === 0) {
     notFound();
@@ -152,6 +153,7 @@ export default async function Home({ searchParams }: HomeProps) {
               totalItems={result.total}
               totalPages={Math.ceil(result.total / CATALOG_PAGE_SIZE)}
               snapshotVersion={snapshotVersion}
+              rankingVersion={result.rankingVersion}
               filters={filters}
             />
           </>

@@ -69,6 +69,55 @@ describe("approved pet search service", () => {
     expect(result.total).toBe(3);
   });
 
+  it("keeps one ranking version across offset slices", async () => {
+    const search = createPetSearchService({
+      listApprovedPets: async () => catalog,
+      semanticSearch: async () => ({
+        text: [],
+        visual: [],
+        visualFallbackReason: null,
+      }),
+      mode: "lexical",
+    });
+
+    const firstPage = await search({ offset: 0, limit: 1 });
+    const secondPage = await search({ offset: 1, limit: 1 });
+
+    expect(firstPage.pets).toEqual([catalog[0]]);
+    expect(secondPage.pets).toEqual([catalog[1]]);
+    expect(firstPage.rankingVersion).toBe(secondPage.rankingVersion);
+    expect(firstPage.rankingVersion).toEqual(expect.any(String));
+  });
+
+  it("changes the ranking version when semantic search falls back", async () => {
+    const hybridSearch = createPetSearchService({
+      listApprovedPets: async () => catalog,
+      semanticSearch: async () => ({
+        text: [{ slug: "orbit-otter", score: 0.9 }],
+        visual: [],
+        visualFallbackReason: null,
+      }),
+      mode: "hybrid",
+      minSemanticScore: 0.5,
+    });
+    const fallbackSearch = createPetSearchService({
+      listApprovedPets: async () => catalog,
+      semanticSearch: async () => {
+        throw new PetSearchFallbackError("timeout");
+      },
+      mode: "hybrid",
+      minSemanticScore: 0.5,
+    });
+
+    const hybrid = await hybridSearch({ q: "space" });
+    const fallback = await fallbackSearch({ q: "space" });
+
+    expect(hybrid.pets).toEqual(fallback.pets);
+    expect(hybrid.mode).toBe("hybrid");
+    expect(fallback.mode).toBe("lexical_fallback");
+    expect(hybrid.rankingVersion).not.toBe(fallback.rankingVersion);
+  });
+
   it("uses a provided catalog without calling the default catalog loader", async () => {
     const listApprovedPets = vi.fn(async () => {
       throw new Error("default catalog loader should not run");

@@ -130,6 +130,7 @@ describe("PetCatalog", () => {
         totalItems={49}
         totalPages={3}
         snapshotVersion="snapshot-page-two"
+        rankingVersion="ranking-page-two"
         filters={{ query: "", kind: "all", tags: [] }}
       />,
     );
@@ -216,6 +217,7 @@ describe("PetCatalog", () => {
         headers: {
           Accept: "application/json",
           "X-Codex-Pets-Catalog-Snapshot": "snapshot-a",
+          "X-Codex-Pets-Catalog-Ranking": "ranking-a",
         },
         signal: expect.any(AbortSignal),
       },
@@ -461,6 +463,7 @@ describe("PetCatalog", () => {
         totalItems: 25,
         totalPages: 2,
         snapshotVersion: "snapshot-b",
+        rankingVersion: "ranking-b",
       });
       await Promise.resolve();
     });
@@ -477,10 +480,46 @@ describe("PetCatalog", () => {
       rendered.container.querySelector('[aria-current="page"]')?.textContent,
     ).toBe("2");
     expect(rendered.container.textContent).toContain(
+      "Reached the final catalog page. 1 of 25 matching pets shown.",
+    );
+    expect(rendered.container.textContent).not.toContain(
       "All 25 matching pets are loaded.",
     );
 
     unmountCatalog(rendered);
+  });
+
+  it("distinguishes an empty catalog from an empty filtered result", () => {
+    const emptyCatalogHtml = renderToStaticMarkup(
+      <PetCatalog
+        initialPets={[]}
+        initialPage={1}
+        pageSize={24}
+        totalItems={0}
+        totalPages={0}
+        snapshotVersion="snapshot-empty"
+        rankingVersion="ranking-empty"
+        filters={{ query: "", kind: "all", tags: [] }}
+      />,
+    );
+    const emptyFilteredHtml = renderToStaticMarkup(
+      <PetCatalog
+        initialPets={[]}
+        initialPage={1}
+        pageSize={24}
+        totalItems={0}
+        totalPages={0}
+        snapshotVersion="snapshot-filtered"
+        rankingVersion="ranking-filtered"
+        filters={{ query: "missing", kind: "all", tags: [] }}
+      />,
+    );
+
+    expect(emptyCatalogHtml).toContain("No approved pets yet.");
+    expect(emptyCatalogHtml).not.toContain("match these filters");
+    expect(emptyFilteredHtml).toContain(
+      "No approved pets match these filters.",
+    );
   });
 });
 
@@ -501,6 +540,7 @@ function renderCatalog(overrides: Partial<PetCatalogProps> = {}): {
     totalItems: 2,
     totalPages: 2,
     snapshotVersion: "snapshot-a",
+    rankingVersion: "ranking-a",
     filters: { query: "", kind: "all", tags: [] },
     ...overrides,
   };
