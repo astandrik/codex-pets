@@ -152,7 +152,7 @@ describe("homepage catalog", () => {
     expect(metadataMocks.getHomepageJsonLdGraph).not.toHaveBeenCalled();
   });
 
-  it("renders filters on page 1 without redirecting away from /", async () => {
+  it("keeps the landing content while filtering page 1", async () => {
     searchMocks.searchApprovedPets.mockResolvedValueOnce({
       pets: approvedPets.slice(0, 24),
       total: approvedPets.length,
@@ -187,8 +187,9 @@ describe("homepage catalog", () => {
       { catalog: approvedPets },
     );
     expect(homePageMocks.props).toMatchObject({
-      showLandingContent: false,
+      showLandingContent: true,
     });
+    expect(metadataMocks.getHomepageJsonLdGraph).toHaveBeenCalledOnce();
     expect(catalogMocks.props).toMatchObject({
       rankingVersion: "filtered-ranking",
     });
