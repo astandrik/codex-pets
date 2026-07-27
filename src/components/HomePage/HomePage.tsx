@@ -47,7 +47,9 @@ export function HomePage({
 }: HomePageProps) {
   const heroPets = showLandingContent ? pets.map(toHomeHeroPet) : [];
   const initialHeroPetIndex = pickRandomHeroPetIndex(heroPets.length) ?? 0;
-  const recommendationEntryPoints = buildHomeRecommendationEntryPoints(pets);
+  const recommendationEntryPoints = showLandingContent
+    ? buildHomeRecommendationEntryPoints(pets)
+    : { styleTags: [], popularPets: [], recentPets: [] };
   const hasRecommendationEntryPoints =
     recommendationEntryPoints.styleTags.length > 0 ||
     recommendationEntryPoints.popularPets.length > 0 ||

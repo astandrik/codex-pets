@@ -22,6 +22,12 @@ const homePageMocks = vi.hoisted(() => ({
 const catalogMocks = vi.hoisted(() => ({
   props: null as Record<string, unknown> | null,
 }));
+const filterMocks = vi.hoisted(() => ({
+  props: null as Record<string, unknown> | null,
+}));
+const metadataMocks = vi.hoisted(() => ({
+  getHomepageJsonLdGraph: vi.fn(() => ({})),
+}));
 
 vi.mock("next/cache", () => ({
   unstable_cache: (callback: unknown) => callback,
@@ -34,7 +40,10 @@ vi.mock("@/lib/pets/search-runtime", () => ({
 }));
 vi.mock("next/navigation", () => navigationMocks);
 vi.mock("@/components/GalleryFilter/GalleryFilter", () => ({
-  GalleryFilter: () => null,
+  GalleryFilter: (props: Record<string, unknown>) => {
+    filterMocks.props = props;
+    return null;
+  },
 }));
 vi.mock("@/components/PetCatalog/PetCatalog", () => ({
   PetCatalog: (props: Record<string, unknown>) => {
@@ -48,6 +57,13 @@ vi.mock("@/components/HomePage/HomePage", () => ({
     return <>{props.catalog as ReactNode}</>;
   },
 }));
+vi.mock("@/lib/site-metadata", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/site-metadata")>();
+  return {
+    ...actual,
+    getHomepageJsonLdGraph: metadataMocks.getHomepageJsonLdGraph,
+  };
+});
 
 const approvedPets = Array.from({ length: 30 }, (_, index) =>
   createPet(`pet-${index + 1}`, `Pet ${index + 1}`),
@@ -59,6 +75,7 @@ describe("homepage catalog", () => {
     vi.resetModules();
     homePageMocks.props = null;
     catalogMocks.props = null;
+    filterMocks.props = null;
     repositoryMocks.listApprovedPetsForSearch.mockResolvedValue(approvedPets);
     searchMocks.searchApprovedPets.mockResolvedValue({
       pets: approvedPets.slice(0, 24),
@@ -129,6 +146,7 @@ describe("homepage catalog", () => {
     ).toEqual(approvedPets.slice(24).map((pet) => pet.slug));
     expect(html).toContain('"@type":"CollectionPage"');
     expect(html).toContain('"position":25');
+    expect(metadataMocks.getHomepageJsonLdGraph).not.toHaveBeenCalled();
   });
 
   it("renders filters on page 1 without redirecting away from /", async () => {
@@ -144,16 +162,40 @@ describe("homepage catalog", () => {
     renderToStaticMarkup(output);
 
     expect(navigationMocks.permanentRedirect).not.toHaveBeenCalled();
-    expect(searchMocks.searchApprovedPets).toHaveBeenCalledWith({
-      q: "space helper",
-      kind: "creature",
-      tags: ["friendly"],
-      offset: 0,
-      limit: 24,
-    });
+    expect(searchMocks.searchApprovedPets).toHaveBeenCalledWith(
+      {
+        q: "space helper",
+        kind: "creature",
+        tags: ["friendly"],
+        offset: 0,
+        limit: 24,
+      },
+      { catalog: approvedPets },
+    );
     expect(homePageMocks.props).toMatchObject({
       showLandingContent: false,
     });
+  });
+
+  it("builds filtered tag suggestions from the full approved catalog", async () => {
+    searchMocks.searchApprovedPets.mockResolvedValueOnce({
+      pets: [],
+      total: 0,
+      mode: "lexical",
+      fallbackReason: null,
+      visualMode: "off",
+      visualFallbackReason: null,
+      visualCandidateCount: 0,
+      durationMs: 2,
+    });
+    const { default: Home } = await import("@/app/page");
+
+    const output = await Home({
+      searchParams: Promise.resolve({ q: "no-such-pet" }),
+    });
+    renderToStaticMarkup(output);
+
+    expect(filterMocks.props?.suggestedTags).toEqual(["gothic"]);
   });
 
   it("self-canonicalizes an unfiltered numbered homepage", async () => {
@@ -175,12 +217,14 @@ describe("homepage catalog", () => {
         searchParams: Promise.resolve({
           q: "space",
           page: "1",
+          utm_source: "campaign",
+          experiment: ["a", "b"],
         }),
       }),
     ).rejects.toThrow("NEXT_REDIRECT");
 
     expect(navigationMocks.permanentRedirect).toHaveBeenCalledWith(
-      "/?q=space",
+      "/?q=space&utm_source=campaign&experiment=a&experiment=b",
     );
     expect(searchMocks.searchApprovedPets).not.toHaveBeenCalled();
   });

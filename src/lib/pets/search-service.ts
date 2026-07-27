@@ -67,6 +67,10 @@ export type PetSearchResult<T extends PetSearchCatalogItem> = {
   durationMs: number;
 };
 
+export type PetSearchOptions<T extends PetSearchCatalogItem> = {
+  catalog?: readonly T[];
+};
+
 export type PetSemanticSearchResult = {
   text: SemanticPetMatch[];
   visual: SemanticPetMatch[];
@@ -89,8 +93,11 @@ type PetSearchDependencies<T extends PetSearchCatalogItem> = {
 
 export function createPetSearchService<T extends PetSearchCatalogItem>(
   dependencies: PetSearchDependencies<T>,
-): (input?: PetSearchInput) => Promise<PetSearchResult<T>> {
-  return async (input = {}) => {
+): (
+  input?: PetSearchInput,
+  options?: PetSearchOptions<T>,
+) => Promise<PetSearchResult<T>> {
+  return async (input = {}, options = {}) => {
     const now = dependencies.now ?? Date.now;
     const startedAt = now();
     const visualMode = dependencies.visualMode ?? "off";
@@ -98,7 +105,7 @@ export function createPetSearchService<T extends PetSearchCatalogItem>(
     const author = normalizeSearchQuery(input.author).text;
     const limit = normalizeLimit(input.limit);
     const offset = normalizeOffset(input.offset);
-    const catalog = await dependencies.listApprovedPets();
+    const catalog = options.catalog ?? await dependencies.listApprovedPets();
     const candidates = catalog.filter((pet) =>
       matchesHardFilters(pet, filters.kind, filters.tags, author),
     );

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   createPetSearchService,
@@ -67,6 +67,26 @@ describe("approved pet search service", () => {
 
     expect(result.pets).toEqual([catalog[1]]);
     expect(result.total).toBe(3);
+  });
+
+  it("uses a provided catalog without calling the default catalog loader", async () => {
+    const listApprovedPets = vi.fn(async () => {
+      throw new Error("default catalog loader should not run");
+    });
+    const search = createPetSearchService({
+      listApprovedPets,
+      semanticSearch: async () => ({
+        text: [],
+        visual: [],
+        visualFallbackReason: null,
+      }),
+      mode: "lexical",
+    });
+
+    const result = await search({ q: "space" }, { catalog });
+
+    expect(result.pets).toEqual([catalog[1]]);
+    expect(listApprovedPets).not.toHaveBeenCalled();
   });
 
   it("uses lexical relevance and respects author and limit", async () => {

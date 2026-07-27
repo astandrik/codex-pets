@@ -11,6 +11,7 @@ import {
 import { serializeJsonLd } from "@/lib/json-ld";
 import { createPublicPetPayload } from "@/lib/pets/api-payloads";
 import {
+  buildGalleryFirstPageHref,
   buildGalleryHref,
   hasGalleryFilters,
   parseGalleryFilters,
@@ -72,7 +73,7 @@ export default async function Home({ searchParams }: HomeProps) {
 
   const filters = parseGalleryFilters(rawSearchParams);
   if (pageResult.explicit && pageResult.page === 1) {
-    permanentRedirect(buildGalleryHref(filters));
+    permanentRedirect(buildGalleryFirstPageHref(rawSearchParams));
   }
 
   const offset = (pageResult.page - 1) * CATALOG_PAGE_SIZE;
@@ -80,20 +81,19 @@ export default async function Home({ searchParams }: HomeProps) {
     notFound();
   }
 
-  const approvedPetsPromise = getApprovedPetsSnapshot();
-  const searchResultPromise = hasGalleryFilters(filters)
-    ? searchApprovedPets({
-        q: filters.query,
-        kind: filters.kind,
-        tags: filters.tags,
-        offset,
-        limit: CATALOG_PAGE_SIZE,
-      })
-    : Promise.resolve(null);
-  const [approvedPets, searchResult] = await Promise.all([
-    approvedPetsPromise,
-    searchResultPromise,
-  ]);
+  const approvedPets = await getApprovedPetsSnapshot();
+  const searchResult = hasGalleryFilters(filters)
+    ? await searchApprovedPets(
+        {
+          q: filters.query,
+          kind: filters.kind,
+          tags: filters.tags,
+          offset,
+          limit: CATALOG_PAGE_SIZE,
+        },
+        { catalog: approvedPets },
+      )
+    : null;
   const result = searchResult ?? {
     pets: approvedPets.slice(offset, offset + CATALOG_PAGE_SIZE),
     total: approvedPets.length,
@@ -106,13 +106,15 @@ export default async function Home({ searchParams }: HomeProps) {
   const featuredPets = sliceHomeGalleryPets(pets);
   const initialPets = result.pets.map(createPublicPetPayload);
   const suggestedTags = pickSuggestedGalleryTags(
-    result.pets,
+    approvedPets,
     filters.tags,
   );
   const showLandingContent =
     pageResult.page === 1 &&
     !hasGalleryFilterSearchParam(rawSearchParams);
-  const homepageJsonLd = getHomepageJsonLdGraph(featuredPets);
+  const homepageJsonLd = showLandingContent
+    ? getHomepageJsonLdGraph(featuredPets)
+    : null;
   const catalogJsonLd = getCatalogJsonLdGraph(
     result.pets,
     pageResult.page,
@@ -123,7 +125,7 @@ export default async function Home({ searchParams }: HomeProps) {
 
   return (
     <>
-      {showLandingContent ? (
+      {homepageJsonLd ? (
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{

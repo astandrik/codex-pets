@@ -110,6 +110,31 @@ export function buildGalleryHref(
   return query ? `/?${query}` : "/";
 }
 
+export function buildGalleryFirstPageHref(params: SearchParamsInput): string {
+  const search = new URLSearchParams();
+  if (params instanceof URLSearchParams) {
+    for (const [key, value] of params.entries()) {
+      if (key !== "page") {
+        search.append(key, value);
+      }
+    }
+  } else {
+    for (const [key, value] of Object.entries(params ?? {})) {
+      if (key === "page") {
+        continue;
+      }
+      for (const item of Array.isArray(value) ? value : [value]) {
+        if (item !== undefined) {
+          search.append(key, item);
+        }
+      }
+    }
+  }
+
+  const query = search.toString();
+  return query ? `/?${query}` : "/";
+}
+
 export function hasGalleryFilters(
   input: Partial<GalleryFilters> & { q?: string } = {},
 ): boolean {

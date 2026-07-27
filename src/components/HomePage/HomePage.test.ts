@@ -1,21 +1,46 @@
 // @vitest-environment jsdom
 
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const router = vi.hoisted(() => ({
   push: vi.fn(),
   replace: vi.fn(),
 }));
+const recommendationMocks = vi.hoisted(() => ({
+  buildHomeRecommendationEntryPoints: vi.fn(() => ({
+    styleTags: [],
+    popularPets: [],
+    recentPets: [],
+  })),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => router,
 }));
+vi.mock(
+  "@/components/HomePage/recommendation-entry-points",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("@/components/HomePage/recommendation-entry-points")
+      >();
+    return {
+      ...actual,
+      buildHomeRecommendationEntryPoints:
+        recommendationMocks.buildHomeRecommendationEntryPoints,
+    };
+  },
+);
 
 import { HomePage } from "@/components/HomePage/HomePage";
 import type { PublicPetSummary } from "@/lib/pets/types";
 
 describe("HomePage visible content", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("keeps long agent-only index copy out of the visual homepage", () => {
     const container = renderHomePage();
 
@@ -57,6 +82,9 @@ describe("HomePage visible content", () => {
     expect(container.querySelector("#gallery")?.textContent).toContain(
       "catalog-slot",
     );
+    expect(
+      recommendationMocks.buildHomeRecommendationEntryPoints,
+    ).not.toHaveBeenCalled();
   });
 
   it("lets the lucky picker choose pets beyond the first 12", () => {
