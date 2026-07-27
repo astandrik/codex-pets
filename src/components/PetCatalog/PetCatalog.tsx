@@ -275,7 +275,14 @@ function PetCatalogState({
         if (!page) return;
 
         setActivePage(page);
-        const href = withBasePath(buildGalleryHref({ ...filters, page }));
+        const searchParams = new URLSearchParams(window.location.search);
+        if (page > 1) {
+          searchParams.set("page", String(page));
+        } else {
+          searchParams.delete("page");
+        }
+        const search = searchParams.toString();
+        const href = `${window.location.pathname}${search ? `?${search}` : ""}`;
         if (`${window.location.pathname}${window.location.search}` !== href) {
           window.history.replaceState(window.history.state, "", href);
         }

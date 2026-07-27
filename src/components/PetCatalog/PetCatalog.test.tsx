@@ -226,6 +226,37 @@ describe("PetCatalog", () => {
     unmountCatalog(rendered);
   });
 
+  it("preserves unrelated query parameters when the visible page is observed", () => {
+    window.history.replaceState(
+      { nextJs: true },
+      "",
+      "/?page=2&utm_source=campaign&experiment=a&experiment=b",
+    );
+    const rendered = renderCatalog({
+      initialPage: 2,
+      initialPets: [createPet("page-two")],
+      totalItems: 2,
+      totalPages: 2,
+    });
+    const pageObserver = intersectionObservers
+      .filter((observer) => observer.rootMargin !== "600px 0px")
+      .at(-1);
+    const pageTwo = pageObserver
+      ?.observedTargets()
+      .find((target) => target.getAttribute("data-catalog-page") === "2");
+    expect(pageTwo).toBeDefined();
+
+    act(() => {
+      pageObserver?.trigger(pageTwo!);
+    });
+
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
+      "/?page=2&utm_source=campaign&experiment=a&experiment=b",
+    );
+
+    unmountCatalog(rendered);
+  });
+
   it("refreshes instead of appending a page from another catalog snapshot", async () => {
     vi.stubGlobal(
       "fetch",
