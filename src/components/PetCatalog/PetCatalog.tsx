@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -12,6 +13,7 @@ import {
 import { PetCard } from "@/components/PetCard/PetCard";
 import { withBasePath } from "@/lib/base-path";
 import type { PublicPetPayload } from "@/lib/pets/api-payloads";
+import { PET_CATALOG_SNAPSHOT_HEADER } from "@/lib/pets/catalog-snapshot";
 import {
   buildGalleryHref,
   serializeGalleryFilters,
@@ -31,6 +33,7 @@ type PetCatalogProps = {
   pageSize: number;
   totalItems: number;
   totalPages: number;
+  snapshotVersion: string;
   filters: GalleryFilters;
 };
 
@@ -73,13 +76,26 @@ export function getPaginationItems(
 }
 
 export function PetCatalog({
+  ...props
+}: PetCatalogProps) {
+  return (
+    <PetCatalogState
+      key={createInitialCatalogStateKey(props)}
+      {...props}
+    />
+  );
+}
+
+function PetCatalogState({
   initialPets,
   initialPage,
   pageSize,
   totalItems,
   totalPages,
+  snapshotVersion,
   filters,
 }: PetCatalogProps) {
+  const router = useRouter();
   const filterSearch = serializeGalleryFilters(filters);
   const [pages, setPages] = useState<LoadedPage[]>([
     { page: initialPage, pets: initialPets },
@@ -138,10 +154,18 @@ export function PetCatalog({
       const response = await fetch(
         buildPetsPageApiHref(filters, nextPage, pageSize),
         {
-          headers: { Accept: "application/json" },
+          headers: {
+            Accept: "application/json",
+            [PET_CATALOG_SNAPSHOT_HEADER]: snapshotVersion,
+          },
           signal: controller.signal,
         },
       );
+      if (response.status === 409) {
+        setAnnouncement("The catalog changed. Refreshing the current page.");
+        router.refresh();
+        return;
+      }
       if (!response.ok) {
         throw new Error(`Pet catalog request failed with ${response.status}.`);
       }
@@ -184,7 +208,15 @@ export function PetCatalog({
         setIsLoading(false);
       }
     }
-  }, [filters, hasNextPage, lastLoadedPage, pageSize, pages]);
+  }, [
+    filters,
+    hasNextPage,
+    lastLoadedPage,
+    pageSize,
+    pages,
+    router,
+    snapshotVersion,
+  ]);
 
   const loadNextPageManually = useCallback(() => {
     automaticLoadUsedRef.current = true;
@@ -379,6 +411,18 @@ export function PetCatalog({
       </p>
     </div>
   );
+}
+
+function createInitialCatalogStateKey(props: PetCatalogProps): string {
+  return JSON.stringify({
+    initialPets: props.initialPets,
+    initialPage: props.initialPage,
+    pageSize: props.pageSize,
+    totalItems: props.totalItems,
+    totalPages: props.totalPages,
+    snapshotVersion: props.snapshotVersion,
+    filters: serializeGalleryFilters(props.filters),
+  });
 }
 
 function isAbortError(error: unknown): boolean {

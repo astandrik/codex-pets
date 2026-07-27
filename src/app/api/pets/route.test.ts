@@ -4,9 +4,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const searchMocks = vi.hoisted(() => ({
   searchApprovedPets: vi.fn(),
 }));
+const repositoryMocks = vi.hoisted(() => ({
+  listApprovedPetsForSearch: vi.fn(),
+}));
 
 vi.mock("@/lib/pets/search-runtime", () => ({
   searchApprovedPets: searchMocks.searchApprovedPets,
+}));
+vi.mock("@/lib/pets/repository", () => ({
+  listApprovedPetsForSearch: repositoryMocks.listApprovedPetsForSearch,
+}));
+vi.mock("next/cache", () => ({
+  unstable_cache: (callback: unknown) => callback,
 }));
 
 const approvedPet = {
@@ -71,6 +80,7 @@ describe("GET /api/pets", () => {
     vi.clearAllMocks();
     vi.resetModules();
     vi.unstubAllEnvs();
+    repositoryMocks.listApprovedPetsForSearch.mockResolvedValue([approvedPet]);
   });
 
   it("returns approved pets as JSON and advertises the TOON alternate", async () => {
@@ -147,6 +157,25 @@ describe("GET /api/pets", () => {
         hasNextPage: true,
       },
     });
+  });
+
+  it("rejects a continuation request from a different catalog snapshot", async () => {
+    const { GET } = await import("@/app/api/pets/route");
+
+    const response = await GET(
+      new Request("https://pets.example/api/pets?page=2&pageSize=24", {
+        headers: {
+          "X-Codex-Pets-Catalog-Snapshot": "stale-snapshot",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      error: "catalog_snapshot_changed",
+      code: "catalog_snapshot_changed",
+    });
+    expect(searchMocks.searchApprovedPets).not.toHaveBeenCalled();
   });
 
   it("returns an empty successful API page beyond the result set", async () => {

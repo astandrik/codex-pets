@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { unstable_cache } from "next/cache";
 import { notFound, permanentRedirect } from "next/navigation";
 
 import { GalleryFilter } from "@/components/GalleryFilter/GalleryFilter";
@@ -21,7 +20,7 @@ import {
   CATALOG_PAGE_SIZE,
   parseCatalogPage,
 } from "@/lib/pets/pagination";
-import { listApprovedPetsForSearch } from "@/lib/pets/repository";
+import { getApprovedPetsCatalogSnapshot } from "@/lib/pets/catalog-snapshot-server";
 import { searchApprovedPets } from "@/lib/pets/search-runtime";
 import type { PublicPet, PublicPetSummary } from "@/lib/pets/types";
 import {
@@ -31,18 +30,7 @@ import {
 } from "@/lib/site-metadata";
 
 export const runtime = "nodejs";
-// Keep request-time rendering because YDB runtime env is only available in the
-// running container, then cache the public gallery snapshot explicitly.
 export const dynamic = "force-dynamic";
-
-const getApprovedPetsSnapshot = unstable_cache(
-  async () => listApprovedPetsForSearch(),
-  [
-    "approved-pets-gallery",
-    process.env.CODEX_PETS_DATA_SOURCE?.trim() || "ydb",
-  ],
-  { revalidate: 60 },
-);
 
 type HomeProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -81,7 +69,10 @@ export default async function Home({ searchParams }: HomeProps) {
     notFound();
   }
 
-  const approvedPets = await getApprovedPetsSnapshot();
+  const {
+    pets: approvedPets,
+    version: snapshotVersion,
+  } = await getApprovedPetsCatalogSnapshot();
   const searchResult = hasGalleryFilters(filters)
     ? await searchApprovedPets(
         {
@@ -160,6 +151,7 @@ export default async function Home({ searchParams }: HomeProps) {
               pageSize={CATALOG_PAGE_SIZE}
               totalItems={result.total}
               totalPages={Math.ceil(result.total / CATALOG_PAGE_SIZE)}
+              snapshotVersion={snapshotVersion}
               filters={filters}
             />
           </>

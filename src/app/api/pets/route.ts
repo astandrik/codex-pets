@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { jsonApiError } from "@/lib/api-error";
 import { toPublicUrl } from "@/lib/base-path";
 import { buildPetsPayload } from "@/lib/pets/api-payloads";
+import { PET_CATALOG_SNAPSHOT_HEADER } from "@/lib/pets/catalog-snapshot";
+import { getApprovedPetsCatalogSnapshot } from "@/lib/pets/catalog-snapshot-server";
 import { parseGalleryFilters } from "@/lib/pets/gallery-filters";
 import {
   createPetsPaginationMetadata,
@@ -35,15 +37,42 @@ export async function GET(req: Request): Promise<Response> {
     });
   }
   const pagination = paginationResult.pagination;
+  const requestedSnapshotVersion = req.headers
+    .get(PET_CATALOG_SNAPSHOT_HEADER)
+    ?.trim();
+  const catalogSnapshot =
+    pagination && requestedSnapshotVersion
+      ? await getApprovedPetsCatalogSnapshot()
+      : null;
+  if (
+    requestedSnapshotVersion &&
+    catalogSnapshot &&
+    requestedSnapshotVersion !== catalogSnapshot.version
+  ) {
+    return jsonApiError("catalog_snapshot_changed", {
+      status: 409,
+      message: "The pet catalog changed while loading the next page.",
+      hint: "Refresh the catalog before continuing pagination.",
+      headers: {
+        Link: alternate,
+        [PET_CATALOG_SNAPSHOT_HEADER]: catalogSnapshot.version,
+      },
+    });
+  }
 
-  const result = await searchApprovedPets({
+  const searchInput = {
     q: filters.query,
     kind: filters.kind,
     tags: filters.tags,
     ...(pagination
       ? { offset: pagination.offset, limit: pagination.pageSize }
       : {}),
-  });
+  };
+  const result = catalogSnapshot
+    ? await searchApprovedPets(searchInput, {
+        catalog: catalogSnapshot.pets,
+      })
+    : await searchApprovedPets(searchInput);
   return NextResponse.json(
     buildPetsPayload(
       result.pets,

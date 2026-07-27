@@ -112,6 +112,7 @@ describe("homepage catalog", () => {
       pageSize: 24,
       totalItems: 30,
       totalPages: 2,
+      snapshotVersion: expect.any(String),
     });
     expect(
       (catalogMocks.props?.initialPets as Array<{ slug: string }>).map(

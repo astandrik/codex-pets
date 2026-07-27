@@ -8,6 +8,7 @@ const cacheMocks = vi.hoisted(() => ({
 const petsRepositoryMocks = vi.hoisted(() => ({
   listApprovedPets: vi.fn(),
   listApprovedPetsForSearch: vi.fn(),
+  listApprovedPetSitemapEntries: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({
@@ -18,6 +19,8 @@ vi.mock("next/cache", () => ({
 vi.mock("@/lib/pets/repository", () => ({
   listApprovedPets: petsRepositoryMocks.listApprovedPets,
   listApprovedPetsForSearch: petsRepositoryMocks.listApprovedPetsForSearch,
+  listApprovedPetSitemapEntries:
+    petsRepositoryMocks.listApprovedPetSitemapEntries,
 }));
 
 describe("sitemap", () => {
@@ -35,27 +38,13 @@ describe("sitemap", () => {
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/codex-pets");
 
     const pets = Array.from({ length: 201 }, (_, index) => ({
-        id: "pet_1",
         slug: `pet-${index + 1}`,
-        displayName: `Pet ${index + 1}`,
-        description: "Demo pet",
-        spritesheetUrl: "https://assets/pets/boba.webp",
-        petJsonUrl: "https://assets/pets/boba.json",
-        zipUrl: "https://assets/pets/boba.zip",
-        spritesheetExt: "webp",
-        kind: "creature",
-        tags: ["round"],
-        status: "approved",
-        ownerName: "Creator",
-        ownerProfileSlug: "creator",
-        ownerAvatarUrl: null,
-        contactEmail: null,
         createdAt: "2026-05-01T00:00:00.000Z",
         approvedAt: "2026-05-02T00:00:00.000Z",
-        downloadCount: 0,
-        installCount: 0,
-        likeCount: 0,
       }));
+    petsRepositoryMocks.listApprovedPetSitemapEntries.mockResolvedValueOnce(
+      pets,
+    );
     petsRepositoryMocks.listApprovedPetsForSearch.mockResolvedValueOnce(pets);
 
     try {
@@ -95,7 +84,12 @@ describe("sitemap", () => {
       ]);
       expect(urls[9]).toBe("https://pets.example/codex-pets/about");
       expect(urls).not.toContain("https://pets.example/codex-pets/pets");
-      expect(petsRepositoryMocks.listApprovedPetsForSearch).toHaveBeenCalledOnce();
+      expect(
+        petsRepositoryMocks.listApprovedPetSitemapEntries,
+      ).toHaveBeenCalledOnce();
+      expect(
+        petsRepositoryMocks.listApprovedPetsForSearch,
+      ).not.toHaveBeenCalled();
       expect(petsRepositoryMocks.listApprovedPets).not.toHaveBeenCalled();
       expect(urls).toContain(
         "https://pets.example/codex-pets/pets/pet-201",

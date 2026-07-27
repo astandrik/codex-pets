@@ -42,4 +42,30 @@ describe("approved pets catalog query", () => {
       "catalog-companion-03",
     ]);
   });
+
+  it("returns lightweight sitemap rows without full public pet shaping", async () => {
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "mock");
+    const repository = await import("@/lib/pets/repository");
+    const listSitemapEntries = Reflect.get(
+      repository,
+      "listApprovedPetSitemapEntries",
+    );
+
+    expect(listSitemapEntries).toBeTypeOf("function");
+    if (typeof listSitemapEntries !== "function") return;
+
+    const entries = await listSitemapEntries();
+
+    expect(entries.length).toBeGreaterThan(48);
+    expect(Object.keys(entries[0] ?? {})).toEqual([
+      "slug",
+      "createdAt",
+      "approvedAt",
+    ]);
+    expect(entries.slice(0, 3).map((entry: { slug: string }) => entry.slug)).toEqual([
+      "catalog-companion-01",
+      "catalog-companion-02",
+      "catalog-companion-03",
+    ]);
+  });
 });

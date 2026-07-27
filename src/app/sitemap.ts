@@ -4,7 +4,7 @@ import { unstable_cache } from "next/cache";
 import { toPublicUrl } from "@/lib/base-path";
 import { buildGalleryHref } from "@/lib/pets/gallery-filters";
 import { CATALOG_PAGE_SIZE } from "@/lib/pets/pagination";
-import { listApprovedPetsForSearch } from "@/lib/pets/repository";
+import { listApprovedPetSitemapEntries } from "@/lib/pets/repository";
 import {
   SITEMAP_CACHE_TAG,
   SITEMAP_REVALIDATE_SECONDS,
@@ -34,7 +34,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 }
 
 async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
-  const pets = await listApprovedPetsForSearch();
+  const pets = await listApprovedPetSitemapEntries();
   const staticEntries: MetadataRoute.Sitemap = [
     {
       url: toPublicUrl("/"),

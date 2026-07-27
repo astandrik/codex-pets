@@ -11,10 +11,17 @@ import {
 } from "@/components/PetCatalog/PetCatalog";
 import type { PublicPetPayload } from "@/lib/pets/api-payloads";
 
+const navigationMocks = vi.hoisted(() => ({
+  refresh: vi.fn(),
+}));
+
 vi.mock("@/components/PetCard/PetCard", () => ({
   PetCard: ({ pet }: { pet: PublicPetPayload }) => (
     <article data-pet-slug={pet.slug}>{pet.displayName}</article>
   ),
+}));
+vi.mock("next/navigation", () => ({
+  useRouter: () => navigationMocks,
 }));
 vi.mock("next/link", () => ({
   default: ({
@@ -86,6 +93,7 @@ class TestIntersectionObserver {
 describe("PetCatalog", () => {
   beforeEach(() => {
     intersectionObservers.length = 0;
+    navigationMocks.refresh.mockReset();
     vi.stubGlobal(
       "IntersectionObserver",
       TestIntersectionObserver as unknown as typeof IntersectionObserver,
@@ -121,6 +129,7 @@ describe("PetCatalog", () => {
         pageSize={24}
         totalItems={49}
         totalPages={3}
+        snapshotVersion="snapshot-page-two"
         filters={{ query: "", kind: "all", tags: [] }}
       />,
     );
@@ -201,6 +210,48 @@ describe("PetCatalog", () => {
     expect(
       rendered.container.querySelector('[aria-live="polite"]')?.textContent,
     ).toContain("Loaded 1 more pet");
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/pets?page=2&pageSize=1",
+      {
+        headers: {
+          Accept: "application/json",
+          "X-Codex-Pets-Catalog-Snapshot": "snapshot-a",
+        },
+        signal: expect.any(AbortSignal),
+      },
+    );
+
+    unmountCatalog(rendered);
+  });
+
+  it("refreshes instead of appending a page from another catalog snapshot", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: "catalog_snapshot_changed",
+            code: "catalog_snapshot_changed",
+          }),
+          { status: 409, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const rendered = renderCatalog();
+
+    await act(async () => {
+      rendered.container
+        .querySelector<HTMLButtonElement>('button[data-action="load-more"]')
+        ?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(navigationMocks.refresh).toHaveBeenCalledOnce();
+    expect(
+      rendered.container.querySelector('[data-pet-slug="first"]'),
+    ).not.toBeNull();
+    expect(rendered.container.querySelector('[role="alert"]')).toBeNull();
 
     unmountCatalog(rendered);
   });
@@ -398,6 +449,39 @@ describe("PetCatalog", () => {
 
     unmountCatalog(rendered);
   });
+
+  it("replaces loaded pages and totals when initial props change", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const rendered = renderCatalog();
+
+    await act(async () => {
+      rendered.rerender({
+        initialPets: [createPet("replacement")],
+        initialPage: 2,
+        totalItems: 25,
+        totalPages: 2,
+        snapshotVersion: "snapshot-b",
+      });
+      await Promise.resolve();
+    });
+
+    expect(
+      [...rendered.container.querySelectorAll("[data-pet-slug]")].map(
+        (node) => node.getAttribute("data-pet-slug"),
+      ),
+    ).toEqual(["replacement"]);
+    expect(
+      rendered.container.querySelector('[data-catalog-page="2"]'),
+    ).not.toBeNull();
+    expect(
+      rendered.container.querySelector('[aria-current="page"]')?.textContent,
+    ).toBe("2");
+    expect(rendered.container.textContent).toContain(
+      "All 25 matching pets are loaded.",
+    );
+
+    unmountCatalog(rendered);
+  });
 });
 
 type PetCatalogProps = ComponentProps<typeof PetCatalog>;
@@ -416,6 +500,7 @@ function renderCatalog(overrides: Partial<PetCatalogProps> = {}): {
     pageSize: 1,
     totalItems: 2,
     totalPages: 2,
+    snapshotVersion: "snapshot-a",
     filters: { query: "", kind: "all", tags: [] },
     ...overrides,
   };
