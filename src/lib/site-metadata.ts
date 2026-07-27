@@ -341,10 +341,15 @@ export function buildCatalogPageMetadata(
     serializeGalleryFilters(normalizedFilters),
   );
   const filtered = hasRawGalleryFilterKey;
-  const baseTitle = hasNormalizedFilters
-    ? getGalleryFilterTitle(normalizedFilters)
-    : CATALOG_TITLE;
+  const isHomepage = page === 1 && !filtered;
+  let baseTitle = CATALOG_TITLE;
+  if (hasNormalizedFilters) {
+    baseTitle = getGalleryFilterTitle(normalizedFilters);
+  } else if (isHomepage) {
+    baseTitle = SITE_TITLE;
+  }
   const title = page > 1 ? `${baseTitle} – Page ${page}` : baseTitle;
+  const socialTitle = isHomepage ? SITE_TITLE : buildPageTitle(title);
   const description = hasNormalizedFilters
     ? getGalleryFilterDescription(normalizedFilters)
     : CATALOG_DESCRIPTION;
@@ -383,14 +388,14 @@ export function buildCatalogPageMetadata(
     openGraph: {
       type: "website",
       siteName: SITE_NAME,
-      title: buildPageTitle(title),
+      title: socialTitle,
       description,
       url: withBasePath(path),
       images: getOpenGraphImages(),
     },
     twitter: {
       card: "summary_large_image",
-      title: buildPageTitle(title),
+      title: socialTitle,
       description,
       images: getTwitterImages(),
     },
