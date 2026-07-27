@@ -379,7 +379,7 @@ describe("catalog page metadata", () => {
 });
 
 describe("site identity metadata", () => {
-  it("keeps global JSON-LD free of homepage-only entities", async () => {
+  it("keeps global JSON-LD free of unsupported rich-result entities", async () => {
     vi.resetModules();
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "");
@@ -390,8 +390,6 @@ describe("site identity metadata", () => {
 
     expect(nodes.map((node) => node["@type"])).toEqual([
       "Organization",
-      "SoftwareApplication",
-      "Product",
       "WebSite",
     ]);
     expect(nodes.find((node) => node["@type"] === "WebSite")).toMatchObject({
@@ -406,7 +404,30 @@ describe("site identity metadata", () => {
     vi.unstubAllEnvs();
   });
 
-  it("uses Codex Pets as the canonical product name and keeps homepage JSON-LD page-specific", async () => {
+  it("does not reference unsupported product or software rich-result entities", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "");
+
+    const { getHomepageJsonLdGraph } = await import("@/lib/site-metadata");
+    const graph = getHomepageJsonLdGraph();
+    const nodes = graph["@graph"] as Array<Record<string, unknown>>;
+    const webPage = nodes.find((node) => node["@type"] === "WebPage");
+    const aboutIds = Array.isArray(webPage?.about)
+      ? webPage.about.map((item) =>
+          typeof item === "object" && item !== null && "@id" in item
+            ? item["@id"]
+            : undefined,
+        )
+      : [];
+
+    expect(aboutIds).not.toContain("https://pets.example/#product");
+    expect(aboutIds).not.toContain("https://pets.example/#software");
+
+    vi.unstubAllEnvs();
+  });
+
+  it("uses Codex Pets as the canonical site name and keeps homepage JSON-LD page-specific", async () => {
     vi.resetModules();
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "");
@@ -447,8 +468,6 @@ describe("site identity metadata", () => {
     expect(SITE_IMAGE_ALT).toContain("Codex Pets");
     expect(websiteNodes.map((node) => node["@type"])).toEqual([
       "Organization",
-      "SoftwareApplication",
-      "Product",
       "WebSite",
     ]);
     expect(homepageNodes.map((node) => node["@type"])).toEqual([
@@ -456,13 +475,6 @@ describe("site identity metadata", () => {
       "FAQPage",
       "ItemList",
     ]);
-    expect(
-      websiteNodes.find((node) => node["@type"] === "SoftwareApplication"),
-    ).toMatchObject({
-      name: "Codex Pets",
-      applicationCategory: "DeveloperApplication",
-      operatingSystem: "Web",
-    });
     expect(
       websiteNodes.find((node) => node["@type"] === "Organization"),
     ).toMatchObject({
