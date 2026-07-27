@@ -276,6 +276,27 @@ describe("gallery page metadata", () => {
 });
 
 describe("catalog page metadata", () => {
+  it("uses the niche title for the unfiltered homepage", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://example.test/codex-pets");
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/codex-pets");
+
+    const { buildCatalogPageMetadata } = await import("@/lib/site-metadata");
+    const metadata = buildCatalogPageMetadata(
+      { query: "", kind: "all", tags: [] },
+      1,
+      false,
+    );
+
+    const homepageTitle =
+      "Codex Pets - Animated pet packs for AI coding agents";
+    expect(metadata.title).toBe(homepageTitle);
+    expect(metadata.openGraph).toMatchObject({ title: homepageTitle });
+    expect(metadata.twitter).toMatchObject({ title: homepageTitle });
+
+    vi.unstubAllEnvs();
+  });
+
   it("self-canonicalizes an unfiltered numbered catalog page", async () => {
     vi.resetModules();
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://example.test/codex-pets");

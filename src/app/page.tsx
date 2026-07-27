@@ -101,9 +101,7 @@ export default async function Home({ searchParams }: HomeProps) {
     approvedPets,
     filters.tags,
   );
-  const showLandingContent =
-    pageResult.page === 1 &&
-    !hasGalleryFilterSearchParam(rawSearchParams);
+  const showLandingContent = pageResult.page === 1;
   const homepageJsonLd = showLandingContent
     ? getHomepageJsonLdGraph(featuredPets)
     : null;
