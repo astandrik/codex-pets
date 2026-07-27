@@ -2,10 +2,12 @@ import type { Metadata } from "next";
 
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import {
+  buildGalleryHref,
   normalizeGalleryFilters,
   serializeGalleryFilters,
   type GalleryFilters,
 } from "@/lib/pets/gallery-filters";
+import { CATALOG_PAGE_SIZE } from "@/lib/pets/pagination";
 import type { PublicPet } from "@/lib/pets/types";
 import {
   PAGE_VIEW_METADATA_NAME,
@@ -19,6 +21,9 @@ export const SITE_DESCRIPTION =
   "Browse, preview, upload, and download community-made animated pet packs for Codex.";
 export const SITE_IMAGE_ALT =
   "Codex Pets gallery for animated Codex companions";
+const CATALOG_TITLE = "Codex Pets gallery";
+const CATALOG_DESCRIPTION =
+  "Browse every approved Codex pet pack with crawlable pages, animation previews, and ZIP downloads.";
 
 export const SITE_KEYWORDS = [
   "Codex Pets",
@@ -325,6 +330,77 @@ export function buildGalleryPageMetadata(
   };
 }
 
+export function buildCatalogPageMetadata(
+  filters: GalleryFilters,
+  page: number,
+  hasRawGalleryFilterKey: boolean,
+  pageViewPath?: string,
+): Metadata {
+  const normalizedFilters = normalizeGalleryFilters(filters);
+  const hasNormalizedFilters = Boolean(
+    serializeGalleryFilters(normalizedFilters),
+  );
+  const filtered = hasRawGalleryFilterKey;
+  const baseTitle = hasNormalizedFilters
+    ? getGalleryFilterTitle(normalizedFilters)
+    : CATALOG_TITLE;
+  const title = page > 1 ? `${baseTitle} – Page ${page}` : baseTitle;
+  const description = hasNormalizedFilters
+    ? getGalleryFilterDescription(normalizedFilters)
+    : CATALOG_DESCRIPTION;
+  const path = buildGalleryHref({ ...normalizedFilters, page });
+  const apiSearch = [
+    serializeGalleryFilters(normalizedFilters),
+    `page=${page}`,
+    `pageSize=${CATALOG_PAGE_SIZE}`,
+  ]
+    .filter(Boolean)
+    .join("&");
+
+  return {
+    title,
+    description,
+    other: getPageViewOtherMetadata(pageViewPath ?? path, title, {
+      applyTitleTemplate: false,
+    }),
+    alternates: {
+      canonical: withBasePath(filtered ? "/" : path),
+      types: {
+        "application/json": [
+          {
+            title: "Approved pet catalog page JSON",
+            url: withBasePath(`/api/pets?${apiSearch}`),
+          },
+        ],
+        "text/toon": [
+          {
+            title: "Approved pet catalog page TOON",
+            url: withBasePath(`/api/pets.toon?${apiSearch}`),
+          },
+        ],
+      },
+    },
+    openGraph: {
+      type: "website",
+      siteName: SITE_NAME,
+      title: buildPageTitle(title),
+      description,
+      url: withBasePath(path),
+      images: getOpenGraphImages(),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: buildPageTitle(title),
+      description,
+      images: getTwitterImages(),
+    },
+    robots: {
+      index: !filtered,
+      follow: true,
+    },
+  };
+}
+
 export function getPetSocialImagePath(slug: string): string {
   return `/pets/${encodeURIComponent(slug)}/opengraph-image.png`;
 }
@@ -446,6 +522,59 @@ export function getHomepageJsonLdGraph(
         itemListElement: featuredPets.map((pet, index) => ({
           "@type": "ListItem",
           position: index + 1,
+          item: getPetJsonLd(pet),
+        })),
+      },
+    ],
+  };
+}
+
+export function getCatalogJsonLdGraph(
+  pets: Array<
+    Pick<
+      PublicPet,
+      | "slug"
+      | "displayName"
+      | "description"
+      | "kind"
+      | "tags"
+      | "ownerName"
+      | "ownerProfileSlug"
+      | "createdAt"
+      | "approvedAt"
+      | "zipUrl"
+      | "spritesheetUrl"
+      | "petJsonUrl"
+    >
+  >,
+  page: number,
+  pageSize: number,
+  totalItems: number,
+  filters: GalleryFilters = { query: "", kind: "all", tags: [] },
+) {
+  const pagePath = buildGalleryHref({ ...filters, page });
+  const pageUrl = toPublicUrl(pagePath);
+  const listId = `${pageUrl}#pet-list`;
+
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "CollectionPage",
+        "@id": `${pageUrl}#webpage`,
+        name: page > 1 ? `${CATALOG_TITLE} – Page ${page}` : CATALOG_TITLE,
+        url: pageUrl,
+        description: CATALOG_DESCRIPTION,
+        mainEntity: { "@id": listId },
+      },
+      {
+        "@type": "ItemList",
+        "@id": listId,
+        name: CATALOG_TITLE,
+        numberOfItems: totalItems,
+        itemListElement: pets.map((pet, index) => ({
+          "@type": "ListItem",
+          position: (page - 1) * pageSize + index + 1,
           item: getPetJsonLd(pet),
         })),
       },

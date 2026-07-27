@@ -110,6 +110,142 @@ describe("GET /api/pets", () => {
     expect(JSON.stringify(body)).not.toContain("private@example.com");
   });
 
+  it("adds pagination metadata only when page parameters are requested", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    searchMocks.searchApprovedPets.mockResolvedValueOnce({
+      pets: [approvedPet],
+      total: 49,
+      mode: "lexical",
+      fallbackReason: null,
+      visualMode: "off",
+      visualFallbackReason: null,
+      visualCandidateCount: 0,
+      durationMs: 2,
+    });
+    const { GET } = await import("@/app/api/pets/route");
+
+    const response = await GET(
+      new Request("https://pets.example/api/pets?page=2&pageSize=24"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(searchMocks.searchApprovedPets).toHaveBeenCalledWith({
+      q: "",
+      kind: "all",
+      tags: [],
+      offset: 24,
+      limit: 24,
+    });
+    expect(await response.json()).toEqual({
+      total: 1,
+      pets: [approvedPetPayload],
+      pagination: {
+        page: 2,
+        pageSize: 24,
+        totalItems: 49,
+        totalPages: 3,
+        hasNextPage: true,
+      },
+    });
+  });
+
+  it("returns an empty successful API page beyond the result set", async () => {
+    searchMocks.searchApprovedPets.mockResolvedValueOnce({
+      pets: [],
+      total: 49,
+      mode: "lexical",
+      fallbackReason: null,
+      visualMode: "off",
+      visualFallbackReason: null,
+      visualCandidateCount: 0,
+      durationMs: 2,
+    });
+    const { GET } = await import("@/app/api/pets/route");
+
+    const response = await GET(
+      new Request("https://pets.example/api/pets?page=4&pageSize=24"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      total: 0,
+      pets: [],
+      pagination: {
+        page: 4,
+        pageSize: 24,
+        totalItems: 49,
+        totalPages: 3,
+        hasNextPage: false,
+      },
+    });
+  });
+
+  it.each([
+    ["page", "0"],
+    ["page", "1.5"],
+    ["pageSize", "201"],
+  ])("rejects invalid %s pagination values", async (field, value) => {
+    const { GET } = await import("@/app/api/pets/route");
+
+    const response = await GET(
+      new Request(`https://pets.example/api/pets?${field}=${value}`),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: "invalid_pagination",
+      code: "invalid_pagination",
+      field,
+    });
+    expect(searchMocks.searchApprovedPets).not.toHaveBeenCalled();
+  });
+
+  it("returns the same paginated payload as TOON", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    const result = {
+      pets: [approvedPet],
+      total: 25,
+      mode: "lexical",
+      fallbackReason: null,
+      visualMode: "off",
+      visualFallbackReason: null,
+      visualCandidateCount: 0,
+      durationMs: 2,
+    };
+    searchMocks.searchApprovedPets.mockResolvedValueOnce(result);
+    const { GET: getJson } = await import("@/app/api/pets/route");
+    const jsonResponse = await getJson(
+      new Request("https://pets.example/api/pets?page=1&pageSize=24"),
+    );
+
+    searchMocks.searchApprovedPets.mockResolvedValueOnce(result);
+    const { GET: getToon } = await import("@/app/api/pets.toon/route");
+    const toonResponse = await getToon(
+      new Request("https://pets.example/api/pets.toon?page=1&pageSize=24"),
+    );
+
+    expect(decode(await toonResponse.text())).toEqual(
+      await jsonResponse.json(),
+    );
+  });
+
+  it("returns matching pagination validation errors as JSON and TOON", async () => {
+    const { GET: getJson } = await import("@/app/api/pets/route");
+    const jsonResponse = await getJson(
+      new Request("https://pets.example/api/pets?pageSize=0"),
+    );
+    const { GET: getToon } = await import("@/app/api/pets.toon/route");
+    const toonResponse = await getToon(
+      new Request("https://pets.example/api/pets.toon?pageSize=0"),
+    );
+
+    expect(jsonResponse.status).toBe(400);
+    expect(toonResponse.status).toBe(400);
+    expect(decode(await toonResponse.text())).toEqual(
+      await jsonResponse.json(),
+    );
+  });
+
   it("returns TOON search results matching the JSON payload", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
     const request = new Request(

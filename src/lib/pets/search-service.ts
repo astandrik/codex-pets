@@ -31,6 +31,7 @@ export type PetSearchInput = {
   tags?: string[];
   author?: string;
   limit?: number;
+  offset?: number;
 };
 
 export type PetSearchMode = "lexical" | "shadow" | "hybrid";
@@ -96,6 +97,7 @@ export function createPetSearchService<T extends PetSearchCatalogItem>(
     const filters = normalizeGalleryFilters(input);
     const author = normalizeSearchQuery(input.author).text;
     const limit = normalizeLimit(input.limit);
+    const offset = normalizeOffset(input.offset);
     const catalog = await dependencies.listApprovedPets();
     const candidates = catalog.filter((pet) =>
       matchesHardFilters(pet, filters.kind, filters.tags, author),
@@ -191,7 +193,7 @@ export function createPetSearchService<T extends PetSearchCatalogItem>(
       visualCandidateCount = 0,
     ): PetSearchResult<T> {
       return {
-        pets: pets.slice(0, limit),
+        pets: pets.slice(offset, offset + limit),
         total,
         mode,
         fallbackReason,
@@ -232,4 +234,9 @@ function matchesHardFilters(
 function normalizeLimit(value: number | undefined): number {
   if (!Number.isFinite(value)) return DEFAULT_RESULT_LIMIT;
   return Math.min(MAX_RESULT_LIMIT, Math.max(1, Math.trunc(value ?? 0)));
+}
+
+function normalizeOffset(value: number | undefined): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.trunc(value ?? 0));
 }

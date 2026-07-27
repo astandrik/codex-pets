@@ -396,11 +396,12 @@ export function buildOpenApiSpec() {
           tags: ["Pets"],
           summary: "Search approved Codex pets",
           description:
-            "Returns approved pets only. Private contact fields are never included.",
+            "Returns approved pets only. Private contact fields are never included. page or pageSize opts into pagination metadata; requests without either parameter retain the legacy response shape.",
           security: publicReadSecurity,
           parameters: petSearchParameters,
           responses: {
             "200": jsonResponse("#/components/schemas/PetsResponse"),
+            "400": errorResponse,
           },
         },
       },
@@ -413,6 +414,7 @@ export function buildOpenApiSpec() {
           parameters: petSearchParameters,
           responses: {
             "200": textResponse("text/toon"),
+            "400": textResponse("text/toon"),
           },
         },
       },
@@ -687,11 +689,36 @@ export function buildOpenApiSpec() {
           type: "object",
           required: ["total", "pets"],
           properties: {
-            total: { type: "integer", minimum: 0 },
+            total: {
+              type: "integer",
+              minimum: 0,
+              description:
+                "Number of pets in this response. For paginated requests, pagination.totalItems is the full filtered count.",
+            },
             pets: {
               type: "array",
               items: { $ref: "#/components/schemas/PublicPet" },
             },
+            pagination: {
+              $ref: "#/components/schemas/PetsPagination",
+            },
+          },
+        },
+        PetsPagination: {
+          type: "object",
+          required: [
+            "page",
+            "pageSize",
+            "totalItems",
+            "totalPages",
+            "hasNextPage",
+          ],
+          properties: {
+            page: { type: "integer", minimum: 1 },
+            pageSize: { type: "integer", minimum: 1, maximum: 200 },
+            totalItems: { type: "integer", minimum: 0 },
+            totalPages: { type: "integer", minimum: 0 },
+            hasNextPage: { type: "boolean" },
           },
         },
         PetDetailResponse: {
@@ -897,6 +924,27 @@ const petSearchParameters = [
     required: false,
     schema: { type: "string" },
     description: "Comma-separated tag filters.",
+  },
+  {
+    name: "page",
+    in: "query",
+    required: false,
+    schema: { type: "integer", minimum: 1, default: 1 },
+    description:
+      "1-based result page. Supplying page or pageSize enables pagination metadata.",
+  },
+  {
+    name: "pageSize",
+    in: "query",
+    required: false,
+    schema: {
+      type: "integer",
+      minimum: 1,
+      maximum: 200,
+      default: 24,
+    },
+    description:
+      "Number of pets per page. Supplying page or pageSize enables pagination metadata.",
   },
 ] as const;
 

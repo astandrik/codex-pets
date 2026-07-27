@@ -52,6 +52,23 @@ describe("approved pet search service", () => {
     expect(result.total).toBe(1);
   });
 
+  it("returns an offset page while keeping the full filtered total", async () => {
+    const search = createPetSearchService({
+      listApprovedPets: async () => catalog,
+      semanticSearch: async () => ({
+        text: [],
+        visual: [],
+        visualFallbackReason: null,
+      }),
+      mode: "lexical",
+    });
+
+    const result = await search({ offset: 1, limit: 1 });
+
+    expect(result.pets).toEqual([catalog[1]]);
+    expect(result.total).toBe(3);
+  });
+
   it("uses lexical relevance and respects author and limit", async () => {
     const search = createPetSearchService({
       listApprovedPets: async () => catalog,

@@ -24,7 +24,7 @@ const API_DESCRIPTION =
 const endpoints = [
   "GET /api/manifest",
   "GET /api/manifest.toon",
-  "GET /api/pets?q=<query>&kind=all|creature|object|character&tags=<tags>",
+  "GET /api/pets?q=<query>&kind=all|creature|object|character&tags=<tags>&page=<n>&pageSize=<1..200>",
   "GET /api/pets.toon",
   "GET /api/pets/<slug>",
   "GET /api/pets/<slug>.toon",
@@ -123,6 +123,11 @@ export default function ApiDocsPage() {
             </li>
           ))}
         </ul>
+        <Text variant="body-2" color="secondary">
+          Supplying page or pageSize adds pagination metadata. In that response,
+          top-level total is the number of returned pets, while
+          pagination.totalItems is the full filtered count.
+        </Text>
       </section>
 
       <section className="page-section">
@@ -134,6 +139,7 @@ export default function ApiDocsPage() {
             {[
               `curl -s ${toPublicUrl("/api/manifest")}`,
               `curl -s "${toPublicUrl("/api/pets")}?q=space&kind=creature"`,
+              `curl -s "${toPublicUrl("/api/pets")}?page=2&pageSize=24"`,
               `curl -s ${toPublicUrl("/api/pets/{slug}/install")}`,
               `codex mcp add codexPets --url ${toPublicUrl("/mcp")}`,
             ].join("\n")}

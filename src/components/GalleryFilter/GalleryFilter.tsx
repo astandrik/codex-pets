@@ -186,11 +186,12 @@ export function GalleryFilter({
     setQuery("");
     setKind("all");
     setTags([]);
-    if (lastNavigatedHref.current === "/") {
+    const clearHref = buildGalleryHref();
+    if (lastNavigatedHref.current === clearHref) {
       cancelScheduledSearch();
       return;
     }
-    navigate("/", "push");
+    navigate(clearHref, "push");
   }
 
   function onToggleTag(tag: string) {

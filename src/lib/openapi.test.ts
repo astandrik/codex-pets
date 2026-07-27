@@ -49,6 +49,47 @@ describe("buildOpenApiSpec", () => {
     expect(spec.info.description).toContain("deprecation notice");
     expect(spec.paths["/api/pets/{slug}/install"]).not.toHaveProperty("post");
     expect(spec.paths["/api/pets/{slug}"]).not.toHaveProperty("post");
+    expect(spec.paths["/api/pets"].get.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "page",
+          schema: expect.objectContaining({
+            type: "integer",
+            minimum: 1,
+            default: 1,
+          }),
+        }),
+        expect.objectContaining({
+          name: "pageSize",
+          schema: expect.objectContaining({
+            type: "integer",
+            minimum: 1,
+            maximum: 200,
+            default: 24,
+          }),
+        }),
+      ]),
+    );
+    expect(spec.paths["/api/pets"].get.responses).toHaveProperty("400");
+    expect(spec.paths["/api/pets.toon"].get.responses).toHaveProperty("400");
+    expect(spec.components.schemas.PetsResponse.properties.pagination).toEqual(
+      { $ref: "#/components/schemas/PetsPagination" },
+    );
+    expect(spec.components.schemas.PetsResponse.required).not.toContain(
+      "pagination",
+    );
+    expect(
+      spec.components.schemas.PetsResponse.properties.total.description,
+    ).toContain("pagination.totalItems");
+    expect(spec.components.schemas.PetsPagination).toMatchObject({
+      required: [
+        "page",
+        "pageSize",
+        "totalItems",
+        "totalPages",
+        "hasNextPage",
+      ],
+    });
     expect(Object.keys(spec.paths).some((path) => path.includes("/admin"))).toBe(
       false,
     );

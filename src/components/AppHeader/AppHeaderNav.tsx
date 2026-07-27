@@ -90,6 +90,11 @@ export function AppHeaderNav() {
     >
       <ul className="app-header__links">
         <li>
+          <Link href="/" prefetch={false} {...linkProps("/")}>
+            Gallery
+          </Link>
+        </li>
+        <li>
           <Link href="/about" prefetch={false} {...linkProps("/about")}>
             About
           </Link>

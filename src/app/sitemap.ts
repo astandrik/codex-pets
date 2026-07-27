@@ -2,7 +2,9 @@ import type { MetadataRoute } from "next";
 import { unstable_cache } from "next/cache";
 
 import { toPublicUrl } from "@/lib/base-path";
-import { listApprovedPets } from "@/lib/pets/repository";
+import { buildGalleryHref } from "@/lib/pets/gallery-filters";
+import { CATALOG_PAGE_SIZE } from "@/lib/pets/pagination";
+import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 import {
   SITEMAP_CACHE_TAG,
   SITEMAP_REVALIDATE_SECONDS,
@@ -16,7 +18,7 @@ const getSitemapSnapshot = unstable_cache(
     return buildSitemap();
   },
   [
-    "codex-pets-sitemap",
+    "codex-pets-sitemap-v2",
     process.env.CODEX_PETS_DATA_SOURCE?.trim() || "ydb",
     process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000",
     process.env.NEXT_PUBLIC_BASE_PATH?.trim() || "",
@@ -32,7 +34,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 }
 
 async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
-  const pets = await listApprovedPets();
+  const pets = await listApprovedPetsForSearch();
   const staticEntries: MetadataRoute.Sitemap = [
     {
       url: toPublicUrl("/"),
@@ -100,6 +102,18 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.7,
     },
   ];
+  const catalogPageCount = Math.max(
+    1,
+    Math.ceil(pets.length / CATALOG_PAGE_SIZE),
+  );
+  const catalogEntries: MetadataRoute.Sitemap = Array.from(
+    { length: Math.max(0, catalogPageCount - 1) },
+    (_, index) => ({
+      url: toPublicUrl(buildGalleryHref({ page: index + 2 })),
+      changeFrequency: "daily" as const,
+      priority: 0.8,
+    }),
+  );
 
   const petEntries: MetadataRoute.Sitemap = pets.map((pet) => {
     const lastModified = toIsoDateTime(pet.approvedAt ?? pet.createdAt);
@@ -112,7 +126,13 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
     };
   });
 
-  return [...staticEntries, ...petEntries];
+  const [homeEntry, ...remainingStaticEntries] = staticEntries;
+  return [
+    ...(homeEntry ? [homeEntry] : []),
+    ...catalogEntries,
+    ...remainingStaticEntries,
+    ...petEntries,
+  ];
 }
 
 function toIsoDateTime(value: string): string {

@@ -3,14 +3,12 @@ import {
   Card,
   Container,
   Flex,
-  PlaceholderContainer,
   Text,
 } from "@/components/GravityUI/GravityUI";
 import {
   ArrowDownToLine,
   ArrowRight,
   Persons,
-  Picture,
   Plus,
   Star,
 } from "@gravity-ui/icons";
@@ -22,45 +20,33 @@ import {
   ASK_AI_HOME,
   ASK_AI_PRODUCT_NAME,
 } from "@/components/AskAI/ask-ai-content";
-import { GalleryFilter } from "@/components/GalleryFilter/GalleryFilter";
 import { BEST_CODEX_PETS_GUIDE_PATH } from "@/lib/guides/best-codex-pets";
 import {
   HomeHeroPetPicker,
   type HomeHeroPet,
 } from "@/components/HomePage/HomeHeroPetPicker";
-import { PetCard } from "@/components/PetCard/PetCard";
 import { withBasePath } from "@/lib/base-path";
 import { pickRandomHeroPetIndex } from "@/components/HomePage/home-hero-random";
 import { buildHomeRecommendationEntryPoints } from "@/components/HomePage/recommendation-entry-points";
-import type { PetKind, PublicPetSummary } from "@/lib/pets/types";
+import type { PublicPetSummary } from "@/lib/pets/types";
 
 type HomePageProps = {
   pets: PublicPetSummary[];
-  filteredPets: PublicPetSummary[];
-  filteredTotal: number;
-  query: string;
-  kind: PetKind | "all";
-  selectedTags: string[];
-  suggestedTags: string[];
+  totalPets: number;
+  catalogTotalPets: number;
+  showLandingContent: boolean;
+  catalog: ReactNode;
 };
-
-function EmptyIcon() {
-  return <Picture width={64} height={64} />;
-}
 
 export function HomePage({
   pets,
-  filteredPets,
-  filteredTotal,
-  query,
-  kind,
-  selectedTags,
-  suggestedTags,
+  totalPets,
+  catalogTotalPets,
+  showLandingContent,
+  catalog,
 }: HomePageProps) {
-  const heroPets = pets.map(toHomeHeroPet);
+  const heroPets = showLandingContent ? pets.map(toHomeHeroPet) : [];
   const initialHeroPetIndex = pickRandomHeroPetIndex(heroPets.length) ?? 0;
-  const hasActiveFilters =
-    Boolean(query) || kind !== "all" || selectedTags.length > 0;
   const recommendationEntryPoints = buildHomeRecommendationEntryPoints(pets);
   const hasRecommendationEntryPoints =
     recommendationEntryPoints.styleTags.length > 0 ||
@@ -69,99 +55,126 @@ export function HomePage({
 
   return (
     <Container as="main" maxWidth="xl" gutters={5} className="page-shell">
-      <Card view="filled" type="container" className="home-hero-card">
-        <Flex
-          as="section"
-          gap={8}
-          alignItems="flex-start"
-          justifyContent="space-between"
-          className="home-hero"
-          wrap
-        >
-          <Flex direction="column" gap={6} className="home-hero__main">
-          <Flex direction="column" gap={3} className="home-hero__copy">
-            <Text variant="caption-2" color="brand" className="home-hero__eyebrow">
-              The Codex pet registry
-            </Text>
-            <Text variant="display-2" as="h1">
-              Codex Pets
-            </Text>
-            <Text variant="body-2" color="secondary" className="home-hero__lead">
-              Browse community-made animated pet packs for Codex, preview every
-              animation state, and download a ZIP that drops into{" "}
-              <code>~/.codex/pets/&lt;slug&gt;</code>.
-            </Text>
-            <Flex gap={2} wrap className="home-hero__actions">
-              <Button view="action" size="l" href={withBasePath("/submit")}>
-                <Plus />
-                Submit a pet
-              </Button>
-              <Button view="outlined" size="l" href={withBasePath("/request")}>
-                Request a pet
-              </Button>
-              <Button view="outlined" size="l" href="#gallery">
-                Browse gallery
-                <ArrowRight />
-              </Button>
-              <Button
-                view="outlined"
-                size="l"
-                href={withBasePath(BEST_CODEX_PETS_GUIDE_PATH)}
-              >
-                Best Codex pets guide
-                <ArrowRight />
-              </Button>
+      {showLandingContent ? (
+        <>
+          <Card view="filled" type="container" className="home-hero-card">
+            <Flex
+              as="section"
+              gap={8}
+              alignItems="flex-start"
+              justifyContent="space-between"
+              className="home-hero"
+              wrap
+            >
+              <Flex direction="column" gap={6} className="home-hero__main">
+                <Flex direction="column" gap={3} className="home-hero__copy">
+                  <Text
+                    variant="caption-2"
+                    color="brand"
+                    className="home-hero__eyebrow"
+                  >
+                    The Codex pet registry
+                  </Text>
+                  <Text variant="display-2" as="h1">
+                    Codex Pets
+                  </Text>
+                  <Text
+                    variant="body-2"
+                    color="secondary"
+                    className="home-hero__lead"
+                  >
+                    Browse community-made animated pet packs for Codex, preview
+                    every animation state, and download a ZIP that drops into{" "}
+                    <code>~/.codex/pets/&lt;slug&gt;</code>.
+                  </Text>
+                  <Flex gap={2} wrap className="home-hero__actions">
+                    <Button
+                      view="action"
+                      size="l"
+                      href={withBasePath("/submit")}
+                    >
+                      <Plus />
+                      Submit a pet
+                    </Button>
+                    <Button
+                      view="outlined"
+                      size="l"
+                      href={withBasePath("/request")}
+                    >
+                      Request a pet
+                    </Button>
+                    <Button
+                      view="outlined"
+                      size="l"
+                      href={withBasePath("/#gallery")}
+                    >
+                      Browse gallery
+                      <ArrowRight />
+                    </Button>
+                    <Button
+                      view="outlined"
+                      size="l"
+                      href={withBasePath(BEST_CODEX_PETS_GUIDE_PATH)}
+                    >
+                      Best Codex pets guide
+                      <ArrowRight />
+                    </Button>
+                  </Flex>
+                </Flex>
+                <div
+                  className="home-hero__stats"
+                  aria-label="Registry highlights"
+                >
+                  <div className="home-hero__stat">
+                    <span className="home-hero__stat-icon">
+                      <Star />
+                    </span>
+                    <span>
+                      <strong>{totalPets} approved pets</strong>
+                      <small>and growing</small>
+                    </span>
+                  </div>
+                  <div className="home-hero__stat">
+                    <span className="home-hero__stat-icon">
+                      <Persons />
+                    </span>
+                    <span>
+                      <strong>Community-submitted</strong>
+                      <small>by creators like you</small>
+                    </span>
+                  </div>
+                  <div className="home-hero__stat">
+                    <span className="home-hero__stat-icon">
+                      <ArrowDownToLine />
+                    </span>
+                    <span>
+                      <strong>ZIP-ready</strong>
+                      <small>drop in and enjoy</small>
+                    </span>
+                  </div>
+                </div>
+              </Flex>
+              <div className="home-hero__visual">
+                <HomeHeroPetPicker
+                  pets={heroPets}
+                  initialIndex={initialHeroPetIndex}
+                />
+              </div>
             </Flex>
-          </Flex>
-          <div className="home-hero__stats" aria-label="Registry highlights">
-            <div className="home-hero__stat">
-              <span className="home-hero__stat-icon">
-                <Star />
-              </span>
-              <span>
-                <strong>{pets.length} approved pets</strong>
-                <small>and growing</small>
-              </span>
-            </div>
-            <div className="home-hero__stat">
-              <span className="home-hero__stat-icon">
-                <Persons />
-              </span>
-              <span>
-                <strong>Community-submitted</strong>
-                <small>by creators like you</small>
-              </span>
-            </div>
-            <div className="home-hero__stat">
-              <span className="home-hero__stat-icon">
-                <ArrowDownToLine />
-              </span>
-              <span>
-                <strong>ZIP-ready</strong>
-                <small>drop in and enjoy</small>
-              </span>
-            </div>
-          </div>
-          </Flex>
-          <div className="home-hero__visual">
-            <HomeHeroPetPicker
-              pets={heroPets}
-              initialIndex={initialHeroPetIndex}
-            />
-          </div>
-        </Flex>
-      </Card>
+          </Card>
 
-      <section className="page-section home-ask-ai">
-        <AskAIPanel
-          productName={ASK_AI_PRODUCT_NAME}
-          label={ASK_AI_HOME.label}
-          helperText={ASK_AI_HOME.helperText}
-          prompt={ASK_AI_HOME.prompt}
-          page={ASK_AI_HOME.page}
-          promptVariant={ASK_AI_HOME.promptVariant}
-        />
-      </section>
+          <section className="page-section home-ask-ai">
+            <AskAIPanel
+              productName={ASK_AI_PRODUCT_NAME}
+              label={ASK_AI_HOME.label}
+              helperText={ASK_AI_HOME.helperText}
+              prompt={ASK_AI_HOME.prompt}
+              page={ASK_AI_HOME.page}
+              promptVariant={ASK_AI_HOME.promptVariant}
+            />
+          </section>
+        </>
+      ) : null}
       <section id="gallery" className="page-section home-gallery">
         <Flex
           as="header"
@@ -170,22 +183,25 @@ export function HomePage({
           gap={3}
           wrap
         >
-          <Text variant="display-1" as="h2">
-            Gallery
-          </Text>
+          {showLandingContent ? (
+            <Text variant="display-1" as="h2">
+              Codex Pets gallery
+            </Text>
+          ) : (
+            <Text variant="display-2" as="h1">
+              Codex Pets gallery
+            </Text>
+          )}
           <span className="section-heading__badge">
-            {filteredTotal} approved pets
+            {catalogTotalPets} approved pets
           </span>
         </Flex>
-        {filteredPets.length < filteredTotal ? (
-          <Text variant="body-2" color="secondary">
-            Showing the first {filteredPets.length} approved pets on the
-            homepage. Use search, tags, or the public manifest to inspect the
-            full registry.
-          </Text>
-        ) : null}
+        <Text variant="body-2" color="secondary">
+          Browse every approved animated pet pack. Use the page links or keep
+          scrolling to load the next page.
+        </Text>
 
-        {hasRecommendationEntryPoints ? (
+        {showLandingContent && hasRecommendationEntryPoints ? (
           <div className="home-recommendations">
             <Flex
               as="header"
@@ -242,45 +258,7 @@ export function HomePage({
           </div>
         ) : null}
 
-        <GalleryFilter
-          defaultQuery={query}
-          defaultKind={kind}
-          defaultTags={selectedTags}
-          suggestedTags={suggestedTags}
-        />
-        {filteredPets.length > 0 ? (
-          <div className="pet-grid">
-            {filteredPets.map((pet) => (
-              <PetCard key={pet.slug} pet={pet} />
-            ))}
-          </div>
-        ) : (
-          <PlaceholderContainer
-            size="l"
-            image={<EmptyIcon />}
-            title={
-              hasActiveFilters
-                ? "No pets match these filters"
-                : "No approved pets yet"
-            }
-            description={
-              hasActiveFilters
-                ? "Clear the filters or try a different tag combination."
-                : "Submitted pets will appear here after moderation."
-            }
-            actions={
-              <Flex gap={2} wrap>
-                <Button view="action" href={withBasePath("/submit")}>
-                  <Plus />
-                  Submit the first pet
-                </Button>
-                <Button view="outlined" href={withBasePath("/request")}>
-                  Request a pet
-                </Button>
-              </Flex>
-            }
-          />
-        )}
+        {catalog}
       </section>
     </Container>
   );

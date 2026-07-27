@@ -103,7 +103,7 @@ DECLARE $status AS Utf8;
 SELECT ${petColumns()}
 FROM ${TABLES.pets}
 WHERE status = $status
-ORDER BY created_at DESC${limitClause ? `\n${limitClause}` : ""};
+ORDER BY created_at DESC, slug ASC${limitClause ? `\n${limitClause}` : ""};
   `;
 }
 
@@ -941,10 +941,17 @@ function listMockPets(
 ): PublicPet[] {
   const normalizedFilters = normalizeGalleryFilters(filters);
 
-  return listMockPetRecords().filter((pet) => {
-    if (pet.status !== status) return false;
-    return matchesGalleryFilters(pet, normalizedFilters);
-  }).map((pet) => toPublicPet(pet, pet.metrics, mockOwnerReference(pet)));
+  return listMockPetRecords()
+    .filter((pet) => {
+      if (pet.status !== status) return false;
+      return matchesGalleryFilters(pet, normalizedFilters);
+    })
+    .sort(
+      (left, right) =>
+        right.createdAt.localeCompare(left.createdAt) ||
+        left.slug.localeCompare(right.slug),
+    )
+    .map((pet) => toPublicPet(pet, pet.metrics, mockOwnerReference(pet)));
 }
 
 function mockOwnerReference(row: PetRow): PublicUserReference | undefined {

@@ -99,10 +99,15 @@ export function serializeGalleryFilters(
 }
 
 export function buildGalleryHref(
-  input: Partial<GalleryFilters> & { q?: string } = {},
+  input: Partial<GalleryFilters> & { q?: string; page?: number } = {},
 ): string {
   const search = serializeGalleryFilters(input);
-  return search ? `/?${search}` : "/";
+  const page = normalizeGalleryPage(input.page);
+  const query = [search, page > 1 ? `page=${page}` : ""]
+    .filter(Boolean)
+    .join("&");
+
+  return query ? `/?${query}` : "/";
 }
 
 export function hasGalleryFilters(
@@ -212,6 +217,10 @@ function firstParam(values: readonly string[]): string | undefined {
 
 function normalizeTagName(value: string): string {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function normalizeGalleryPage(value: number | undefined): number {
+  return Number.isSafeInteger(value) && (value ?? 0) > 1 ? value! : 1;
 }
 
 function pickWeightedIndex(

@@ -434,6 +434,51 @@ const MOCK_PET_SEEDS: MockPetSeed[] = [
   },
 ];
 
+MOCK_PET_SEEDS.push(...createCatalogPaginationMockPetSeeds());
+
+function createCatalogPaginationMockPetSeeds(): MockPetSeed[] {
+  const kinds: PetKind[] = ["creature", "object", "character"];
+  const palettes = [
+    ["#5b8def", "#f9d65c"],
+    ["#58c18c", "#15202b"],
+    ["#e98a4b", "#f4f1de"],
+    ["#9b72cf", "#f7d6e0"],
+  ] as const;
+  const timestamp = "2026-05-11T10:00:00.000Z";
+
+  return Array.from({ length: 48 }, (_, index) => {
+    const number = String(index + 1).padStart(2, "0");
+    const kind = kinds[index % kinds.length] ?? "creature";
+    const [color, accent] = palettes[index % palettes.length] ?? palettes[0];
+
+    return {
+      slug: `catalog-companion-${number}`,
+      id: `dev_pet_catalog_companion_${number}`,
+      assetId: `dev_asset_catalog_companion_${number}`,
+      displayName: `Catalog Companion ${number}`,
+      description:
+        "A deterministic local mock pet for pagination and infinite-scroll checks.",
+      kind,
+      tags: ["catalog", "pagination", kind],
+      status: "approved",
+      ownerId: "local-admin",
+      ownerEmail: "local-admin@example.com",
+      ownerName: "Local Admin",
+      color,
+      accent,
+      glyph: `C${number}`,
+      metrics: {
+        downloadCount: index,
+        installCount: Math.floor(index / 2),
+        likeCount: Math.floor(index / 3),
+      },
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      approvedAt: timestamp,
+    };
+  });
+}
+
 const INITIAL_MOCK_PET_RECORDS: MockPetRecord[] = MOCK_PET_SEEDS.map((seed) => ({
   ...seed,
   spritesheetUrl: assetUrl(seed.assetId, "spritesheet.png"),
