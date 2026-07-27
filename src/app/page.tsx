@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { HomePage } from "@/components/HomePage/HomePage";
 import { unstable_cache } from "next/cache";
 import {
+  matchesGalleryFilters,
   parseGalleryFilters,
   pickSuggestedGalleryTags,
 } from "@/lib/pets/gallery-filters";
@@ -50,16 +51,30 @@ export async function generateMetadata({
 
 export default async function Home({ searchParams }: HomeProps) {
   const filters = parseGalleryFilters(await searchParams);
+  const approvedPetsPromise = getApprovedPetsSnapshot();
+  const searchResultPromise = filters.query
+    ? searchApprovedPets({
+        q: filters.query,
+        kind: filters.kind,
+        tags: filters.tags,
+      })
+    : Promise.resolve(null);
   const [approvedPets, searchResult] = await Promise.all([
-    getApprovedPetsSnapshot(),
-    searchApprovedPets({
-      q: filters.query,
-      kind: filters.kind,
-      tags: filters.tags,
-    }),
+    approvedPetsPromise,
+    searchResultPromise,
   ]);
+
+  let galleryPets = approvedPets;
+  if (searchResult) {
+    galleryPets = searchResult.pets;
+  } else if (filters.kind !== "all" || filters.tags.length > 0) {
+    galleryPets = approvedPets.filter((pet) =>
+      matchesGalleryFilters(pet, filters),
+    );
+  }
+
   const pets = approvedPets.map(toPublicPetSummary);
-  const filteredPets = searchResult.pets.map(toPublicPetSummary);
+  const filteredPets = galleryPets.map(toPublicPetSummary);
   const visiblePets = sliceHomeGalleryPets(filteredPets);
   const suggestedTags = pickSuggestedGalleryTags(pets, filters.tags);
   const homepageJsonLd = getHomepageJsonLdGraph(
@@ -75,7 +90,7 @@ export default async function Home({ searchParams }: HomeProps) {
       <HomePage
         pets={pets}
         filteredPets={visiblePets}
-        filteredTotal={searchResult.total}
+        filteredTotal={searchResult?.total ?? galleryPets.length}
         query={filters.query}
         kind={filters.kind}
         selectedTags={filters.tags}

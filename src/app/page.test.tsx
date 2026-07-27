@@ -33,7 +33,7 @@ describe("homepage pet search", () => {
     ]);
     searchMocks.searchApprovedPets.mockResolvedValue({
       pets: [semanticPet, newestPet],
-      total: 2,
+      total: 7,
       mode: "hybrid",
       fallbackReason: null,
       visualMode: "hybrid",
@@ -41,6 +41,69 @@ describe("homepage pet search", () => {
       visualCandidateCount: 1,
       durationMs: 10,
     });
+  });
+
+  it("uses the cached snapshot directly when q is absent", async () => {
+    const { default: Home } = await import("@/app/page");
+    const output = await Home({
+      searchParams: Promise.resolve({}),
+    });
+    const children = output.props.children as Array<{
+      props: Record<string, unknown>;
+    }>;
+    const homePage = children[1];
+
+    expect(repositoryMocks.listApprovedPets).toHaveBeenCalledTimes(1);
+    expect(searchMocks.searchApprovedPets).not.toHaveBeenCalled();
+    expect(
+      (homePage?.props.pets as Array<{ slug: string }>).map(
+        (pet) => pet.slug,
+      ),
+    ).toEqual(["orbit-otter", "velvet-luma"]);
+    expect(
+      (homePage?.props.filteredPets as Array<{ slug: string }>).map(
+        (pet) => pet.slug,
+      ),
+    ).toEqual(["orbit-otter", "velvet-luma"]);
+    expect(homePage?.props.filteredTotal).toBe(2);
+  });
+
+  it("applies kind and all selected tags locally when q normalizes to empty", async () => {
+    repositoryMocks.listApprovedPets.mockResolvedValue([
+      createPet("multi-tag", "Multi Tag", {
+        kind: "character",
+        tags: ["gothic", "purple"],
+      }),
+      createPet("missing-tag", "Missing Tag", {
+        kind: "character",
+        tags: ["gothic"],
+      }),
+      createPet("wrong-kind", "Wrong Kind", {
+        kind: "object",
+        tags: ["gothic", "purple"],
+      }),
+    ]);
+    const { default: Home } = await import("@/app/page");
+    const output = await Home({
+      searchParams: Promise.resolve({
+        q: "  \n ",
+        kind: "character",
+        tags: ["purple", "gothic"],
+      }),
+    });
+    const children = output.props.children as Array<{
+      props: Record<string, unknown>;
+    }>;
+    const homePage = children[1];
+
+    expect(searchMocks.searchApprovedPets).not.toHaveBeenCalled();
+    expect(homePage?.props.query).toBe("");
+    expect(
+      (homePage?.props.filteredPets as Array<{ slug: string }>).map(
+        (pet) => pet.slug,
+      ),
+    ).toEqual(["multi-tag"]);
+    expect(homePage?.props.filteredTotal).toBe(1);
   });
 
   it("renders the unified search order while keeping the full gallery snapshot", async () => {
@@ -58,6 +121,8 @@ describe("homepage pet search", () => {
       kind: "character",
       tags: [],
     });
+    expect(repositoryMocks.listApprovedPets).toHaveBeenCalledTimes(1);
+    expect(searchMocks.searchApprovedPets).toHaveBeenCalledTimes(1);
     expect(
       (homePage?.props.pets as Array<{ slug: string }>).map((pet) => pet.slug),
     ).toEqual(["orbit-otter", "velvet-luma"]);
@@ -66,14 +131,21 @@ describe("homepage pet search", () => {
         (pet) => pet.slug,
       ),
     ).toEqual(["velvet-luma", "orbit-otter"]);
-    expect(homePage?.props.filteredTotal).toBe(2);
+    expect(homePage?.props.filteredTotal).toBe(7);
     expect(JSON.stringify(homePage?.props)).not.toMatch(
       /captionJson|captionText|sourceHash|visualMode|visualFallbackReason/,
     );
   });
 });
 
-function createPet(slug: string, displayName: string) {
+function createPet(
+  slug: string,
+  displayName: string,
+  overrides: {
+    kind?: "character" | "creature" | "object";
+    tags?: string[];
+  } = {},
+) {
   return {
     id: `pet-${slug}`,
     slug,
@@ -83,8 +155,8 @@ function createPet(slug: string, displayName: string) {
     petJsonUrl: `/assets/${slug}.json`,
     zipUrl: `/assets/${slug}.zip`,
     spritesheetExt: "webp" as const,
-    kind: "character" as const,
-    tags: ["gothic"],
+    kind: overrides.kind ?? ("character" as const),
+    tags: overrides.tags ?? ["gothic"],
     status: "approved" as const,
     ownerName: "Creator",
     ownerProfileSlug: "creator",
