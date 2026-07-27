@@ -470,8 +470,6 @@ export function getHomepageJsonLdGraph(
   > = [],
 ) {
   const homeUrl = toPublicUrl("/");
-  const productId = `${homeUrl}#product`;
-  const softwareId = `${homeUrl}#software`;
   const websiteId = `${homeUrl}#website`;
 
   return {
@@ -484,7 +482,6 @@ export function getHomepageJsonLdGraph(
         url: homeUrl,
         description: SITE_DESCRIPTION,
         isPartOf: { "@id": websiteId },
-        about: [{ "@id": productId }, { "@id": softwareId }],
         speakable: {
           "@type": "SpeakableSpecification",
           cssSelector: [".home-hero__lead"],
@@ -585,8 +582,6 @@ export function getCatalogJsonLdGraph(
 function getSiteIdentityJsonLdNodes() {
   const homeUrl = toPublicUrl("/");
   const organizationId = `${homeUrl}#organization`;
-  const softwareId = `${homeUrl}#software`;
-  const productId = `${homeUrl}#product`;
   const websiteId = `${homeUrl}#website`;
 
   return [
@@ -595,29 +590,6 @@ function getSiteIdentityJsonLdNodes() {
       "@id": organizationId,
       name: SITE_NAME,
       url: homeUrl,
-      sameAs: SAME_AS_URLS,
-    },
-    {
-      "@type": "SoftwareApplication",
-      "@id": softwareId,
-      name: SITE_NAME,
-      applicationCategory: "DeveloperApplication",
-      operatingSystem: "Web",
-      url: homeUrl,
-      description: SITE_DESCRIPTION,
-      isAccessibleForFree: true,
-      publisher: { "@id": organizationId },
-      sameAs: SAME_AS_URLS,
-    },
-    {
-      "@type": "Product",
-      "@id": productId,
-      name: SITE_NAME,
-      category: "AI coding agent companion registry",
-      description: SITE_DESCRIPTION,
-      url: homeUrl,
-      brand: { "@id": organizationId },
-      isRelatedTo: { "@id": softwareId },
       sameAs: SAME_AS_URLS,
     },
     {
