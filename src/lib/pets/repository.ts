@@ -117,6 +117,29 @@ export async function listApprovedPetsForSearch(): Promise<PublicPet[]> {
   return listApprovedPetsWithQuery({}, approvedPetsCatalogQuery());
 }
 
+export async function countApprovedPets(): Promise<number> {
+  if (isMockPetsDataSource()) {
+    return listMockPetRecords().filter((pet) => pet.status === "approved").length;
+  }
+
+  if (!isYdbConfigured()) return 0;
+
+  const result = await withSession((session) =>
+    session.executeQuery(
+      `
+DECLARE $status AS Utf8;
+SELECT COUNT(*) AS approved_count
+FROM ${TABLES.pets}
+WHERE status = $status;
+      `,
+      { $status: TypedValues.utf8("approved") },
+    ),
+  );
+
+  const row = rowsFromResult(result)[0];
+  return row ? uintAt(row, 0) : 0;
+}
+
 async function listApprovedPetsWithQuery(
   filters: PetFilters,
   query: string,

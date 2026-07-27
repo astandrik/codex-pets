@@ -2,11 +2,14 @@ import type { Metadata } from "next";
 import { HomePage } from "@/components/HomePage/HomePage";
 import { unstable_cache } from "next/cache";
 import {
-  matchesGalleryFilters,
+  hasGalleryFilters,
   parseGalleryFilters,
   pickSuggestedGalleryTags,
 } from "@/lib/pets/gallery-filters";
-import { listApprovedPets } from "@/lib/pets/repository";
+import {
+  countApprovedPets,
+  listApprovedPets,
+} from "@/lib/pets/repository";
 import { searchApprovedPets } from "@/lib/pets/search-runtime";
 import {
   buildGalleryPageMetadata,
@@ -25,7 +28,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const getApprovedPetsSnapshot = unstable_cache(
-  async () => listApprovedPets(),
+  async () => {
+    const [pets, total] = await Promise.all([
+      listApprovedPets(),
+      countApprovedPets(),
+    ]);
+    return { pets, total };
+  },
   [
     "approved-pets-gallery",
     process.env.CODEX_PETS_DATA_SOURCE?.trim() || "ydb",
@@ -52,26 +61,19 @@ export async function generateMetadata({
 export default async function Home({ searchParams }: HomeProps) {
   const filters = parseGalleryFilters(await searchParams);
   const approvedPetsPromise = getApprovedPetsSnapshot();
-  const searchResultPromise = filters.query
+  const searchResultPromise = hasGalleryFilters(filters)
     ? searchApprovedPets({
         q: filters.query,
         kind: filters.kind,
         tags: filters.tags,
       })
     : Promise.resolve(null);
-  const [approvedPets, searchResult] = await Promise.all([
+  const [approvedPetsSnapshot, searchResult] = await Promise.all([
     approvedPetsPromise,
     searchResultPromise,
   ]);
-
-  let galleryPets = approvedPets;
-  if (searchResult) {
-    galleryPets = searchResult.pets;
-  } else if (filters.kind !== "all" || filters.tags.length > 0) {
-    galleryPets = approvedPets.filter((pet) =>
-      matchesGalleryFilters(pet, filters),
-    );
-  }
+  const approvedPets = approvedPetsSnapshot.pets;
+  const galleryPets = searchResult?.pets ?? approvedPets;
 
   const pets = approvedPets.map(toPublicPetSummary);
   const filteredPets = galleryPets.map(toPublicPetSummary);
@@ -90,7 +92,7 @@ export default async function Home({ searchParams }: HomeProps) {
       <HomePage
         pets={pets}
         filteredPets={visiblePets}
-        filteredTotal={searchResult?.total ?? galleryPets.length}
+        filteredTotal={searchResult?.total ?? approvedPetsSnapshot.total}
         query={filters.query}
         kind={filters.kind}
         selectedTags={filters.tags}
