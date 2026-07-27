@@ -90,6 +90,17 @@ describe("gallery filters", () => {
     expect(buildGalleryHref({ tags: ["space", "terminal"] })).toBe(
       "/?tags=space,terminal",
     );
+    expect(
+      buildGalleryHref({
+        query: "space helper",
+        kind: "creature",
+        tags: ["terminal", "space"],
+        page: 3,
+      }),
+    ).toBe(
+      "/?q=space%20helper&kind=creature&tags=space,terminal&page=3",
+    );
+    expect(buildGalleryHref({ page: 1 })).toBe("/");
   });
 
   it("detects applied filters after normalization", () => {

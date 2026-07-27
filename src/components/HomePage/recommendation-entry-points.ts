@@ -56,7 +56,7 @@ export function buildHomeRecommendationEntryPoints(
 }
 
 export function sliceHomeGalleryPets<T>(pets: T[]): T[] {
-  return pets;
+  return pets.slice(0, HOME_FEATURED_PET_LIMIT);
 }
 
 function popularityScore(pet: RecommendationPet): number {

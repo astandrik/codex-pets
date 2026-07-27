@@ -275,6 +275,16 @@ Codex Pets exposes public JSON, TOON, markdown, and MCP surfaces for approved pe
 - GET /.well-known/oauth-protected-resource
 - GET /.well-known/oauth-protected-resource/mcp
 
+## Pet search pagination
+
+\`GET /api/pets?page=2&pageSize=24\` returns the requested slice and adds a
+\`pagination\` object with \`page\`, \`pageSize\`, \`totalItems\`,
+\`totalPages\`, and \`hasNextPage\`. pageSize must be between 1 and 200.
+Top-level \`total\` remains the number of pets in the current response;
+\`pagination.totalItems\` is the full filtered count.
+Requests without page or pageSize keep the legacy response shape without a
+\`pagination\` field. The TOON endpoint accepts the same parameters.
+
 ## Error responses
 
 JSON error responses include \`error\`, \`code\`, \`message\`, and when useful a \`hint\` or \`field\`.
@@ -500,13 +510,16 @@ API and MCP routes for approved public Codex pet discovery.
 ## Core endpoints
 
 - GET /api/manifest
-- GET /api/pets
+- GET /api/pets (optional page and pageSize add pagination metadata)
 - GET /api/pets/{slug}
 - GET /api/pets/{slug}/share
 - GET /api/pets/{slug}/install
 - GET /api/tags
 - POST /mcp
 - POST /.well-known/mcp
+
+Use \`GET /api/pets?page=2&pageSize=24\` for paginated catalog retrieval.
+Requests without page or pageSize keep the legacy response shape.
 
 ## Error responses
 

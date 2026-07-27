@@ -89,6 +89,12 @@ export type PetFilters = {
   tags?: string[];
 };
 
+export type ApprovedPetSitemapEntry = {
+  slug: string;
+  createdAt: string;
+  approvedAt: string | null;
+};
+
 export function approvedPetsCatalogQuery(): string {
   return approvedPetsQuery("");
 }
@@ -103,7 +109,7 @@ DECLARE $status AS Utf8;
 SELECT ${petColumns()}
 FROM ${TABLES.pets}
 WHERE status = $status
-ORDER BY created_at DESC${limitClause ? `\n${limitClause}` : ""};
+ORDER BY created_at DESC, slug ASC${limitClause ? `\n${limitClause}` : ""};
   `;
 }
 
@@ -115,6 +121,42 @@ export async function listApprovedPets(
 
 export async function listApprovedPetsForSearch(): Promise<PublicPet[]> {
   return listApprovedPetsWithQuery({}, approvedPetsCatalogQuery());
+}
+
+export async function listApprovedPetSitemapEntries(): Promise<
+  ApprovedPetSitemapEntry[]
+> {
+  if (isMockPetsDataSource()) {
+    return listMockPetRecords()
+      .filter((pet) => pet.status === "approved")
+      .sort(comparePetRowsNewestFirst)
+      .map(({ slug, createdAt, approvedAt }) => ({
+        slug,
+        createdAt,
+        approvedAt,
+      }));
+  }
+
+  if (!isYdbConfigured()) return [];
+
+  const result = await withSession((session) =>
+    session.executeQuery(
+      `
+DECLARE $status AS Utf8;
+SELECT slug, created_at, approved_at
+FROM ${TABLES.pets}
+WHERE status = $status
+ORDER BY created_at DESC, slug ASC;
+      `,
+      { $status: TypedValues.utf8("approved") },
+    ),
+  );
+
+  return rowsFromResult(result).map((row) => ({
+    slug: textAt(row, 0),
+    createdAt: textAt(row, 1),
+    approvedAt: textAt(row, 2) || null,
+  }));
 }
 
 export async function countApprovedPets(): Promise<number> {
@@ -941,10 +983,23 @@ function listMockPets(
 ): PublicPet[] {
   const normalizedFilters = normalizeGalleryFilters(filters);
 
-  return listMockPetRecords().filter((pet) => {
-    if (pet.status !== status) return false;
-    return matchesGalleryFilters(pet, normalizedFilters);
-  }).map((pet) => toPublicPet(pet, pet.metrics, mockOwnerReference(pet)));
+  return listMockPetRecords()
+    .filter((pet) => {
+      if (pet.status !== status) return false;
+      return matchesGalleryFilters(pet, normalizedFilters);
+    })
+    .sort(comparePetRowsNewestFirst)
+    .map((pet) => toPublicPet(pet, pet.metrics, mockOwnerReference(pet)));
+}
+
+function comparePetRowsNewestFirst(
+  left: Pick<PetRow, "createdAt" | "slug">,
+  right: Pick<PetRow, "createdAt" | "slug">,
+): number {
+  return (
+    right.createdAt.localeCompare(left.createdAt) ||
+    left.slug.localeCompare(right.slug)
+  );
 }
 
 function mockOwnerReference(row: PetRow): PublicUserReference | undefined {

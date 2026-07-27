@@ -99,10 +99,40 @@ export function serializeGalleryFilters(
 }
 
 export function buildGalleryHref(
-  input: Partial<GalleryFilters> & { q?: string } = {},
+  input: Partial<GalleryFilters> & { q?: string; page?: number } = {},
 ): string {
   const search = serializeGalleryFilters(input);
-  return search ? `/?${search}` : "/";
+  const page = normalizeGalleryPage(input.page);
+  const query = [search, page > 1 ? `page=${page}` : ""]
+    .filter(Boolean)
+    .join("&");
+
+  return query ? `/?${query}` : "/";
+}
+
+export function buildGalleryFirstPageHref(params: SearchParamsInput): string {
+  const search = new URLSearchParams();
+  if (params instanceof URLSearchParams) {
+    for (const [key, value] of params.entries()) {
+      if (key !== "page") {
+        search.append(key, value);
+      }
+    }
+  } else {
+    for (const [key, value] of Object.entries(params ?? {})) {
+      if (key === "page") {
+        continue;
+      }
+      for (const item of Array.isArray(value) ? value : [value]) {
+        if (item !== undefined) {
+          search.append(key, item);
+        }
+      }
+    }
+  }
+
+  const query = search.toString();
+  return query ? `/?${query}` : "/";
 }
 
 export function hasGalleryFilters(
@@ -212,6 +242,10 @@ function firstParam(values: readonly string[]): string | undefined {
 
 function normalizeTagName(value: string): string {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function normalizeGalleryPage(value: number | undefined): number {
+  return Number.isSafeInteger(value) && (value ?? 0) > 1 ? value! : 1;
 }
 
 function pickWeightedIndex(

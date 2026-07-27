@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { normalizeGalleryFilters } from "@/lib/pets/gallery-filters";
 import {
   fuseRankedPets,
@@ -31,6 +33,7 @@ export type PetSearchInput = {
   tags?: string[];
   author?: string;
   limit?: number;
+  offset?: number;
 };
 
 export type PetSearchMode = "lexical" | "shadow" | "hybrid";
@@ -58,12 +61,17 @@ export class PetSearchFallbackError extends Error {
 export type PetSearchResult<T extends PetSearchCatalogItem> = {
   pets: T[];
   total: number;
+  rankingVersion: string;
   mode: PetSearchResultMode;
   fallbackReason: PetSearchFallbackReason | null;
   visualMode: PetSearchVisualMode;
   visualFallbackReason: PetVisualSearchFallbackReason | null;
   visualCandidateCount: number;
   durationMs: number;
+};
+
+export type PetSearchOptions<T extends PetSearchCatalogItem> = {
+  catalog?: readonly T[];
 };
 
 export type PetSemanticSearchResult = {
@@ -88,15 +96,19 @@ type PetSearchDependencies<T extends PetSearchCatalogItem> = {
 
 export function createPetSearchService<T extends PetSearchCatalogItem>(
   dependencies: PetSearchDependencies<T>,
-): (input?: PetSearchInput) => Promise<PetSearchResult<T>> {
-  return async (input = {}) => {
+): (
+  input?: PetSearchInput,
+  options?: PetSearchOptions<T>,
+) => Promise<PetSearchResult<T>> {
+  return async (input = {}, options = {}) => {
     const now = dependencies.now ?? Date.now;
     const startedAt = now();
     const visualMode = dependencies.visualMode ?? "off";
     const filters = normalizeGalleryFilters(input);
     const author = normalizeSearchQuery(input.author).text;
     const limit = normalizeLimit(input.limit);
-    const catalog = await dependencies.listApprovedPets();
+    const offset = normalizeOffset(input.offset);
+    const catalog = options.catalog ?? await dependencies.listApprovedPets();
     const candidates = catalog.filter((pet) =>
       matchesHardFilters(pet, filters.kind, filters.tags, author),
     );
@@ -191,8 +203,9 @@ export function createPetSearchService<T extends PetSearchCatalogItem>(
       visualCandidateCount = 0,
     ): PetSearchResult<T> {
       return {
-        pets: pets.slice(0, limit),
+        pets: pets.slice(offset, offset + limit),
         total,
+        rankingVersion: createPetSearchRankingVersion(pets, mode),
         mode,
         fallbackReason,
         visualMode,
@@ -202,6 +215,15 @@ export function createPetSearchService<T extends PetSearchCatalogItem>(
       };
     }
   };
+}
+
+export function createPetSearchRankingVersion(
+  pets: readonly Pick<PetSearchCatalogItem, "slug">[],
+  mode: PetSearchResultMode,
+): string {
+  return createHash("sha256")
+    .update(JSON.stringify({ mode, slugs: pets.map((pet) => pet.slug) }))
+    .digest("base64url");
 }
 
 function matchesHardFilters(
@@ -232,4 +254,9 @@ function matchesHardFilters(
 function normalizeLimit(value: number | undefined): number {
   if (!Number.isFinite(value)) return DEFAULT_RESULT_LIMIT;
   return Math.min(MAX_RESULT_LIMIT, Math.max(1, Math.trunc(value ?? 0)));
+}
+
+function normalizeOffset(value: number | undefined): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.trunc(value ?? 0));
 }

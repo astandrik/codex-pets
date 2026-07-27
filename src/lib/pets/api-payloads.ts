@@ -1,6 +1,7 @@
 import { toPublicUrl } from "@/lib/base-path";
 import { buildPetInstallCommand } from "@/lib/pets/install-command";
 import type { PublicPet } from "@/lib/pets/types";
+import type { PetsPaginationMetadata } from "@/lib/pets/pagination";
 
 export type PublicPetPayload = Omit<PublicPet, "contactEmail"> & {
   ownerProfileUrl: string | null;
@@ -37,10 +38,14 @@ export function buildManifestPayload(
   };
 }
 
-export function buildPetsPayload(pets: PublicPet[]) {
+export function buildPetsPayload(
+  pets: PublicPet[],
+  pagination?: PetsPaginationMetadata,
+) {
   return {
     total: pets.length,
     pets: pets.map(createPublicPetPayload),
+    ...(pagination ? { pagination } : {}),
   };
 }
 

@@ -1,0 +1,139 @@
+.pet-catalog {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+
+  &__page + &__page {
+    margin-top: 32px;
+  }
+
+  &__pagination,
+  &__load-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  &__pagination {
+    gap: 12px;
+  }
+
+  &__page-numbers {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--g-color-line-generic);
+    border-radius: 10px;
+    background: var(--g-color-base-generic);
+  }
+
+  &__page-link {
+    display: inline-flex;
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    height: 34px;
+    padding: 0 9px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--g-color-text-primary);
+    text-decoration: none;
+    font: inherit;
+    line-height: 1;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--g-color-base-selection);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--g-color-line-brand);
+      outline-offset: 2px;
+    }
+  }
+
+  &__page-link--edge {
+    min-width: 0;
+    height: 40px;
+    padding: 0 14px;
+    border: 1px solid var(--g-color-line-generic);
+    border-radius: 8px;
+    background: var(--g-color-base-background);
+  }
+
+  &__page-link--current {
+    background: var(--g-color-base-selection);
+    box-shadow: inset 0 0 0 1px var(--g-color-line-brand);
+    font-weight: 600;
+    cursor: default;
+  }
+
+  &__page-link--disabled {
+    color: var(--g-color-text-hint);
+    cursor: default;
+
+    &:hover {
+      background: var(--g-color-base-background);
+    }
+  }
+
+  &__load-button {
+    min-height: 40px;
+    padding: 8px 14px;
+    border: 1px solid var(--g-color-line-generic);
+    border-radius: 8px;
+    color: var(--g-color-text-primary);
+    background: var(--g-color-base-background);
+    font: inherit;
+    cursor: pointer;
+
+    &:hover {
+      border-color: var(--g-color-line-generic-hover);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--g-color-line-brand);
+      outline-offset: 2px;
+    }
+  }
+
+  &__load-button:disabled {
+    cursor: wait;
+    opacity: 0.7;
+  }
+
+  &__load-state {
+    color: var(--g-color-text-secondary);
+  }
+
+  &__sentinel {
+    height: 1px;
+  }
+
+  &__empty,
+  &__end,
+  &__announcement {
+    margin: 0;
+    text-align: center;
+    color: var(--g-color-text-secondary);
+  }
+
+  &__announcement:empty {
+    display: none;
+  }
+
+  @media (max-width: 520px) {
+    &__pagination {
+      gap: 8px;
+    }
+
+    &__page-link--edge {
+      padding: 0 10px;
+    }
+  }
+}

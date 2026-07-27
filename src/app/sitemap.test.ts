@@ -7,6 +7,8 @@ const cacheMocks = vi.hoisted(() => ({
 
 const petsRepositoryMocks = vi.hoisted(() => ({
   listApprovedPets: vi.fn(),
+  listApprovedPetsForSearch: vi.fn(),
+  listApprovedPetSitemapEntries: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({
@@ -16,6 +18,9 @@ vi.mock("next/cache", () => ({
 
 vi.mock("@/lib/pets/repository", () => ({
   listApprovedPets: petsRepositoryMocks.listApprovedPets,
+  listApprovedPetsForSearch: petsRepositoryMocks.listApprovedPetsForSearch,
+  listApprovedPetSitemapEntries:
+    petsRepositoryMocks.listApprovedPetSitemapEntries,
 }));
 
 describe("sitemap", () => {
@@ -32,30 +37,15 @@ describe("sitemap", () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example/codex-pets");
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/codex-pets");
 
-    petsRepositoryMocks.listApprovedPets.mockResolvedValueOnce([
-      {
-        id: "pet_1",
-        slug: "boba",
-        displayName: "Boba",
-        description: "Demo pet",
-        spritesheetUrl: "https://assets/pets/boba.webp",
-        petJsonUrl: "https://assets/pets/boba.json",
-        zipUrl: "https://assets/pets/boba.zip",
-        spritesheetExt: "webp",
-        kind: "creature",
-        tags: ["round"],
-        status: "approved",
-        ownerName: "Creator",
-        ownerProfileSlug: "creator",
-        ownerAvatarUrl: null,
-        contactEmail: null,
+    const pets = Array.from({ length: 201 }, (_, index) => ({
+        slug: `pet-${index + 1}`,
         createdAt: "2026-05-01T00:00:00.000Z",
         approvedAt: "2026-05-02T00:00:00.000Z",
-        downloadCount: 0,
-        installCount: 0,
-        likeCount: 0,
-      },
-    ]);
+      }));
+    petsRepositoryMocks.listApprovedPetSitemapEntries.mockResolvedValueOnce(
+      pets,
+    );
+    petsRepositoryMocks.listApprovedPetsForSearch.mockResolvedValueOnce(pets);
 
     try {
       const [{ default: sitemap }, sitemapCache] = await Promise.all([
@@ -68,7 +58,7 @@ describe("sitemap", () => {
       expect(cacheMocks.unstableCache).toHaveBeenCalledWith(
         expect.any(Function),
         [
-          "codex-pets-sitemap",
+          "codex-pets-sitemap-v2",
           "mock",
           "https://pets.example/codex-pets",
           "/codex-pets",
@@ -81,25 +71,32 @@ describe("sitemap", () => {
       const urls = entries.map((entry) => entry.url);
 
       expect(new Set(urls).size).toBe(urls.length);
-      expect(urls).toEqual([
+      expect(urls.slice(0, 9)).toEqual([
         "https://pets.example/codex-pets",
-        "https://pets.example/codex-pets/about",
-        "https://pets.example/codex-pets/agents",
-        "https://pets.example/codex-pets/pricing",
-        "https://pets.example/codex-pets/terms",
-        "https://pets.example/codex-pets/developers",
-        "https://pets.example/codex-pets/docs/api",
-        "https://pets.example/codex-pets/guides/best-codex-pets-for-ai-coding-agents",
-        "https://pets.example/codex-pets/guides/codex-pets-vs-vscode-pets",
-        "https://pets.example/codex-pets/guides/codex-pets-vs-openpets",
-        "https://pets.example/codex-pets/guides/codex-pets-mcp-integration-guide",
-        "https://pets.example/codex-pets/request",
-        "https://pets.example/codex-pets/submit",
-        "https://pets.example/codex-pets/pets/boba",
+        "https://pets.example/codex-pets?page=2",
+        "https://pets.example/codex-pets?page=3",
+        "https://pets.example/codex-pets?page=4",
+        "https://pets.example/codex-pets?page=5",
+        "https://pets.example/codex-pets?page=6",
+        "https://pets.example/codex-pets?page=7",
+        "https://pets.example/codex-pets?page=8",
+        "https://pets.example/codex-pets?page=9",
       ]);
+      expect(urls[9]).toBe("https://pets.example/codex-pets/about");
+      expect(urls).not.toContain("https://pets.example/codex-pets/pets");
+      expect(
+        petsRepositoryMocks.listApprovedPetSitemapEntries,
+      ).toHaveBeenCalledOnce();
+      expect(
+        petsRepositoryMocks.listApprovedPetsForSearch,
+      ).not.toHaveBeenCalled();
+      expect(petsRepositoryMocks.listApprovedPets).not.toHaveBeenCalled();
+      expect(urls).toContain(
+        "https://pets.example/codex-pets/pets/pet-201",
+      );
       expect(entries).toContainEqual(
         sitemapEntry(
-          "https://pets.example/codex-pets/pets/boba",
+          "https://pets.example/codex-pets/pets/pet-1",
           "2026-05-02T00:00:00.000Z",
           "weekly",
           0.8,

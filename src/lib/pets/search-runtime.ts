@@ -22,6 +22,7 @@ import {
   type PetSearchCatalogItem,
   type PetSearchFallbackReason,
   type PetSearchInput,
+  type PetSearchOptions,
   type PetSearchResult,
   type PetSemanticSearchResult,
 } from "@/lib/pets/search-service";
@@ -314,8 +315,9 @@ const runtime = createApprovedPetSearchRuntime<PublicPet>({
 
 export function searchApprovedPets(
   input: PetSearchInput = {},
+  options: PetSearchOptions<PublicPet> = {},
 ): Promise<PetSearchResult<PublicPet>> {
-  return runtime.searchApprovedPets(input).then((result) => {
+  return runtime.searchApprovedPets(input, options).then((result) => {
     void trackPetSearch({
       mode: result.mode,
       fallbackReason: result.fallbackReason,

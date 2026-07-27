@@ -94,6 +94,16 @@ HTTP fallback routes are public too:
 - `/card/<slug>.gif`
 - `/embed/<slug>`
 
+The crawlable HTML gallery lives on `/`; numbered pages use `/?page=2`,
+`/?page=3`, and so on. The legacy `/pets` catalog URL permanently redirects
+to the equivalent homepage URL, while pet details remain on `/pets/<slug>`.
+
+`/api/pets` and `/api/pets.toon` accept optional `page` and `pageSize`
+parameters. Supplying either parameter enables the additive `pagination`
+metadata object; requests without them retain the legacy response shape.
+In paginated responses, top-level `total` is the number of returned pets and
+`pagination.totalItems` is the full filtered count.
+
 If you deploy under a subpath such as `/codex-pets`, set:
 
 ```bash

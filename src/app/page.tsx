@@ -1,46 +1,36 @@
 import type { Metadata } from "next";
+import { notFound, permanentRedirect } from "next/navigation";
+
+import { GalleryFilter } from "@/components/GalleryFilter/GalleryFilter";
 import { HomePage } from "@/components/HomePage/HomePage";
-import { unstable_cache } from "next/cache";
+import { PetCatalog } from "@/components/PetCatalog/PetCatalog";
 import {
+  sliceHomeGalleryPets,
+} from "@/components/HomePage/recommendation-entry-points";
+import { serializeJsonLd } from "@/lib/json-ld";
+import { createPublicPetPayload } from "@/lib/pets/api-payloads";
+import {
+  buildGalleryFirstPageHref,
+  buildGalleryHref,
   hasGalleryFilters,
   parseGalleryFilters,
   pickSuggestedGalleryTags,
 } from "@/lib/pets/gallery-filters";
 import {
-  countApprovedPets,
-  listApprovedPets,
-} from "@/lib/pets/repository";
+  CATALOG_PAGE_SIZE,
+  parseCatalogPage,
+} from "@/lib/pets/pagination";
+import { getApprovedPetsCatalogSnapshot } from "@/lib/pets/catalog-snapshot-server";
 import { searchApprovedPets } from "@/lib/pets/search-runtime";
+import type { PublicPet, PublicPetSummary } from "@/lib/pets/types";
 import {
-  buildGalleryPageMetadata,
+  buildCatalogPageMetadata,
+  getCatalogJsonLdGraph,
   getHomepageJsonLdGraph,
 } from "@/lib/site-metadata";
-import { serializeJsonLd } from "@/lib/json-ld";
-import {
-  HOME_FEATURED_PET_LIMIT,
-  sliceHomeGalleryPets,
-} from "@/components/HomePage/recommendation-entry-points";
-import type { PublicPet, PublicPetSummary } from "@/lib/pets/types";
 
 export const runtime = "nodejs";
-// Keep request-time rendering because YDB runtime env is only available in the
-// running container, then cache the public gallery snapshot explicitly.
 export const dynamic = "force-dynamic";
-
-const getApprovedPetsSnapshot = unstable_cache(
-  async () => {
-    const [pets, total] = await Promise.all([
-      listApprovedPets(),
-      countApprovedPets(),
-    ]);
-    return { pets, total };
-  },
-  [
-    "approved-pets-gallery",
-    process.env.CODEX_PETS_DATA_SOURCE?.trim() || "ydb",
-  ],
-  { revalidate: 60 },
-);
 
 type HomeProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -50,53 +40,124 @@ export async function generateMetadata({
   searchParams,
 }: HomeProps): Promise<Metadata> {
   const rawSearchParams = await searchParams;
+  const pageResult = parseCatalogPage(rawSearchParams);
+  const page = pageResult.ok ? pageResult.page : 1;
   const filters = parseGalleryFilters(rawSearchParams);
-  return buildGalleryPageMetadata(
+
+  return buildCatalogPageMetadata(
     filters,
+    page,
     hasGalleryFilterSearchParam(rawSearchParams),
     getGalleryPageViewPath(rawSearchParams),
   );
 }
 
 export default async function Home({ searchParams }: HomeProps) {
-  const filters = parseGalleryFilters(await searchParams);
-  const approvedPetsPromise = getApprovedPetsSnapshot();
-  const searchResultPromise = hasGalleryFilters(filters)
-    ? searchApprovedPets({
-        q: filters.query,
-        kind: filters.kind,
-        tags: filters.tags,
-      })
-    : Promise.resolve(null);
-  const [approvedPetsSnapshot, searchResult] = await Promise.all([
-    approvedPetsPromise,
-    searchResultPromise,
-  ]);
-  const approvedPets = approvedPetsSnapshot.pets;
-  const galleryPets = searchResult?.pets ?? approvedPets;
+  const rawSearchParams = await searchParams;
+  const pageResult = parseCatalogPage(rawSearchParams);
+  if (!pageResult.ok) {
+    notFound();
+  }
+
+  const filters = parseGalleryFilters(rawSearchParams);
+  if (pageResult.explicit && pageResult.page === 1) {
+    permanentRedirect(buildGalleryFirstPageHref(rawSearchParams));
+  }
+
+  const offset = (pageResult.page - 1) * CATALOG_PAGE_SIZE;
+  if (!Number.isSafeInteger(offset)) {
+    notFound();
+  }
+
+  const {
+    pets: approvedPets,
+    version: snapshotVersion,
+  } = await getApprovedPetsCatalogSnapshot();
+  const searchResult = hasGalleryFilters(filters)
+    ? await searchApprovedPets(
+        {
+          q: filters.query,
+          kind: filters.kind,
+          tags: filters.tags,
+          offset,
+          limit: CATALOG_PAGE_SIZE,
+        },
+        { catalog: approvedPets },
+      )
+    : null;
+  const result = searchResult ?? {
+    pets: approvedPets.slice(offset, offset + CATALOG_PAGE_SIZE),
+    total: approvedPets.length,
+    rankingVersion: snapshotVersion,
+  };
+  if (pageResult.page > 1 && result.pets.length === 0) {
+    notFound();
+  }
 
   const pets = approvedPets.map(toPublicPetSummary);
-  const filteredPets = galleryPets.map(toPublicPetSummary);
-  const visiblePets = sliceHomeGalleryPets(filteredPets);
-  const suggestedTags = pickSuggestedGalleryTags(pets, filters.tags);
-  const homepageJsonLd = getHomepageJsonLdGraph(
-    visiblePets.slice(0, HOME_FEATURED_PET_LIMIT),
+  const featuredPets = sliceHomeGalleryPets(pets);
+  const initialPets = result.pets.map(createPublicPetPayload);
+  const suggestedTags = pickSuggestedGalleryTags(
+    approvedPets,
+    filters.tags,
+  );
+  const showLandingContent =
+    pageResult.page === 1 &&
+    !hasGalleryFilterSearchParam(rawSearchParams);
+  const homepageJsonLd = showLandingContent
+    ? getHomepageJsonLdGraph(featuredPets)
+    : null;
+  const catalogJsonLd = getCatalogJsonLdGraph(
+    result.pets,
+    pageResult.page,
+    CATALOG_PAGE_SIZE,
+    result.total,
+    filters,
   );
 
   return (
     <>
+      {homepageJsonLd ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: serializeJsonLd(homepageJsonLd),
+          }}
+        />
+      ) : null}
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: serializeJsonLd(homepageJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(catalogJsonLd) }}
       />
       <HomePage
         pets={pets}
-        filteredPets={visiblePets}
-        filteredTotal={searchResult?.total ?? approvedPetsSnapshot.total}
-        query={filters.query}
-        kind={filters.kind}
-        selectedTags={filters.tags}
-        suggestedTags={suggestedTags}
+        totalPets={pets.length}
+        catalogTotalPets={result.total}
+        showLandingContent={showLandingContent}
+        catalog={
+          <>
+            <GalleryFilter
+              defaultQuery={filters.query}
+              defaultKind={filters.kind}
+              defaultTags={filters.tags}
+              suggestedTags={suggestedTags}
+            />
+            <PetCatalog
+              key={buildGalleryHref({
+                ...filters,
+                page: pageResult.page,
+              })}
+              initialPets={initialPets}
+              initialPage={pageResult.page}
+              pageSize={CATALOG_PAGE_SIZE}
+              totalItems={result.total}
+              totalPages={Math.ceil(result.total / CATALOG_PAGE_SIZE)}
+              snapshotVersion={snapshotVersion}
+              rankingVersion={result.rankingVersion}
+              filters={filters}
+            />
+          </>
+        }
       />
     </>
   );
