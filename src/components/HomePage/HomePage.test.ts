@@ -9,9 +9,11 @@ const router = vi.hoisted(() => ({
 }));
 const recommendationMocks = vi.hoisted(() => ({
   buildHomeRecommendationEntryPoints: vi.fn(() => ({
-    styleTags: [],
-    popularPets: [],
-    recentPets: [],
+    styleTags: [{ tag: "anime", href: "/?tags=anime" }],
+    popularPets: [{ slug: "cloud", displayName: "Cloud", href: "/pets/cloud" }],
+    recentPets: [
+      { slug: "kestrel", displayName: "Kestrel", href: "/pets/kestrel" },
+    ],
   })),
 }));
 
@@ -85,6 +87,32 @@ describe("HomePage visible content", () => {
     expect(
       recommendationMocks.buildHomeRecommendationEntryPoints,
     ).not.toHaveBeenCalled();
+  });
+
+  it("renders the semantic search heading and lead", () => {
+    const container = renderHomePage();
+
+    expect(container.textContent).toContain("Find by vibe, not keywords");
+    expect(container.textContent).toContain(
+      "Describe a mood, style, color, character, or coding energy — semantic search will find the closest approved pets.",
+    );
+  });
+
+  it("keeps recommendation links as real anchors", () => {
+    const container = renderHomePage();
+
+    const tagLink = container.querySelector(
+      '.home-recommendations a[href="/?tags=anime"]',
+    );
+    expect(tagLink?.textContent).toBe("#anime");
+    expect(
+      container.querySelector('.home-recommendations a[href="/pets/cloud"]')
+        ?.textContent,
+    ).toBe("Cloud");
+    expect(
+      container.querySelector('.home-recommendations a[href="/pets/kestrel"]')
+        ?.textContent,
+    ).toBe("Kestrel");
   });
 
   it("lets the lucky picker choose pets beyond the first 12", () => {
