@@ -235,3 +235,41 @@ describe("middleware markdown content negotiation", () => {
     );
   });
 });
+
+describe("middleware IndexNow key rewrite", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+  });
+
+  it("rewrites the configured IndexNow key file to the API route", async () => {
+    vi.stubEnv("INDEXNOW_KEY", "indexnow-key-123");
+    const { middleware } = await import("@/middleware");
+    const request = new NextRequest("https://pets.example/indexnow-key-123.txt");
+
+    const response = middleware(request);
+
+    expect(response.headers.get("x-middleware-rewrite")).toBe(
+      "https://pets.example/api/indexnow",
+    );
+  });
+
+  it("leaves other single-segment paths to the not-found page", async () => {
+    vi.stubEnv("INDEXNOW_KEY", "indexnow-key-123");
+    const { middleware } = await import("@/middleware");
+    const request = new NextRequest("https://pets.example/no-such-page");
+
+    const response = middleware(request);
+
+    expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+  });
+
+  it("does not rewrite when the IndexNow key is not configured", async () => {
+    const { middleware } = await import("@/middleware");
+    const request = new NextRequest("https://pets.example/indexnow-key-123.txt");
+
+    const response = middleware(request);
+
+    expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+  });
+});

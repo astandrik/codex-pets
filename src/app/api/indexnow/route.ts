@@ -1,17 +1,12 @@
-import { getIndexNowKey, getIndexNowKeyFileName } from "@/lib/indexnow";
+import { getIndexNowKey } from "@/lib/indexnow";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ file: string }> },
-): Promise<Response> {
+export async function GET(): Promise<Response> {
   const key = getIndexNowKey();
-  const fileName = getIndexNowKeyFileName();
-  const { file } = await params;
 
-  if (!key || !fileName || file !== fileName) {
+  if (!key) {
     return new Response("not found", { status: 404 });
   }
 
