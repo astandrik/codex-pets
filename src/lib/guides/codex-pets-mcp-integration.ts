@@ -133,9 +133,7 @@ export function buildMcpIntegrationGuideMarkdown(pets: PublicPet[]): string {
   );
   const petLines = examplePets.map(
     (pet) =>
-      `- [${escapeMarkdownInlineText(pet.displayName)}](/pets/${encodeURIComponent(
-        pet.slug,
-      )}): ${escapeMarkdownInlineText(pet.description)} Install: \`${pet.installCommand}\`.`,
+      `- [${escapeMarkdownInlineText(pet.displayName)}](${pet.pageUrl}): ${escapeMarkdownInlineText(pet.description)} Install: \`${pet.installCommand}\`.`,
   );
 
   return [

@@ -85,7 +85,7 @@ describe("Codex Pets MCP integration guide content", () => {
     expect(markdown).toContain("How we tested");
     expect(markdown).toContain("/api/manifest");
     expect(markdown).toContain("| Surface | Use when | Example |");
-    expect(markdown).toContain("](/pets/demo-pet)");
+    expect(markdown).toContain("/pets/demo-pet)");
     expect(markdown).toContain("/openapi.json");
     expect(markdown).toContain("/llms-full.txt");
   });

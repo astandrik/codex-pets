@@ -170,26 +170,28 @@ export default async function CodexPetsMcpIntegrationGuidePage() {
         <Text variant="display-1" as="h2">
           Which surface should your agent use?
         </Text>
-        <table className="guide-decision-table">
-          <thead>
-            <tr>
-              <th>Surface</th>
-              <th>Use when</th>
-              <th>Example</th>
-            </tr>
-          </thead>
-          <tbody>
-            {MCP_GUIDE_DECISION_ROWS.map((row) => (
-              <tr key={row.surface}>
-                <td>{row.surface}</td>
-                <td>{row.useWhen}</td>
-                <td>
-                  <code>{row.example}</code>
-                </td>
+        <div className="guide-decision-table-wrapper">
+          <table className="guide-decision-table">
+            <thead>
+              <tr>
+                <th>Surface</th>
+                <th>Use when</th>
+                <th>Example</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {MCP_GUIDE_DECISION_ROWS.map((row) => (
+                <tr key={row.surface}>
+                  <td>{row.surface}</td>
+                  <td>{row.useWhen}</td>
+                  <td>
+                    <code>{row.example}</code>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="page-section">
