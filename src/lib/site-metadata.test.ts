@@ -493,9 +493,15 @@ describe("site identity metadata", () => {
     ]);
     expect(homepageNodes.map((node) => node["@type"])).toEqual([
       "WebPage",
-      "FAQPage",
       "ItemList",
     ]);
+    expect(homepageNodes.some((node) => node["@type"] === "FAQPage")).toBe(
+      false,
+    );
+    const homeWebPage = homepageNodes.find(
+      (node) => node["@type"] === "WebPage",
+    );
+    expect(homeWebPage).not.toHaveProperty("speakable");
     expect(
       websiteNodes.find((node) => node["@type"] === "Organization"),
     ).toMatchObject({
@@ -511,13 +517,6 @@ describe("site identity metadata", () => {
     ).toMatchObject({
       name: "Featured Codex pet packs",
       numberOfItems: 1,
-    });
-    expect(
-      homepageNodes.find((node) => node["@type"] === "WebPage"),
-    ).toMatchObject({
-      speakable: {
-        cssSelector: [".home-hero__lead"],
-      },
     });
 
     vi.unstubAllEnvs();

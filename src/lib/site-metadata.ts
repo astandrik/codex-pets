@@ -487,34 +487,6 @@ export function getHomepageJsonLdGraph(
         url: homeUrl,
         description: SITE_DESCRIPTION,
         isPartOf: { "@id": websiteId },
-        speakable: {
-          "@type": "SpeakableSpecification",
-          cssSelector: [".home-hero__lead"],
-        },
-      },
-      {
-        "@type": "FAQPage",
-        "@id": `${homeUrl}#faq`,
-        mainEntity: [
-          {
-            "@type": "Question",
-            name: "What is Codex Pets?",
-            acceptedAnswer: {
-              "@type": "Answer",
-              text:
-                "Codex Pets is a moderated community gallery for downloadable Codex-compatible animated pet packs.",
-            },
-          },
-          {
-            "@type": "Question",
-            name: "How do agents access Codex Pets?",
-            acceptedAnswer: {
-              "@type": "Answer",
-              text:
-                "Agents can use the public OpenAPI spec, llms.txt, JSON and TOON routes, or the read-only MCP endpoint.",
-            },
-          },
-        ],
       },
       {
         "@type": "ItemList",
