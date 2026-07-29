@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { BASE_PATH } from "@/lib/base-path";
 import { appendAgentLinkHeaders } from "@/lib/agent-link-headers";
+import { getIndexNowKeyFileName } from "@/lib/indexnow";
 import {
   getMarkdownTwinPath,
   isMarkdownTwinSourcePath,
@@ -15,6 +16,15 @@ export function middleware(request: NextRequest): Response {
   if (oauthMetadataPath) {
     const rewriteUrl = new URL(request.url);
     rewriteUrl.pathname = withBasePath(oauthMetadataPath, basePath);
+    return NextResponse.rewrite(rewriteUrl);
+  }
+
+  // The IndexNow key file lives at the site root; serve it from the API route
+  // so single-segment garbage URLs fall through to the branded 404 page.
+  const indexNowFileName = getIndexNowKeyFileName();
+  if (indexNowFileName && pathname === `/${indexNowFileName}`) {
+    const rewriteUrl = new URL(request.url);
+    rewriteUrl.pathname = withBasePath("/api/indexnow", basePath);
     return NextResponse.rewrite(rewriteUrl);
   }
 
