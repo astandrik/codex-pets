@@ -279,6 +279,7 @@
     display: grid;
     grid-template-columns: 1fr;
     gap: var(--spacing-sm);
+    margin-top: var(--spacing-md);
 
     @include md {
       grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
