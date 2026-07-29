@@ -240,6 +240,7 @@ describe("middleware IndexNow key rewrite", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.unstubAllEnvs();
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "");
   });
 
   it("rewrites the configured IndexNow key file to the API route", async () => {

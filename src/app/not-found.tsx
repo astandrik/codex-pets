@@ -4,7 +4,7 @@ import {
   Button,
   Container,
   Flex,
-  PlaceholderContainer,
+  Text,
 } from "@/components/GravityUI/GravityUI";
 import { withBasePath } from "@/lib/base-path";
 
@@ -12,12 +12,16 @@ export default function NotFound() {
   return (
     <Container as="main" maxWidth="xl" gutters={5} className="page-shell">
       <Flex direction="column" alignItems="center" gap={5} className="page-section">
-        <PlaceholderContainer
-          size="l"
-          image={<Picture width={64} height={64} />}
-          title="404 — page not found"
-          description="The page you are looking for moved, was renamed, or never existed. Try the gallery or the guide below."
-        />
+        <Flex direction="column" alignItems="center" gap={2}>
+          <Picture width={64} height={64} />
+          <Text variant="subheader-3" as="h1">
+            404 — page not found
+          </Text>
+          <Text color="secondary">
+            The page you are looking for moved, was renamed, or never existed. Try
+            the gallery or the guide below.
+          </Text>
+        </Flex>
         <Flex gap={2} wrap justifyContent="center">
           <Button view="action" size="l" href={withBasePath("/")}>
             Browse gallery
