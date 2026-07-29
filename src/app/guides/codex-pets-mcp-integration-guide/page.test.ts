@@ -11,4 +11,23 @@ describe("Codex Pets MCP integration guide", () => {
     );
     expect(source).not.toContain('href={withBasePath("/mcp")}');
   });
+
+  it("renders the maintainer byline and the first-hand methodology section", () => {
+    const source = readFileSync(new URL("page.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("formatGuideByline");
+    expect(source).toContain("GUIDE_AUTHOR_NAME");
+    expect(source).toContain("How we tested");
+    expect(source).toContain("guide-decision-table");
+    expect(source).toContain("MCP_GUIDE_QUERY_EXAMPLES");
+  });
+
+  it("keeps the markdown route on the shared guide source", () => {
+    const source = readFileSync(
+      new URL("../codex-pets-mcp-integration-guide.md/route.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("buildMcpIntegrationGuideMarkdown");
+  });
 });
