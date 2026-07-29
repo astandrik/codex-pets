@@ -189,7 +189,7 @@ export default async function UserPage({ params }: UserPageProps) {
                 view="outlined"
                 href={link.href}
                 target="_blank"
-                rel="noreferrer"
+                rel="nofollow ugc noreferrer"
               >
                 {link.icon}
                 {link.label}
