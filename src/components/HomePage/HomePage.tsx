@@ -213,9 +213,13 @@ export function HomePage({
               wrap
             >
               <Text variant="subheader-2" as="h2" className="home-recommendations__title">
-                Find by style
+                Find by vibe, not keywords
               </Text>
             </Flex>
+            <Text variant="body-2" color="secondary">
+              Describe a mood, style, color, character, or coding energy —
+              semantic search will find the closest approved pets.
+            </Text>
             <div className="home-recommendations__groups">
               {recommendationEntryPoints.styleTags.length > 0 ? (
                 <RecommendationGroup title="Styles">
