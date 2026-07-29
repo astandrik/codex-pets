@@ -20,6 +20,7 @@ import {
   MCP_INTEGRATION_GUIDE_DESCRIPTION,
   MCP_INTEGRATION_GUIDE_PATH,
   MCP_INTEGRATION_GUIDE_TITLE,
+  METHODOLOGY_RUN_DATE,
   selectMcpGuideExamplePets,
 } from "@/lib/guides/codex-pets-mcp-integration";
 import {
@@ -28,7 +29,7 @@ import {
   GUIDE_AUTHOR_NAME,
 } from "@/lib/guides/shared";
 import { serializeJsonLd } from "@/lib/json-ld";
-import { listApprovedPets } from "@/lib/pets/repository";
+import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 import {
   getOpenGraphImages,
   getPageViewOtherMetadata,
@@ -70,7 +71,7 @@ export const metadata: Metadata = {
 };
 
 const getApprovedPetsSnapshot = unstable_cache(
-  async () => listApprovedPets(),
+  async () => listApprovedPetsForSearch(),
   [
     "mcp-integration-guide",
     process.env.CODEX_PETS_DATA_SOURCE?.trim() || "ydb",
@@ -132,7 +133,7 @@ export default async function CodexPetsMcpIntegrationGuidePage() {
         <Text variant="body-2" color="secondary">
           The {GUIDE_AUTHOR_NAME} ran these reproducible checks against the
           production deployment on{" "}
-          {formatGuideDate(MCP_INTEGRATION_GUIDE_DATE_MODIFIED)}. Each one uses
+          {formatGuideDate(METHODOLOGY_RUN_DATE)}. Each one uses
           only public read-only routes, so any agent or human can repeat them
           verbatim.
         </Text>
