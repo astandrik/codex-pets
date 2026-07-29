@@ -1,6 +1,6 @@
 import { toPublicUrl } from "@/lib/base-path";
 import { buildManifestPayload } from "@/lib/pets/api-payloads";
-import { listApprovedPets } from "@/lib/pets/repository";
+import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 import {
   alternateLinkHeader,
   JSON_MEDIA_TYPE,
@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<Response> {
-  const pets = await listApprovedPets();
+  const pets = await listApprovedPetsForSearch();
 
   return toonResponse(buildManifestPayload(pets), {
     headers: {

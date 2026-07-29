@@ -1,34 +1,29 @@
+import { unstable_cache } from "next/cache";
+
 import { markdownResponse } from "@/lib/agent-markdown";
-import { toPublicUrl } from "@/lib/base-path";
+import {
+  buildMcpIntegrationGuideMarkdown,
+  MCP_INTEGRATION_GUIDE_PATH,
+} from "@/lib/guides/codex-pets-mcp-integration";
+import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export function GET(): Response {
-  return markdownResponse(`
-# Codex Pets MCP integration guide
+const getApprovedPetsSnapshot = unstable_cache(
+  async () => listApprovedPetsForSearch(),
+  [
+    "mcp-integration-guide-markdown",
+    process.env.CODEX_PETS_DATA_SOURCE?.trim() || "ydb",
+  ],
+  { revalidate: 60 },
+);
 
-Use the public read-only MCP server when an agent should search approved Codex pet packs, fetch one pack, or generate install and share snippets without changing site data.
-
-## Connect
-
-\`\`\`bash
-codex mcp add codexPets --url ${toPublicUrl("/mcp")}
-curl -s ${toPublicUrl("/.well-known/mcp/server-card.json")}
-curl -s ${toPublicUrl("/api/manifest")}
-\`\`\`
-
-## Tool choices
-
-- Use search_pets for vague style, tag, author, or category requests.
-- Use get_pet when the agent already has an approved slug.
-- Use get_install_instructions, get_badge_code, get_card_code, and get_embed_code for known-slug snippets.
-- Use get_pet_request_info only to explain the public request workflow; it does not create private requests.
-
-## Fallbacks
-
-- OpenAPI: ${toPublicUrl("/openapi.json")}
-- Developer llms.txt: ${toPublicUrl("/developers/llms.txt")}
-- API llms.txt: ${toPublicUrl("/docs/llms.txt")}
-- Full LLM context: ${toPublicUrl("/llms-full.txt")}
-`, { canonicalPath: "/guides/codex-pets-mcp-integration-guide" });
+export async function GET(): Promise<Response> {
+  const response = markdownResponse(
+    buildMcpIntegrationGuideMarkdown(await getApprovedPetsSnapshot()),
+    { canonicalPath: MCP_INTEGRATION_GUIDE_PATH },
+  );
+  response.headers.set("Cache-Control", "public, max-age=60, s-maxage=300");
+  return response;
 }

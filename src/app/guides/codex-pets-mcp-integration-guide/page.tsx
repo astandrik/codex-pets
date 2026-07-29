@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { unstable_cache } from "next/cache";
 import { ArrowRight } from "@gravity-ui/icons";
 import {
   Button,
@@ -9,7 +10,25 @@ import {
 } from "@/components/GravityUI/GravityUI";
 
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
+import {
+  getMcpIntegrationGuideJsonLd,
+  MCP_GUIDE_DECISION_ROWS,
+  MCP_GUIDE_QUERY_EXAMPLES,
+  MCP_INTEGRATION_GUIDE_DATE_MODIFIED,
+  MCP_INTEGRATION_GUIDE_DATE_PUBLISHED,
+  MCP_INTEGRATION_GUIDE_DESCRIPTION,
+  MCP_INTEGRATION_GUIDE_PATH,
+  MCP_INTEGRATION_GUIDE_TITLE,
+  METHODOLOGY_RUN_DATE,
+  selectMcpGuideExamplePets,
+} from "@/lib/guides/codex-pets-mcp-integration";
+import {
+  formatGuideByline,
+  formatGuideDate,
+  GUIDE_AUTHOR_NAME,
+} from "@/lib/guides/shared";
 import { serializeJsonLd } from "@/lib/json-ld";
+import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 import {
   getOpenGraphImages,
   getPageViewOtherMetadata,
@@ -17,49 +36,55 @@ import {
   SITE_NAME,
 } from "@/lib/site-metadata";
 
-const GUIDE_DESCRIPTION =
-  "Integrate AI coding agents with Codex Pets through the read-only MCP server, OpenAPI spec, public manifest, markdown docs, and package install commands.";
+import "./guide.scss";
+
 const MCP_GUIDE_PRIMARY_CTA_PATH = "/mcp.md";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
-  title: "Codex Pets MCP integration guide",
-  description: GUIDE_DESCRIPTION,
+  title: MCP_INTEGRATION_GUIDE_TITLE,
+  description: MCP_INTEGRATION_GUIDE_DESCRIPTION,
   other: getPageViewOtherMetadata(
-    "/guides/codex-pets-mcp-integration-guide",
-    "Codex Pets MCP integration guide",
+    MCP_INTEGRATION_GUIDE_PATH,
+    MCP_INTEGRATION_GUIDE_TITLE,
   ),
   alternates: {
-    canonical: withBasePath("/guides/codex-pets-mcp-integration-guide"),
+    canonical: withBasePath(MCP_INTEGRATION_GUIDE_PATH),
   },
   openGraph: {
     type: "article",
     siteName: SITE_NAME,
-    title: "Codex Pets MCP integration guide",
-    description: GUIDE_DESCRIPTION,
-    url: withBasePath("/guides/codex-pets-mcp-integration-guide"),
+    title: MCP_INTEGRATION_GUIDE_TITLE,
+    description: MCP_INTEGRATION_GUIDE_DESCRIPTION,
+    url: withBasePath(MCP_INTEGRATION_GUIDE_PATH),
     images: getOpenGraphImages(),
   },
   twitter: {
     card: "summary_large_image",
-    title: "Codex Pets MCP integration guide",
-    description: GUIDE_DESCRIPTION,
+    title: MCP_INTEGRATION_GUIDE_TITLE,
+    description: MCP_INTEGRATION_GUIDE_DESCRIPTION,
     images: getTwitterImages(),
   },
 };
 
-export default function CodexPetsMcpIntegrationGuidePage() {
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "TechArticle",
-    headline: "Codex Pets MCP integration guide",
-    url: toPublicUrl("/guides/codex-pets-mcp-integration-guide"),
-    description: GUIDE_DESCRIPTION,
-    isPartOf: {
-      "@type": "WebSite",
-      name: SITE_NAME,
-      url: toPublicUrl("/"),
-    },
-  };
+const getApprovedPetsSnapshot = unstable_cache(
+  async () => listApprovedPetsForSearch(),
+  [
+    "mcp-integration-guide",
+    process.env.CODEX_PETS_DATA_SOURCE?.trim() || "ydb",
+  ],
+  { revalidate: 60 },
+);
+
+export default async function CodexPetsMcpIntegrationGuidePage() {
+  const examplePets = selectMcpGuideExamplePets(await getApprovedPetsSnapshot());
+  const jsonLd = getMcpIntegrationGuideJsonLd();
+  const byline = formatGuideByline({
+    datePublished: MCP_INTEGRATION_GUIDE_DATE_PUBLISHED,
+    dateModified: MCP_INTEGRATION_GUIDE_DATE_MODIFIED,
+  });
 
   return (
     <Container as="main" maxWidth="xl" gutters={5} className="page-shell">
@@ -71,13 +96,14 @@ export default function CodexPetsMcpIntegrationGuidePage() {
         <Flex direction="column" gap={3}>
           <Label theme="info">Integration guide</Label>
           <Text variant="display-2" as="h1">
-            Codex Pets MCP integration guide
+            {MCP_INTEGRATION_GUIDE_TITLE}
           </Text>
           <Text variant="body-2" color="secondary" className="page-section-header__lead">
             Use the public read-only MCP server when an agent should search
             approved Codex pet packs, fetch one pack, or generate install and
             share snippets without changing site data.
           </Text>
+          <Text className="guide-byline">{byline}</Text>
           <Flex gap={2} wrap>
             <Button
               view="action"
@@ -97,6 +123,64 @@ export default function CodexPetsMcpIntegrationGuidePage() {
             </Button>
           </Flex>
         </Flex>
+      </section>
+
+      <section className="page-section">
+        <Text variant="display-1" as="h2">
+          How we tested
+        </Text>
+        <Text variant="body-2" color="secondary">
+          The {GUIDE_AUTHOR_NAME} ran these reproducible checks against the
+          production deployment on{" "}
+          {formatGuideDate(METHODOLOGY_RUN_DATE)}. Each one uses
+          only public read-only routes, so any agent or human can repeat them
+          verbatim.
+        </Text>
+        {MCP_GUIDE_QUERY_EXAMPLES.map((example) => (
+          <div className="guide-query-example" key={example.id}>
+            <Text variant="subheader-2" as="h3">
+              {example.title}
+            </Text>
+            <pre>
+              <code>{example.command}</code>
+            </pre>
+            <pre>
+              <code>{example.responseExcerpt}</code>
+            </pre>
+            <Text variant="body-2" color="secondary">
+              {example.resultSummary} (Run on {formatGuideDate(example.runDate)}
+              .)
+            </Text>
+          </div>
+        ))}
+      </section>
+
+      <section className="page-section">
+        <Text variant="display-1" as="h2">
+          Which surface should your agent use?
+        </Text>
+        <div className="guide-decision-table-wrapper">
+          <table className="guide-decision-table">
+            <thead>
+              <tr>
+                <th>Surface</th>
+                <th>Use when</th>
+                <th>Example</th>
+              </tr>
+            </thead>
+            <tbody>
+              {MCP_GUIDE_DECISION_ROWS.map((row) => (
+                <tr key={row.surface}>
+                  <td>{row.surface}</td>
+                  <td>{row.useWhen}</td>
+                  <td>
+                    <code>{row.example}</code>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="page-section">
@@ -134,6 +218,34 @@ export default function CodexPetsMcpIntegrationGuidePage() {
 
       <section className="page-section">
         <Text variant="display-1" as="h2">
+          Example pets from this guide
+        </Text>
+        <Text variant="body-2" color="secondary">
+          Approved pets an agent can cite right now through any of the surfaces
+          above.
+        </Text>
+        {examplePets.map((pet) => (
+          <article key={pet.slug}>
+            <Text variant="subheader-2" as="h3">
+              <a href={withBasePath(`/pets/${pet.slug}`)}>{pet.displayName}</a>
+            </Text>
+            <Text variant="body-2" color="secondary">
+              {pet.description}
+            </Text>
+            <ul>
+              <li>
+                Page: <a href={pet.pageUrl}>{pet.pageUrl}</a>
+              </li>
+              <li>
+                Install: <code>{pet.installCommand}</code>
+              </li>
+            </ul>
+          </article>
+        ))}
+      </section>
+
+      <section className="page-section">
+        <Text variant="display-1" as="h2">
           Fallbacks
         </Text>
         <ul>
@@ -149,6 +261,29 @@ export default function CodexPetsMcpIntegrationGuidePage() {
           <li>
             Use <a href={withBasePath("/llms-full.txt")}>llms-full.txt</a> when
             the agent needs full product context in one request.
+          </li>
+        </ul>
+      </section>
+
+      <section className="page-section">
+        <Text variant="display-1" as="h2">
+          Related guides
+        </Text>
+        <ul>
+          <li>
+            <a href={withBasePath("/guides/best-codex-pets-for-ai-coding-agents")}>
+              Best Codex pets for AI coding agents
+            </a>
+          </li>
+          <li>
+            <a href={withBasePath("/guides/codex-pets-vs-vscode-pets")}>
+              Codex Pets vs VS Code Pets
+            </a>
+          </li>
+          <li>
+            <a href={withBasePath("/guides/codex-pets-vs-openpets")}>
+              Codex Pets vs OpenPets
+            </a>
           </li>
         </ul>
       </section>

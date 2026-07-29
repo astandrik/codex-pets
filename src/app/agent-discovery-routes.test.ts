@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 const repositoryMocks = vi.hoisted(() => ({
   listApprovedPets: vi.fn(),
+  listApprovedPetsForSearch: vi.fn(),
 }));
 
 vi.mock("@/lib/pets/repository", () => ({
   listApprovedPets: repositoryMocks.listApprovedPets,
+  listApprovedPetsForSearch: repositoryMocks.listApprovedPetsForSearch,
 }));
 
 vi.mock("next/cache", () => ({
@@ -194,6 +196,9 @@ describe("guide markdown routes", () => {
         likeCount: 1,
       },
     ]);
+    repositoryMocks.listApprovedPetsForSearch.mockImplementation(() =>
+      repositoryMocks.listApprovedPets(),
+    );
 
     const { GET } = await import(modulePath);
     const response = await GET();
