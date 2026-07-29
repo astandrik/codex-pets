@@ -57,9 +57,9 @@ export const MCP_GUIDE_QUERY_EXAMPLES: GuideQueryExample[] = [
     runDate: METHODOLOGY_RUN_DATE,
     screenshot: {
       path: "/guides/mcp-integration/pet-install.png",
-      alt: "Pet page install section for the Anime Girl pet",
-      width: 1145,
-      height: 45,
+      alt: "JSON response of the install instructions endpoint for the Anime Girl pet",
+      width: 1200,
+      height: 847,
     },
   },
 ];

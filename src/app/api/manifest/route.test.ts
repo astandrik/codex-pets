@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { decode } from "@toon-format/toon";
 
 const repositoryMocks = vi.hoisted(() => ({
-  listApprovedPets: vi.fn(),
+  listApprovedPetsForSearch: vi.fn(),
 }));
 
 vi.mock("@/lib/pets/repository", () => ({
-  listApprovedPets: repositoryMocks.listApprovedPets,
+  listApprovedPetsForSearch: repositoryMocks.listApprovedPetsForSearch,
 }));
 
 const approvedPet = {
@@ -42,7 +42,7 @@ describe("GET /api/manifest", () => {
   it("returns an agent-friendly manifest for approved pets", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "");
-    repositoryMocks.listApprovedPets.mockResolvedValueOnce([approvedPet]);
+    repositoryMocks.listApprovedPetsForSearch.mockResolvedValueOnce([approvedPet]);
     const { GET } = await import("@/app/api/manifest/route");
 
     const response = await GET();
@@ -82,12 +82,12 @@ describe("GET /api/manifest", () => {
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "");
 
     try {
-      repositoryMocks.listApprovedPets.mockResolvedValueOnce([approvedPet]);
+      repositoryMocks.listApprovedPetsForSearch.mockResolvedValueOnce([approvedPet]);
       const { GET: getJson } = await import("@/app/api/manifest/route");
       const jsonResponse = await getJson();
       const jsonBody = await jsonResponse.json();
 
-      repositoryMocks.listApprovedPets.mockResolvedValueOnce([approvedPet]);
+      repositoryMocks.listApprovedPetsForSearch.mockResolvedValueOnce([approvedPet]);
       const { GET: getToon } = await import("@/app/api/manifest.toon/route");
       const toonResponse = await getToon();
       const toonBody = decode(await toonResponse.text());
