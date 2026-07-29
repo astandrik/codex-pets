@@ -28,39 +28,62 @@ export const MCP_GUIDE_QUERY_EXAMPLES: GuideQueryExample[] = [
     title: "List every approved pet as JSON",
     command: `curl -s ${toPublicUrl("/api/manifest")}`,
     resultSummary: `Returned 146 approved pets when we ran it on ${METHODOLOGY_RUN_DATE_LABEL}.`,
-    runDate: METHODOLOGY_RUN_DATE,
-    screenshot: {
-      path: "/guides/mcp-integration/manifest-json.png",
-      alt: "JSON manifest response listing approved Codex pets",
-      width: 1200,
-      height: 847,
+    responseExcerpt: `{
+  "generatedAt": "2026-07-29T21:16:26.515Z",
+  "total": 146,
+  "pets": [
+    {
+      "slug": "kesha",
+      "displayName": "Kesha",
+      "description": "A cheerful tan-and-white Pembroke Welsh corgi …",
+      "installCommand": "npx @astandrik/codex-pets install kesha",
+      …
     },
+    … 145 more approved pets …
+  ]
+}`,
+    runDate: METHODOLOGY_RUN_DATE,
   },
   {
     id: "search",
     title: "Search pets by vibe",
     command: `curl -s "${toPublicUrl("/api/pets")}?q=anime&pageSize=3"`,
     resultSummary: `Top match on ${METHODOLOGY_RUN_DATE_LABEL}: Anime Girl (anime-girl-3), a chibi anime pet. The MCP search_pets tool returns the same approved registry data.`,
-    runDate: METHODOLOGY_RUN_DATE,
-    screenshot: {
-      path: "/guides/mcp-integration/search-anime-json.png",
-      alt: "Search JSON response for the anime query",
-      width: 1200,
-      height: 847,
+    responseExcerpt: `{
+  "total": 3,
+  "pets": [
+    {
+      "slug": "anime-girl-3",
+      "displayName": "Anime Girl",
+      "description": "A slightly chibi anime girl pet …",
+      "tags": ["anime", "chibi", "sweater-dress"],
+      "downloadCount": 53,
+      …
     },
+    … 2 more matches …
+  ]
+}`,
+    runDate: METHODOLOGY_RUN_DATE,
   },
   {
     id: "install",
     title: "Get install instructions for a slug",
     command: `curl -s ${toPublicUrl("/api/pets/anime-girl-3/install")}`,
     resultSummary: `Returned CLI and manual install steps, including npx @astandrik/codex-pets install anime-girl-3 and the codex mcp add command.`,
-    runDate: METHODOLOGY_RUN_DATE,
-    screenshot: {
-      path: "/guides/mcp-integration/pet-install.png",
-      alt: "JSON response of the install instructions endpoint for the Anime Girl pet",
-      width: 1200,
-      height: 847,
+    responseExcerpt: `{
+  "slug": "anime-girl-3",
+  "name": "Anime Girl",
+  "install": {
+    "command": "npx @astandrik/codex-pets install anime-girl-3",
+    "codex": {
+      "mcpServer": {
+        "addCommand": "codex mcp add codexPets --url ${toPublicUrl("/mcp")}"
+      }
     },
+    …
+  }
+}`,
+    runDate: METHODOLOGY_RUN_DATE,
   },
 ];
 
@@ -127,6 +150,10 @@ export function buildMcpIntegrationGuideMarkdown(pets: PublicPet[]): string {
       `### ${example.title}`,
       "",
       `\`${example.command}\``,
+      "",
+      "```json",
+      example.responseExcerpt,
+      "```",
       "",
       `${escapeMarkdownInlineText(example.resultSummary)} (Run on ${formatGuideDate(example.runDate)}.)`,
     ].join("\n"),

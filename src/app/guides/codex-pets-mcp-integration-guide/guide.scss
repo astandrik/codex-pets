@@ -45,21 +45,3 @@
     margin: var(--spacing-sm) 0;
   }
 }
-
-.guide-screenshot {
-  margin: var(--spacing-md) 0 0;
-
-  img {
-    display: block;
-    max-width: 100%;
-    height: auto;
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius-lg);
-  }
-
-  figcaption {
-    margin-top: var(--spacing-xs);
-    color: var(--g-color-text-hint);
-    font-size: 13px;
-  }
-}

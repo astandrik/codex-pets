@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { unstable_cache } from "next/cache";
-import Image from "next/image";
 import { ArrowRight } from "@gravity-ui/icons";
 import {
   Button,
@@ -145,24 +144,13 @@ export default async function CodexPetsMcpIntegrationGuidePage() {
             <pre>
               <code>{example.command}</code>
             </pre>
+            <pre>
+              <code>{example.responseExcerpt}</code>
+            </pre>
             <Text variant="body-2" color="secondary">
               {example.resultSummary} (Run on {formatGuideDate(example.runDate)}
               .)
             </Text>
-            {example.screenshot ? (
-              <figure className="guide-screenshot">
-                <Image
-                  src={withBasePath(example.screenshot.path)}
-                  alt={example.screenshot.alt}
-                  width={example.screenshot.width}
-                  height={example.screenshot.height}
-                />
-                <figcaption>
-                  {example.screenshot.alt}. Captured{" "}
-                  {formatGuideDate(example.runDate)}.
-                </figcaption>
-              </figure>
-            ) : null}
           </div>
         ))}
       </section>

@@ -15,14 +15,14 @@ export type GuideQueryExample = {
   title: string;
   command: string;
   resultSummary: string;
+  /**
+   * Trimmed copy of the real production response captured on runDate.
+   * Text is used instead of screenshots: it stays indexable, accessible,
+   * and cheap to serve.
+   */
+  responseExcerpt: string;
   /** ISO date (YYYY-MM-DD) when the query was run against production. */
   runDate: string;
-  screenshot: {
-    path: string;
-    alt: string;
-    width: number;
-    height: number;
-  } | null;
 };
 
 export function buildGuideArticleJsonLd(options: {

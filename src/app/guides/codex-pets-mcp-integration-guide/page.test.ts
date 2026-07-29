@@ -20,6 +20,9 @@ describe("Codex Pets MCP integration guide", () => {
     expect(source).toContain("How we tested");
     expect(source).toContain("guide-decision-table");
     expect(source).toContain("MCP_GUIDE_QUERY_EXAMPLES");
+    expect(source).toContain("example.responseExcerpt");
+    expect(source).not.toContain("guide-screenshot");
+    expect(source).not.toContain('from "next/image"');
   });
 
   it("dates the methodology intro by the actual check run date", () => {

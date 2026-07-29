@@ -22,9 +22,8 @@ describe("Codex Pets MCP integration guide content", () => {
     for (const example of MCP_GUIDE_QUERY_EXAMPLES) {
       expect(example.command.length).toBeGreaterThan(0);
       expect(example.runDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(example.screenshot?.path).toMatch(
-        /^\/guides\/mcp-integration\/.+\.png$/,
-      );
+      expect(example.responseExcerpt).toMatch(/^\{/);
+      expect(example.responseExcerpt.length).toBeGreaterThan(20);
     }
     const commands = MCP_GUIDE_QUERY_EXAMPLES.map(
       (example) => example.command,
@@ -84,6 +83,7 @@ describe("Codex Pets MCP integration guide content", () => {
     expect(markdown).toContain("May 27, 2026");
     expect(markdown).toContain("How we tested");
     expect(markdown).toContain("/api/manifest");
+    expect(markdown).toContain("```json");
     expect(markdown).toContain("| Surface | Use when | Example |");
     expect(markdown).toContain("/pets/demo-pet)");
     expect(markdown).toContain("/openapi.json");
