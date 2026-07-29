@@ -212,7 +212,7 @@ export function HomePage({
               gap={3}
               wrap
             >
-              <Text variant="subheader-2" as="h2" className="home-recommendations__title">
+              <Text variant="subheader-3" as="h2" className="home-recommendations__title">
                 Find by vibe, not keywords
               </Text>
             </Flex>
