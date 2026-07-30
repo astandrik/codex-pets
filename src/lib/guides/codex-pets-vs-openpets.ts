@@ -216,7 +216,7 @@ export function buildVsOpenPetsGuideMarkdown(pets: PublicPet[]): string {
     "",
     `We ran these reproducible checks on ${METHODOLOGY_RUN_DATE_LABEL} against the production Codex Pets deployment and the public OpenPets catalog. Each one uses only public read-only routes, so you can repeat them verbatim.`,
     "",
-    "What we did not test: we did not install or run the OpenPets desktop app for this update. Every claim about its desktop runtime, leases, hooks, and plugins comes from the official OpenPets documentation, linked in Sources. The catalog numbers are first-hand: we fetched the public catalog descriptor ourselves, shown above.",
+    "What we did not test: we did not install or run the OpenPets desktop app for this update. Every claim about its desktop runtime, leases, hooks, and plugins comes from the official OpenPets documentation, linked in Sources. The catalog numbers are first-hand: we fetched the public catalog descriptor ourselves, shown below.",
     "",
     ...exampleBlocks,
     "",
