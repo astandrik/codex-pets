@@ -1,13 +1,10 @@
-import Link from "next/link";
 import { Text } from "@/components/GravityUI/GravityUI";
-import {
-  formatRelatedPetDescription,
-  type RelatedPetCandidate,
-} from "@/lib/pets/related-pets";
+import { PetCard } from "@/components/PetCard/PetCard";
+import type { PublicPet } from "@/lib/pets/types";
 import "./related-pets.scss";
 
 type RelatedPetsProps = {
-  pets: RelatedPetCandidate[];
+  pets: PublicPet[];
 };
 
 export function RelatedPets({ pets }: RelatedPetsProps) {
@@ -16,19 +13,11 @@ export function RelatedPets({ pets }: RelatedPetsProps) {
       <Text variant="subheader-2" as="h2" className="related-pets__title">
         Related pets
       </Text>
-      <ul className="related-pets__list">
+      <div className="pet-grid related-pets__grid">
         {pets.map((pet) => (
-          <li key={pet.slug} className="related-pets__item">
-            <Link href={`/pets/${pet.slug}`} className="related-pets__link">
-              {pet.displayName}
-            </Link>
-            <span className="related-pets__kind">{pet.kind}</span>
-            <span className="related-pets__description">
-              {formatRelatedPetDescription(pet.description)}
-            </span>
-          </li>
+          <PetCard key={pet.slug} pet={pet} />
         ))}
-      </ul>
+      </div>
     </section>
   );
 }

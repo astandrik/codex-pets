@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -7,6 +8,7 @@ const repositoryMocks = vi.hoisted(() => ({
   getPetBySlug: vi.fn(),
   getPetMetrics: vi.fn(),
   listRelatedPetCandidates: vi.fn(),
+  listApprovedPetsBySlugs: vi.fn(),
 }));
 const authMocks = vi.hoisted(() => ({
   listPublicUserProfilesByIds: vi.fn(async () => new Map()),
@@ -32,6 +34,19 @@ vi.mock("@/components/PetDetails/PetBreadcrumbs", () => ({
 }));
 vi.mock("@/components/InstallCommand/InstallCommandButton", () => ({
   InstallCommandButton: () => null,
+}));
+vi.mock("@/components/PetCard/PetCard", () => ({
+  PetCard: ({
+    pet,
+  }: {
+    pet: { slug: string; displayName: string; description: string };
+  }) =>
+    createElement(
+      "article",
+      { className: "pet-card", "data-slug": pet.slug },
+      createElement("a", { href: `/pets/${pet.slug}` }, pet.displayName),
+      createElement("p", null, pet.description),
+    ),
 }));
 vi.mock("@/components/PetDetails/PetMetaList", () => ({
   PetMetaList: () => null,
@@ -102,6 +117,22 @@ const relatedCandidates = [
   },
 ];
 
+const relatedSummaries: Record<
+  string,
+  { slug: string; displayName: string; description: string }
+> = {
+  "star-fox": {
+    slug: "star-fox",
+    displayName: "Star Fox",
+    description: "A fox from the stars.",
+  },
+  "terminal-cube": {
+    slug: "terminal-cube",
+    displayName: "Terminal Cube",
+    description: "A cube that lives in your terminal.",
+  },
+};
+
 describe("/pets/[slug] related pets section", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -115,6 +146,13 @@ describe("/pets/[slug] related pets section", () => {
     repositoryMocks.listRelatedPetCandidates.mockResolvedValue(
       relatedCandidates,
     );
+    repositoryMocks.listApprovedPetsBySlugs.mockImplementation(
+      async (slugs: string[]) =>
+        slugs.flatMap((slug) => {
+          const summary = relatedSummaries[slug];
+          return summary ? [summary] : [];
+        }),
+    );
   });
 
   async function renderPetPage(slug = approvedPetRow.slug) {
@@ -127,7 +165,7 @@ describe("/pets/[slug] related pets section", () => {
     return container;
   }
 
-  it("renders links to the related slugs in selector order after the body", async () => {
+  it("renders a card per related slug in selector order after the body", async () => {
     const container = await renderPetPage();
 
     const section = container.querySelector(".related-pets");
@@ -136,39 +174,30 @@ describe("/pets/[slug] related pets section", () => {
       container.querySelector(".pet-detail__body + .related-pets"),
     ).not.toBeNull();
 
-    const hrefs = Array.from(
-      section!.querySelectorAll(".related-pets__list a"),
-    ).map((anchor) => anchor.getAttribute("href"));
-    expect(hrefs).toEqual(["/pets/star-fox", "/pets/terminal-cube"]);
-    expect(hrefs).not.toContain("/pets/orbit-otter");
+    const cardSlugs = Array.from(
+      section!.querySelectorAll(".pet-grid .pet-card"),
+    ).map((card) => card.getAttribute("data-slug"));
+    expect(cardSlugs).toEqual(["star-fox", "terminal-cube"]);
+    expect(cardSlugs).not.toContain("orbit-otter");
     expect(section!.querySelector("h2")?.textContent).toBe("Related pets");
   }, 20_000);
 
-  it("renders the one-line description, collapsed and truncated with an ellipsis", async () => {
+  it("hydrates full card data for the selected slugs in selector order", async () => {
+    await renderPetPage();
+
+    expect(repositoryMocks.listApprovedPetsBySlugs).toHaveBeenCalledWith([
+      "star-fox",
+      "terminal-cube",
+    ]);
+  }, 20_000);
+
+  it("renders the full description inside the card", async () => {
     const container = await renderPetPage();
 
-    const items = Array.from(
-      container.querySelectorAll(".related-pets__item"),
+    const cube = container.querySelector(
+      '.pet-card[data-slug="terminal-cube"] p',
     );
-    const itemFor = (slug: string) =>
-      items.find(
-        (item) =>
-          item.querySelector("a")?.getAttribute("href") === `/pets/${slug}`,
-      );
-
-    const starFox = itemFor("star-fox")?.querySelector(
-      ".related-pets__description",
-    );
-    expect(starFox?.textContent).toBe("A fox from the stars.");
-
-    const cube = itemFor("terminal-cube")?.querySelector(
-      ".related-pets__description",
-    );
-    expect(cube?.textContent).not.toBeNull();
-    expect(cube!.textContent).not.toContain("\n");
-    expect(cube!.textContent!.startsWith("A cube that lives in your terminal. Blinks")).toBe(true);
-    expect(cube!.textContent!.endsWith("…")).toBe(true);
-    expect(cube!.textContent!.length).toBe(120);
+    expect(cube?.textContent).toBe("A cube that lives in your terminal.");
   }, 20_000);
 
   it("omits the section when no related candidates exist", async () => {
@@ -176,6 +205,7 @@ describe("/pets/[slug] related pets section", () => {
     const container = await renderPetPage();
 
     expect(container.querySelector(".related-pets")).toBeNull();
+    expect(repositoryMocks.listApprovedPetsBySlugs).not.toHaveBeenCalled();
   }, 20_000);
 
   it("renders the page without the section when the candidates lookup fails", async () => {
@@ -188,7 +218,17 @@ describe("/pets/[slug] related pets section", () => {
     expect(container.querySelector(".related-pets")).toBeNull();
   }, 20_000);
 
-  it("omits the section and skips the candidates query for pending pets", async () => {
+  it("renders the page without the section when summary hydration fails", async () => {
+    repositoryMocks.listApprovedPetsBySlugs.mockRejectedValue(
+      new Error("YDB timeout"),
+    );
+    const container = await renderPetPage();
+
+    expect(container.querySelector(".pet-detail__body")).not.toBeNull();
+    expect(container.querySelector(".related-pets")).toBeNull();
+  }, 20_000);
+
+  it("omits the section and skips the related queries for pending pets", async () => {
     repositoryMocks.getPetBySlug.mockResolvedValue({
       ...approvedPetRow,
       status: "pending",
@@ -198,5 +238,6 @@ describe("/pets/[slug] related pets section", () => {
 
     expect(container.querySelector(".related-pets")).toBeNull();
     expect(repositoryMocks.listRelatedPetCandidates).not.toHaveBeenCalled();
+    expect(repositoryMocks.listApprovedPetsBySlugs).not.toHaveBeenCalled();
   }, 20_000);
 });

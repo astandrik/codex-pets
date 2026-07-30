@@ -5,34 +5,7 @@
     margin-bottom: var(--spacing-lg);
   }
 
-  &__list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--spacing-sm);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  &__item {
-    display: inline-flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--spacing-xs);
-    padding: var(--spacing-xs) var(--spacing-md);
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius-md);
-    background: rgba(255, 255, 255, 0.04);
-  }
-
-  &__kind {
-    color: var(--g-color-text-secondary);
-    font-size: 12px;
-  }
-
-  &__description {
-    flex-basis: 100%;
-    color: var(--g-color-text-secondary);
-    font-size: 13px;
+  &__grid {
+    margin-top: 0;
   }
 }

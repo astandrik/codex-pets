@@ -27,7 +27,7 @@ vi.mock("@/lib/ydb/result", () => ({
   uintAt: vi.fn(),
 }));
 
-import { listRelatedPetCandidates } from "@/lib/pets/repository";
+import { listApprovedPetsBySlugs, listRelatedPetCandidates } from "@/lib/pets/repository";
 
 describe("listRelatedPetCandidates", () => {
   beforeEach(() => {
@@ -133,5 +133,51 @@ describe("listRelatedPetCandidates", () => {
     expect(slugs).toContain("orbit-otter");
     expect(slugs).not.toContain("pending-pixel");
     expect(slugs).not.toContain("rejected-spark");
+  });
+});
+
+describe("listApprovedPetsBySlugs", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    mocks.isYdbConfigured.mockReturnValue(true);
+    mocks.executeQuery.mockResolvedValue({ resultSets: [] });
+    mocks.rowsFromResult.mockReturnValue([]);
+    mocks.withSession.mockImplementation((callback) =>
+      callback({ executeQuery: mocks.executeQuery }),
+    );
+  });
+
+  it("returns approved mock pets in the input slug order, skipping the rest", async () => {
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "mock");
+
+    const pets = await listApprovedPetsBySlugs([
+      "byte-beacon",
+      "orbit-otter",
+      "pending-pixel",
+      "rejected-spark",
+      "missing-slug",
+      "orbit-otter",
+    ]);
+
+    expect(mocks.executeQuery).not.toHaveBeenCalled();
+    expect(pets.map((pet) => pet.slug)).toEqual(["byte-beacon", "orbit-otter"]);
+    for (const pet of pets) {
+      expect(pet.status).toBe("approved");
+      expect(pet.spritesheetUrl).toBeTruthy();
+    }
+  });
+
+  it("returns an empty list without touching YDB when no slugs are given", async () => {
+    await expect(listApprovedPetsBySlugs([])).resolves.toEqual([]);
+    expect(mocks.executeQuery).not.toHaveBeenCalled();
+  });
+
+  it("returns an empty list without touching YDB when YDB is not configured", async () => {
+    mocks.isYdbConfigured.mockReturnValue(false);
+
+    await expect(listApprovedPetsBySlugs(["orbit-otter"])).resolves.toEqual([]);
+    expect(mocks.executeQuery).not.toHaveBeenCalled();
   });
 });

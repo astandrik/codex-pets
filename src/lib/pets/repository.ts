@@ -384,6 +384,74 @@ LIMIT 200;
   );
 }
 
+export async function listApprovedPetsBySlugs(
+  slugs: string[],
+): Promise<PublicPet[]> {
+  const uniqueSlugs = Array.from(new Set(slugs));
+
+  if (isMockPetsDataSource()) {
+    const petsBySlug = new Map(
+      listMockPetRecords()
+        .filter(
+          (pet) => uniqueSlugs.includes(pet.slug) && pet.status === "approved",
+        )
+        .map((pet) => [
+          pet.slug,
+          toPublicPet(pet, pet.metrics, mockOwnerReference(pet)),
+        ]),
+    );
+    return uniqueSlugs.flatMap((slug) => {
+      const pet = petsBySlug.get(slug);
+      return pet ? [pet] : [];
+    });
+  }
+
+  if (!isYdbConfigured() || uniqueSlugs.length === 0) return [];
+
+  const declarations = uniqueSlugs
+    .map((_, index) => `DECLARE $slug${index} AS Utf8;`)
+    .join("\n");
+  const predicate = uniqueSlugs
+    .map((_, index) => `slug = $slug${index}`)
+    .join(" OR ");
+  const params = Object.fromEntries(
+    uniqueSlugs.map((slug, index) => [`$slug${index}`, TypedValues.utf8(slug)]),
+  );
+
+  const result = await withSession((session) =>
+    session.executeQuery(
+      `
+${declarations}
+DECLARE $status AS Utf8;
+SELECT ${petColumns()}
+FROM ${TABLES.pets}
+WHERE status = $status AND (${predicate});
+      `,
+      { ...params, $status: TypedValues.utf8("approved") },
+    ),
+  );
+
+  const rowsBySlug = new Map(
+    rowsFromResult(result)
+      .map(parsePetRow)
+      .map((row) => [row.slug, row] as const),
+  );
+  const rows = uniqueSlugs.flatMap((slug) => {
+    const row = rowsBySlug.get(slug);
+    return row ? [row] : [];
+  });
+  const metricsBySlug = await getMetricsBySlugs(rows.map((row) => row.slug));
+  const profilesByUserId = await getOwnerProfilesByRows(rows);
+
+  return rows.map((row) =>
+    toPublicPet(
+      row,
+      metricsBySlug.get(row.slug) ?? EMPTY_METRICS,
+      profilesByUserId.get(row.ownerId),
+    ),
+  );
+}
+
 export async function listPendingPets(): Promise<PublicPet[]> {
   if (isMockPetsDataSource()) {
     return listMockPets({}, "pending");
