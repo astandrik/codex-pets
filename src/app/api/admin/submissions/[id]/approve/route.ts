@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
 import { moderatePet } from "@/lib/pets/repository";
+import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { refreshApprovedPetSearchEmbedding } from "@/lib/pets/search-runtime";
 import { refreshApprovedPetVisionSearchBestEffort } from "@/lib/pets/search-vision-runtime";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
@@ -30,6 +31,7 @@ export async function POST(
   }
 
   revalidateSitemapCache();
+  revalidateRelatedPetCandidatesCache();
 
   try {
     await refreshApprovedPetSearchEmbedding(pet);

@@ -93,6 +93,7 @@ export type PetFilters = {
 export type ApprovedPetSitemapEntry = {
   slug: string;
   createdAt: string;
+  updatedAt: string | null;
   approvedAt: string | null;
 };
 
@@ -131,9 +132,10 @@ export async function listApprovedPetSitemapEntries(): Promise<
     return listMockPetRecords()
       .filter((pet) => pet.status === "approved")
       .sort(comparePetRowsNewestFirst)
-      .map(({ slug, createdAt, approvedAt }) => ({
+      .map(({ slug, createdAt, updatedAt, approvedAt }) => ({
         slug,
         createdAt,
+        updatedAt,
         approvedAt,
       }));
   }
@@ -144,7 +146,7 @@ export async function listApprovedPetSitemapEntries(): Promise<
     session.executeQuery(
       `
 DECLARE $status AS Utf8;
-SELECT slug, created_at, approved_at
+SELECT slug, created_at, updated_at, approved_at
 FROM ${TABLES.pets}
 WHERE status = $status
 ORDER BY created_at DESC, slug ASC;
@@ -156,7 +158,8 @@ ORDER BY created_at DESC, slug ASC;
   return rowsFromResult(result).map((row) => ({
     slug: textAt(row, 0),
     createdAt: textAt(row, 1),
-    approvedAt: textAt(row, 2) || null,
+    updatedAt: textAt(row, 2) || null,
+    approvedAt: textAt(row, 3) || null,
   }));
 }
 

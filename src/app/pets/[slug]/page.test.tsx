@@ -178,6 +178,16 @@ describe("/pets/[slug] related pets section", () => {
     expect(container.querySelector(".related-pets")).toBeNull();
   }, 20_000);
 
+  it("renders the page without the section when the candidates lookup fails", async () => {
+    repositoryMocks.listRelatedPetCandidates.mockRejectedValue(
+      new Error("YDB timeout"),
+    );
+    const container = await renderPetPage();
+
+    expect(container.querySelector(".pet-detail__body")).not.toBeNull();
+    expect(container.querySelector(".related-pets")).toBeNull();
+  }, 20_000);
+
   it("omits the section and skips the candidates query for pending pets", async () => {
     repositoryMocks.getPetBySlug.mockResolvedValue({
       ...approvedPetRow,

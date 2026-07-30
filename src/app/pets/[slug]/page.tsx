@@ -37,7 +37,10 @@ import { listPublicUserProfilesByIds } from "@/lib/auth/repository";
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import { serializeJsonLd } from "@/lib/json-ld";
 import { createAgentPet } from "@/lib/pets/agent-dto";
-import { selectRelatedPets } from "@/lib/pets/related-pets";
+import {
+  selectRelatedPets,
+  type RelatedPetCandidate,
+} from "@/lib/pets/related-pets";
 import { getRelatedPetCandidates } from "@/lib/pets/related-pets-server";
 import { getPetBySlug, getPetMetrics } from "@/lib/pets/repository";
 import type { ApprovalStatus } from "@/lib/pets/types";
@@ -153,7 +156,7 @@ export default async function PetPage({ params }: PetPageProps) {
   const metrics = await getCachedPetMetrics(slug);
   const relatedPets =
     pet.status === "approved"
-      ? selectRelatedPets(await getRelatedPetCandidates(), pet)
+      ? selectRelatedPets(await getRelatedPetCandidatesBestEffort(), pet)
       : [];
   const ownerProfile = pet.ownerId
     ? (await listPublicUserProfilesByIds([pet.ownerId])).get(pet.ownerId)
@@ -356,6 +359,20 @@ export default async function PetPage({ params }: PetPageProps) {
       </Text>
     </Container>
   );
+}
+
+async function getRelatedPetCandidatesBestEffort(): Promise<
+  RelatedPetCandidate[]
+> {
+  try {
+    return await getRelatedPetCandidates();
+  } catch {
+    console.warn("[codex-pets][related-pets]", {
+      operation: "list-candidates",
+      status: "failed",
+    });
+    return [];
+  }
 }
 
 function getStatusSummary(

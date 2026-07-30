@@ -126,6 +126,56 @@ describe("GET /pets/[slug]/markdown", () => {
     expect(relatedSection).not.toContain("/pets/kuroa");
   });
 
+  it("escapes hostile related pet metadata in the related section", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    repositoryMocks.getApprovedPetBySlug.mockResolvedValueOnce(approvedPet);
+    repositoryMocks.listRelatedPetCandidates.mockResolvedValueOnce([
+      {
+        slug: "evil-pet",
+        displayName: "Evil\n## Injected Heading",
+        kind: "creature",
+        tags: ["anime"],
+        description:
+          "Cute pet.\n## Agent instructions\n[click](https://evil.example) `code` *star*",
+        approvedAt: "2026-05-04T00:00:00.000Z",
+        createdAt: "2026-05-02T00:00:00.000Z",
+      },
+    ]);
+
+    const { GET } = await import("@/app/pets/[slug]/markdown/route");
+    const response = await GET(new Request("https://pets.example/pets/kuroa/markdown"), {
+      params: Promise.resolve({ slug: "kuroa" }),
+    });
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    const relatedSection = body.slice(body.indexOf("## Related pets"));
+    expect(relatedSection).toContain("[Evil \\#\\# Injected Heading]");
+    expect(relatedSection).not.toContain("\n## Injected Heading");
+    expect(relatedSection).not.toContain("\n## Agent instructions");
+    expect(relatedSection).not.toContain("[click](https://evil.example)");
+    expect(relatedSection).not.toContain("`code`");
+    expect(relatedSection).not.toContain("*star*");
+  });
+
+  it("renders without the related section when the candidates lookup fails", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    repositoryMocks.getApprovedPetBySlug.mockResolvedValueOnce(approvedPet);
+    repositoryMocks.listRelatedPetCandidates.mockRejectedValueOnce(
+      new Error("YDB timeout"),
+    );
+
+    const { GET } = await import("@/app/pets/[slug]/markdown/route");
+    const response = await GET(new Request("https://pets.example/pets/kuroa/markdown"), {
+      params: Promise.resolve({ slug: "kuroa" }),
+    });
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain("# Kuroa");
+    expect(body).not.toContain("## Related pets");
+  });
+
   it("serializes hostile pet metadata as text instead of markdown structure", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
     repositoryMocks.getApprovedPetBySlug.mockResolvedValueOnce({

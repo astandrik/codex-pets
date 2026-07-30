@@ -81,6 +81,8 @@ Two independent deliverables:
 1. **Improved descriptions on 10 pilot pets** (data operation, not code). Each rewritten description: ≤320 characters (hard ingestion bound), English (fixing the Spanish/mixed-language defects), first-hand facts only (visual identity, animation behavior, provenance where known), no keyword stuffing, no template. Approval rule: pets owned by a known user require that owner's sign-off; `Anonymous` pets fall back to maintainer approval, recorded per-pet. `kitsune-chibi-2` (owner `jrpg fan`) is rewritten only if the owner confirms.
    - **Owner-denial branch:** cohorts are disjoint by construction — the pilot set is exactly the pets actually rewritten. If the `kitsune-chibi-2` owner declines, it keeps its current text, leaves the pilot list (9 rewrites), and joins the control set (11 controls). No replacement pet is drafted: a substitute from another stratum would break the stratum matching, and the success metric is a per-cohort indexation *rate*, which tolerates unequal cohort sizes. The groups recorded in `docs/seo-indexation-baseline.md` must reflect the final lists.
    - **Storage scope:** the update rewrites only the `codex_pets.description` row. The stored `pet.json` asset and the downloadable ZIP keep the author-submitted bytes: they are the original artifact (provenance), while every SEO surface — HTML page, markdown twin, `/api/manifest` — reads the description from the row. Syncing packaged copies is a possible later step, not part of this pilot.
+   - **Sitemap freshness:** pet `lastModified` in `src/app/sitemap.ts` is `updatedAt ?? approvedAt ?? createdAt`, and the description-update script sets `updated_at` on every row it rewrites, so rewritten pages advertise a fresh `lastModified`. The sitemap is served from a TTL cache tagged `SITEMAP_CACHE_TAG`; the data operation runs outside the Next.js runtime and does not call `revalidateTag`, so the new dates self-propagate when the cache expires within its TTL — acceptable on the multi-day recrawl horizon this pilot measures.
+   - **Embeddings rollout step:** immediately after a successful `--apply`, refresh the rewritten pets' search embeddings by running `node scripts/backfill-pet-search-embeddings.mjs --apply --slug <slug>` once per updated slug (the backfill takes a single `--slug` value per run; the update script prints the exact commands after a successful apply). Rationale: hybrid search rejects embeddings whose stored source hash no longer matches the rewritten description, so skipping this step would silently drop the pilot pets from vector search results.
 2. **SSR related-pets links on all approved detail pages** (code). Rationale for shipping globally instead of gating to the 10 pilot pages: related links are deterministic navigation, not new prose; they add no content-quality risk; they directly address discovery ("URL is unknown to Google" for all detail pages) by giving the crawler page-to-page paths; per-slug gating would add an allowlist mechanism with no benefit. The description experiment stays isolated because both pilot and control pages receive related links simultaneously.
 
 ### Path 2 — schema/format extension (separate approval required)
@@ -98,7 +100,9 @@ Inputs: the full approved catalog (slug, displayName, kind, tags, description, a
 
 Rendering: server-rendered "Related pets" section after the main body on `/pets/[slug]`, plain text links: displayName + kind label + one-line description (whitespace collapsed, hard-truncated at 120 characters with an ellipsis). No sprite previews (the 1200×630 og-image per pet is too heavy; bundle is already 996 KB identity). Non-approved pages (pending/rejected) render no section. The markdown twin gets a matching `## Related pets` section fed by the same selector.
 
-Data source: new lightweight repository query selecting only `slug, display_name, kind, tags, description, approved_at, created_at` for `status='approved'` (no metrics/profile joins), cached via `unstable_cache` with 60 s revalidate, mirroring the existing metrics cache pattern on the same page.
+Data source: new lightweight repository query selecting only `slug, display_name, kind, tags_json, description, approved_at, created_at` for `status='approved'` (no metrics/profile joins), cached via `unstable_cache` with 60 s revalidate plus explicit tag-based invalidation (`revalidateTag(RELATED_PETS_CANDIDATES_CACHE_TAG, "max")`) on moderation approve/reject/delete and owner delete, mirroring the existing sitemap-cache pattern.
+
+Inbound-coverage scope: universal inbound discovery is already provided by gallery pagination and `sitemap.xml`, both unchanged. The related-pets section adds cluster-level internal links between similar pets and deliberately does **not** guarantee ≥1 inbound link per approved pet (whether a pet is selected by any other page depends on tag overlap and tie-breaks). Accepted as out of scope for this spec.
 
 ## Pilot and control groups
 
@@ -112,19 +116,21 @@ Control (descriptions untouched; both groups get related links): `cloud-flat-2`,
 
 Selection is deterministic from the production sitemap (approval dates) and `/api/manifest` (owners, kinds) as of 2026-07-30. The control list is disjoint from the pilot and spans the same strata — maintainer-owned, Anonymous, and other-owner pets of both kinds — drawn from the same snapshot; it is stratum-matched, not randomized. Residual confounders (approval-age distribution, pre-existing description quality) are recorded as a limitation: the comparison reads within-cohort verdict movement after recrawl, not absolute rates alone.
 
+One further residual confounder is accepted without mitigation for the pilot: the related-pets section on a control page can render a rewritten pilot one-line description, and vice versa, because both cohorts receive the feature simultaneously. The bias direction is conservative — control pages receiving treatment prose can only shrink the measured pilot-minus-control difference, so this cross-contamination cannot manufacture a false positive.
+
 ## Measurement plan
 
 - Record both groups in `docs/seo-indexation-baseline.md` before rollout.
 - After Google recrawls the groups (newer `lastCrawlTime` than the rollout date per URL), rerun the GSC inspection cohort and compare verdicts pilot vs control. Follow the baseline rerun protocol: no attribution when several releases share a crawl window; missing evidence recorded as `unavailable`, never as zero.
 - Manual "Request indexing" in the GSC UI is a separately confirmed user action, not part of the automated protocol. If performed, it must cover **both cohorts equally** (all pilot *and* control URLs, same day, dates recorded): requesting only pilot URLs would add a recrawl stimulus the control never gets and destroy attribution.
-- Success signal: pilot pages move from "URL is unknown to Google" / "Crawled — currently not indexed" toward indexed at a visibly higher rate than control pages after recrawl.
+- Success metric (fixed decision rule): the primary metric is the share of cohort URLs whose GSC URL Inspection verdict is "indexed", measured at T+14 and T+28 days after rollout. Success = pilot indexed rate ≥ control indexed rate + 20 percentage points at T+28; T+14 is an early read, not a decision point. URLs whose inspection is unavailable are recorded as `unknown` and excluded from both cohort denominators. Unequal cohort sizes (9 vs 11 in the owner-denial branch) are acceptable because the metric is a rate, not a count.
 
 ## Test plan (fail-before / pass-after)
 
 - Related-pets selector (pure function): shared-tags-first ordering on normalized unique tag sets, kind fallback, approvedAt/createdAt tie-break, stable slug ordering, self-exclusion, ≤4 results, no duplicates, approved-only.
 - Detail page SSR: section present in raw HTML for approved pets; absent for pending/rejected; ≤4 links; current slug never listed; one-line description truncated at 120 characters.
 - Repository: mock-data branch of the new lightweight query.
-- Markdown twin: `## Related pets` section present for approved pets.
+- Markdown twin: `## Related pets` section present for approved pets; hostile related pet — related displayName/description containing markdown metacharacters (`[]()*_`) and newlines — renders escaped in the `.md` output, pinning the existing escaping behavior.
 - Unchanged contracts: canonical, robots, metadata composition, JSON-LD shape, non-approved `noindex` behavior.
 
 ## Rollback

@@ -5,6 +5,11 @@ export type DescriptionUpdate = {
   description: string;
 };
 
+export type CurrentPetDescription = {
+  description: string;
+  status: string;
+};
+
 export function parseUpdateArgs(argv: string[]): {
   file: string;
   apply: boolean;
@@ -14,5 +19,7 @@ export function readDescriptionUpdates(filePath: string): DescriptionUpdate[];
 
 export function assertAllSlugsFound(
   updates: DescriptionUpdate[],
-  currentDescriptions: Map<string, string>,
+  currentPets: Map<string, CurrentPetDescription>,
 ): void;
+
+export function buildEmbeddingBackfillCommands(slugs: string[]): string[];

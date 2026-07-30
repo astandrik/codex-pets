@@ -116,7 +116,9 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
   );
 
   const petEntries: MetadataRoute.Sitemap = pets.map((pet) => {
-    const lastModified = toIsoDateTime(pet.approvedAt ?? pet.createdAt);
+    const lastModified = toIsoDateTime(
+      pet.updatedAt ?? pet.approvedAt ?? pet.createdAt,
+    );
 
     return {
       url: toPublicUrl(`/pets/${pet.slug}`),

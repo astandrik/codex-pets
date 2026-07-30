@@ -77,15 +77,36 @@ export function readDescriptionUpdates(filePath) {
     .sort((left, right) => left.slug.localeCompare(right.slug));
 }
 
-export function assertAllSlugsFound(updates, currentDescriptions) {
+export function assertAllSlugsFound(updates, currentPets) {
   const missing = updates
     .map((update) => update.slug)
-    .filter((slug) => !currentDescriptions.has(slug));
+    .filter((slug) => !currentPets.has(slug));
   if (missing.length > 0) {
     throw new Error(
       `Refusing the whole batch; unknown slug(s) in the pets table: ${missing.join(", ")}.`,
     );
   }
+
+  const notApproved = updates
+    .map((update) => update.slug)
+    .map((slug) => ({ slug, status: currentPets.get(slug)?.status ?? "" }))
+    .filter((entry) => entry.status !== "approved");
+  if (notApproved.length > 0) {
+    const details = notApproved
+      .map((entry) => `${entry.slug} (status: ${entry.status})`)
+      .join(", ");
+    throw new Error(
+      `Refusing the whole batch; slug(s) without approved status: ${details}.`,
+    );
+  }
+}
+
+export function buildEmbeddingBackfillCommands(slugs) {
+  // The backfill script accepts a single --slug value per invocation.
+  return slugs.map(
+    (slug) =>
+      `node scripts/backfill-pet-search-embeddings.mjs --apply --slug ${slug}`,
+  );
 }
 
 function validateDescription(description) {

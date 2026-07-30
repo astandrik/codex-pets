@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { softDeletePetById } from "@/lib/pets/repository";
+import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 export const runtime = "nodejs";
@@ -28,6 +29,7 @@ export async function POST(
   }
 
   revalidateSitemapCache();
+  revalidateRelatedPetCandidatesCache();
 
   return NextResponse.json({ ok: true });
 }

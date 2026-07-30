@@ -13,9 +13,14 @@ vi.mock("@/lib/sitemap-cache", () => ({
   revalidateSitemapCache: vi.fn(),
 }));
 
+vi.mock("@/lib/pets/related-pets-server", () => ({
+  revalidateRelatedPetCandidatesCache: vi.fn(),
+}));
+
 import { POST } from "@/app/api/admin/submissions/[id]/delete/route";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { softDeletePetById } from "@/lib/pets/repository";
+import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 describe("POST /api/admin/submissions/[id]/delete", () => {
@@ -38,6 +43,7 @@ describe("POST /api/admin/submissions/[id]/delete", () => {
 
     expect(response.status).toBe(403);
     expect(revalidateSitemapCache).not.toHaveBeenCalled();
+    expect(revalidateRelatedPetCandidatesCache).not.toHaveBeenCalled();
   });
 
   it("allows admins to delete any pet", async () => {
@@ -61,6 +67,7 @@ describe("POST /api/admin/submissions/[id]/delete", () => {
       actorRole: "admin",
     });
     expect(revalidateSitemapCache).toHaveBeenCalledTimes(1);
+    expect(revalidateRelatedPetCandidatesCache).toHaveBeenCalledTimes(1);
   });
 
   it("does not revalidate sitemap cache when the pet is missing", async () => {
@@ -79,5 +86,6 @@ describe("POST /api/admin/submissions/[id]/delete", () => {
 
     expect(response.status).toBe(404);
     expect(revalidateSitemapCache).not.toHaveBeenCalled();
+    expect(revalidateRelatedPetCandidatesCache).not.toHaveBeenCalled();
   });
 });

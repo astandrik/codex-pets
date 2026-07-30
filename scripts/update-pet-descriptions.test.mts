@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 const {
   MAX_DESCRIPTION_LENGTH,
   assertAllSlugsFound,
+  buildEmbeddingBackfillCommands,
   parseUpdateArgs,
   readDescriptionUpdates,
 } = await import("./lib/pet-description-update.mjs");
@@ -150,11 +151,11 @@ describe("readDescriptionUpdates", () => {
 });
 
 describe("assertAllSlugsFound", () => {
-  it("passes when every slug exists in the current map", () => {
+  it("passes when every slug exists in the current map and is approved", () => {
     expect(() =>
       assertAllSlugsFound(
         [{ slug: "kesha", description: "next" }],
-        new Map([["kesha", "current"]]),
+        new Map([["kesha", { description: "current", status: "approved" }]]),
       ),
     ).not.toThrow();
   });
@@ -166,8 +167,32 @@ describe("assertAllSlugsFound", () => {
           { slug: "kesha", description: "next" },
           { slug: "ghost", description: "next" },
         ],
-        new Map([["kesha", "current"]]),
+        new Map([["kesha", { description: "current", status: "approved" }]]),
       ),
     ).toThrow(/ghost/);
+  });
+
+  it("refuses the whole batch when any slug is not approved", () => {
+    expect(() =>
+      assertAllSlugsFound(
+        [
+          { slug: "kesha", description: "next" },
+          { slug: "wild-boar", description: "next" },
+        ],
+        new Map([
+          ["kesha", { description: "current", status: "approved" }],
+          ["wild-boar", { description: "current", status: "deleted" }],
+        ]),
+      ),
+    ).toThrow(/wild-boar \(status: deleted\)/);
+  });
+});
+
+describe("buildEmbeddingBackfillCommands", () => {
+  it("prints one apply command per updated slug", () => {
+    expect(buildEmbeddingBackfillCommands(["kesha", "wild-boar"])).toEqual([
+      "node scripts/backfill-pet-search-embeddings.mjs --apply --slug kesha",
+      "node scripts/backfill-pet-search-embeddings.mjs --apply --slug wild-boar",
+    ]);
   });
 });

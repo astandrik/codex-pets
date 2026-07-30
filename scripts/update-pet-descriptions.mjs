@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 
 import {
   assertAllSlugsFound,
+  buildEmbeddingBackfillCommands,
   parseUpdateArgs,
   readDescriptionUpdates,
 } from "./lib/pet-description-update.mjs";
@@ -53,21 +54,29 @@ export async function main(argv = process.argv.slice(2)) {
       throw new Error(`YDB driver is not ready for ${endpoint} ${database}.`);
     }
 
-    const currentDescriptions = await listCurrentDescriptions(
+    const currentPets = await listCurrentDescriptions(
       driver,
       updates.map((update) => update.slug),
     );
-    assertAllSlugsFound(updates, currentDescriptions);
+    assertAllSlugsFound(updates, currentPets);
 
-    const backupPath = writeBackup(currentDescriptions);
+    const backupPath = writeBackup(currentPets);
     console.log(`backup of previous descriptions: ${backupPath}`);
 
     const now = new Date().toISOString();
+    await applyDescriptionUpdates(driver, updates, now);
     for (const update of updates) {
-      await updateDescription(driver, update, now);
       console.log(`applied ${update.slug}`);
     }
     console.log(`applied ${updates.length} description update(s).`);
+    console.log(
+      "refresh the search embeddings for the rewritten description(s):",
+    );
+    for (const command of buildEmbeddingBackfillCommands(
+      updates.map((update) => update.slug),
+    )) {
+      console.log(command);
+    }
   } finally {
     await driver.destroy();
   }
@@ -131,7 +140,7 @@ async function listCurrentDescriptions(driver, slugs) {
     `
 ${declarations}
 
-SELECT slug, description
+SELECT slug, description, status
 FROM ${PETS_TABLE}
 WHERE ${predicate};
     `,
@@ -139,28 +148,43 @@ WHERE ${predicate};
   );
 
   return new Map(
-    rowsFromResult(result).map((row) => [textAt(row, 0), textAt(row, 1)]),
+    rowsFromResult(result).map((row) => [
+      textAt(row, 0),
+      { description: textAt(row, 1), status: textAt(row, 2) },
+    ]),
   );
 }
 
-function writeBackup(currentDescriptions) {
+function writeBackup(currentPets) {
   mkdirSync(BACKUP_DIR, { recursive: true });
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const backupPath = new URL(
     `pet-descriptions-backup-${timestamp}.json`,
     BACKUP_DIR,
   );
+  const previousDescriptions = Object.fromEntries(
+    Array.from(currentPets, ([slug, pet]) => [slug, pet.description]),
+  );
   writeFileSync(
     backupPath,
-    `${JSON.stringify(Object.fromEntries(currentDescriptions), null, 2)}\n`,
+    `${JSON.stringify(previousDescriptions, null, 2)}\n`,
   );
   return backupPath.pathname;
 }
 
-async function updateDescription(driver, update, now) {
-  await execute(
-    driver,
-    `
+async function applyDescriptionUpdates(driver, updates, now) {
+  await driver.tableClient.withSessionRetry(
+    async (session) => {
+      const tx = await session.beginTransaction({ serializableReadWrite: {} });
+      if (!tx.id) {
+        throw new Error("Unable to start YDB transaction.");
+      }
+      const txControl = { txId: tx.id };
+
+      try {
+        for (const update of updates) {
+          await session.executeQuery(
+            `
 DECLARE $slug AS Utf8;
 DECLARE $description AS Utf8;
 DECLARE $updated_at AS Utf8;
@@ -169,12 +193,27 @@ UPDATE ${PETS_TABLE}
 SET description = $description,
     updated_at = $updated_at
 WHERE slug = $slug;
-    `,
-    {
-      $slug: TypedValues.utf8(update.slug),
-      $description: TypedValues.utf8(update.description),
-      $updated_at: TypedValues.utf8(now),
+            `,
+            {
+              $slug: TypedValues.utf8(update.slug),
+              $description: TypedValues.utf8(update.description),
+              $updated_at: TypedValues.utf8(now),
+            },
+            txControl,
+          );
+        }
+        await session.commitTransaction(txControl);
+      } catch (error) {
+        try {
+          await session.rollbackTransaction(txControl);
+        } catch {
+          // The transaction may already be aborted or committed by YDB.
+        }
+        throw error;
+      }
     },
+    10_000,
+    3,
   );
 }
 

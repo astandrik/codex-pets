@@ -1,6 +1,9 @@
 import { markdownResponse } from "@/lib/agent-markdown";
 import { buildPetMarkdown } from "@/lib/pets/markdown";
-import { selectRelatedPets } from "@/lib/pets/related-pets";
+import {
+  selectRelatedPets,
+  type RelatedPetCandidate,
+} from "@/lib/pets/related-pets";
 import { getRelatedPetCandidates } from "@/lib/pets/related-pets-server";
 import { getApprovedPetBySlug } from "@/lib/pets/repository";
 
@@ -23,10 +26,27 @@ export async function GET(
     });
   }
 
-  const relatedPets = selectRelatedPets(await getRelatedPetCandidates(), pet);
+  const relatedPets = selectRelatedPets(
+    await getRelatedPetCandidatesBestEffort(),
+    pet,
+  );
   const response = markdownResponse(buildPetMarkdown(pet, relatedPets), {
     canonicalPath: `/pets/${pet.slug}`,
   });
   response.headers.set("Cache-Control", "public, max-age=60, s-maxage=300");
   return response;
+}
+
+async function getRelatedPetCandidatesBestEffort(): Promise<
+  RelatedPetCandidate[]
+> {
+  try {
+    return await getRelatedPetCandidates();
+  } catch {
+    console.warn("[codex-pets][related-pets]", {
+      operation: "list-candidates",
+      status: "failed",
+    });
+    return [];
+  }
 }
