@@ -33,7 +33,9 @@ export async function GET(
   const response = markdownResponse(buildPetMarkdown(pet, relatedPets), {
     canonicalPath: `/pets/${pet.slug}`,
   });
-  response.headers.set("Cache-Control", "public, max-age=60, s-maxage=300");
+  // No s-maxage: the payload embeds related pets, which can disappear from
+  // the catalog on moderation; shared caches must not serve them stale.
+  response.headers.set("Cache-Control", "public, max-age=60");
   return response;
 }
 

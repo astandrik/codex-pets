@@ -274,6 +274,14 @@ describe("formatRelatedPetDescription", () => {
     expect(formatted).toBe(`${"x".repeat(118)}…`);
   });
 
+  it("does not split a surrogate pair at the truncation boundary", () => {
+    const formatted = formatRelatedPetDescription(
+      `${"a".repeat(118)}😀 tail`,
+    );
+
+    expect(formatted).toBe(`${"a".repeat(118)}😀…`);
+  });
+
   it("returns an empty string for empty input", () => {
     expect(formatRelatedPetDescription("")).toBe("");
   });

@@ -15,7 +15,11 @@ export const RELATED_PET_DESCRIPTION_MAX_LENGTH = 120;
 export function formatRelatedPetDescription(description: string): string {
   const line = description.replace(/\s+/g, " ").trim();
   if (line.length <= RELATED_PET_DESCRIPTION_MAX_LENGTH) return line;
-  return `${line.slice(0, RELATED_PET_DESCRIPTION_MAX_LENGTH - 1).trimEnd()}…`;
+  return `${truncateByCodePoints(line, RELATED_PET_DESCRIPTION_MAX_LENGTH - 1).trimEnd()}…`;
+}
+
+function truncateByCodePoints(text: string, maxCodePoints: number): string {
+  return Array.from(text).slice(0, maxCodePoints).join("");
 }
 
 export function selectRelatedPets(
