@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const repositoryMocks = vi.hoisted(() => ({
   getApprovedPetBySlug: vi.fn(),
+  listRelatedPetCandidates: vi.fn(),
 }));
 
-vi.mock("@/lib/pets/repository", () => ({
-  getApprovedPetBySlug: repositoryMocks.getApprovedPetBySlug,
+vi.mock("next/cache", () => ({
+  unstable_cache: (callback: unknown) => callback,
 }));
+vi.mock("@/lib/pets/repository", () => repositoryMocks);
 
 const approvedPet = {
   id: "pet_kuroa",
@@ -36,6 +38,7 @@ describe("GET /pets/[slug]/markdown", () => {
     vi.clearAllMocks();
     vi.resetModules();
     vi.unstubAllEnvs();
+    repositoryMocks.listRelatedPetCandidates.mockResolvedValue([]);
   });
 
   it("returns approved pet markdown with install and share links", async () => {
@@ -66,6 +69,61 @@ describe("GET /pets/[slug]/markdown", () => {
     expect(body).toContain("https://pets.example/api/pets/kuroa/share");
     expect(body).toContain("https://pets.example/card/kuroa.gif");
     expect(body).not.toContain("private@example.com");
+    expect(body).not.toContain("## Related pets");
+  });
+
+  it("appends a related pets section fed by the same cached candidates", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    repositoryMocks.getApprovedPetBySlug.mockResolvedValueOnce(approvedPet);
+    repositoryMocks.listRelatedPetCandidates.mockResolvedValueOnce([
+      {
+        slug: "kuroa",
+        displayName: "Kuroa",
+        kind: "creature",
+        tags: ["anime", "chibi"],
+        description: "A chibi anime Codex pet pack.",
+        approvedAt: "2026-05-02T00:00:00.000Z",
+        createdAt: "2026-05-01T00:00:00.000Z",
+      },
+      {
+        slug: "orbit-otter",
+        displayName: "Orbit Otter",
+        kind: "creature",
+        tags: ["chibi"],
+        description: "A compact space helper.",
+        approvedAt: "2026-05-04T00:00:00.000Z",
+        createdAt: "2026-05-02T00:00:00.000Z",
+      },
+      {
+        slug: "terminal-cube",
+        displayName: "Terminal Cube",
+        kind: "object",
+        tags: ["anime", "chibi"],
+        description: "A cube that\nlives in your terminal.",
+        approvedAt: "2026-05-06T10:00:00.000Z",
+        createdAt: "2026-05-05T10:00:00.000Z",
+      },
+    ]);
+
+    const { GET } = await import("@/app/pets/[slug]/markdown/route");
+    const response = await GET(new Request("https://pets.example/pets/kuroa/markdown"), {
+      params: Promise.resolve({ slug: "kuroa" }),
+    });
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    const relatedSection = body.slice(body.indexOf("## Related pets"));
+    expect(relatedSection).toContain("## Related pets");
+    expect(relatedSection.indexOf("/pets/terminal-cube")).toBeLessThan(
+      relatedSection.indexOf("/pets/orbit-otter"),
+    );
+    expect(relatedSection).toContain(
+      "- [Terminal Cube](https://pets.example/pets/terminal-cube) — object — A cube that lives in your terminal.",
+    );
+    expect(relatedSection).toContain(
+      "- [Orbit Otter](https://pets.example/pets/orbit-otter) — creature — A compact space helper.",
+    );
+    expect(relatedSection).not.toContain("/pets/kuroa");
   });
 
   it("serializes hostile pet metadata as text instead of markdown structure", async () => {

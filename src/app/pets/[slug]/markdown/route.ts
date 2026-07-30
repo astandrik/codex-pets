@@ -1,5 +1,7 @@
 import { markdownResponse } from "@/lib/agent-markdown";
 import { buildPetMarkdown } from "@/lib/pets/markdown";
+import { selectRelatedPets } from "@/lib/pets/related-pets";
+import { getRelatedPetCandidates } from "@/lib/pets/related-pets-server";
 import { getApprovedPetBySlug } from "@/lib/pets/repository";
 
 export const runtime = "nodejs";
@@ -21,7 +23,8 @@ export async function GET(
     });
   }
 
-  const response = markdownResponse(buildPetMarkdown(pet), {
+  const relatedPets = selectRelatedPets(await getRelatedPetCandidates(), pet);
+  const response = markdownResponse(buildPetMarkdown(pet, relatedPets), {
     canonicalPath: `/pets/${pet.slug}`,
   });
   response.headers.set("Cache-Control", "public, max-age=60, s-maxage=300");

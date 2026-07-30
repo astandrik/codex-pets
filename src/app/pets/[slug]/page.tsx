@@ -30,12 +30,15 @@ import { InstallCommandButton } from "@/components/InstallCommand/InstallCommand
 import { PetMetaList } from "@/components/PetDetails/PetMetaList";
 import { PetLikeButton } from "@/components/PetLikeButton/PetLikeButton";
 import { PetSharePanel } from "@/components/PetSharePanel/PetSharePanel";
+import { RelatedPets } from "@/components/RelatedPets/RelatedPets";
 import { StatePreview } from "@/components/StatePreview/StatePreview";
 import { CurrentPetWebMCPTool } from "@/components/WebMCP/CurrentPetWebMCPTool";
 import { listPublicUserProfilesByIds } from "@/lib/auth/repository";
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import { serializeJsonLd } from "@/lib/json-ld";
 import { createAgentPet } from "@/lib/pets/agent-dto";
+import { selectRelatedPets } from "@/lib/pets/related-pets";
+import { getRelatedPetCandidates } from "@/lib/pets/related-pets-server";
 import { getPetBySlug, getPetMetrics } from "@/lib/pets/repository";
 import type { ApprovalStatus } from "@/lib/pets/types";
 import {
@@ -148,6 +151,10 @@ export default async function PetPage({ params }: PetPageProps) {
   if (pet.status === "deleted") notFound();
 
   const metrics = await getCachedPetMetrics(slug);
+  const relatedPets =
+    pet.status === "approved"
+      ? selectRelatedPets(await getRelatedPetCandidates(), pet)
+      : [];
   const ownerProfile = pet.ownerId
     ? (await listPublicUserProfilesByIds([pet.ownerId])).get(pet.ownerId)
     : undefined;
@@ -335,6 +342,8 @@ export default async function PetPage({ params }: PetPageProps) {
           ) : null}
         </div>
       </section>
+
+      {relatedPets.length > 0 ? <RelatedPets pets={relatedPets} /> : null}
 
       {pet.status !== "approved" ? (
         <Text variant="caption-2" color="secondary">

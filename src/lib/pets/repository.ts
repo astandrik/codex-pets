@@ -12,6 +12,7 @@ import {
 import type { PublicUserReference } from "@/lib/auth/repository";
 import type { ApprovalStatus, PetKind, PublicPet } from "@/lib/pets/types";
 import { withBasePath } from "@/lib/base-path";
+import type { RelatedPetCandidate } from "@/lib/pets/related-pets";
 import { slugify, type PetJson } from "@/lib/pets/validation";
 import { statusAfterModeration } from "@/lib/pets/moderation";
 import {
@@ -156,6 +157,50 @@ ORDER BY created_at DESC, slug ASC;
     slug: textAt(row, 0),
     createdAt: textAt(row, 1),
     approvedAt: textAt(row, 2) || null,
+  }));
+}
+
+export async function listRelatedPetCandidates(): Promise<
+  RelatedPetCandidate[]
+> {
+  if (isMockPetsDataSource()) {
+    return listMockPetRecords()
+      .filter((pet) => pet.status === "approved")
+      .map(
+        ({ slug, displayName, kind, tags, description, approvedAt, createdAt }) => ({
+          slug,
+          displayName,
+          kind,
+          tags,
+          description,
+          approvedAt,
+          createdAt,
+        }),
+      );
+  }
+
+  if (!isYdbConfigured()) return [];
+
+  const result = await withSession((session) =>
+    session.executeQuery(
+      `
+DECLARE $status AS Utf8;
+SELECT slug, display_name, kind, tags_json, description, approved_at, created_at
+FROM ${TABLES.pets}
+WHERE status = $status;
+      `,
+      { $status: TypedValues.utf8("approved") },
+    ),
+  );
+
+  return rowsFromResult(result).map((row) => ({
+    slug: textAt(row, 0),
+    displayName: textAt(row, 1),
+    kind: parseKind(textAt(row, 2)),
+    tags: parseTags(textAt(row, 3)),
+    description: textAt(row, 4),
+    approvedAt: textAt(row, 5) || null,
+    createdAt: textAt(row, 6),
   }));
 }
 
