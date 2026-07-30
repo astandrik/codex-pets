@@ -24,6 +24,7 @@ describe("Codex Pets vs VS Code Pets guide content", () => {
       expect(example.runDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(example.responseExcerpt).toMatch(/^\{/);
       expect(example.responseExcerpt.length).toBeGreaterThan(20);
+      expect(() => JSON.parse(example.responseExcerpt)).not.toThrow();
     }
     const commands = VS_VSCODE_PETS_QUERY_EXAMPLES.map(
       (example) => example.command,

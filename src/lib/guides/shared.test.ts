@@ -11,29 +11,44 @@ import {
 
 describe("guide shared helpers", () => {
   it("selects example pets by popularity, recency, then name", () => {
-    const pets = selectGuideExamplePets([
-      pet({
-        slug: "newer",
-        displayName: "Newer",
-        approvedAt: "2026-05-08T00:00:00.000Z",
-        likeCount: 1,
-      }),
-      pet({
-        slug: "popular",
-        displayName: "Popular",
-        approvedAt: "2026-05-01T00:00:00.000Z",
-        downloadCount: 4,
-      }),
-      pet({
-        slug: "alpha",
-        displayName: "Alpha",
-        approvedAt: "2026-05-08T00:00:00.000Z",
-        likeCount: 1,
-      }),
-      pet({ slug: "last", displayName: "Last" }),
-    ]);
+    const pets = selectGuideExamplePets(
+      [
+        pet({
+          slug: "beta",
+          displayName: "Beta",
+          approvedAt: "2026-05-08T00:00:00.000Z",
+          likeCount: 1,
+        }),
+        pet({
+          slug: "popular",
+          displayName: "Popular",
+          approvedAt: "2026-05-01T00:00:00.000Z",
+          downloadCount: 4,
+        }),
+        pet({
+          slug: "alpha",
+          displayName: "Alpha",
+          approvedAt: "2026-05-08T00:00:00.000Z",
+          likeCount: 1,
+        }),
+        pet({
+          slug: "zeta",
+          displayName: "Zeta",
+          approvedAt: "2026-05-09T00:00:00.000Z",
+          likeCount: 1,
+        }),
+        pet({ slug: "last", displayName: "Last" }),
+      ],
+      5,
+    );
 
-    expect(pets.map((item) => item.slug)).toEqual(["popular", "alpha", "newer"]);
+    expect(pets.map((item) => item.slug)).toEqual([
+      "popular",
+      "zeta",
+      "alpha",
+      "beta",
+      "last",
+    ]);
     expect(pets[0].installCommand).toBe(
       "npx @astandrik/codex-pets install popular",
     );

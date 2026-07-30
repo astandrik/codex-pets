@@ -24,6 +24,7 @@ describe("Codex Pets MCP integration guide content", () => {
       expect(example.runDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(example.responseExcerpt).toMatch(/^\{/);
       expect(example.responseExcerpt.length).toBeGreaterThan(20);
+      expect(() => JSON.parse(example.responseExcerpt)).not.toThrow();
     }
     const commands = MCP_GUIDE_QUERY_EXAMPLES.map(
       (example) => example.command,

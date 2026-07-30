@@ -36,10 +36,9 @@ export const VS_VSCODE_PETS_QUERY_EXAMPLES: GuideQueryExample[] = [
       "displayName": "Kesha",
       "petJsonUrl": "/api/assets/asset_c4f97b4b4981/pet.json",
       "spritesheetUrl": "/api/assets/asset_c4f97b4b4981/spritesheet.webp",
-      "zipUrl": "/api/assets/asset_c4f97b4b4981/pet.zip",
-      …
+      "zipUrl": "/api/assets/asset_c4f97b4b4981/pet.zip"
     },
-    … 145 more approved pets …
+    "… 145 more approved pets …"
   ]
 }`,
     runDate: METHODOLOGY_RUN_DATE,
@@ -59,9 +58,15 @@ export const VS_VSCODE_PETS_QUERY_EXAMPLES: GuideQueryExample[] = [
         "addCommand": "codex mcp add codexPets --url ${toPublicUrl("/mcp")}"
       }
     },
-    "cursor": { "command": "npx @astandrik/codex-pets install anime-girl-3", … },
-    "claudeCode": { … },
-    "manual": { "steps": [ … ] }
+    "cursor": {
+      "command": "npx @astandrik/codex-pets install anime-girl-3",
+      "note": "…"
+    },
+    "claudeCode": {
+      "command": "npx @astandrik/codex-pets install anime-girl-3",
+      "note": "…"
+    },
+    "manual": { "steps": ["…"] }
   }
 }`,
     runDate: METHODOLOGY_RUN_DATE,
@@ -78,11 +83,10 @@ export const VS_VSCODE_PETS_QUERY_EXAMPLES: GuideQueryExample[] = [
       "slug": "pink-catgirl",
       "displayName": "Pink Catgirl",
       "tags": ["anime", "catgirl", "pink", "chibi"],
-      "downloadCount": 47,
-      …
+      "downloadCount": 47
     },
-    { "slug": "neko-samurai-5", "displayName": "Neko Samurai", … },
-    { "slug": "carmine-2", "displayName": "Carmine", … }
+    { "slug": "neko-samurai-5", "displayName": "Neko Samurai" },
+    { "slug": "carmine-2", "displayName": "Carmine" }
   ]
 }`,
     runDate: METHODOLOGY_RUN_DATE,
@@ -93,11 +97,11 @@ export const VS_VSCODE_PETS_QUERY_EXAMPLES: GuideQueryExample[] = [
     command: `curl -s ${toPublicUrl("/api/pets/kesha/share")}`,
     resultSummary: `Returned ready-to-paste markdown badge, animated markdown card, iframe embed, and an install prompt for agent chats.`,
     responseExcerpt: `{
-  "markdownBadge": "[![Codex pet: Kesha](${toPublicUrl("/badge/kesha.svg")})](…)",
-  "markdownCard": "[![Kesha Codex pet](${toPublicUrl("/card/kesha.gif?mode=sprite&scale=2&state=idle")})](…)",
-  "iframe": "<iframe title=\\"Codex pet: Kesha\\" src=\\"${toPublicUrl("/embed/kesha")}?…\\">…",
-  "installPrompt": "Install the Kesha Codex pet from ${toPublicUrl("/pets/kesha")}",
-  …
+  "markdownBadge": "[![Codex pet: Kesha](${toPublicUrl("/badge/kesha.svg")})](${toPublicUrl("/pets/kesha")})",
+  "markdownCard": "[![Kesha Codex pet](${toPublicUrl("/card/kesha.gif?mode=sprite&scale=2&state=idle")})](${toPublicUrl("/pets/kesha")})",
+  "iframe": "<iframe title=\\"Codex pet: Kesha\\" src=\\"${toPublicUrl("/embed/kesha")}?mode=sprite&scale=2&state=idle\\" width=\\"360\\" height=\\"420\\" loading=\\"lazy\\"></iframe>",
+  "installCommand": "npx @astandrik/codex-pets install kesha",
+  "installPrompt": "Install the Kesha Codex pet from ${toPublicUrl("/pets/kesha")}"
 }`,
     runDate: METHODOLOGY_RUN_DATE,
   },
@@ -107,7 +111,7 @@ export const VS_VSCODE_PETS_DECISION_ROWS: GuideDecisionRow[] = [
   {
     surface: "Codex Pets pet packs",
     useWhen:
-      "Your AI coding agent runs on your machine (Codex, Claude Code, Cursor) and can load a local pet.json plus spritesheet pack.",
+      "Your agent is Codex. The CLI installs packs into the Codex home directory; other hosts need the manual pet.json plus spritesheet steps.",
     example: "npx @astandrik/codex-pets install kesha",
   },
   {

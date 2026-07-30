@@ -39,10 +39,9 @@ export const MCP_GUIDE_QUERY_EXAMPLES: GuideQueryExample[] = [
       "slug": "kesha",
       "displayName": "Kesha",
       "description": "A cheerful tan-and-white Pembroke Welsh corgi …",
-      "installCommand": "npx @astandrik/codex-pets install kesha",
-      …
+      "installCommand": "npx @astandrik/codex-pets install kesha"
     },
-    … 145 more approved pets …
+    "… 145 more approved pets …"
   ]
 }`,
     runDate: METHODOLOGY_RUN_DATE,
@@ -60,10 +59,9 @@ export const MCP_GUIDE_QUERY_EXAMPLES: GuideQueryExample[] = [
       "displayName": "Anime Girl",
       "description": "A slightly chibi anime girl pet …",
       "tags": ["anime", "chibi", "sweater-dress"],
-      "downloadCount": 53,
-      …
+      "downloadCount": 53
     },
-    … 2 more matches …
+    "… 2 more matches …"
   ]
 }`,
     runDate: METHODOLOGY_RUN_DATE,
@@ -83,7 +81,15 @@ export const MCP_GUIDE_QUERY_EXAMPLES: GuideQueryExample[] = [
         "addCommand": "codex mcp add codexPets --url ${toPublicUrl("/mcp")}"
       }
     },
-    …
+    "cursor": {
+      "command": "npx @astandrik/codex-pets install anime-girl-3",
+      "note": "…"
+    },
+    "claudeCode": {
+      "command": "npx @astandrik/codex-pets install anime-girl-3",
+      "note": "…"
+    },
+    "manual": { "steps": ["…"] }
   }
 }`,
     runDate: METHODOLOGY_RUN_DATE,

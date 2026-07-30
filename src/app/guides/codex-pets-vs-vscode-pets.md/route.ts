@@ -5,6 +5,7 @@ import {
   buildVsVsCodePetsGuideMarkdown,
   VS_VSCODE_PETS_GUIDE_PATH,
 } from "@/lib/guides/codex-pets-vs-vscode-pets";
+import { loadGuidePets } from "@/lib/guides/load-guide-pets";
 import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 
 export const runtime = "nodejs";
@@ -21,7 +22,7 @@ const getApprovedPetsSnapshot = unstable_cache(
 
 export async function GET(): Promise<Response> {
   const response = markdownResponse(
-    buildVsVsCodePetsGuideMarkdown(await getApprovedPetsSnapshot()),
+    buildVsVsCodePetsGuideMarkdown(await loadGuidePets(getApprovedPetsSnapshot)),
     { canonicalPath: VS_VSCODE_PETS_GUIDE_PATH },
   );
   response.headers.set("Cache-Control", "public, max-age=60, s-maxage=300");

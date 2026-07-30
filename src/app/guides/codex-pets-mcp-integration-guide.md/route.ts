@@ -5,6 +5,7 @@ import {
   buildMcpIntegrationGuideMarkdown,
   MCP_INTEGRATION_GUIDE_PATH,
 } from "@/lib/guides/codex-pets-mcp-integration";
+import { loadGuidePets } from "@/lib/guides/load-guide-pets";
 import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 
 export const runtime = "nodejs";
@@ -21,7 +22,7 @@ const getApprovedPetsSnapshot = unstable_cache(
 
 export async function GET(): Promise<Response> {
   const response = markdownResponse(
-    buildMcpIntegrationGuideMarkdown(await getApprovedPetsSnapshot()),
+    buildMcpIntegrationGuideMarkdown(await loadGuidePets(getApprovedPetsSnapshot)),
     { canonicalPath: MCP_INTEGRATION_GUIDE_PATH },
   );
   response.headers.set("Cache-Control", "public, max-age=60, s-maxage=300");

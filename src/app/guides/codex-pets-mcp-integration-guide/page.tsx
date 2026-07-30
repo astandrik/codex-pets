@@ -22,6 +22,7 @@ import {
   METHODOLOGY_RUN_DATE,
   selectMcpGuideExamplePets,
 } from "@/lib/guides/codex-pets-mcp-integration";
+import { loadGuidePets } from "@/lib/guides/load-guide-pets";
 import {
   formatGuideByline,
   formatGuideDate,
@@ -79,7 +80,9 @@ const getApprovedPetsSnapshot = unstable_cache(
 );
 
 export default async function CodexPetsMcpIntegrationGuidePage() {
-  const examplePets = selectMcpGuideExamplePets(await getApprovedPetsSnapshot());
+  const examplePets = selectMcpGuideExamplePets(
+    await loadGuidePets(getApprovedPetsSnapshot),
+  );
   const jsonLd = getMcpIntegrationGuideJsonLd();
   const byline = formatGuideByline({
     datePublished: MCP_INTEGRATION_GUIDE_DATE_PUBLISHED,

@@ -22,6 +22,7 @@ import {
   VS_VSCODE_PETS_QUERY_EXAMPLES,
   VS_VSCODE_PETS_SOURCES,
 } from "@/lib/guides/codex-pets-vs-vscode-pets";
+import { loadGuidePets } from "@/lib/guides/load-guide-pets";
 import {
   formatGuideByline,
   formatGuideDate,
@@ -78,7 +79,10 @@ const getApprovedPetsSnapshot = unstable_cache(
 );
 
 export default async function CodexPetsVsVsCodePetsGuidePage() {
-  const examplePets = selectGuideExamplePets(await getApprovedPetsSnapshot(), 5);
+  const examplePets = selectGuideExamplePets(
+    await loadGuidePets(getApprovedPetsSnapshot),
+    5,
+  );
   const jsonLd = getVsVsCodePetsGuideJsonLd();
   const byline = formatGuideByline({
     datePublished: VS_VSCODE_PETS_DATE_PUBLISHED,

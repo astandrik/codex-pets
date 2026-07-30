@@ -17,6 +17,7 @@ import {
   buildBestCodexPetGuideSummary,
   getBestCodexPetsGuideJsonLd,
 } from "@/lib/guides/best-codex-pets";
+import { loadGuidePets } from "@/lib/guides/load-guide-pets";
 import { serializeJsonLd } from "@/lib/json-ld";
 import { listApprovedPets } from "@/lib/pets/repository";
 import {
@@ -68,7 +69,7 @@ const getApprovedPetsSnapshot = unstable_cache(
 );
 
 export default async function BestCodexPetsGuidePage() {
-  const pets = await getApprovedPetsSnapshot();
+  const pets = await loadGuidePets(getApprovedPetsSnapshot);
   const sections = buildBestCodexPetGuideSections(pets);
   const summary = buildBestCodexPetGuideSummary(sections);
   const jsonLd = getBestCodexPetsGuideJsonLd(sections);
