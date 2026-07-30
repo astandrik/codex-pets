@@ -1,29 +1,30 @@
+import { unstable_cache } from "next/cache";
+
 import { markdownResponse } from "@/lib/agent-markdown";
-import { toPublicUrl } from "@/lib/base-path";
+import {
+  buildVsOpenPetsGuideMarkdown,
+  OPENPETS_GUIDE_PATH,
+} from "@/lib/guides/codex-pets-vs-openpets";
+import { loadGuidePets } from "@/lib/guides/load-guide-pets";
+import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export function GET(): Response {
-  return markdownResponse(`
-# Codex Pets vs OpenPets
+const getApprovedPetsSnapshot = unstable_cache(
+  async () => listApprovedPetsForSearch(),
+  [
+    "vs-openpets-guide-markdown",
+    process.env.CODEX_PETS_DATA_SOURCE?.trim() || "ydb",
+  ],
+  { revalidate: 60 },
+);
 
-OpenPets is a desktop pet app for AI coding assistants. Codex Pets focuses on a moderated, agent-readable registry of downloadable Codex pet packs with stable package, API, and MCP discovery.
-
-## Primary difference
-
-OpenPets documents a local-first desktop app, MCP server, CLI, and assistant integrations for showing agent status on the user's desktop. Codex Pets is not a desktop status app; it is a public registry and package surface for Codex-compatible pet packs that agents can search, cite, install, and share.
-
-## When to choose Codex Pets
-
-- You need downloadable Codex pet pack assets and stable slugs.
-- You want OpenAPI, llms.txt, markdown, JSON, TOON, and MCP discovery.
-- You need README badge, animated card, iframe, or install snippets.
-- You want a moderated public gallery that agents can cite directly.
-
-## Links
-
-- Gallery: ${toPublicUrl("/")}
-- Agent access: ${toPublicUrl("/agents")}
-- Best Codex pets guide: ${toPublicUrl("/guides/best-codex-pets-for-ai-coding-agents")}
-`, { canonicalPath: "/guides/codex-pets-vs-openpets" });
+export async function GET(): Promise<Response> {
+  const response = markdownResponse(
+    buildVsOpenPetsGuideMarkdown(await loadGuidePets(getApprovedPetsSnapshot)),
+    { canonicalPath: OPENPETS_GUIDE_PATH },
+  );
+  response.headers.set("Cache-Control", "public, max-age=60, s-maxage=300");
+  return response;
 }
