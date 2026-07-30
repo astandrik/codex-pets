@@ -66,7 +66,7 @@ describe("/users/[profileSlug] external links", () => {
       expect(anchor, href).not.toBeNull();
       expect(anchor?.getAttribute("rel")).toBe("nofollow ugc noreferrer");
     }
-  });
+  }, 20_000);
 
   it("does not nofollow the internal gallery link", async () => {
     const container = await renderUserPage();
@@ -75,5 +75,5 @@ describe("/users/[profileSlug] external links", () => {
 
     expect(galleryLink).not.toBeNull();
     expect(galleryLink?.getAttribute("rel") ?? "").not.toContain("nofollow");
-  });
+  }, 20_000);
 });

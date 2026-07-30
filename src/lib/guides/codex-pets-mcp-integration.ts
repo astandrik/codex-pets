@@ -5,11 +5,14 @@ import {
   formatGuideByline,
   formatGuideDate,
   formatMarkdownDecisionTable,
+  selectGuideExamplePets,
   type GuideDecisionRow,
   type GuideQueryExample,
 } from "@/lib/guides/shared";
-import { buildPetInstallCommand } from "@/lib/pets/install-command";
 import type { PublicPet } from "@/lib/pets/types";
+
+export type { GuideExamplePet as McpGuideExamplePet } from "@/lib/guides/shared";
+export { selectGuideExamplePets as selectMcpGuideExamplePets } from "@/lib/guides/shared";
 
 export const MCP_INTEGRATION_GUIDE_PATH =
   "/guides/codex-pets-mcp-integration-guide";
@@ -108,30 +111,6 @@ export const MCP_GUIDE_DECISION_ROWS: GuideDecisionRow[] = [
   },
 ];
 
-export type McpGuideExamplePet = {
-  slug: string;
-  displayName: string;
-  description: string;
-  pageUrl: string;
-  installCommand: string;
-};
-
-export function selectMcpGuideExamplePets(
-  pets: PublicPet[],
-  limit = 3,
-): McpGuideExamplePet[] {
-  return pets
-    .toSorted(compareGuidePets)
-    .slice(0, limit)
-    .map((pet) => ({
-      slug: pet.slug,
-      displayName: pet.displayName,
-      description: pet.description,
-      pageUrl: toPublicUrl(`/pets/${encodeURIComponent(pet.slug)}`),
-      installCommand: buildPetInstallCommand(pet.slug),
-    }));
-}
-
 export function getMcpIntegrationGuideJsonLd(): Record<string, unknown> {
   return buildGuideArticleJsonLd({
     path: MCP_INTEGRATION_GUIDE_PATH,
@@ -144,7 +123,7 @@ export function getMcpIntegrationGuideJsonLd(): Record<string, unknown> {
 }
 
 export function buildMcpIntegrationGuideMarkdown(pets: PublicPet[]): string {
-  const examplePets = selectMcpGuideExamplePets(pets);
+  const examplePets = selectGuideExamplePets(pets);
   const exampleBlocks = MCP_GUIDE_QUERY_EXAMPLES.map((example) =>
     [
       `### ${example.title}`,
@@ -217,22 +196,4 @@ export function buildMcpIntegrationGuideMarkdown(pets: PublicPet[]): string {
     `- Agent access: ${toPublicUrl("/agents")}`,
     `- Best Codex pets guide: ${toPublicUrl("/guides/best-codex-pets-for-ai-coding-agents")}`,
   ].join("\n");
-}
-
-function compareGuidePets(left: PublicPet, right: PublicPet): number {
-  return (
-    popularityScore(right) - popularityScore(left) ||
-    dateScore(right.approvedAt ?? right.createdAt) -
-      dateScore(left.approvedAt ?? left.createdAt) ||
-    left.displayName.localeCompare(right.displayName)
-  );
-}
-
-function popularityScore(pet: PublicPet): number {
-  return pet.likeCount + pet.downloadCount + pet.installCount;
-}
-
-function dateScore(value: string): number {
-  const time = new Date(value).getTime();
-  return Number.isFinite(time) ? time : 0;
 }

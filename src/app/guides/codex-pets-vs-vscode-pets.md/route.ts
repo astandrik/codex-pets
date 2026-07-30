@@ -1,29 +1,29 @@
+import { unstable_cache } from "next/cache";
+
 import { markdownResponse } from "@/lib/agent-markdown";
-import { toPublicUrl } from "@/lib/base-path";
+import {
+  buildVsVsCodePetsGuideMarkdown,
+  VS_VSCODE_PETS_GUIDE_PATH,
+} from "@/lib/guides/codex-pets-vs-vscode-pets";
+import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export function GET(): Response {
-  return markdownResponse(`
-# Codex Pets vs VS Code Pets
+const getApprovedPetsSnapshot = unstable_cache(
+  async () => listApprovedPetsForSearch(),
+  [
+    "vs-vscode-pets-guide-markdown",
+    process.env.CODEX_PETS_DATA_SOURCE?.trim() || "ydb",
+  ],
+  { revalidate: 60 },
+);
 
-VS Code Pets is a popular editor extension category leader. Codex Pets focuses on Codex-compatible downloadable pet packs and agent-readable registry access.
-
-## When to choose Codex Pets
-
-- You want pet packs designed for Codex rather than a VS Code extension.
-- You need public manifest, OpenAPI, llms.txt, or MCP discovery.
-- You want downloadable ZIP packages with pet.json and spritesheet assets.
-- You want README badge, card, or iframe share snippets for approved pets.
-
-## Agent-readiness difference
-
-Codex Pets exposes its registry through MCP, JSON, TOON, OpenAPI, sitemap, llms.txt, and llms-full.txt. That lets coding agents inspect approved pets and produce install instructions without scraping a visual gallery.
-
-## Links
-
-- Gallery: ${toPublicUrl("/")}
-- Developer resources: ${toPublicUrl("/developers")}
-- Best Codex pets guide: ${toPublicUrl("/guides/best-codex-pets-for-ai-coding-agents")}
-`, { canonicalPath: "/guides/codex-pets-vs-vscode-pets" });
+export async function GET(): Promise<Response> {
+  const response = markdownResponse(
+    buildVsVsCodePetsGuideMarkdown(await getApprovedPetsSnapshot()),
+    { canonicalPath: VS_VSCODE_PETS_GUIDE_PATH },
+  );
+  response.headers.set("Cache-Control", "public, max-age=60, s-maxage=300");
+  return response;
 }

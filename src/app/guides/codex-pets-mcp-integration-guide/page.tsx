@@ -36,7 +36,7 @@ import {
   SITE_NAME,
 } from "@/lib/site-metadata";
 
-import "./guide.scss";
+import "../guide.scss";
 
 const MCP_GUIDE_PRIMARY_CTA_PATH = "/mcp.md";
 

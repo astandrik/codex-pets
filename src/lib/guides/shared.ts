@@ -1,5 +1,7 @@
 import { escapeMarkdownInlineText } from "@/lib/agent-markdown";
 import { toPublicUrl } from "@/lib/base-path";
+import { buildPetInstallCommand } from "@/lib/pets/install-command";
+import type { PublicPet } from "@/lib/pets/types";
 import { SITE_NAME } from "@/lib/site-metadata";
 
 export const GUIDE_AUTHOR_NAME = "Codex Pets maintainers";
@@ -101,4 +103,46 @@ export function formatMarkdownDecisionTable(rows: GuideDecisionRow[]): string {
   );
 
   return [header, divider, ...body].join("\n");
+}
+
+export type GuideExamplePet = {
+  slug: string;
+  displayName: string;
+  description: string;
+  pageUrl: string;
+  installCommand: string;
+};
+
+export function selectGuideExamplePets(
+  pets: PublicPet[],
+  limit = 3,
+): GuideExamplePet[] {
+  return pets
+    .toSorted(compareGuidePets)
+    .slice(0, limit)
+    .map((pet) => ({
+      slug: pet.slug,
+      displayName: pet.displayName,
+      description: pet.description,
+      pageUrl: toPublicUrl(`/pets/${encodeURIComponent(pet.slug)}`),
+      installCommand: buildPetInstallCommand(pet.slug),
+    }));
+}
+
+function compareGuidePets(left: PublicPet, right: PublicPet): number {
+  return (
+    popularityScore(right) - popularityScore(left) ||
+    dateScore(right.approvedAt ?? right.createdAt) -
+      dateScore(left.approvedAt ?? left.createdAt) ||
+    left.displayName.localeCompare(right.displayName)
+  );
+}
+
+function popularityScore(pet: PublicPet): number {
+  return pet.likeCount + pet.downloadCount + pet.installCount;
+}
+
+function dateScore(value: string): number {
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
 }
