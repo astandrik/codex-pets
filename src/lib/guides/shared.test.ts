@@ -1,13 +1,73 @@
 import { describe, expect, it } from "vitest";
 
+import type { PublicPet } from "@/lib/pets/types";
 import {
   buildGuideArticleJsonLd,
   formatGuideDate,
   formatMarkdownDecisionTable,
   GUIDE_AUTHOR_NAME,
+  selectGuideExamplePets,
 } from "@/lib/guides/shared";
 
 describe("guide shared helpers", () => {
+  it("selects example pets by popularity, recency, then name", () => {
+    const pets = selectGuideExamplePets(
+      [
+        pet({
+          slug: "beta",
+          displayName: "Beta",
+          approvedAt: "2026-05-08T00:00:00.000Z",
+          likeCount: 1,
+        }),
+        pet({
+          slug: "popular",
+          displayName: "Popular",
+          approvedAt: "2026-05-01T00:00:00.000Z",
+          downloadCount: 4,
+        }),
+        pet({
+          slug: "alpha",
+          displayName: "Alpha",
+          approvedAt: "2026-05-08T00:00:00.000Z",
+          likeCount: 1,
+        }),
+        pet({
+          slug: "zeta",
+          displayName: "Zeta",
+          approvedAt: "2026-05-09T00:00:00.000Z",
+          likeCount: 1,
+        }),
+        pet({ slug: "last", displayName: "Last" }),
+      ],
+      5,
+    );
+
+    expect(pets.map((item) => item.slug)).toEqual([
+      "popular",
+      "zeta",
+      "alpha",
+      "beta",
+      "last",
+    ]);
+    expect(pets[0].installCommand).toBe(
+      "npx @astandrik/codex-pets install popular",
+    );
+    expect(pets[0].pageUrl).toContain("/pets/popular");
+  });
+
+  it("honors the example pet limit", () => {
+    const pets = selectGuideExamplePets(
+      [
+        pet({ slug: "one", downloadCount: 3 }),
+        pet({ slug: "two", downloadCount: 2 }),
+        pet({ slug: "three", downloadCount: 1 }),
+      ],
+      2,
+    );
+
+    expect(pets.map((item) => item.slug)).toEqual(["one", "two"]);
+  });
+
   it("builds Article JSON-LD with maintainer byline and dates", () => {
     const jsonLd = buildGuideArticleJsonLd({
       path: "/guides/demo",
@@ -64,3 +124,30 @@ describe("guide shared helpers", () => {
     expect(table).toContain("MCP \\| tool calls");
   });
 });
+
+function pet(overrides: Partial<PublicPet>): PublicPet {
+  const slug = overrides.slug ?? "demo";
+
+  return {
+    id: `pet_${slug}`,
+    slug,
+    displayName: overrides.displayName ?? "Demo Pet",
+    description: overrides.description ?? "A demo Codex pet pack.",
+    spritesheetUrl: overrides.spritesheetUrl ?? `/api/assets/${slug}/sheet.webp`,
+    petJsonUrl: overrides.petJsonUrl ?? `/api/assets/${slug}/pet.json`,
+    zipUrl: overrides.zipUrl ?? `/api/assets/${slug}/package.zip`,
+    spritesheetExt: overrides.spritesheetExt ?? "webp",
+    kind: overrides.kind ?? "creature",
+    tags: overrides.tags ?? [],
+    status: overrides.status ?? "approved",
+    ownerName: overrides.ownerName ?? "Creator",
+    ownerProfileSlug: overrides.ownerProfileSlug ?? "creator",
+    ownerAvatarUrl: overrides.ownerAvatarUrl ?? null,
+    contactEmail: overrides.contactEmail ?? null,
+    createdAt: overrides.createdAt ?? "2026-05-01T00:00:00.000Z",
+    approvedAt: overrides.approvedAt ?? "2026-05-02T00:00:00.000Z",
+    downloadCount: overrides.downloadCount ?? 0,
+    installCount: overrides.installCount ?? 0,
+    likeCount: overrides.likeCount ?? 0,
+  };
+}

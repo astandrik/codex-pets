@@ -5,6 +5,7 @@ import {
   buildBestCodexPetGuideSections,
   buildBestCodexPetsGuideMarkdown,
 } from "@/lib/guides/best-codex-pets";
+import { loadGuidePets } from "@/lib/guides/load-guide-pets";
 import { listApprovedPets } from "@/lib/pets/repository";
 
 export const runtime = "nodejs";
@@ -21,7 +22,7 @@ const getApprovedPetsSnapshot = unstable_cache(
 
 export async function GET(): Promise<Response> {
   const sections = buildBestCodexPetGuideSections(
-    await getApprovedPetsSnapshot(),
+    await loadGuidePets(getApprovedPetsSnapshot),
   );
 
   return markdownResponse(buildBestCodexPetsGuideMarkdown(sections), {
