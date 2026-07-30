@@ -80,7 +80,7 @@ export async function GET(): Promise<Response> {
       "## Guides",
       "",
       `- [Codex Pets vs VS Code Pets](${toPublicUrl("/guides/codex-pets-vs-vscode-pets")}): First-hand comparison with reproducible registry queries. Markdown: ${toPublicUrl("/guides/codex-pets-vs-vscode-pets.md")}.`,
-      `- [Codex Pets vs OpenPets](${toPublicUrl("/guides/codex-pets-vs-openpets")}): Comparison based on the OpenPets public documentation. Markdown: ${toPublicUrl("/guides/codex-pets-vs-openpets.md")}.`,
+      `- [Codex Pets vs OpenPets](${toPublicUrl("/guides/codex-pets-vs-openpets")}): First-hand comparison with reproducible queries against both public surfaces. Markdown: ${toPublicUrl("/guides/codex-pets-vs-openpets.md")}.`,
       `- [Best Codex pets for AI coding agents](${toPublicUrl("/guides/best-codex-pets-for-ai-coding-agents")}): Practical guide to choosing approved pet packs. Markdown: ${toPublicUrl("/guides/best-codex-pets-for-ai-coding-agents.md")}.`,
       `- [Codex Pets MCP integration guide](${toPublicUrl("/guides/codex-pets-mcp-integration-guide")}): Connect an agent through MCP or the HTTP contract. Markdown: ${toPublicUrl("/guides/codex-pets-mcp-integration-guide.md")}.`,
       "",

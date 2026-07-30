@@ -25,6 +25,8 @@ export type GuideQueryExample = {
   responseExcerpt: string;
   /** ISO date (YYYY-MM-DD) when the query was run against production. */
   runDate: string;
+  /** Markdown code fence language for the excerpt. Defaults to "json". */
+  language?: string;
 };
 
 export function buildGuideArticleJsonLd(options: {
