@@ -25,10 +25,15 @@ vi.mock("@/lib/sitemap-cache", () => ({
   revalidateSitemapCache: vi.fn(),
 }));
 
+vi.mock("@/lib/pets/related-pets-server", () => ({
+  revalidateRelatedPetCandidatesCache: vi.fn(),
+}));
+
 import { POST } from "@/app/api/admin/submissions/[id]/approve/route";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
 import { moderatePet } from "@/lib/pets/repository";
+import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { refreshApprovedPetSearchEmbedding } from "@/lib/pets/search-runtime";
 import { refreshApprovedPetVisionSearchBestEffort } from "@/lib/pets/search-vision-runtime";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
@@ -64,6 +69,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     expect(response.status).toBe(403);
     expect(notifyIndexNowOfApprovedPet).not.toHaveBeenCalled();
     expect(revalidateSitemapCache).not.toHaveBeenCalled();
+    expect(revalidateRelatedPetCandidatesCache).not.toHaveBeenCalled();
   });
 
   it("does not revalidate sitemap cache when the pet is missing", async () => {
@@ -82,6 +88,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
 
     expect(response.status).toBe(404);
     expect(revalidateSitemapCache).not.toHaveBeenCalled();
+    expect(revalidateRelatedPetCandidatesCache).not.toHaveBeenCalled();
     expect(notifyIndexNowOfApprovedPet).not.toHaveBeenCalled();
   });
 
@@ -120,6 +127,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
 
     expect(response.status).toBe(200);
     expect(revalidateSitemapCache).toHaveBeenCalledTimes(1);
+    expect(revalidateRelatedPetCandidatesCache).toHaveBeenCalledTimes(1);
     expect(notifyIndexNowOfApprovedPet).toHaveBeenCalledWith("boba");
     expect(refreshApprovedPetSearchEmbedding).toHaveBeenCalledWith(
       expect.objectContaining({ slug: "boba", status: "approved" }),

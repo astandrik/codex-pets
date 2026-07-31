@@ -109,6 +109,47 @@ describe("sitemap", () => {
       vi.unstubAllEnvs();
     }
   });
+
+  it("prefers updatedAt over approvedAt for pet lastModified", async () => {
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "mock");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "");
+
+    petsRepositoryMocks.listApprovedPetSitemapEntries.mockResolvedValueOnce([
+      {
+        slug: "rewritten-pet",
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-07-30T12:00:00.000Z",
+        approvedAt: "2026-05-02T00:00:00.000Z",
+      },
+      {
+        slug: "untouched-pet",
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: null,
+        approvedAt: "2026-05-03T00:00:00.000Z",
+      },
+    ]);
+
+    const { default: sitemap } = await import("@/app/sitemap");
+    const entries = await sitemap();
+
+    expect(entries).toContainEqual(
+      sitemapEntry(
+        "https://pets.example/pets/rewritten-pet",
+        "2026-07-30T12:00:00.000Z",
+        "weekly",
+        0.8,
+      ),
+    );
+    expect(entries).toContainEqual(
+      sitemapEntry(
+        "https://pets.example/pets/untouched-pet",
+        "2026-05-03T00:00:00.000Z",
+        "weekly",
+        0.8,
+      ),
+    );
+  });
 });
 
 function sitemapEntry(

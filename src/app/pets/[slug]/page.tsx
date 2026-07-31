@@ -30,14 +30,24 @@ import { InstallCommandButton } from "@/components/InstallCommand/InstallCommand
 import { PetMetaList } from "@/components/PetDetails/PetMetaList";
 import { PetLikeButton } from "@/components/PetLikeButton/PetLikeButton";
 import { PetSharePanel } from "@/components/PetSharePanel/PetSharePanel";
+import { RelatedPets } from "@/components/RelatedPets/RelatedPets";
 import { StatePreview } from "@/components/StatePreview/StatePreview";
 import { CurrentPetWebMCPTool } from "@/components/WebMCP/CurrentPetWebMCPTool";
 import { listPublicUserProfilesByIds } from "@/lib/auth/repository";
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import { serializeJsonLd } from "@/lib/json-ld";
 import { createAgentPet } from "@/lib/pets/agent-dto";
-import { getPetBySlug, getPetMetrics } from "@/lib/pets/repository";
-import type { ApprovalStatus } from "@/lib/pets/types";
+import {
+  selectRelatedPets,
+  type RelatedPetCandidate,
+} from "@/lib/pets/related-pets";
+import { getRelatedPetCandidates } from "@/lib/pets/related-pets-server";
+import {
+  getPetBySlug,
+  getPetMetrics,
+  listApprovedPetsBySlugs,
+} from "@/lib/pets/repository";
+import type { ApprovalStatus, PublicPet } from "@/lib/pets/types";
 import {
   buildPageTitle,
   getBreadcrumbJsonLd,
@@ -148,6 +158,13 @@ export default async function PetPage({ params }: PetPageProps) {
   if (pet.status === "deleted") notFound();
 
   const metrics = await getCachedPetMetrics(slug);
+  const relatedCandidates =
+    pet.status === "approved"
+      ? selectRelatedPets(await getRelatedPetCandidatesBestEffort(), pet)
+      : [];
+  const relatedPets = await listApprovedRelatedPetsBestEffort(
+    relatedCandidates.map((candidate) => candidate.slug),
+  );
   const ownerProfile = pet.ownerId
     ? (await listPublicUserProfilesByIds([pet.ownerId])).get(pet.ownerId)
     : undefined;
@@ -336,6 +353,8 @@ export default async function PetPage({ params }: PetPageProps) {
         </div>
       </section>
 
+      {relatedPets.length > 0 ? <RelatedPets pets={relatedPets} /> : null}
+
       {pet.status !== "approved" ? (
         <Text variant="caption-2" color="secondary">
           {statusSummary.message}
@@ -347,6 +366,35 @@ export default async function PetPage({ params }: PetPageProps) {
       </Text>
     </Container>
   );
+}
+
+async function getRelatedPetCandidatesBestEffort(): Promise<
+  RelatedPetCandidate[]
+> {
+  try {
+    return await getRelatedPetCandidates();
+  } catch {
+    console.warn("[codex-pets][related-pets]", {
+      operation: "list-candidates",
+      status: "failed",
+    });
+    return [];
+  }
+}
+
+async function listApprovedRelatedPetsBestEffort(
+  slugs: string[],
+): Promise<PublicPet[]> {
+  if (slugs.length === 0) return [];
+  try {
+    return await listApprovedPetsBySlugs(slugs);
+  } catch {
+    console.warn("[codex-pets][related-pets]", {
+      operation: "hydrate-related",
+      status: "failed",
+    });
+    return [];
+  }
 }
 
 function getStatusSummary(

@@ -12,6 +12,7 @@ import {
 import type { PublicUserReference } from "@/lib/auth/repository";
 import type { ApprovalStatus, PetKind, PublicPet } from "@/lib/pets/types";
 import { withBasePath } from "@/lib/base-path";
+import type { RelatedPetCandidate } from "@/lib/pets/related-pets";
 import { slugify, type PetJson } from "@/lib/pets/validation";
 import { statusAfterModeration } from "@/lib/pets/moderation";
 import {
@@ -92,6 +93,7 @@ export type PetFilters = {
 export type ApprovedPetSitemapEntry = {
   slug: string;
   createdAt: string;
+  updatedAt: string | null;
   approvedAt: string | null;
 };
 
@@ -130,9 +132,10 @@ export async function listApprovedPetSitemapEntries(): Promise<
     return listMockPetRecords()
       .filter((pet) => pet.status === "approved")
       .sort(comparePetRowsNewestFirst)
-      .map(({ slug, createdAt, approvedAt }) => ({
+      .map(({ slug, createdAt, updatedAt, approvedAt }) => ({
         slug,
         createdAt,
+        updatedAt,
         approvedAt,
       }));
   }
@@ -143,7 +146,7 @@ export async function listApprovedPetSitemapEntries(): Promise<
     session.executeQuery(
       `
 DECLARE $status AS Utf8;
-SELECT slug, created_at, approved_at
+SELECT slug, created_at, updated_at, approved_at
 FROM ${TABLES.pets}
 WHERE status = $status
 ORDER BY created_at DESC, slug ASC;
@@ -155,7 +158,52 @@ ORDER BY created_at DESC, slug ASC;
   return rowsFromResult(result).map((row) => ({
     slug: textAt(row, 0),
     createdAt: textAt(row, 1),
-    approvedAt: textAt(row, 2) || null,
+    updatedAt: textAt(row, 2) || null,
+    approvedAt: textAt(row, 3) || null,
+  }));
+}
+
+export async function listRelatedPetCandidates(): Promise<
+  RelatedPetCandidate[]
+> {
+  if (isMockPetsDataSource()) {
+    return listMockPetRecords()
+      .filter((pet) => pet.status === "approved")
+      .map(
+        ({ slug, displayName, kind, tags, description, approvedAt, createdAt }) => ({
+          slug,
+          displayName,
+          kind,
+          tags,
+          description,
+          approvedAt,
+          createdAt,
+        }),
+      );
+  }
+
+  if (!isYdbConfigured()) return [];
+
+  const result = await withSession((session) =>
+    session.executeQuery(
+      `
+DECLARE $status AS Utf8;
+SELECT slug, display_name, kind, tags_json, description, approved_at, created_at
+FROM ${TABLES.pets}
+WHERE status = $status;
+      `,
+      { $status: TypedValues.utf8("approved") },
+    ),
+  );
+
+  return rowsFromResult(result).map((row) => ({
+    slug: textAt(row, 0),
+    displayName: textAt(row, 1),
+    kind: parseKind(textAt(row, 2)),
+    tags: parseTags(textAt(row, 3)),
+    description: textAt(row, 4),
+    approvedAt: textAt(row, 5) || null,
+    createdAt: textAt(row, 6),
   }));
 }
 
@@ -324,6 +372,74 @@ LIMIT 200;
   );
 
   const rows = rowsFromResult(result).map(parsePetRow);
+  const metricsBySlug = await getMetricsBySlugs(rows.map((row) => row.slug));
+  const profilesByUserId = await getOwnerProfilesByRows(rows);
+
+  return rows.map((row) =>
+    toPublicPet(
+      row,
+      metricsBySlug.get(row.slug) ?? EMPTY_METRICS,
+      profilesByUserId.get(row.ownerId),
+    ),
+  );
+}
+
+export async function listApprovedPetsBySlugs(
+  slugs: string[],
+): Promise<PublicPet[]> {
+  const uniqueSlugs = Array.from(new Set(slugs));
+
+  if (isMockPetsDataSource()) {
+    const petsBySlug = new Map(
+      listMockPetRecords()
+        .filter(
+          (pet) => uniqueSlugs.includes(pet.slug) && pet.status === "approved",
+        )
+        .map((pet) => [
+          pet.slug,
+          toPublicPet(pet, pet.metrics, mockOwnerReference(pet)),
+        ]),
+    );
+    return uniqueSlugs.flatMap((slug) => {
+      const pet = petsBySlug.get(slug);
+      return pet ? [pet] : [];
+    });
+  }
+
+  if (!isYdbConfigured() || uniqueSlugs.length === 0) return [];
+
+  const declarations = uniqueSlugs
+    .map((_, index) => `DECLARE $slug${index} AS Utf8;`)
+    .join("\n");
+  const predicate = uniqueSlugs
+    .map((_, index) => `slug = $slug${index}`)
+    .join(" OR ");
+  const params = Object.fromEntries(
+    uniqueSlugs.map((slug, index) => [`$slug${index}`, TypedValues.utf8(slug)]),
+  );
+
+  const result = await withSession((session) =>
+    session.executeQuery(
+      `
+${declarations}
+DECLARE $status AS Utf8;
+SELECT ${petColumns()}
+FROM ${TABLES.pets}
+WHERE status = $status AND (${predicate});
+      `,
+      { ...params, $status: TypedValues.utf8("approved") },
+    ),
+  );
+
+  const rowsBySlug = new Map(
+    rowsFromResult(result)
+      .map(parsePetRow)
+      .map((row) => [row.slug, row] as const),
+  );
+  const rows = uniqueSlugs.flatMap((slug) => {
+    const row = rowsBySlug.get(slug);
+    return row ? [row] : [];
+  });
   const metricsBySlug = await getMetricsBySlugs(rows.map((row) => row.slug));
   const profilesByUserId = await getOwnerProfilesByRows(rows);
 

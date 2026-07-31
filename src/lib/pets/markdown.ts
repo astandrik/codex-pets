@@ -4,9 +4,16 @@ import {
 } from "@/lib/agent-markdown";
 import { toPublicUrl } from "@/lib/base-path";
 import { createAgentPet } from "@/lib/pets/agent-dto";
+import {
+  formatRelatedPetDescription,
+  type RelatedPetCandidate,
+} from "@/lib/pets/related-pets";
 import type { PublicPet } from "@/lib/pets/types";
 
-export function buildPetMarkdown(pet: PublicPet): string {
+export function buildPetMarkdown(
+  pet: PublicPet,
+  relatedPets?: RelatedPetCandidate[],
+): string {
   const agentPet = createAgentPet(pet);
   const displayName = escapeMarkdownInlineText(pet.displayName);
   const description = escapeMarkdownInlineText(pet.description);
@@ -15,6 +22,23 @@ export function buildPetMarkdown(pet: PublicPet): string {
   const author = agentPet.author.profileUrl
     ? `[${authorName}](${agentPet.author.profileUrl})`
     : authorName;
+
+  const relatedSection =
+    relatedPets && relatedPets.length > 0
+      ? [
+          "",
+          "## Related pets",
+          "",
+          ...relatedPets.map((related) => {
+            const name = escapeMarkdownInlineText(related.displayName);
+            const url = toPublicUrl(`/pets/${related.slug}`);
+            const description = escapeMarkdownInlineText(
+              formatRelatedPetDescription(related.description),
+            );
+            return `- [${name}](${url}) — ${related.kind} — ${description}`;
+          }),
+        ]
+      : [];
 
   return [
     `# ${displayName}`,
@@ -50,5 +74,6 @@ export function buildPetMarkdown(pet: PublicPet): string {
     "## Agent guidance",
     "",
     `Use this pet when a user asks for a ${pet.kind} Codex pet pack with tags such as ${tags}. Cite the public page URL and return the install command.`,
+    ...relatedSection,
   ].join("\n");
 }

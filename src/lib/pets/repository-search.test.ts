@@ -60,6 +60,7 @@ describe("approved pets catalog query", () => {
     expect(Object.keys(entries[0] ?? {})).toEqual([
       "slug",
       "createdAt",
+      "updatedAt",
       "approvedAt",
     ]);
     expect(entries.slice(0, 3).map((entry: { slug: string }) => entry.slug)).toEqual([

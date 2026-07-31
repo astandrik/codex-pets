@@ -1,0 +1,11 @@
+.related-pets {
+  margin-top: var(--spacing-3xl);
+
+  &__title {
+    margin-bottom: var(--spacing-lg);
+  }
+
+  &__grid {
+    margin-top: 0;
+  }
+}
