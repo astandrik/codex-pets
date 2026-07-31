@@ -47,6 +47,7 @@ next-env.d.ts
 .playwright-mcp/
 /.superpowers/
 /docs/superpowers/
+/docs/seo-indexation-baseline.md
 /.worktrees/
 .scratch
 
