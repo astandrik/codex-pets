@@ -17,5 +17,7 @@ export function getRelatedPetCandidates(): Promise<RelatedPetCandidate[]> {
 }
 
 export function revalidateRelatedPetCandidatesCache(): void {
-  revalidateTag(RELATED_PETS_CANDIDATES_CACHE_TAG, "max");
+  // Expire synchronously (not the SWR "max" profile): the markdown twin reads
+  // candidates directly, so a stale entry could leak a moderated pet.
+  revalidateTag(RELATED_PETS_CANDIDATES_CACHE_TAG, { expire: 0 });
 }

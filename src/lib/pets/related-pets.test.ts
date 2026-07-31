@@ -282,6 +282,19 @@ describe("formatRelatedPetDescription", () => {
     expect(formatted).toBe(`${"a".repeat(118)}😀…`);
   });
 
+  it("measures the limit in code points, not UTF-16 units", () => {
+    const atLimit = `${"a".repeat(119)}😀`;
+
+    expect(atLimit.length).toBe(RELATED_PET_DESCRIPTION_MAX_LENGTH + 1);
+    expect(formatRelatedPetDescription(atLimit)).toBe(atLimit);
+  });
+
+  it("truncates when code points exceed the limit", () => {
+    const formatted = formatRelatedPetDescription(`${"a".repeat(120)}😀`);
+
+    expect(formatted).toBe(`${"a".repeat(119)}…`);
+  });
+
   it("returns an empty string for empty input", () => {
     expect(formatRelatedPetDescription("")).toBe("");
   });
