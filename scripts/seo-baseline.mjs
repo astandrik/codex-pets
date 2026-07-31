@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Technical slice of the fixed SEO measurement cohort.
 // Rerun protocol: node scripts/seo-baseline.mjs
-// The cohort is frozen; change it only deliberately and update docs/seo-indexation-baseline.md.
+// The cohort is frozen; change it only deliberately and update docs/seo-indexation-baseline.md
+// (local working file, intentionally not tracked in git).
 
 import https from "node:https";
 import { mkdirSync, writeFileSync } from "node:fs";
