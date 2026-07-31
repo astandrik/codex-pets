@@ -1,7 +1,7 @@
 # SEO Indexation Baseline — Codex Pets
 
 > Fixed measurement cohort and first slice. Rerun this cohort unchanged after every SEO-related rollout.
-> Companion plan: `docs/superpowers/plans/2026-07-31-seo-indexation-reprioritized-ru.md` (item 1, measurement protocol).
+> Companion plan: `docs/superpowers/plans/2026-07-31-seo-indexation-reprioritized-ru.md` (item 1, measurement protocol) — local working file, not tracked in git.
 
 ## 1. Observation metadata
 

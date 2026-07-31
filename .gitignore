@@ -46,6 +46,7 @@ next-env.d.ts
 .eslintcache
 .playwright-mcp/
 /.superpowers/
+/docs/superpowers/
 /.worktrees/
 .scratch
 
