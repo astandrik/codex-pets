@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 
 import {
+  assertAllDescriptionsChanged,
   assertAllSlugsFound,
   buildEmbeddingBackfillCommands,
   parseUpdateArgs,
@@ -39,9 +40,13 @@ export async function main(argv = process.argv.slice(2)) {
     return;
   }
 
-  const endpoint =
-    process.env.YDB_PETS_ENDPOINT?.trim() || "grpc://127.0.0.1:2136";
-  const database = process.env.YDB_PETS_DATABASE?.trim() || "/local";
+  const endpoint = process.env.YDB_PETS_ENDPOINT?.trim();
+  const database = process.env.YDB_PETS_DATABASE?.trim();
+  if (!endpoint || !database) {
+    throw new Error(
+      "--apply requires explicit YDB_PETS_ENDPOINT and YDB_PETS_DATABASE; no local topology is assumed.",
+    );
+  }
   if (isLocalEndpoint(endpoint)) {
     process.env.YDB_ANONYMOUS_CREDENTIALS ??= "1";
     process.env.YDB_ENDPOINT ??= endpoint;
@@ -59,6 +64,7 @@ export async function main(argv = process.argv.slice(2)) {
       updates.map((update) => update.slug),
     );
     assertAllSlugsFound(updates, currentPets);
+    assertAllDescriptionsChanged(updates, currentPets);
 
     const backupPath = writeBackup(currentPets);
     console.log(`backup of previous descriptions: ${backupPath}`);
@@ -125,6 +131,12 @@ function readYdbPassword() {
 }
 
 async function listCurrentDescriptions(driver, slugs) {
+  const { statement, params } = buildSelectBySlugs(slugs);
+  const result = await execute(driver, statement, params);
+  return mapPetRows(result);
+}
+
+function buildSelectBySlugs(slugs) {
   const declarations = slugs
     .map((_, index) => `DECLARE $slug${index} AS Utf8;`)
     .join("\n");
@@ -135,9 +147,8 @@ async function listCurrentDescriptions(driver, slugs) {
     slugs.map((slug, index) => [`$slug${index}`, TypedValues.utf8(slug)]),
   );
 
-  const result = await execute(
-    driver,
-    `
+  return {
+    statement: `
 ${declarations}
 
 SELECT slug, description, status
@@ -145,8 +156,10 @@ FROM ${PETS_TABLE}
 WHERE ${predicate};
     `,
     params,
-  );
+  };
+}
 
+function mapPetRows(result) {
   return new Map(
     rowsFromResult(result).map((row) => [
       textAt(row, 0),
@@ -182,6 +195,16 @@ async function applyDescriptionUpdates(driver, updates, now) {
       const txControl = { txId: tx.id };
 
       try {
+        // Re-read and re-validate statuses inside the serializable
+        // transaction: moderation may have rejected or deleted a pet
+        // after the preflight read.
+        const currentInTx = await readPetsBySlugs(
+          session,
+          updates.map((update) => update.slug),
+          txControl,
+        );
+        assertAllSlugsFound(updates, currentInTx);
+
         for (const update of updates) {
           await session.executeQuery(
             `
@@ -215,6 +238,12 @@ WHERE slug = $slug;
     10_000,
     3,
   );
+}
+
+async function readPetsBySlugs(session, slugs, txControl) {
+  const { statement, params } = buildSelectBySlugs(slugs);
+  const result = await session.executeQuery(statement, params, txControl);
+  return mapPetRows(result);
 }
 
 function execute(driver, statement, params = {}) {

@@ -101,6 +101,19 @@ export function assertAllSlugsFound(updates, currentPets) {
   }
 }
 
+export function assertAllDescriptionsChanged(updates, currentPets) {
+  const unchanged = updates
+    .filter(
+      (update) => currentPets.get(update.slug)?.description === update.description,
+    )
+    .map((update) => update.slug);
+  if (unchanged.length > 0) {
+    throw new Error(
+      `Refusing the whole batch; description(s) identical to the stored text: ${unchanged.join(", ")}.`,
+    );
+  }
+}
+
 export function buildEmbeddingBackfillCommands(slugs) {
   // The backfill script accepts a single --slug value per invocation.
   return slugs.map(

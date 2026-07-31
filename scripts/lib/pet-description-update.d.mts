@@ -22,4 +22,9 @@ export function assertAllSlugsFound(
   currentPets: Map<string, CurrentPetDescription>,
 ): void;
 
+export function assertAllDescriptionsChanged(
+  updates: DescriptionUpdate[],
+  currentPets: Map<string, CurrentPetDescription>,
+): void;
+
 export function buildEmbeddingBackfillCommands(slugs: string[]): string[];

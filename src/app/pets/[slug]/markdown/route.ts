@@ -33,9 +33,10 @@ export async function GET(
   const response = markdownResponse(buildPetMarkdown(pet, relatedPets), {
     canonicalPath: `/pets/${pet.slug}`,
   });
-  // No s-maxage: the payload embeds related pets, which can disappear from
-  // the catalog on moderation; shared caches must not serve them stale.
-  response.headers.set("Cache-Control", "public, max-age=60");
+  // private, not public: the payload embeds related pets, which can
+  // disappear from the catalog on moderation; shared caches must not
+  // serve them stale, and tag invalidation cannot purge them.
+  response.headers.set("Cache-Control", "private, max-age=60");
   return response;
 }
 

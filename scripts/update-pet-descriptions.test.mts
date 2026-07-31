@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const {
   MAX_DESCRIPTION_LENGTH,
+  assertAllDescriptionsChanged,
   assertAllSlugsFound,
   buildEmbeddingBackfillCommands,
   parseUpdateArgs,
@@ -185,6 +186,32 @@ describe("assertAllSlugsFound", () => {
         ]),
       ),
     ).toThrow(/wild-boar \(status: deleted\)/);
+  });
+});
+
+describe("assertAllDescriptionsChanged", () => {
+  it("passes when every update differs from the stored description", () => {
+    expect(() =>
+      assertAllDescriptionsChanged(
+        [{ slug: "kesha", description: "next" }],
+        new Map([["kesha", { description: "current", status: "approved" }]]),
+      ),
+    ).not.toThrow();
+  });
+
+  it("refuses the whole batch when any description is identical to the stored one", () => {
+    expect(() =>
+      assertAllDescriptionsChanged(
+        [
+          { slug: "kesha", description: "next" },
+          { slug: "wild-boar", description: "current boar" },
+        ],
+        new Map([
+          ["kesha", { description: "current", status: "approved" }],
+          ["wild-boar", { description: "current boar", status: "approved" }],
+        ]),
+      ),
+    ).toThrow(/wild-boar/);
   });
 });
 

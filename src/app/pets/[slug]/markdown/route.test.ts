@@ -56,7 +56,7 @@ describe("GET /pets/[slug]/markdown", () => {
     expect(response.headers.get("Content-Type")).toBe(
       "text/markdown; charset=utf-8",
     );
-    expect(response.headers.get("Cache-Control")).toBe("public, max-age=60");
+    expect(response.headers.get("Cache-Control")).toBe("private, max-age=60");
     expect(response.headers.get("Link")).toContain(
       '<https://pets.example/pets/kuroa>; rel="canonical"',
     );
