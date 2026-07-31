@@ -109,6 +109,30 @@ Comparison rules:
 
 ## 10. Rollout log
 
+### 2026-07-29 — measurement cohort established (PR #23, `main@71cc858`)
+
+This document: fixed 13-URL cohort + `scripts/seo-baseline.mjs` for the technical slice.
+
+### 2026-07-29 — homepage JSON-LD cleanup (PR #22, `main@045b34c`)
+
+Removed invisible `FAQPage` and news-oriented `SpeakableSpecification`; homepage JSON-LD is now `WebPage` + `ItemList` only. Production-verified the same day.
+
+### 2026-07-29 — homepage semantic-search copy (PR #24 + heading fix #25, `main@8277530`)
+
+SSR section "Find by vibe, not keywords" with the semantic-search value proposition; catalog behavior unchanged.
+
+### 2026-07-29 — UGC profile links (PR #26, `main@a343f92`)
+
+User-controlled external links on public profiles now `rel="nofollow ugc noreferrer"`; first-party navigation untouched.
+
+### 2026-07-29 — branded 404, web manifest, favicon.ico (PR #27, `main@2d4a2f0`)
+
+Branded 404 page, `/manifest.webmanifest`, generated ICO/PNG brand icons; IndexNow key moved behind a middleware rewrite.
+
+### 2026-07-29/30 — three guide rewrites (PRs #28, #29, #30, up to `main@7610989`)
+
+`codex-pets-mcp-integration-guide`, `codex-pets-vs-vscode-pets`, `codex-pets-vs-openpets` rewritten with first-hand methodology (reproducible queries with text excerpts), bylines, dates, decision tables, and contextual pet links; single content source for page + `.md` twin; `loadGuidePets` 500-fallback for all guides.
+
 ### 2026-07-31 — detail-page content model pilot (PR #31, `main@4b4be52`)
 
 Plan task 5 (P1.4). No-schema path: richer owner-approved descriptions for 10 pilot pets + a server-rendered "Related pets" section (4 approved pets as gallery cards, deterministic rule: shared tags → same kind → approval date → slug) on every pet detail page and its `/pets/<slug>/markdown` twin (`Cache-Control: private`). Candidate list cached 60 s with synchronous invalidation (`revalidateTag(..., { expire: 0 })`) on approve/reject/delete.
