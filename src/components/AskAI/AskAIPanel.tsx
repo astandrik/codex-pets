@@ -65,7 +65,7 @@ export function AskAIPanel({
                 key={link.id}
                 href={link.href}
                 target="_blank"
-                rel="noopener noreferrer"
+                rel="nofollow noopener noreferrer"
                 className={`ask-ai-panel__link ask-ai-panel__link_${provider?.tone ?? "white"}`}
                 aria-label={`Ask ${link.label}`}
                 title={link.label}
