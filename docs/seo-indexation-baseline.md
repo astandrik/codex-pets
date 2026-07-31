@@ -106,3 +106,16 @@ Comparison rules:
 - All 7 crawled indexable URLs sit at "Crawled - currently not indexed" with correct canonicals, allowed crawling and successful fetches — the bottleneck is selection, not crawlability.
 - Pet detail pages and the profile are **unknown to Google** despite being in the sitemap — discovery/processing of detail URLs has not started.
 - Search demand measurement (impressions/queries) starts from an empty series; first non-zero rows will be meaningful.
+
+## 10. Rollout log
+
+### 2026-07-31 — detail-page content model pilot (PR #31, `main@4b4be52`)
+
+Plan task 5 (P1.4). No-schema path: richer owner-approved descriptions for 10 pilot pets + a server-rendered "Related pets" section (4 approved pets as gallery cards, deterministic rule: shared tags → same kind → approval date → slug) on every pet detail page and its `/pets/<slug>/markdown` twin (`Cache-Control: private`). Candidate list cached 60 s with synchronous invalidation (`revalidateTag(..., { expire: 0 })`) on approve/reject/delete.
+
+- Pilot cohort (descriptions rewritten 2026-07-30, sitemap `lastmod` bumped): crawlstack-polished, kitsune-chibi-2, wild-boar, kesha, johnny, bolshoy-tyll, blond-flexer-2, foggy-hedgehog, rose-katana, polin.
+- Control cohort (unchanged): cloud-flat-2, chibi-wolf, blue-rabbit-2, sakura, fire-skull, leon, curator, lain, maybe-baby-2-2, jinx.
+- Cohort overlap: 4 of 13 baseline URLs are pilot pet pages (#8 crawlstack-polished, #9 kitsune-chibi-2, #10 wild-boar, #11 kesha); all 13 now also carry the related-pets section.
+- Production verification 2026-07-31: deploy smoke 9/9 = 200; `/pets/kesha` SSR 73 KB → 114 KB with 4 related cards; markdown twin private + related block with ≤120-code-point one-liners; sitemap `lastmod 2026-07-30T21:06Z` on pilot URLs; JSON-LD, search, homepage unchanged. 0 console errors.
+- Watch items for the next rerun: GSC `lastCrawlTime` newer than 2026-07-31 on pilot vs control pet URLs; coverage-verdict movement on the 4 baseline pet URLs (still "URL is unknown to Google" at baseline); sitemap submitted/indexed counts. Request Indexing for the 20 pilot+control URLs is a separately confirmed operation, pending.
+
