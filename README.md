@@ -1,6 +1,7 @@
 # Codex Pets
 
 [![codex-pets MCP server](https://glama.ai/mcp/servers/astandrik/codex-pets/badges/score.svg)](https://glama.ai/mcp/servers/astandrik/codex-pets)
+[![codex-pets on ModelScope](https://img.shields.io/badge/ModelScope-MCP-624AFF)](https://www.modelscope.cn/mcp/servers/astandrik/codex-pets)
 
 Community gallery for Codex-compatible animated pets with local accounts,
 manual moderation, public generation requests, YDB-backed asset storage, and
