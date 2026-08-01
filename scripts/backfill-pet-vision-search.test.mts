@@ -35,6 +35,8 @@ const {
   PET_VISION_BACKFILL_CAPTION_REVISIONS,
   PET_VISUAL_BACKFILL_REVISIONS,
 } = await import("./lib/pet-search-provider-config.mjs");
+// @ts-expect-error -- The executable MJS entrypoint intentionally has no declaration file.
+const backfillEntry = await import("./backfill-pet-vision-search.mjs");
 
 const visualConfig = {
   captionRevision: PET_VISION_CAPTION_REVISION,
@@ -119,6 +121,41 @@ function freshCaption() {
 }
 
 describe("pet vision search backfill", () => {
+  it("disables Qwen reasoning in provider requests", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    vi.stubGlobal("fetch", async (url: URL | RequestInfo, init?: RequestInit) => {
+      requests.push({ url: String(url), init });
+      return Response.json({
+        choices: [{ message: { content: JSON.stringify(caption) } }],
+      });
+    });
+    try {
+      const createVisionProvider = Reflect.get(
+        backfillEntry,
+        "createVisionProvider",
+      ) as (config: {
+        folderId: string;
+        apiKey: string;
+        modelUri: string;
+        visionTimeoutMs: number;
+      }) => (frames: unknown[]) => Promise<unknown>;
+      const provider = createVisionProvider({
+        folderId: "folder-1",
+        apiKey: "secret-key",
+        modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+        visionTimeoutMs: 30_000,
+      });
+
+      await expect(provider(frames)).resolves.toEqual(caption);
+      expect(requests).toHaveLength(1);
+      expect(JSON.parse(String(requests[0]?.init?.body))).toMatchObject({
+        reasoning_effort: "none",
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("keeps Qwen visual provider definitions in runtime parity", () => {
     expect(PET_VISION_BACKFILL_CAPTION_REVISIONS).toEqual(
       PET_VISION_CAPTION_REVISIONS,

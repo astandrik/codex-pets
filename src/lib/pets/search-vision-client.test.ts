@@ -68,6 +68,7 @@ describe("Yandex vision caption client", () => {
       temperature: 0,
       stream: false,
       max_tokens: 900,
+      reasoning_effort: "none",
       response_format: {
         type: "json_schema",
         json_schema: {
