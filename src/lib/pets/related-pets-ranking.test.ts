@@ -65,6 +65,32 @@ describe("related pet vector validation", () => {
       decodeRelatedPetVector(storedVector({ embedding }), EXPECTED_VECTOR),
     ).toBeNull();
   });
+
+  it("rejects a finite zero-norm vector at the decoder boundary", () => {
+    expect(
+      decodeRelatedPetVector(
+        storedVector({ embedding: embeddingToBuffer([0, 0]) }),
+        EXPECTED_VECTOR,
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects an empty vector at the decoder boundary", () => {
+    const emptyVector = {
+      ...EXPECTED_VECTOR,
+      dimensions: 0,
+    };
+
+    expect(
+      decodeRelatedPetVector(
+        storedVector({
+          dimensions: 0,
+          embedding: Buffer.from([0x01]),
+        }),
+        emptyVector,
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("related pet cosine similarity", () => {
@@ -164,6 +190,21 @@ describe("related pet weighted RRF", () => {
         visualWeight: 0.5,
       }),
     ).toEqual(["peer", "fill"]);
+  });
+
+  it("never returns more than four candidates when a larger limit is requested", () => {
+    expect(
+      fuseRelatedPetRankings({
+        sourceSlug: "source",
+        metadataSlugs: ["one", "two", "three", "four", "five"],
+        textMatches: [],
+        visualMatches: [],
+        textMinSimilarity: 0.5,
+        visualMinSimilarity: 0.5,
+        visualWeight: 0.25,
+        limit: 5,
+      }),
+    ).toEqual(["one", "two", "three", "four"]);
   });
 });
 

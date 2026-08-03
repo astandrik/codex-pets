@@ -38,6 +38,7 @@ export function decodeRelatedPetVector(
   const expectedByteLength =
     expected.dimensions * Float32Array.BYTES_PER_ELEMENT + 1;
   if (
+    expected.dimensions <= 0 ||
     row.modelRevision !== expected.modelRevision ||
     row.dimensions !== expected.dimensions ||
     row.sourceHash !== expected.sourceHash ||
@@ -50,7 +51,10 @@ export function decodeRelatedPetVector(
   const vector = Array.from({ length: expected.dimensions }, (_, index) =>
     row.embedding.readFloatLE(index * Float32Array.BYTES_PER_ELEMENT),
   );
-  return vector.every(Number.isFinite) ? vector : null;
+  return vector.every(Number.isFinite) &&
+    vector.some((value) => value !== 0)
+    ? vector
+    : null;
 }
 
 export function cosineSimilarity(
@@ -257,6 +261,9 @@ function uniqueKnownSlugs(
 
 function normalizedLimit(limit: number | undefined): number {
   return Number.isFinite(limit)
-    ? Math.max(0, Math.trunc(limit ?? RELATED_PETS_DEFAULT_LIMIT))
+    ? Math.min(
+        RELATED_PETS_DEFAULT_LIMIT,
+        Math.max(0, Math.trunc(limit ?? RELATED_PETS_DEFAULT_LIMIT)),
+      )
     : RELATED_PETS_DEFAULT_LIMIT;
 }

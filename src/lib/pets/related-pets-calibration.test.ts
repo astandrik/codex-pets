@@ -74,6 +74,25 @@ function observation(
 }
 
 describe("related pet profile selection", () => {
+  it("selects a later text threshold when it strictly improves nDCG@4", () => {
+    expect(
+      selectRelatedTextThreshold(
+        [
+          observation({
+            metadataSlugs: ["other", "peer"],
+            textMatches: [{ slug: "peer", score: 0.8 }],
+            visualMatches: [],
+          }),
+        ],
+        [0.8, 0.9],
+      ),
+    ).toMatchObject({
+      textMinSimilarity: 0.8,
+      ndcgAt4: 1,
+      evaluatedThresholdCount: 2,
+    });
+  });
+
   it("selects the higher text threshold when calibration nDCG ties", () => {
     expect(
       selectRelatedTextThreshold([observation()], [0.4, 0.9]),
@@ -83,10 +102,41 @@ describe("related pet profile selection", () => {
     });
   });
 
-  it("uses only approved visual weights and breaks ties by lower weight then higher threshold", () => {
+  it("selects a later visual profile when it strictly improves nDCG@4", () => {
+    expect(
+      selectRelatedVisualProfile(
+        [
+          observation({
+            metadataSlugs: ["other", "peer"],
+            textMatches: [],
+            visualMatches: [{ slug: "peer", score: 0.8 }],
+          }),
+        ],
+        Number.POSITIVE_INFINITY,
+        [0.8, 0.9],
+      ),
+    ).toMatchObject({
+      visualMinSimilarity: 0.8,
+      visualWeight: 0.25,
+      ndcgAt4: 1,
+      evaluatedProfileCount: 6,
+    });
+  });
+
+  it("uses only approved visual weights and breaks ties by lower weight", () => {
     expect(RELATED_PETS_VISUAL_WEIGHT_CANDIDATES).toEqual([
       0.25, 0.5, 0.75,
     ]);
+    expect(
+      selectRelatedVisualProfile([observation()], 0.9, [0.9]),
+    ).toMatchObject({
+      visualMinSimilarity: 0.9,
+      visualWeight: 0.25,
+      evaluatedProfileCount: 3,
+    });
+  });
+
+  it("breaks remaining visual profile ties by higher threshold", () => {
     expect(
       selectRelatedVisualProfile([observation()], 0.9, [0.4, 0.9]),
     ).toMatchObject({
