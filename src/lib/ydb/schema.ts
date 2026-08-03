@@ -15,4 +15,6 @@ export const TABLES = {
   idempotencyKeys: "codex_idempotency_keys",
   searchEmbeddings: "codex_pet_search_embeddings",
   searchCaptions: "codex_pet_search_captions",
+  relatedState: "codex_pet_related_state",
+  relatedSnapshots: "codex_pet_related_snapshots",
 } as const;
