@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  PET_DERIVED_VISION_CAPTION_REVISION,
   PET_VISION_CAPTION_REVISION,
   PET_VISUAL_MODEL_REVISION,
   buildPetVisionCaptionText,
+  createPetDerivedVisionCaptionEnvelope,
+  createPetDerivedVisionCaptionSourceHash,
+  createPetDerivedVisionCaptionSourceHashFromTextHash,
+  createPetVisionCaptionTextHash,
   createPetVisionCaptionEnvelope,
   createPetVisionCaptionSourceHash,
   createPetVisualEmbeddingSourceHash,
+  parsePetDerivedVisionCaptionEnvelope,
   parsePetVisionCaption,
   parsePetVisionCaptionEnvelope,
 } from "@/lib/pets/search-vision-contract";
@@ -147,5 +153,98 @@ describe("pet vision caption contract", () => {
         captionText,
       }),
     ).not.toBe(visualHash);
+  });
+
+  it("stores strict derived-caption provenance and invalidates every upstream input", () => {
+    const caption = parsePetVisionCaption(rawCaption);
+    const upstreamCaptionText = buildPetVisionCaptionText(caption);
+    const upstreamCaptionTextSha256 =
+      createPetVisionCaptionTextHash(upstreamCaptionText);
+    const sourceInput = {
+      captionRevision: PET_DERIVED_VISION_CAPTION_REVISION,
+      modelUri: "gpt://folder-1/deepseek-v4-flash",
+      upstreamCaptionRevision: PET_VISION_CAPTION_REVISION,
+      upstreamSourceHash: "a".repeat(64),
+      upstreamCaptionText,
+    };
+    const sourceHash = createPetDerivedVisionCaptionSourceHash(sourceInput);
+    const envelope = createPetDerivedVisionCaptionEnvelope({
+      upstreamCaptionRevision: PET_VISION_CAPTION_REVISION,
+      upstreamSourceHash: sourceInput.upstreamSourceHash,
+      upstreamCaptionTextSha256,
+      caption,
+    });
+
+    expect(
+      parsePetDerivedVisionCaptionEnvelope(JSON.stringify(envelope)),
+    ).toEqual(envelope);
+    expect(envelope).toMatchObject({
+      schemaVersion: 2,
+      source: {
+        upstreamCaptionRevision: PET_VISION_CAPTION_REVISION,
+        upstreamSourceHash: "a".repeat(64),
+        upstreamCaptionTextSha256,
+      },
+    });
+    expect(
+      createPetDerivedVisionCaptionSourceHashFromTextHash({
+        captionRevision: sourceInput.captionRevision,
+        modelUri: sourceInput.modelUri,
+        upstreamCaptionRevision: sourceInput.upstreamCaptionRevision,
+        upstreamSourceHash: sourceInput.upstreamSourceHash,
+        upstreamCaptionTextSha256,
+      }),
+    ).toBe(sourceHash);
+    expect(
+      createPetDerivedVisionCaptionSourceHash({
+        ...sourceInput,
+        modelUri: "gpt://folder-1/deepseek-v4-flash-changed",
+      }),
+    ).not.toBe(sourceHash);
+    expect(
+      createPetDerivedVisionCaptionSourceHash({
+        ...sourceInput,
+        upstreamSourceHash: "b".repeat(64),
+      }),
+    ).not.toBe(sourceHash);
+    expect(
+      createPetDerivedVisionCaptionSourceHash({
+        ...sourceInput,
+        upstreamCaptionText: `${upstreamCaptionText}\nchanged`,
+      }),
+    ).not.toBe(sourceHash);
+  });
+
+  it("rejects incomplete or non-hash derived provenance", () => {
+    const caption = parsePetVisionCaption(rawCaption);
+    const envelope = createPetDerivedVisionCaptionEnvelope({
+      upstreamCaptionRevision: PET_VISION_CAPTION_REVISION,
+      upstreamSourceHash: "a".repeat(64),
+      upstreamCaptionTextSha256: "b".repeat(64),
+      caption,
+    });
+
+    expect(() =>
+      parsePetDerivedVisionCaptionEnvelope(
+        JSON.stringify({
+          ...envelope,
+          source: {
+            ...envelope.source,
+            upstreamCaptionTextSha256: "not-a-hash",
+          },
+        }),
+      ),
+    ).toThrow(/upstreamCaptionTextSha256/i);
+    expect(() =>
+      parsePetDerivedVisionCaptionEnvelope(
+        JSON.stringify({
+          ...envelope,
+          source: {
+            ...envelope.source,
+            catalogSlug: "must-not-exist",
+          },
+        }),
+      ),
+    ).toThrow(/unknown field/i);
   });
 });

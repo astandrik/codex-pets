@@ -5,19 +5,23 @@ import {
   PET_SEARCH_MODEL_REVISIONS,
   PET_VISUAL_MODEL_REVISIONS,
 } from "@/lib/pets/search-config";
-import { PET_VISION_CAPTION_REVISION } from "@/lib/pets/search-vision-contract";
+import {
+  PET_DERIVED_VISION_CAPTION_REVISION,
+  PET_VISION_CAPTION_REVISION,
+} from "@/lib/pets/search-vision-contract";
 
 const supportedRevision = Object.keys(PET_SEARCH_MODEL_REVISIONS)[0] ?? "";
 const supportedVisualRevision =
   Object.keys(PET_VISUAL_MODEL_REVISIONS)[0] ?? "";
-const v2TextRevision =
-  "yandex-text-embeddings-v2-768-2026-07";
-const v2VisualRevision =
-  "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1";
 const calibratedVisualProfile = {
   minSemanticScore: 0.3455384373664856,
   weight: 0.25,
 };
+const v2TextRevision = "yandex-text-embeddings-v2-768-2026-07";
+const v2QwenVisualRevision =
+  "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1";
+const v2DeepSeekVisualRevision =
+  "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-deepseek-v4-v1";
 
 describe("pet search runtime configuration", () => {
   it("defaults to lexical mode without reading semantic secrets", () => {
@@ -50,7 +54,6 @@ describe("pet search runtime configuration", () => {
     expect(config.visual).toMatchObject({
       captionRevision: PET_VISION_CAPTION_REVISION,
       visualRevision: supportedVisualRevision,
-      embeddingModelId: "yandex-text-search-v1-256",
       dimensions: 256,
       profile: calibratedVisualProfile,
       visionTimeoutMs: 30_000,
@@ -103,13 +106,13 @@ describe("pet search runtime configuration", () => {
     });
   });
 
-  it("loads compatible calibrated v2 text and Qwen visual profiles", () => {
+  it("loads compatible calibrated direct managed v2 768 profiles", () => {
     const config = loadPetSearchConfig(
       {
         PET_SEARCH_MODE: "hybrid",
         PET_SEARCH_MODEL_REVISION: v2TextRevision,
         PET_SEARCH_VISUAL_MODE: "hybrid",
-        PET_SEARCH_VISUAL_MODEL_REVISION: v2VisualRevision,
+        PET_SEARCH_VISUAL_MODEL_REVISION: v2QwenVisualRevision,
         YANDEX_AI_STUDIO_FOLDER_ID: "folder-1",
         YANDEX_AI_STUDIO_API_KEY_FILE: "/run/secrets/key",
       },
@@ -123,7 +126,7 @@ describe("pet search runtime configuration", () => {
       minSemanticScore: 0.28,
     });
     expect(config.visual).toMatchObject({
-      visualRevision: v2VisualRevision,
+      visualRevision: v2QwenVisualRevision,
       embeddingModelId: "yandex-text-embeddings-v2-768",
       dimensions: 768,
       profile: {
@@ -135,19 +138,46 @@ describe("pet search runtime configuration", () => {
     expect(config.visualFallbackReason).toBeNull();
   });
 
-  it("disables visual ranking for incompatible embedding providers", () => {
+  it("registers the managed Qwen to DeepSeek caption pipeline", () => {
     const config = loadPetSearchConfig(
       {
-        PET_SEARCH_MODE: "hybrid",
-        PET_SEARCH_MODEL_REVISION: supportedRevision,
-        PET_SEARCH_VISUAL_MODE: "hybrid",
-        PET_SEARCH_VISUAL_MODEL_REVISION: v2VisualRevision,
+        PET_SEARCH_MODE: "lexical",
+        PET_SEARCH_MODEL_REVISION: v2TextRevision,
+        PET_SEARCH_VISUAL_MODE: "off",
+        PET_SEARCH_VISION_CAPTION_REVISION:
+          PET_DERIVED_VISION_CAPTION_REVISION,
+        PET_SEARCH_VISUAL_MODEL_REVISION: v2DeepSeekVisualRevision,
         YANDEX_AI_STUDIO_FOLDER_ID: "folder-1",
         YANDEX_AI_STUDIO_API_KEY_FILE: "/run/secrets/key",
       },
       () => "secret",
     );
 
+    expect(config.visual).toMatchObject({
+      captionRevision: PET_DERIVED_VISION_CAPTION_REVISION,
+      visualRevision: v2DeepSeekVisualRevision,
+      embeddingModelId: "yandex-text-embeddings-v2-768",
+      dimensions: 768,
+      profile: null,
+      modelUri: "gpt://folder-1/deepseek-v4-flash",
+    });
+  });
+
+  it("disables visual ranking when text and visual embedding models differ", () => {
+    const config = loadPetSearchConfig(
+      {
+        PET_SEARCH_MODE: "shadow",
+        PET_SEARCH_MODEL_REVISION: supportedRevision,
+        PET_SEARCH_VISUAL_MODE: "shadow",
+        PET_SEARCH_VISUAL_MODEL_REVISION: v2QwenVisualRevision,
+        YANDEX_AI_STUDIO_FOLDER_ID: "folder-1",
+        YANDEX_AI_STUDIO_API_KEY_FILE: "/run/secrets/key",
+      },
+      () => "secret",
+    );
+
+    expect(config.semantic?.dimensions).toBe(256);
+    expect(config.visual?.dimensions).toBe(768);
     expect(config.visualFallbackReason).toBe(
       "visual_embedding_incompatible",
     );

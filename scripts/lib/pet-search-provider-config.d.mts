@@ -4,9 +4,17 @@ export type BackfillEmbeddingDefinition = {
   requestDimensions: number | null;
 };
 
-export type VisionBackfillCaptionDefinition = {
-  modelName: string;
-};
+export type VisionBackfillCaptionDefinition =
+  | {
+      kind: "vision";
+      modelName: string;
+    }
+  | {
+      kind: "rewrite";
+      modelName: string;
+      upstreamCaptionRevision: string;
+      upstreamModelName: string;
+    };
 
 export const PET_SEARCH_BACKFILL_REVISIONS: Record<
   string,

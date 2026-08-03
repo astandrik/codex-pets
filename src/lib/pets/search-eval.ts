@@ -73,12 +73,139 @@ export type VisualSearchProfileReport = {
 
 export type VisualSearchEvalSplit = "calibration" | "holdout";
 
+export type PetCaptionHumanReview = {
+  petSlug: string;
+  captionRevision: string;
+  unsupportedFact: boolean;
+  bilingualContradiction: boolean;
+  coverage: number;
+  searchUtility: number;
+};
+
+export type PetCaptionCandidateEvaluation = {
+  captionRevision: string;
+  visualRevision: string;
+  passed: boolean;
+  checks: {
+    completeHumanReview: boolean;
+    noUnsupportedFacts: boolean;
+    noBilingualContradictions: boolean;
+    noSchemaFailures: boolean;
+    noMissingCaptions: boolean;
+    exactNameMrrAt5: boolean;
+    textHybridNdcgLift: boolean;
+    combinedOverallNonRegression: boolean;
+    visualSubsetNdcgLift: boolean;
+    negativeSafety: boolean;
+    sexyHasRelevantTop5: boolean;
+    p95Duration: boolean;
+    textV2NonRegression: boolean;
+  };
+  textReport: SearchQualityReport;
+  visualReport: VisualSearchProfileReport;
+  meanHumanScore: number;
+};
+
 export function resolveVisualSearchEvalSplit(
   mode: string | undefined,
 ): VisualSearchEvalSplit | null {
   if (mode === "calibrate") return "calibration";
   if (mode === "holdout") return "holdout";
   return null;
+}
+
+export function evaluatePetCaptionCandidate(input: {
+  captionRevision: string;
+  visualRevision: string;
+  approvedPetSlugs: readonly string[];
+  reviews: readonly PetCaptionHumanReview[];
+  schemaFailureSlugs: readonly string[];
+  missingCaptionSlugs: readonly string[];
+  textReport: SearchQualityReport;
+  visualReport: VisualSearchProfileReport;
+  freshV1TextNdcgAt5: number;
+}): PetCaptionCandidateEvaluation {
+  const approvedSlugs = new Set(input.approvedPetSlugs);
+  const validReviews = input.reviews.filter(
+    (review) =>
+      review.captionRevision === input.captionRevision &&
+      approvedSlugs.has(review.petSlug) &&
+      Number.isInteger(review.coverage) &&
+      review.coverage >= 1 &&
+      review.coverage <= 5 &&
+      Number.isInteger(review.searchUtility) &&
+      review.searchUtility >= 1 &&
+      review.searchUtility <= 5,
+  );
+  const reviewedSlugs = new Set(validReviews.map((review) => review.petSlug));
+  const quality = evaluateVisualSearchQualityGate(
+    input.visualReport,
+    input.textReport,
+  ).checks;
+  const checks = {
+    completeHumanReview:
+      validReviews.length === approvedSlugs.size &&
+      reviewedSlugs.size === approvedSlugs.size,
+    noUnsupportedFacts: validReviews.every(
+      (review) => !review.unsupportedFact,
+    ),
+    noBilingualContradictions: validReviews.every(
+      (review) => !review.bilingualContradiction,
+    ),
+    noSchemaFailures: input.schemaFailureSlugs.length === 0,
+    noMissingCaptions: input.missingCaptionSlugs.length === 0,
+    exactNameMrrAt5: quality.exactNameMrrAt5,
+    textHybridNdcgLift: quality.textHybridNdcgLift,
+    combinedOverallNonRegression:
+      quality.combinedOverallNonRegression,
+    visualSubsetNdcgLift: quality.visualSubsetNdcgLift,
+    negativeSafety:
+      quality.textNegativeSemanticOnlySafe &&
+      quality.negativeVisualOnlySafe,
+    sexyHasRelevantTop5: quality.sexyHasRelevantTop5,
+    p95Duration: quality.p95Duration,
+    textV2NonRegression:
+      input.textReport.hybridNdcgAt5 >= input.freshV1TextNdcgAt5,
+  };
+
+  return {
+    captionRevision: input.captionRevision,
+    visualRevision: input.visualRevision,
+    passed: Object.values(checks).every(Boolean),
+    checks,
+    textReport: input.textReport,
+    visualReport: input.visualReport,
+    meanHumanScore: mean(
+      validReviews.map(
+        (review) => (review.coverage + review.searchUtility) / 2,
+      ),
+    ),
+  };
+}
+
+export function selectPetCaptionWinner(
+  candidates: readonly PetCaptionCandidateEvaluation[],
+  qwenCaptionRevision: string,
+): PetCaptionCandidateEvaluation {
+  const passing = candidates.filter((candidate) => candidate.passed);
+  if (passing.length === 0) {
+    throw new Error("No caption candidate passes every rollout gate.");
+  }
+  return passing.toSorted((left, right) => {
+    const visualSubset =
+      right.visualReport.visualSubsetCombinedNdcgAt5 -
+      left.visualReport.visualSubsetCombinedNdcgAt5;
+    if (visualSubset !== 0) return visualSubset;
+    const overall =
+      right.visualReport.combinedNdcgAt5 -
+      left.visualReport.combinedNdcgAt5;
+    if (overall !== 0) return overall;
+    const human = right.meanHumanScore - left.meanHumanScore;
+    if (human !== 0) return human;
+    if (left.captionRevision === qwenCaptionRevision) return -1;
+    if (right.captionRevision === qwenCaptionRevision) return 1;
+    return left.captionRevision.localeCompare(right.captionRevision);
+  })[0]!;
 }
 
 export function calibrateVisualSearchProfile<T extends SearchablePet>(

@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import fixtures from "@/lib/pets/search-eval-fixtures.json";
 import {
   calibrateVisualSearchProfile,
+  evaluatePetCaptionCandidate,
   evaluateSearchRolloutGate,
   evaluateSearchQuality,
   evaluateVisualSearchQualityGate,
   evaluateVisualSearchRolloutGate,
   resolveVisualSearchEvalSplit,
+  selectPetCaptionWinner,
   selectSemanticThreshold,
 } from "@/lib/pets/search-eval";
 import { PET_SEARCH_MODEL_REVISIONS } from "@/lib/pets/search-config";
@@ -74,6 +76,85 @@ describe("pet search evaluation", () => {
       PET_SEARCH_MODEL_REVISIONS["yandex-text-search-2026-07"]
       .minSemanticScore,
     ).toBe(threshold);
+  });
+
+  it("rejects unsafe or incomplete caption candidates before ranking", () => {
+    const report = visualReport({
+      visualSubsetCombinedNdcgAt5: 0.9,
+      combinedNdcgAt5: 0.8,
+    });
+    const textReport = searchReport({ hybridNdcgAt5: 0.75 });
+    const result = evaluatePetCaptionCandidate({
+      captionRevision: "candidate-a",
+      visualRevision: "visual-a",
+      approvedPetSlugs: ["a", "b"],
+      reviews: [
+        humanReview("a", "candidate-a"),
+        {
+          ...humanReview("b", "candidate-a"),
+          unsupportedFact: true,
+        },
+      ],
+      schemaFailureSlugs: [],
+      missingCaptionSlugs: [],
+      textReport,
+      visualReport: report,
+      freshV1TextNdcgAt5: 0.74,
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.checks).toMatchObject({
+      completeHumanReview: true,
+      noUnsupportedFacts: false,
+      noBilingualContradictions: true,
+      noSchemaFailures: true,
+      noMissingCaptions: true,
+      textV2NonRegression: true,
+    });
+  });
+
+  it("selects the best passing caption with an exact Qwen tie-break", () => {
+    const qwen = evaluatePetCaptionCandidate({
+      captionRevision: "qwen",
+      visualRevision: "visual-qwen",
+      approvedPetSlugs: ["a"],
+      reviews: [humanReview("a", "qwen", 4, 4)],
+      schemaFailureSlugs: [],
+      missingCaptionSlugs: [],
+      textReport: searchReport(),
+      visualReport: visualReport({
+        visualSubsetCombinedNdcgAt5: 0.9,
+        combinedNdcgAt5: 0.8,
+      }),
+      freshV1TextNdcgAt5: 0.7,
+    });
+    const deepseek = evaluatePetCaptionCandidate({
+      captionRevision: "deepseek",
+      visualRevision: "visual-deepseek",
+      approvedPetSlugs: ["a"],
+      reviews: [humanReview("a", "deepseek", 5, 5)],
+      schemaFailureSlugs: [],
+      missingCaptionSlugs: [],
+      textReport: searchReport(),
+      visualReport: visualReport({
+        visualSubsetCombinedNdcgAt5: 0.9,
+        combinedNdcgAt5: 0.8,
+      }),
+      freshV1TextNdcgAt5: 0.7,
+    });
+
+    expect(qwen.passed).toBe(true);
+    expect(deepseek.passed).toBe(true);
+    expect(
+      selectPetCaptionWinner([deepseek, qwen], "qwen").captionRevision,
+    ).toBe("deepseek");
+    const exactTie = {
+      ...deepseek,
+      meanHumanScore: qwen.meanHumanScore,
+    };
+    expect(
+      selectPetCaptionWinner([exactTie, qwen], "qwen").captionRevision,
+    ).toBe("qwen");
   });
 
   it("refuses to calibrate or pass safety without negative fixtures", () => {
@@ -292,6 +373,58 @@ describe("pet search evaluation", () => {
     ).toBe(false);
   });
 });
+
+function humanReview(
+  petSlug: string,
+  captionRevision: string,
+  coverage = 5,
+  searchUtility = 5,
+) {
+  return {
+    petSlug,
+    captionRevision,
+    unsupportedFact: false,
+    bilingualContradiction: false,
+    coverage,
+    searchUtility,
+  };
+}
+
+function searchReport(
+  overrides: Partial<ReturnType<typeof evaluateSearchQuality>> = {},
+) {
+  return {
+    exactNameMrrAt5: 1,
+    lexicalNdcgAt5: 0.5,
+    hybridNdcgAt5: 0.7,
+    hybridNdcgLift: 0.4,
+    sexyHasRelevantTop5: true,
+    sexyHumanReviewedTop5: true,
+    negativeSemanticOnlySafe: true,
+    p95DurationMs: 500,
+    ...overrides,
+  };
+}
+
+function visualReport(
+  overrides: Partial<
+    ReturnType<typeof calibrateVisualSearchProfile>["report"]
+  > = {},
+) {
+  return {
+    exactNameMrrAt5: 1,
+    textHybridNdcgAt5: 0.7,
+    combinedNdcgAt5: 0.8,
+    visualSubsetTextHybridNdcgAt5: 0.6,
+    visualSubsetCombinedNdcgAt5: 0.9,
+    visualSubsetLift: 0.5,
+    sexyHasRelevantTop5: true,
+    negativeVisualOnlySafe: true,
+    p95DurationMs: 500,
+    rankings: [],
+    ...overrides,
+  };
+}
 
 function searchablePet(slug: string, displayName: string) {
   return {

@@ -4,6 +4,8 @@ import { PET_VISION_FRAME_POLICY } from "@/lib/pets/search-vision-frames";
 
 export const PET_VISION_CAPTION_REVISION =
   "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1";
+export const PET_DERIVED_VISION_CAPTION_REVISION =
+  "yandex-qwen3.6-35b-a3b-deepseek-v4-flash-pet-caption-2026-07-v1";
 export const PET_VISUAL_MODEL_REVISION =
   "yandex-text-search-2026-07-pet-vision-v1";
 
@@ -78,6 +80,15 @@ export const PET_VISION_RESPONSE_JSON_SCHEMA = {
   },
 } as const;
 
+export const PET_CAPTION_REWRITE_SYSTEM_PROMPT =
+  "Rewrite one validated bilingual visual-search caption using only facts already present in the input. Never add or infer identity, a character name, catalog metadata, hidden backstory, protected attributes, an exact age, or any unseen detail. Improve concrete visible coverage and search utility while keeping English and Russian fields semantic equivalents. Output only JSON matching the supplied schema.";
+
+export const PET_CAPTION_REWRITE_RESPONSE_JSON_SCHEMA =
+  PET_VISION_RESPONSE_JSON_SCHEMA;
+
+export const PET_CAPTION_OUTPUT_NORMALIZATION_REVISION =
+  "pet-vision-caption-nfkc-whitespace-dedupe-v1";
+
 export type BilingualText = {
   en: string;
   ru: string;
@@ -99,6 +110,16 @@ export type PetVisionCaptionEnvelope = {
   source: {
     assetId: string;
     spritesheetSha256: string;
+  };
+  caption: PetVisionCaption;
+};
+
+export type PetDerivedVisionCaptionEnvelope = {
+  schemaVersion: 2;
+  source: {
+    upstreamCaptionRevision: string;
+    upstreamSourceHash: string;
+    upstreamCaptionTextSha256: string;
   };
   caption: PetVisionCaption;
 };
@@ -182,6 +203,35 @@ export function parsePetVisionCaptionEnvelope(
   return parseEnvelopeValue(parsed);
 }
 
+export function createPetDerivedVisionCaptionEnvelope(input: {
+  upstreamCaptionRevision: string;
+  upstreamSourceHash: string;
+  upstreamCaptionTextSha256: string;
+  caption: PetVisionCaption;
+}): PetDerivedVisionCaptionEnvelope {
+  return parseDerivedEnvelopeValue({
+    schemaVersion: 2,
+    source: {
+      upstreamCaptionRevision: input.upstreamCaptionRevision,
+      upstreamSourceHash: input.upstreamSourceHash,
+      upstreamCaptionTextSha256: input.upstreamCaptionTextSha256,
+    },
+    caption: input.caption,
+  });
+}
+
+export function parsePetDerivedVisionCaptionEnvelope(
+  value: string,
+): PetDerivedVisionCaptionEnvelope {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("Derived caption envelope must contain one JSON object.");
+  }
+  return parseDerivedEnvelopeValue(parsed);
+}
+
 export function buildPetVisionCaptionText(
   caption: PetVisionCaption,
 ): string {
@@ -219,6 +269,47 @@ export function createPetVisionCaptionSourceHash(input: {
     JSON.stringify(PET_VISION_FRAME_POLICY.frames),
     input.assetId,
     input.spritesheetSha256,
+  ]);
+}
+
+export function createPetVisionCaptionTextHash(captionText: string): string {
+  return createHash("sha256").update(captionText, "utf8").digest("hex");
+}
+
+export function createPetDerivedVisionCaptionSourceHash(input: {
+  captionRevision: string;
+  modelUri: string;
+  upstreamCaptionRevision: string;
+  upstreamSourceHash: string;
+  upstreamCaptionText: string;
+}): string {
+  return createPetDerivedVisionCaptionSourceHashFromTextHash({
+    captionRevision: input.captionRevision,
+    modelUri: input.modelUri,
+    upstreamCaptionRevision: input.upstreamCaptionRevision,
+    upstreamSourceHash: input.upstreamSourceHash,
+    upstreamCaptionTextSha256: createPetVisionCaptionTextHash(
+      input.upstreamCaptionText,
+    ),
+  });
+}
+
+export function createPetDerivedVisionCaptionSourceHashFromTextHash(input: {
+  captionRevision: string;
+  modelUri: string;
+  upstreamCaptionRevision: string;
+  upstreamSourceHash: string;
+  upstreamCaptionTextSha256: string;
+}): string {
+  return lengthPrefixedSha256([
+    input.captionRevision,
+    input.modelUri,
+    PET_CAPTION_REWRITE_SYSTEM_PROMPT,
+    JSON.stringify(PET_CAPTION_REWRITE_RESPONSE_JSON_SCHEMA),
+    PET_CAPTION_OUTPUT_NORMALIZATION_REVISION,
+    input.upstreamCaptionRevision,
+    input.upstreamSourceHash,
+    input.upstreamCaptionTextSha256,
   ]);
 }
 
@@ -263,6 +354,48 @@ function parseEnvelopeValue(input: unknown): PetVisionCaptionEnvelope {
   return {
     schemaVersion: 1,
     source: { assetId, spritesheetSha256 },
+    caption: parsePetVisionCaption(envelope.caption),
+  };
+}
+
+function parseDerivedEnvelopeValue(
+  input: unknown,
+): PetDerivedVisionCaptionEnvelope {
+  const envelope = strictObject(input, "derived caption envelope", [
+    "schemaVersion",
+    "source",
+    "caption",
+  ]);
+  if (envelope.schemaVersion !== 2) {
+    throw new Error("Derived caption envelope schemaVersion must be 2.");
+  }
+  const source = strictObject(envelope.source, "source", [
+    "upstreamCaptionRevision",
+    "upstreamSourceHash",
+    "upstreamCaptionTextSha256",
+  ]);
+  const upstreamCaptionRevision = normalizedString(
+    source.upstreamCaptionRevision,
+    "source.upstreamCaptionRevision",
+    1,
+    256,
+  );
+  const upstreamSourceHash = normalizedSha256(
+    source.upstreamSourceHash,
+    "source.upstreamSourceHash",
+  );
+  const upstreamCaptionTextSha256 = normalizedSha256(
+    source.upstreamCaptionTextSha256,
+    "source.upstreamCaptionTextSha256",
+  );
+
+  return {
+    schemaVersion: 2,
+    source: {
+      upstreamCaptionRevision,
+      upstreamSourceHash,
+      upstreamCaptionTextSha256,
+    },
     caption: parsePetVisionCaption(envelope.caption),
   };
 }
@@ -328,6 +461,14 @@ function normalizedString(
     throw new Error(
       `${path} must contain between ${minLength} and ${maxLength} characters.`,
     );
+  }
+  return value;
+}
+
+function normalizedSha256(input: unknown, path: string): string {
+  const value = normalizedString(input, path, 64, 64).toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(value)) {
+    throw new Error(`${path} must be lowercase SHA-256.`);
   }
   return value;
 }

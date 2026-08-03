@@ -3,7 +3,10 @@ import {
   listPetSearchCaptions,
   type StoredPetSearchCaption,
 } from "@/lib/pets/search-captions-repository";
-import type { PetSearchConfig } from "@/lib/pets/search-config";
+import {
+  PET_VISION_CAPTION_REVISIONS,
+  type PetSearchConfig,
+} from "@/lib/pets/search-config";
 import {
   buildPetSearchDocument,
   createPetSearchSourceHash,
@@ -32,8 +35,10 @@ import {
 } from "@/lib/pets/search-provider-runtime";
 import {
   buildPetVisionCaptionText,
+  createPetDerivedVisionCaptionSourceHashFromTextHash,
   createPetVisionCaptionSourceHash,
   createPetVisualEmbeddingSourceHash,
+  parsePetDerivedVisionCaptionEnvelope,
   parsePetVisionCaptionEnvelope,
 } from "@/lib/pets/search-vision-contract";
 import { listApprovedPetsForSearch } from "@/lib/pets/repository";
@@ -83,7 +88,8 @@ export function createApprovedPetSearchRuntime<T extends ApprovedSearchPet>(
   const search = createPetSearchService<T>({
     listApprovedPets: dependencies.listApprovedPets,
     mode: dependencies.config.mode,
-    minSemanticScore: dependencies.config.semantic?.minSemanticScore,
+    minSemanticScore:
+      dependencies.config.semantic?.minSemanticScore ?? undefined,
     visualMode: dependencies.config.visualMode,
     visualProfile: dependencies.config.visual?.profile,
     configuredVisualFallbackReason:
@@ -106,6 +112,12 @@ export function createApprovedPetSearchRuntime<T extends ApprovedSearchPet>(
       throw new PetSearchFallbackError(
         dependencies.config.fallbackReason ?? "configuration_missing",
       );
+    }
+    if (
+      dependencies.config.mode === "hybrid" &&
+      semanticConfig.minSemanticScore === null
+    ) {
+      throw new PetSearchFallbackError("semantic_calibration_missing");
     }
 
     let embedding: number[];
@@ -200,6 +212,7 @@ export function createApprovedPetSearchRuntime<T extends ApprovedSearchPet>(
     options: { force?: boolean } = {},
   ): Promise<PetSearchEmbeddingRefreshResult> {
     if (pet.status !== "approved") return "skipped";
+    if (dependencies.config.mode === "lexical") return "skipped";
 
     const semanticConfig = dependencies.config.semantic;
     const embeddingClient = dependencies.embeddingClient;
@@ -254,31 +267,75 @@ export function filterCurrentVisualMatches<T extends ApprovedSearchPet>(input: {
     const assetId = getPetAssetIdFromSpritesheetUrl(pet.spritesheetUrl);
     if (!assetId) return [];
 
-    const envelope = parsePetVisionCaptionEnvelope(caption.captionJson);
-    const captionText = buildPetVisionCaptionText(envelope.caption);
-    if (captionText !== caption.captionText) {
-      throw new Error("Stored visual caption is not canonical.");
-    }
-    if (envelope.source.assetId !== assetId) return [];
-
-    const captionSourceHash = createPetVisionCaptionSourceHash({
-      captionRevision: input.visualConfig.captionRevision,
-      modelUri: input.visualConfig.modelUri,
+    const currentCaption = readCurrentVisualCaption({
+      caption,
+      visualConfig: input.visualConfig,
       assetId,
-      spritesheetSha256: envelope.source.spritesheetSha256,
     });
-    if (caption.sourceHash !== captionSourceHash) return [];
+    if (!currentCaption) return [];
 
     const visualSourceHash = createPetVisualEmbeddingSourceHash({
       visualRevision: input.visualConfig.visualRevision,
       captionRevision: input.visualConfig.captionRevision,
-      captionSourceHash,
-      captionText,
+      captionSourceHash: currentCaption.sourceHash,
+      captionText: currentCaption.captionText,
     });
     if (match.sourceHash !== visualSourceHash) return [];
 
     return [{ slug: match.slug, score: match.score }];
   });
+}
+
+function readCurrentVisualCaption(input: {
+  caption: StoredPetSearchCaption;
+  visualConfig: NonNullable<PetSearchConfig["visual"]>;
+  assetId: string;
+}): { captionText: string; sourceHash: string } | null {
+  const definition =
+    PET_VISION_CAPTION_REVISIONS[input.visualConfig.captionRevision];
+  if (definition.kind === "vision") {
+    const envelope = parsePetVisionCaptionEnvelope(input.caption.captionJson);
+    const captionText = buildPetVisionCaptionText(envelope.caption);
+    if (captionText !== input.caption.captionText) {
+      throw new Error("Stored visual caption is not canonical.");
+    }
+    if (envelope.source.assetId !== input.assetId) return null;
+
+    const sourceHash = createPetVisionCaptionSourceHash({
+      captionRevision: input.visualConfig.captionRevision,
+      modelUri: input.visualConfig.modelUri,
+      assetId: input.assetId,
+      spritesheetSha256: envelope.source.spritesheetSha256,
+    });
+    return input.caption.sourceHash === sourceHash
+      ? { captionText, sourceHash }
+      : null;
+  }
+
+  const envelope = parsePetDerivedVisionCaptionEnvelope(
+    input.caption.captionJson,
+  );
+  const captionText = buildPetVisionCaptionText(envelope.caption);
+  if (captionText !== input.caption.captionText) {
+    throw new Error("Stored visual caption is not canonical.");
+  }
+  if (
+    envelope.source.upstreamCaptionRevision !==
+    definition.upstreamCaptionRevision
+  ) {
+    return null;
+  }
+
+  const sourceHash = createPetDerivedVisionCaptionSourceHashFromTextHash({
+    captionRevision: input.visualConfig.captionRevision,
+    modelUri: input.visualConfig.modelUri,
+    upstreamCaptionRevision: envelope.source.upstreamCaptionRevision,
+    upstreamSourceHash: envelope.source.upstreamSourceHash,
+    upstreamCaptionTextSha256: envelope.source.upstreamCaptionTextSha256,
+  });
+  return input.caption.sourceHash === sourceHash
+    ? { captionText, sourceHash }
+    : null;
 }
 
 const PROVIDER_FALLBACK_REASONS = new Set<PetSearchFallbackReason>([

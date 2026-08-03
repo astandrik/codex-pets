@@ -14,7 +14,15 @@ export const PET_SEARCH_BACKFILL_REVISIONS = {
 
 export const PET_VISION_BACKFILL_CAPTION_REVISIONS = {
   "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1": {
+    kind: "vision",
     modelName: "qwen3.6-35b-a3b",
+  },
+  "yandex-qwen3.6-35b-a3b-deepseek-v4-flash-pet-caption-2026-07-v1": {
+    kind: "rewrite",
+    modelName: "deepseek-v4-flash",
+    upstreamCaptionRevision:
+      "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1",
+    upstreamModelName: "qwen3.6-35b-a3b",
   },
 };
 
@@ -29,6 +37,13 @@ export const PET_VISUAL_BACKFILL_REVISIONS = {
   "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1": {
     captionRevision:
       "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1",
+    dimensions: 768,
+    documentModelPath: "text-embeddings-v2-doc",
+    requestDimensions: 768,
+  },
+  "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-deepseek-v4-v1": {
+    captionRevision:
+      "yandex-qwen3.6-35b-a3b-deepseek-v4-flash-pet-caption-2026-07-v1",
     dimensions: 768,
     documentModelPath: "text-embeddings-v2-doc",
     requestDimensions: 768,

@@ -4,11 +4,15 @@ import { PET_SEARCH_MODEL_REVISIONS } from "@/lib/pets/search-config";
 import { createPetSearchSourceHash } from "@/lib/pets/search-embeddings";
 import { createApprovedPetSearchRuntime } from "@/lib/pets/search-runtime";
 import {
+  PET_DERIVED_VISION_CAPTION_REVISION,
   PET_VISION_CAPTION_REVISION,
   PET_VISUAL_MODEL_REVISION,
   buildPetVisionCaptionText,
+  createPetDerivedVisionCaptionEnvelope,
+  createPetDerivedVisionCaptionSourceHash,
   createPetVisionCaptionEnvelope,
   createPetVisionCaptionSourceHash,
+  createPetVisionCaptionTextHash,
   createPetVisualEmbeddingSourceHash,
   type PetVisionCaption,
 } from "@/lib/pets/search-vision-contract";
@@ -200,6 +204,26 @@ describe("approved pet search runtime", () => {
     ).toBe("skipped");
   });
 
+  it("does not write text vectors while the rollout is inactive", async () => {
+    const deps = dependencies({
+      config: {
+        mode: "lexical",
+        semantic: semanticConfig,
+        fallbackReason: null,
+        visualMode: "off",
+        visual: null,
+        visualFallbackReason: null,
+      },
+    });
+    const runtime = createApprovedPetSearchRuntime(deps);
+
+    await expect(
+      runtime.refreshApprovedPetEmbedding(catalog[0]),
+    ).resolves.toBe("skipped");
+    expect(deps.embeddingClient.embedDocument).not.toHaveBeenCalled();
+    expect(deps.upsert).not.toHaveBeenCalled();
+  });
+
   it("does not read embeddings or captions in base lexical mode", async () => {
     const embedQuery = vi.fn(async () => Array(256).fill(0.1));
     const findSimilar = vi.fn(async () => []);
@@ -216,7 +240,7 @@ describe("approved pet search runtime", () => {
             apiKey: "secret",
             captionRevision: PET_VISION_CAPTION_REVISION,
             visualRevision: PET_VISUAL_MODEL_REVISION,
-            embeddingModelId: "yandex-text-search-v1-256",
+            embeddingModelId: "yandex-text-search-v1-256" as const,
             dimensions: 256,
             profile: { minSemanticScore: 0.9, weight: 0.5 },
             visionTimeoutMs: 30_000,
@@ -246,7 +270,7 @@ describe("approved pet search runtime", () => {
       apiKey: "secret",
       captionRevision: PET_VISION_CAPTION_REVISION,
       visualRevision: PET_VISUAL_MODEL_REVISION,
-      embeddingModelId: "yandex-text-search-v1-256",
+      embeddingModelId: "yandex-text-search-v1-256" as const,
       dimensions: 256,
       profile: null,
       visionTimeoutMs: 30_000,
@@ -336,14 +360,208 @@ describe("approved pet search runtime", () => {
     expect(findSimilar).toHaveBeenCalledTimes(2);
   });
 
-  it("does not query visual vectors from an incompatible provider", async () => {
+  it("returns validated visual matches for the derived DeepSeek caption revision", async () => {
+    const visualConfig = {
+      folderId: "folder-1",
+      apiKey: "secret",
+      captionRevision: PET_DERIVED_VISION_CAPTION_REVISION,
+      visualRevision:
+        "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-deepseek-v4-v1",
+      embeddingModelId: "yandex-text-embeddings-v2-768" as const,
+      dimensions: 768,
+      profile: null,
+      visionTimeoutMs: 30_000,
+      modelUri: "gpt://folder-1/deepseek-v4-flash",
+    } as const;
+    const visualCaption: PetVisionCaption = {
+      subject: { en: "woman", ru: "женщина" },
+      appearance: { en: "silver hair", ru: "серебряные волосы" },
+      clothing: { en: "black dress", ru: "чёрное платье" },
+      style: { en: "pixel art", ru: "пиксель-арт" },
+      mood: { en: "confident", ru: "уверенная" },
+      colors: { en: ["black"], ru: ["чёрный"] },
+      search_terms_en: ["anime woman", "gothic", "elegant"],
+      search_terms_ru: ["аниме девушка", "готика", "элегантная"],
+    };
+    const captionText = buildPetVisionCaptionText(visualCaption);
+    const captionSourceHash = createPetDerivedVisionCaptionSourceHash({
+      captionRevision: visualConfig.captionRevision,
+      modelUri: visualConfig.modelUri,
+      upstreamCaptionRevision: PET_VISION_CAPTION_REVISION,
+      upstreamSourceHash: "a".repeat(64),
+      upstreamCaptionText: captionText,
+    });
+    const visualSourceHash = createPetVisualEmbeddingSourceHash({
+      visualRevision: visualConfig.visualRevision,
+      captionRevision: visualConfig.captionRevision,
+      captionSourceHash,
+      captionText,
+    });
+    const findSimilar = vi.fn(async (input: { modelRevision: string }) =>
+      input.modelRevision === "yandex-text-embeddings-v2-768-2026-07"
+        ? []
+        : [{ slug: "velvet-byte", sourceHash: visualSourceHash, score: 0.95 }],
+    );
+    const runtime = createApprovedPetSearchRuntime(
+      dependencies({
+        config: {
+          mode: "shadow",
+          semantic: {
+            ...semanticConfig,
+            revision: "yandex-text-embeddings-v2-768-2026-07",
+            embeddingModelId: "yandex-text-embeddings-v2-768",
+            dimensions: 768,
+            minSemanticScore: null,
+          },
+          fallbackReason: null,
+          visualMode: "shadow",
+          visual: visualConfig,
+          visualFallbackReason: null,
+        },
+        embeddingClient: {
+          revision: "yandex-text-embeddings-v2-768-2026-07",
+          dimensions: 768,
+          embedQuery: vi.fn(async () => Array(768).fill(0.1)),
+          embedDocument: vi.fn(async () => Array(768).fill(0.2)),
+        },
+        findSimilar,
+        listCaptions: vi.fn(async () => [
+          {
+            slug: "velvet-byte",
+            sourceHash: captionSourceHash,
+            captionJson: JSON.stringify(
+              createPetDerivedVisionCaptionEnvelope({
+                upstreamCaptionRevision: PET_VISION_CAPTION_REVISION,
+                upstreamSourceHash: "a".repeat(64),
+                upstreamCaptionTextSha256:
+                  createPetVisionCaptionTextHash(captionText),
+                caption: visualCaption,
+              }),
+            ),
+            captionText,
+            updatedAt: "2026-07-25T12:00:00.000Z",
+          },
+        ]),
+      }),
+    );
+
+    await expect(runtime.searchApprovedPets({ q: "unrelated" })).resolves
+      .toMatchObject({
+        mode: "shadow",
+        visualFallbackReason: null,
+        visualCandidateCount: 1,
+      });
+    expect(findSimilar).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a derived visual caption whose provenance source hash is stale", async () => {
+    const visualConfig = {
+      folderId: "folder-1",
+      apiKey: "secret",
+      captionRevision: PET_DERIVED_VISION_CAPTION_REVISION,
+      visualRevision:
+        "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-deepseek-v4-v1",
+      embeddingModelId: "yandex-text-embeddings-v2-768" as const,
+      dimensions: 768,
+      profile: null,
+      visionTimeoutMs: 30_000,
+      modelUri: "gpt://folder-1/deepseek-v4-flash",
+    } as const;
+    const visualCaption: PetVisionCaption = {
+      subject: { en: "woman", ru: "женщина" },
+      appearance: { en: "silver hair", ru: "серебряные волосы" },
+      clothing: { en: "black dress", ru: "чёрное платье" },
+      style: { en: "pixel art", ru: "пиксель-арт" },
+      mood: { en: "confident", ru: "уверенная" },
+      colors: { en: ["black"], ru: ["чёрный"] },
+      search_terms_en: ["anime woman", "gothic", "elegant"],
+      search_terms_ru: ["аниме девушка", "готика", "элегантная"],
+    };
+    const captionText = buildPetVisionCaptionText(visualCaption);
+    const validCaptionSourceHash = createPetDerivedVisionCaptionSourceHash({
+      captionRevision: visualConfig.captionRevision,
+      modelUri: visualConfig.modelUri,
+      upstreamCaptionRevision: PET_VISION_CAPTION_REVISION,
+      upstreamSourceHash: "a".repeat(64),
+      upstreamCaptionText: captionText,
+    });
+    const runtime = createApprovedPetSearchRuntime(
+      dependencies({
+        config: {
+          mode: "shadow",
+          semantic: {
+            ...semanticConfig,
+            revision: "yandex-text-embeddings-v2-768-2026-07",
+            embeddingModelId: "yandex-text-embeddings-v2-768",
+            dimensions: 768,
+            minSemanticScore: null,
+          },
+          fallbackReason: null,
+          visualMode: "shadow",
+          visual: visualConfig,
+          visualFallbackReason: null,
+        },
+        embeddingClient: {
+          revision: "yandex-text-embeddings-v2-768-2026-07",
+          dimensions: 768,
+          embedQuery: vi.fn(async () => Array(768).fill(0.1)),
+          embedDocument: vi.fn(async () => Array(768).fill(0.2)),
+        },
+        findSimilar: vi.fn(async (input: { modelRevision: string }) =>
+          input.modelRevision === "yandex-text-embeddings-v2-768-2026-07"
+            ? []
+            : [
+                {
+                  slug: "velvet-byte",
+                  sourceHash: createPetVisualEmbeddingSourceHash({
+                    visualRevision: visualConfig.visualRevision,
+                    captionRevision: visualConfig.captionRevision,
+                    captionSourceHash: validCaptionSourceHash,
+                    captionText,
+                  }),
+                  score: 0.95,
+                },
+              ],
+        ),
+        listCaptions: vi.fn(async () => [
+          {
+            slug: "velvet-byte",
+            sourceHash: "b".repeat(64),
+            captionJson: JSON.stringify(
+              createPetDerivedVisionCaptionEnvelope({
+                upstreamCaptionRevision: PET_VISION_CAPTION_REVISION,
+                upstreamSourceHash: "a".repeat(64),
+                upstreamCaptionTextSha256:
+                  createPetVisionCaptionTextHash(captionText),
+                caption: visualCaption,
+              }),
+            ),
+            captionText,
+            updatedAt: "2026-07-25T12:00:00.000Z",
+          },
+        ]),
+      }),
+    );
+
+    await expect(runtime.searchApprovedPets({ q: "unrelated" })).resolves
+      .toMatchObject({
+        mode: "shadow",
+        visualFallbackReason: null,
+        visualCandidateCount: 0,
+      });
+  });
+
+  it("does not query visual vectors when their embedding model is incompatible", async () => {
+    const embedQuery = vi.fn(async () => Array(256).fill(0.1));
     const findSimilar = vi.fn(async () => []);
     const listCaptions = vi.fn(async () => []);
     const runtime = createApprovedPetSearchRuntime(
       dependencies({
         config: {
-          ...dependencies().config,
-          visualMode: "hybrid",
+          mode: "shadow",
+          semantic: semanticConfig,
+          fallbackReason: null,
+          visualMode: "shadow",
           visual: {
             folderId: "folder-1",
             apiKey: "secret",
@@ -352,11 +570,15 @@ describe("approved pet search runtime", () => {
               "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
             embeddingModelId: "yandex-text-embeddings-v2-768",
             dimensions: 768,
-            profile: { minSemanticScore: 0.35, weight: 0.25 },
+            profile: null,
             visionTimeoutMs: 30_000,
             modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
           },
           visualFallbackReason: "visual_embedding_incompatible",
+        },
+        embeddingClient: {
+          ...dependencies().embeddingClient,
+          embedQuery,
         },
         findSimilar,
         listCaptions,
@@ -365,11 +587,48 @@ describe("approved pet search runtime", () => {
 
     await expect(runtime.searchApprovedPets({ q: "space" })).resolves
       .toMatchObject({
+        mode: "shadow",
         visualFallbackReason: "visual_embedding_incompatible",
         visualCandidateCount: 0,
       });
+    expect(embedQuery).toHaveBeenCalledTimes(1);
     expect(findSimilar).toHaveBeenCalledTimes(1);
     expect(listCaptions).not.toHaveBeenCalled();
+  });
+
+  it("refuses uncalibrated semantic revisions in hybrid mode", async () => {
+    const embedQuery = vi.fn(async () => Array(768).fill(0.1));
+    const runtime = createApprovedPetSearchRuntime(
+      dependencies({
+        config: {
+          mode: "hybrid",
+          semantic: {
+            ...semanticConfig,
+            revision: "yandex-text-embeddings-v2-768-2026-07",
+            embeddingModelId: "yandex-text-embeddings-v2-768",
+            dimensions: 768,
+            minSemanticScore: null,
+          },
+          fallbackReason: "semantic_calibration_missing",
+          visualMode: "off",
+          visual: null,
+          visualFallbackReason: null,
+        },
+        embeddingClient: {
+          revision: "yandex-text-embeddings-v2-768-2026-07",
+          dimensions: 768,
+          embedQuery,
+          embedDocument: vi.fn(async () => Array(768).fill(0.2)),
+        },
+      }),
+    );
+
+    await expect(runtime.searchApprovedPets({ q: "space" })).resolves
+      .toMatchObject({
+        mode: "lexical_fallback",
+        fallbackReason: "semantic_calibration_missing",
+      });
+    expect(embedQuery).not.toHaveBeenCalled();
   });
 
   it("keeps text-hybrid results when visual storage fails", async () => {
@@ -383,7 +642,7 @@ describe("approved pet search runtime", () => {
             apiKey: "secret",
             captionRevision: PET_VISION_CAPTION_REVISION,
             visualRevision: PET_VISUAL_MODEL_REVISION,
-            embeddingModelId: "yandex-text-search-v1-256",
+            embeddingModelId: "yandex-text-search-v1-256" as const,
             dimensions: 256,
             profile: { minSemanticScore: 0.9, weight: 0.5 },
             visionTimeoutMs: 30_000,
@@ -419,7 +678,7 @@ describe("approved pet search runtime", () => {
       apiKey: "secret",
       captionRevision: PET_VISION_CAPTION_REVISION,
       visualRevision: PET_VISUAL_MODEL_REVISION,
-      embeddingModelId: "yandex-text-search-v1-256",
+      embeddingModelId: "yandex-text-search-v1-256" as const,
       dimensions: 256,
       profile: { minSemanticScore: 0.9, weight: 0.5 },
       visionTimeoutMs: 30_000,
