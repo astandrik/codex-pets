@@ -495,6 +495,8 @@ describe("related pets repository", () => {
       return { resultSets: [] };
     });
     const input = {
+      expectedRequestedGenerationId: "generation-2",
+      expectedStatus: "ready" as const,
       expectedActiveGenerationId: "generation-2",
       targetPreviousGenerationId: "generation-1",
       updatedAt: "2026-08-03T10:05:00.000Z",
@@ -517,10 +519,12 @@ describe("related pets repository", () => {
     );
     expect(update?.transactional).toBe(true);
     expect(update?.params).toMatchObject({
+      $expected_requested_generation_id: { textValue: "generation-2" },
       $expected_active_generation_id: { textValue: "generation-2" },
       $target_previous_generation_id: { textValue: "generation-1" },
       $ranking_revision: { textValue: "ranking-v0" },
-      $status: { textValue: "ready" },
+      $expected_status: { textValue: "ready" },
+      $ready_status: { textValue: "ready" },
     });
     expect(update?.statement).toContain(
       "active_generation_id = $expected_active_generation_id",
@@ -540,6 +544,133 @@ describe("related pets repository", () => {
     ).toHaveLength(1);
   });
 
+  it.each(["failed", "building"] as const)(
+    "recovers from an exact captured %s state without weakening token guards",
+    async (expectedStatus) => {
+      let recovered = false;
+      const harness = createHarness(async (statement) => {
+        if (statement.includes("SELECT state_id")) {
+          return recovered
+            ? stateResult({
+                requested: "generation-1",
+                active: "generation-1",
+                previous: "generation-2",
+                status: "ready",
+                rankingRevision: "ranking-v0",
+              })
+            : stateResult({
+                requested: "generation-incomplete",
+                active: "generation-2",
+                previous: "generation-1",
+                status: expectedStatus,
+                failureReason:
+                  expectedStatus === "failed" ? "rebuild_failed" : null,
+              });
+        }
+        if (statement.includes("SELECT DISTINCT ranking_revision")) {
+          return {
+            resultSets: [
+              { rows: [{ items: [{ textValue: "ranking-v0" }] }] },
+            ],
+          };
+        }
+        if (statement.includes("UPDATE codex_pet_related_state")) {
+          recovered = true;
+        }
+        return { resultSets: [] };
+      });
+      const input = {
+        expectedRequestedGenerationId: "generation-incomplete",
+        expectedStatus,
+        expectedActiveGenerationId: "generation-2",
+        targetPreviousGenerationId: "generation-1",
+        updatedAt: "2026-08-03T10:05:00.000Z",
+      };
+      const expected = {
+        activeGenerationId: "generation-1",
+        previousGenerationId: "generation-2",
+        rankingRevision: "ranking-v0",
+      };
+
+      await expect(
+        harness.repository.recoverPreviousGeneration(input),
+      ).resolves.toEqual(expected);
+      await expect(
+        harness.repository.recoverPreviousGeneration(input),
+      ).resolves.toEqual(expected);
+
+      const update = harness.statements.find(({ statement }) =>
+        statement.includes("UPDATE codex_pet_related_state"),
+      );
+      expect(update?.params).toMatchObject({
+        $expected_requested_generation_id: {
+          textValue: "generation-incomplete",
+        },
+        $expected_status: { textValue: expectedStatus },
+        $ready_status: { textValue: "ready" },
+      });
+      expect(update?.statement).toContain(
+        "requested_generation_id = $expected_requested_generation_id",
+      );
+      expect(update?.statement).toContain("status = $expected_status");
+      expect(
+        harness.statements.filter(({ statement }) =>
+          statement.includes("UPDATE codex_pet_related_state"),
+        ),
+      ).toHaveLength(1);
+      if (expectedStatus === "building") {
+        await expect(
+          harness.repository.activateGeneration({
+            generationId: "generation-incomplete",
+            rankingRevision: "ranking-v1",
+            updatedAt: "2026-08-03T10:06:00.000Z",
+          }),
+        ).resolves.toBe(false);
+      }
+    },
+  );
+
+  it.each([
+    {
+      name: "requested token",
+      actualRequested: "generation-newer",
+      actualStatus: "failed" as const,
+    },
+    {
+      name: "status",
+      actualRequested: "generation-incomplete",
+      actualStatus: "building" as const,
+    },
+  ])("rejects recovery when the captured $name changed", async (scenario) => {
+    const harness = createHarness(async (statement) =>
+      statement.includes("SELECT state_id")
+        ? stateResult({
+            requested: scenario.actualRequested,
+            active: "generation-2",
+            previous: "generation-1",
+            status: scenario.actualStatus,
+          })
+        : { resultSets: [] },
+    );
+
+    await expect(
+      harness.repository.recoverPreviousGeneration({
+        expectedRequestedGenerationId: "generation-incomplete",
+        expectedStatus: "failed",
+        expectedActiveGenerationId: "generation-2",
+        targetPreviousGenerationId: "generation-1",
+        updatedAt: "2026-08-03T10:05:00.000Z",
+      }),
+    ).resolves.toBeNull();
+    expect(
+      harness.statements.some(
+        ({ statement }) =>
+          statement.includes("SELECT DISTINCT ranking_revision") ||
+          statement.includes("UPDATE codex_pet_related_state"),
+      ),
+    ).toBe(false);
+  });
+
   it("rejects recovery when the captured generation pair is stale", async () => {
     const harness = createHarness(async (statement) =>
       statement.includes("SELECT state_id")
@@ -554,6 +685,8 @@ describe("related pets repository", () => {
 
     await expect(
       harness.repository.recoverPreviousGeneration({
+        expectedRequestedGenerationId: "generation-2",
+        expectedStatus: "ready",
         expectedActiveGenerationId: "generation-2",
         targetPreviousGenerationId: "generation-1",
         updatedAt: "2026-08-03T10:05:00.000Z",

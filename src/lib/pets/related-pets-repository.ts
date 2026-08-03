@@ -25,6 +25,8 @@ export type RelatedPetsSnapshot = {
 };
 
 export type RecoverPreviousRelatedPetsGenerationInput = {
+  expectedRequestedGenerationId: string;
+  expectedStatus: RelatedPetsGenerationStatus;
   expectedActiveGenerationId: string;
   targetPreviousGenerationId: string;
   updatedAt: string;
@@ -401,8 +403,9 @@ WHERE generation_id != $active_generation_id${previousFilter};
         };
       }
       if (
-        state?.status !== "ready" ||
-        state.requestedGenerationId !== input.expectedActiveGenerationId ||
+        state?.status !== input.expectedStatus ||
+        state.requestedGenerationId !==
+          input.expectedRequestedGenerationId ||
         state.activeGenerationId !== input.expectedActiveGenerationId ||
         state.previousGenerationId !== input.targetPreviousGenerationId
       ) {
@@ -433,9 +436,11 @@ WHERE generation_id = $generation_id;
       await execute(
         `
 DECLARE $state_id AS Utf8;
+DECLARE $expected_requested_generation_id AS Utf8;
 DECLARE $expected_active_generation_id AS Utf8;
 DECLARE $target_previous_generation_id AS Utf8;
-DECLARE $status AS Utf8;
+DECLARE $expected_status AS Utf8;
+DECLARE $ready_status AS Utf8;
 DECLARE $ranking_revision AS Utf8;
 DECLARE $updated_at AS Utf8;
 
@@ -443,25 +448,29 @@ UPDATE ${TABLES.relatedState}
 SET requested_generation_id = $target_previous_generation_id,
     previous_generation_id = $expected_active_generation_id,
     active_generation_id = $target_previous_generation_id,
-    status = $status,
+    status = $ready_status,
     ranking_revision = $ranking_revision,
     failure_reason = NULL,
     updated_at = $updated_at
 WHERE state_id = $state_id
-  AND requested_generation_id = $expected_active_generation_id
+  AND requested_generation_id = $expected_requested_generation_id
   AND active_generation_id = $expected_active_generation_id
   AND previous_generation_id = $target_previous_generation_id
-  AND status = $status;
+  AND status = $expected_status;
         `,
         {
           $state_id: dependencies.values.utf8(RELATED_PETS_STATE_ID),
+          $expected_requested_generation_id: dependencies.values.utf8(
+            input.expectedRequestedGenerationId,
+          ),
           $expected_active_generation_id: dependencies.values.utf8(
             input.expectedActiveGenerationId,
           ),
           $target_previous_generation_id: dependencies.values.utf8(
             input.targetPreviousGenerationId,
           ),
-          $status: dependencies.values.utf8("ready"),
+          $expected_status: dependencies.values.utf8(input.expectedStatus),
+          $ready_status: dependencies.values.utf8("ready"),
           $ranking_revision: dependencies.values.utf8(rankingRevision),
           $updated_at: dependencies.values.utf8(input.updatedAt),
         },

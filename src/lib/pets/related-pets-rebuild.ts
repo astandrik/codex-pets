@@ -337,7 +337,7 @@ export function createRelatedPetsRebuildService(
       }
       const state = await dependencies.repository.getState();
       if (
-        state?.status !== "ready" ||
+        !state?.requestedGenerationId ||
         !state.activeGenerationId ||
         !state.previousGenerationId
       ) {
@@ -351,6 +351,8 @@ export function createRelatedPetsRebuildService(
       }
       const recovered =
         await dependencies.repository.recoverPreviousGeneration({
+          expectedRequestedGenerationId: state.requestedGenerationId,
+          expectedStatus: state.status,
           expectedActiveGenerationId: state.activeGenerationId,
           targetPreviousGenerationId: state.previousGenerationId,
           updatedAt: dependencies.now().toISOString(),

@@ -159,6 +159,8 @@ function createHarness(options: {
   const mutations: string[] = [];
   const cleanupExpectedIds: Array<string | null> = [];
   const recoveryInputs: Array<{
+    expectedRequestedGenerationId: string;
+    expectedStatus: RelatedPetsState["status"];
     expectedActiveGenerationId: string;
     targetPreviousGenerationId: string;
     updatedAt: string;
@@ -297,6 +299,8 @@ function createHarness(options: {
       return true;
     },
     recoverPreviousGeneration: async (input: {
+      expectedRequestedGenerationId: string;
+      expectedStatus: RelatedPetsState["status"];
       expectedActiveGenerationId: string;
       targetPreviousGenerationId: string;
       updatedAt: string;
@@ -304,7 +308,8 @@ function createHarness(options: {
       recoveryInputs.push(input);
       if (options.recoveryError) throw options.recoveryError;
       if (
-        state?.status !== "ready" ||
+        state?.status !== input.expectedStatus ||
+        state.requestedGenerationId !== input.expectedRequestedGenerationId ||
         state.activeGenerationId !== input.expectedActiveGenerationId ||
         state.previousGenerationId !== input.targetPreviousGenerationId
       ) {
@@ -540,12 +545,47 @@ describe("related pets rebuild service", () => {
     });
     expect(harness.recoveryInputs).toEqual([
       {
+        expectedRequestedGenerationId: "generation-2",
+        expectedStatus: "ready",
         expectedActiveGenerationId: "generation-2",
         targetPreviousGenerationId: "generation-1",
         updatedAt: "2026-08-03T10:00:00.010Z",
       },
     ]);
   });
+
+  it.each(["failed", "building"] as const)(
+    "recovers the retained generation from an exact captured %s state",
+    async (expectedStatus) => {
+      const harness = createHarness({
+        initialState: {
+          requestedGenerationId: "generation-incomplete",
+          activeGenerationId: "generation-2",
+          previousGenerationId: "generation-1",
+          status: expectedStatus,
+          rankingRevision: "ranking-v1",
+          failureReason:
+            expectedStatus === "failed" ? "rebuild_failed" : null,
+          updatedAt: "2026-08-03T10:00:00.000Z",
+        },
+      });
+
+      await expect(harness.service.recoverPrevious()).resolves.toMatchObject({
+        status: "recovered",
+        generationId: "generation-1",
+        rankingRevision: "ranking-v0",
+      });
+      expect(harness.recoveryInputs).toEqual([
+        {
+          expectedRequestedGenerationId: "generation-incomplete",
+          expectedStatus,
+          expectedActiveGenerationId: "generation-2",
+          targetPreviousGenerationId: "generation-1",
+          updatedAt: "2026-08-03T10:00:00.010Z",
+        },
+      ]);
+    },
+  );
 
   it("reports no retained generation without treating configured storage as a failure", async () => {
     const harness = createHarness({
