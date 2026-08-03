@@ -69,6 +69,7 @@ function dependencies(
     getState: vi.fn(async () => readyState),
     getSnapshot: vi.fn(async () => readySnapshot),
     getHybridEnabledValue: () => undefined,
+    nowMs: () => 0,
     log: vi.fn(),
     ...overrides,
   };
@@ -80,7 +81,11 @@ describe("createRelatedPetsResolver", () => {
   });
 
   it("rehydrates a ready snapshot from approved candidates and fills four unique cards", async () => {
-    const deps = dependencies();
+    const nowMs = vi
+      .fn<() => number>()
+      .mockReturnValueOnce(100)
+      .mockReturnValueOnce(107);
+    const deps = dependencies({ nowMs });
     const resolveRelatedPets = createRelatedPetsResolver(deps);
 
     const result = await resolveRelatedPets(current);
@@ -90,6 +95,15 @@ describe("createRelatedPetsResolver", () => {
       "generation-ready",
       "source",
     );
+    expect(deps.log).toHaveBeenCalledTimes(1);
+    expect(deps.log).toHaveBeenCalledWith({
+      operation: "snapshot-read",
+      status: "ready",
+      reason: "snapshot-current",
+      generation: "active",
+      generationStatus: "ready",
+      durationMs: 7,
+    });
   });
 
   it.each([
@@ -106,6 +120,7 @@ describe("createRelatedPetsResolver", () => {
 
     expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c"]);
     expect(deps.getSnapshot).not.toHaveBeenCalled();
+    expect(deps.log).not.toHaveBeenCalled();
   });
 
   it("uses heuristic order when state is missing", async () => {
@@ -135,6 +150,15 @@ describe("createRelatedPetsResolver", () => {
     const result = await createRelatedPetsResolver(deps)(current);
 
     expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c"]);
+    expect(deps.log).toHaveBeenCalledTimes(1);
+    expect(deps.log).toHaveBeenCalledWith({
+      operation: "snapshot-read",
+      status: "heuristic",
+      reason: "snapshot-incompatible",
+      generation: "active",
+      generationStatus: "ready",
+      durationMs: 0,
+    });
   });
 
   it("uses heuristic order when the snapshot is missing", async () => {
@@ -143,29 +167,59 @@ describe("createRelatedPetsResolver", () => {
     const result = await createRelatedPetsResolver(deps)(current);
 
     expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c"]);
+    expect(deps.log).toHaveBeenCalledTimes(1);
+    expect(deps.log).toHaveBeenCalledWith({
+      operation: "snapshot-read",
+      status: "heuristic",
+      reason: "snapshot-missing",
+      generation: "active",
+      generationStatus: "ready",
+      durationMs: 0,
+    });
   });
 
   it.each(["state", "snapshot"])(
     "uses heuristic order when the %s read fails without logging error details",
     async (read) => {
+      const nowMs = vi
+        .fn<() => number>()
+        .mockReturnValueOnce(200)
+        .mockReturnValueOnce(215);
       const deps = dependencies({
         ...(read === "state"
-          ? { getState: vi.fn(async () => Promise.reject(new Error("secret state error"))) }
+          ? {
+              getState: vi.fn(async () =>
+                Promise.reject(new Error("secret state error")),
+              ),
+            }
           : {
               getSnapshot: vi.fn(async () =>
                 Promise.reject(new Error("secret malformed JSON")),
               ),
             }),
+        nowMs,
       });
 
       const result = await createRelatedPetsResolver(deps)(current);
 
       expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c"]);
-      expect(deps.log).toHaveBeenCalledWith({
-        operation: "resolve",
-        status: "heuristic",
-        reason: `${read}-read-failed`,
-      });
+      expect(deps.log).toHaveBeenCalledTimes(1);
+      expect(deps.log).toHaveBeenCalledWith(
+        read === "state"
+          ? {
+              operation: "resolve",
+              status: "heuristic",
+              reason: "state-read-failed",
+            }
+          : {
+              operation: "snapshot-read",
+              status: "heuristic",
+              reason: "snapshot-read-failed",
+              generation: "active",
+              generationStatus: "ready",
+              durationMs: 15,
+            },
+      );
       expect(JSON.stringify(vi.mocked(deps.log).mock.calls)).not.toContain(
         "secret",
       );
