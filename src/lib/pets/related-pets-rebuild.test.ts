@@ -137,6 +137,7 @@ function createHarness(options: {
   writeError?: Error;
   cleanupError?: Error;
   recoveryError?: Error;
+  retainedRankingRevision?: string;
   activationErrorAfterReady?: Error;
   initialState?: RelatedPetsState | null;
   interleaveNewerBuildBeforeCleanup?: boolean;
@@ -163,6 +164,7 @@ function createHarness(options: {
     expectedStatus: RelatedPetsState["status"];
     expectedActiveGenerationId: string;
     targetPreviousGenerationId: string;
+    expectedRankingRevision: string;
     updatedAt: string;
   }> = [];
   const vectorRevisionReads: string[] = [];
@@ -303,6 +305,7 @@ function createHarness(options: {
       expectedStatus: RelatedPetsState["status"];
       expectedActiveGenerationId: string;
       targetPreviousGenerationId: string;
+      expectedRankingRevision: string;
       updatedAt: string;
     }) => {
       recoveryInputs.push(input);
@@ -311,14 +314,17 @@ function createHarness(options: {
         state?.status !== input.expectedStatus ||
         state.requestedGenerationId !== input.expectedRequestedGenerationId ||
         state.activeGenerationId !== input.expectedActiveGenerationId ||
-        state.previousGenerationId !== input.targetPreviousGenerationId
+        state.previousGenerationId !== input.targetPreviousGenerationId ||
+        input.expectedRankingRevision !==
+          (options.retainedRankingRevision ?? profile.rankingRevision)
       ) {
         return null;
       }
       return {
         activeGenerationId: input.targetPreviousGenerationId,
         previousGenerationId: input.expectedActiveGenerationId,
-        rankingRevision: "ranking-v0",
+        rankingRevision:
+          options.retainedRankingRevision ?? profile.rankingRevision,
       };
     },
   };
@@ -541,7 +547,7 @@ describe("related pets rebuild service", () => {
     await expect(harness.service.recoverPrevious()).resolves.toMatchObject({
       status: "recovered",
       generationId: "generation-1",
-      rankingRevision: "ranking-v0",
+      rankingRevision: "ranking-v1",
     });
     expect(harness.recoveryInputs).toEqual([
       {
@@ -549,8 +555,33 @@ describe("related pets rebuild service", () => {
         expectedStatus: "ready",
         expectedActiveGenerationId: "generation-2",
         targetPreviousGenerationId: "generation-1",
+        expectedRankingRevision: "ranking-v1",
         updatedAt: "2026-08-03T10:00:00.010Z",
       },
+    ]);
+  });
+
+  it("reports an incompatible retained ranking revision as unavailable", async () => {
+    const harness = createHarness({
+      retainedRankingRevision: "ranking-v0",
+      initialState: {
+        requestedGenerationId: "generation-2",
+        activeGenerationId: "generation-2",
+        previousGenerationId: "generation-1",
+        status: "ready",
+        rankingRevision: "ranking-v1",
+        failureReason: null,
+        updatedAt: "2026-08-03T10:00:00.000Z",
+      },
+    });
+
+    await expect(harness.service.recoverPrevious()).resolves.toMatchObject({
+      status: "unavailable",
+      generationId: null,
+      rankingRevision: "ranking-v1",
+    });
+    expect(harness.recoveryInputs).toEqual([
+      expect.objectContaining({ expectedRankingRevision: "ranking-v1" }),
     ]);
   });
 
@@ -573,7 +604,7 @@ describe("related pets rebuild service", () => {
       await expect(harness.service.recoverPrevious()).resolves.toMatchObject({
         status: "recovered",
         generationId: "generation-1",
-        rankingRevision: "ranking-v0",
+        rankingRevision: "ranking-v1",
       });
       expect(harness.recoveryInputs).toEqual([
         {
@@ -581,6 +612,7 @@ describe("related pets rebuild service", () => {
           expectedStatus,
           expectedActiveGenerationId: "generation-2",
           targetPreviousGenerationId: "generation-1",
+          expectedRankingRevision: "ranking-v1",
           updatedAt: "2026-08-03T10:00:00.010Z",
         },
       ]);

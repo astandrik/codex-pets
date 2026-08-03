@@ -166,7 +166,9 @@ npm run related:rebuild -- --recover-previous
 
 The recovery command exits nonzero when no compatible previous generation is
 available. Keep the feature disabled until the recovered state is confirmed
-`ready`; re-enable it only after that check.
+`ready`; re-enable it only after that check. Compatibility requires an exact
+ranking-profile revision match, so deploy the application version for the
+retained revision before recovery when rolling back across profile revisions.
 
 ## Build and run
 

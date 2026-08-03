@@ -499,6 +499,7 @@ describe("related pets repository", () => {
       expectedStatus: "ready" as const,
       expectedActiveGenerationId: "generation-2",
       targetPreviousGenerationId: "generation-1",
+      expectedRankingRevision: "ranking-v0",
       updatedAt: "2026-08-03T10:05:00.000Z",
     };
     const expected = {
@@ -544,6 +545,81 @@ describe("related pets repository", () => {
     ).toHaveLength(1);
   });
 
+  it("rejects recovery when the retained ranking revision is incompatible", async () => {
+    const harness = createHarness(async (statement) => {
+      if (statement.includes("SELECT state_id")) {
+        return stateResult({
+          requested: "generation-2",
+          active: "generation-2",
+          previous: "generation-1",
+          status: "ready",
+          rankingRevision: "ranking-v1",
+        });
+      }
+      if (statement.includes("SELECT DISTINCT ranking_revision")) {
+        return {
+          resultSets: [
+            { rows: [{ items: [{ textValue: "ranking-v0" }] }] },
+          ],
+        };
+      }
+      return { resultSets: [] };
+    });
+
+    await expect(
+      harness.repository.recoverPreviousGeneration({
+        expectedRequestedGenerationId: "generation-2",
+        expectedStatus: "ready",
+        expectedActiveGenerationId: "generation-2",
+        targetPreviousGenerationId: "generation-1",
+        expectedRankingRevision: "ranking-v1",
+        updatedAt: "2026-08-03T10:05:00.000Z",
+      }),
+    ).resolves.toBeNull();
+    expect(
+      harness.statements.filter(({ statement }) =>
+        statement.includes("SELECT DISTINCT ranking_revision"),
+      ),
+    ).toHaveLength(1);
+    expect(
+      harness.statements.some(({ statement }) =>
+        statement.includes("UPDATE codex_pet_related_state"),
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects an incompatible retry after an older revision was recovered", async () => {
+    const harness = createHarness(async (statement) =>
+      statement.includes("SELECT state_id")
+        ? stateResult({
+            requested: "generation-1",
+            active: "generation-1",
+            previous: "generation-2",
+            status: "ready",
+            rankingRevision: "ranking-v0",
+          })
+        : { resultSets: [] },
+    );
+
+    await expect(
+      harness.repository.recoverPreviousGeneration({
+        expectedRequestedGenerationId: "generation-2",
+        expectedStatus: "ready",
+        expectedActiveGenerationId: "generation-2",
+        targetPreviousGenerationId: "generation-1",
+        expectedRankingRevision: "ranking-v1",
+        updatedAt: "2026-08-03T10:05:00.000Z",
+      }),
+    ).resolves.toBeNull();
+    expect(
+      harness.statements.some(
+        ({ statement }) =>
+          statement.includes("SELECT DISTINCT ranking_revision") ||
+          statement.includes("UPDATE codex_pet_related_state"),
+      ),
+    ).toBe(false);
+  });
+
   it.each(["failed", "building"] as const)(
     "recovers from an exact captured %s state without weakening token guards",
     async (expectedStatus) => {
@@ -584,6 +660,7 @@ describe("related pets repository", () => {
         expectedStatus,
         expectedActiveGenerationId: "generation-2",
         targetPreviousGenerationId: "generation-1",
+        expectedRankingRevision: "ranking-v0",
         updatedAt: "2026-08-03T10:05:00.000Z",
       };
       const expected = {
@@ -659,6 +736,7 @@ describe("related pets repository", () => {
         expectedStatus: "failed",
         expectedActiveGenerationId: "generation-2",
         targetPreviousGenerationId: "generation-1",
+        expectedRankingRevision: "ranking-v1",
         updatedAt: "2026-08-03T10:05:00.000Z",
       }),
     ).resolves.toBeNull();
@@ -689,6 +767,7 @@ describe("related pets repository", () => {
         expectedStatus: "ready",
         expectedActiveGenerationId: "generation-2",
         targetPreviousGenerationId: "generation-1",
+        expectedRankingRevision: "ranking-v1",
         updatedAt: "2026-08-03T10:05:00.000Z",
       }),
     ).resolves.toBeNull();

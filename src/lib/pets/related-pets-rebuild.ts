@@ -357,6 +357,7 @@ export function createRelatedPetsRebuildService(
           expectedStatus: state.status,
           expectedActiveGenerationId: state.activeGenerationId,
           targetPreviousGenerationId: state.previousGenerationId,
+          expectedRankingRevision: dependencies.profile.rankingRevision,
           updatedAt: dependencies.now().toISOString(),
         });
       const status = recovered ? "recovered" : "unavailable";

@@ -29,6 +29,7 @@ export type RecoverPreviousRelatedPetsGenerationInput = {
   expectedStatus: RelatedPetsGenerationStatus;
   expectedActiveGenerationId: string;
   targetPreviousGenerationId: string;
+  expectedRankingRevision: string;
   updatedAt: string;
 };
 
@@ -394,7 +395,8 @@ WHERE generation_id != $active_generation_id${previousFilter};
         state?.status === "ready" &&
         state.requestedGenerationId === input.targetPreviousGenerationId &&
         state.activeGenerationId === input.targetPreviousGenerationId &&
-        state.previousGenerationId === input.expectedActiveGenerationId
+        state.previousGenerationId === input.expectedActiveGenerationId &&
+        state.rankingRevision === input.expectedRankingRevision
       ) {
         return {
           activeGenerationId: input.targetPreviousGenerationId,
@@ -432,6 +434,7 @@ WHERE generation_id = $generation_id;
         throw new Error("Invalid retained related pets generation.");
       }
       const rankingRevision = textAt(revisionRows[0], 0);
+      if (rankingRevision !== input.expectedRankingRevision) return null;
 
       await execute(
         `
