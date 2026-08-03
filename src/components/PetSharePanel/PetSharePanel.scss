@@ -1,6 +1,26 @@
 .pet-share-panel {
   padding: var(--spacing-2xl);
 
+  &__heading {
+    margin: 0;
+
+    .g-disclosure__trigger {
+      width: 100%;
+      justify-content: space-between;
+      text-align: left;
+    }
+  }
+
+  &__summary {
+    display: grid;
+    min-width: 0;
+    gap: var(--spacing-2xs);
+  }
+
+  &__content {
+    padding-top: var(--spacing-xl);
+  }
+
   &__controls {
     display: grid;
     gap: var(--spacing-md);

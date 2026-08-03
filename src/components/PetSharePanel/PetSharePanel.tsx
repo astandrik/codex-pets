@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Card, Flex, Text } from "@/components/GravityUI/GravityUI";
+import {
+  Button,
+  Card,
+  Disclosure,
+  Flex,
+  Text,
+} from "@/components/GravityUI/GravityUI";
 import { Check, Copy } from "@gravity-ui/icons";
 
 import { trackGoal } from "@/lib/metrics/yandex";
@@ -56,127 +62,156 @@ export function PetSharePanel({ slug, source }: PetSharePanelProps) {
 
   return (
     <Card view="raised" className="pet-share-panel">
-      <Flex direction="column" gap={4}>
-        <Flex direction="column" gap={1}>
-          <Text variant="subheader-2" as="h2">
-            Share this pet
-          </Text>
-        </Flex>
-        <div className="pet-share-panel__controls">
-          <div className="pet-share-panel__control">
-            <Text
-              variant="caption-2"
-              color="secondary"
-              className="pet-share-panel__control-label"
-            >
-              Format
+      <Disclosure
+        size="l"
+        arrowPosition="end"
+        defaultExpanded={false}
+        keepMounted
+        summary={
+          <span className="pet-share-panel__summary">
+            <Text variant="subheader-2" as="span">
+              Embed &amp; share
             </Text>
-            <div className="pet-share-panel__segmented" role="tablist">
-              {(["sprite", "card"] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={
-                    mode === value
-                      ? "pet-share-panel__segment pet-share-panel__segment_active"
-                      : "pet-share-panel__segment"
-                  }
-                  onClick={() => setMode(value)}
-                >
-                  {value === "sprite" ? "Sprite" : "Card"}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="pet-share-panel__control">
-            <Text
-              variant="caption-2"
-              color="secondary"
-              className="pet-share-panel__control-label"
-            >
-              Animation
+            <Text variant="caption-2" color="secondary" as="span">
+              Badges, animated cards, embeds, and install prompts
             </Text>
-            <label className="pet-share-panel__select-wrap">
-              <select
-                className="pet-share-panel__select"
-                value={state}
-                onChange={(event) => setState(event.target.value as PetShareStateKey)}
-              >
-                {PET_STATES.map((item) => (
-                  <option key={item.key} value={item.key}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          {mode === "sprite" ? (
+          </span>
+        }
+        className="pet-share-panel__disclosure"
+      >
+        <Disclosure.Summary>
+          {(_, defaultSummary) => (
+            <Text
+              variant="subheader-2"
+              as="h2"
+              className="pet-share-panel__heading"
+            >
+              {defaultSummary}
+            </Text>
+          )}
+        </Disclosure.Summary>
+        <Flex direction="column" gap={4} className="pet-share-panel__content">
+          <div className="pet-share-panel__controls">
             <div className="pet-share-panel__control">
               <Text
                 variant="caption-2"
                 color="secondary"
                 className="pet-share-panel__control-label"
               >
-                Scale
+                Format
               </Text>
               <div className="pet-share-panel__segmented" role="tablist">
-                {SPRITE_SCALES.map((value) => (
+                {(["sprite", "card"] as const).map((value) => (
                   <button
                     key={value}
                     type="button"
                     className={
-                      scale === value
+                      mode === value
                         ? "pet-share-panel__segment pet-share-panel__segment_active"
                         : "pet-share-panel__segment"
                     }
-                    onClick={() => setScale(value)}
+                    onClick={() => setMode(value)}
                   >
-                    {value}x
+                    {value === "sprite" ? "Sprite" : "Card"}
                   </button>
                 ))}
               </div>
             </div>
-          ) : null}
-        </div>
-        <div className="pet-share-panel__snippets">
-          {snippets.map((snippet) => {
-            const copyStatus = status[snippet.id] ?? "idle";
-            const copied = copyStatus === "copied";
-
-            return (
-              <div className="pet-share-panel__snippet" key={snippet.id}>
+            <div className="pet-share-panel__control">
+              <Text
+                variant="caption-2"
+                color="secondary"
+                className="pet-share-panel__control-label"
+              >
+                Animation
+              </Text>
+              <label className="pet-share-panel__select-wrap">
+                <select
+                  className="pet-share-panel__select"
+                  value={state}
+                  onChange={(event) =>
+                    setState(event.target.value as PetShareStateKey)
+                  }
+                >
+                  {PET_STATES.map((item) => (
+                    <option key={item.key} value={item.key}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {mode === "sprite" ? (
+              <div className="pet-share-panel__control">
                 <Text
                   variant="caption-2"
                   color="secondary"
-                  className="pet-share-panel__label"
+                  className="pet-share-panel__control-label"
                 >
-                  {snippet.label}
+                  Scale
                 </Text>
-                <div className="pet-share-panel__row">
-                  <code className="pet-share-panel__code" title={snippet.value}>
-                    {snippet.value}
-                  </code>
-                  <Button
-                    view="flat"
-                    size="s"
-                    onClick={() => handleCopy(snippet)}
-                    aria-label={`Copy ${snippet.label}`}
-                    title={`Copy ${snippet.label}`}
-                    className="pet-share-panel__button"
-                  >
-                    {copied ? (
-                      <Check width={16} height={16} />
-                    ) : (
-                      <Copy width={16} height={16} />
-                    )}
-                    <span>{buttonText(copyStatus)}</span>
-                  </Button>
+                <div className="pet-share-panel__segmented" role="tablist">
+                  {SPRITE_SCALES.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={
+                        scale === value
+                          ? "pet-share-panel__segment pet-share-panel__segment_active"
+                          : "pet-share-panel__segment"
+                      }
+                      onClick={() => setScale(value)}
+                    >
+                      {value}x
+                    </button>
+                  ))}
                 </div>
               </div>
-            );
-          })}
-        </div>
-      </Flex>
+            ) : null}
+          </div>
+          <div className="pet-share-panel__snippets">
+            {snippets.map((snippet) => {
+              const copyStatus = status[snippet.id] ?? "idle";
+              const copied = copyStatus === "copied";
+
+              return (
+                <div className="pet-share-panel__snippet" key={snippet.id}>
+                  <Text
+                    variant="caption-2"
+                    color="secondary"
+                    className="pet-share-panel__label"
+                  >
+                    {snippet.label}
+                  </Text>
+                  <div className="pet-share-panel__row">
+                    <code
+                      className="pet-share-panel__code"
+                      title={snippet.value}
+                    >
+                      {snippet.value}
+                    </code>
+                    <Button
+                      view="flat"
+                      size="s"
+                      onClick={() => handleCopy(snippet)}
+                      aria-label={`Copy ${snippet.label}`}
+                      title={`Copy ${snippet.label}`}
+                      className="pet-share-panel__button"
+                    >
+                      {copied ? (
+                        <Check width={16} height={16} />
+                      ) : (
+                        <Copy width={16} height={16} />
+                      )}
+                      <span>{buttonText(copyStatus)}</span>
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Flex>
+      </Disclosure>
     </Card>
   );
 }

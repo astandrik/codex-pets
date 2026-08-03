@@ -6,6 +6,7 @@ export {
   Card,
   Container,
   DefinitionList,
+  Disclosure,
   Divider,
   Flex,
   Label,
