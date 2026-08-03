@@ -24,6 +24,7 @@ import {
 } from "@/lib/pets/search-vision-contract";
 import {
   activateRelatedPetsGeneration,
+  cleanupFailedRelatedPetsGeneration,
   cleanupRelatedPetsGenerations,
   getRelatedPetsState,
   markRelatedPetsGenerationFailed,
@@ -78,6 +79,9 @@ type RelatedPetsRepository = {
     updatedAt: string;
   }) => Promise<boolean>;
   cleanupGenerations: (input: {
+    expectedGenerationId: string;
+  }) => Promise<boolean>;
+  cleanupFailedGeneration: (input: {
     expectedGenerationId: string;
   }) => Promise<boolean>;
   getState: () => Promise<RelatedPetsState | null>;
@@ -285,9 +289,11 @@ export function createRelatedPetsRebuildService(
         error instanceof RelatedPetsRebuildError
           ? error.reason
           : "rebuild_failed";
+      let cleanupStatus: "failed" | undefined;
       if (generationId && !activated) {
+        let markedFailed = false;
         try {
-          await dependencies.repository.markGenerationFailed({
+          markedFailed = await dependencies.repository.markGenerationFailed({
             generationId,
             rankingRevision: dependencies.profile.rankingRevision,
             failureReason,
@@ -295,6 +301,17 @@ export function createRelatedPetsRebuildService(
           });
         } catch {
           // Preserve the sanitized rebuild failure when state marking also fails.
+        }
+        if (markedFailed) {
+          try {
+            const cleaned =
+              await dependencies.repository.cleanupFailedGeneration({
+                expectedGenerationId: generationId,
+              });
+            if (!cleaned) cleanupStatus = "failed";
+          } catch {
+            cleanupStatus = "failed";
+          }
         }
       }
       const durationMs = elapsedMilliseconds(startedAt);
@@ -306,6 +323,7 @@ export function createRelatedPetsRebuildService(
         coverage,
         durationMs,
         failureReason,
+        cleanupStatus,
       });
       throw new RelatedPetsRebuildError(failureReason);
     }
@@ -432,6 +450,7 @@ export function createRelatedPetsRebuildService(
 
   async function recoverPrevious(input: {
     targetGenerationId: string;
+    expectedActiveGenerationId: string;
   }): Promise<{
     status: "recovered" | "unavailable";
     generationId: string | null;
@@ -445,9 +464,11 @@ export function createRelatedPetsRebuildService(
       }
       const state = await dependencies.repository.getState();
       if (
+        input.targetGenerationId !== input.expectedActiveGenerationId &&
         state?.status === "ready" &&
         state.requestedGenerationId === input.targetGenerationId &&
         state.activeGenerationId === input.targetGenerationId &&
+        state.previousGenerationId === input.expectedActiveGenerationId &&
         state.rankingRevision === dependencies.profile.rankingRevision
       ) {
         return recoveryResultAndLog({
@@ -460,6 +481,8 @@ export function createRelatedPetsRebuildService(
       if (
         !state?.requestedGenerationId ||
         !state.activeGenerationId ||
+        input.targetGenerationId === input.expectedActiveGenerationId ||
+        state.activeGenerationId !== input.expectedActiveGenerationId ||
         state.previousGenerationId !== input.targetGenerationId
       ) {
         return recoveryResultAndLog({
@@ -474,7 +497,7 @@ export function createRelatedPetsRebuildService(
         await dependencies.repository.recoverPreviousGeneration({
           expectedRequestedGenerationId: state.requestedGenerationId,
           expectedStatus: state.status,
-          expectedActiveGenerationId: state.activeGenerationId,
+          expectedActiveGenerationId: input.expectedActiveGenerationId,
           targetPreviousGenerationId: input.targetGenerationId,
           expectedRankingRevision: dependencies.profile.rankingRevision,
           updatedAt: dependencies.now().toISOString(),
@@ -660,6 +683,7 @@ const productionRepository: RelatedPetsRepository = {
   activateGeneration: activateRelatedPetsGeneration,
   markGenerationFailed: markRelatedPetsGenerationFailed,
   cleanupGenerations: cleanupRelatedPetsGenerations,
+  cleanupFailedGeneration: cleanupFailedRelatedPetsGeneration,
   getState: getRelatedPetsState,
   recoverPreviousGeneration: recoverPreviousRelatedPetsGeneration,
 };

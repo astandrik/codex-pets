@@ -464,6 +464,79 @@ describe("related pets repository", () => {
     ).toBe(false);
   });
 
+  it("deletes snapshots only for the exact failed requested generation", async () => {
+    const harness = createHarness(async (statement) =>
+      statement.includes("SELECT state_id")
+        ? stateResult({
+            requested: "generation-2",
+            active: "generation-1",
+            previous: "generation-0",
+            status: "failed",
+          })
+        : { resultSets: [] },
+    );
+
+    expect(harness.repository.cleanupFailedGeneration).toBeTypeOf("function");
+    await expect(
+      harness.repository.cleanupFailedGeneration({
+        expectedGenerationId: "generation-2",
+      }),
+    ).resolves.toBe(true);
+
+    const cleanup = harness.statements.find(({ statement }) =>
+      statement.includes("DELETE FROM codex_pet_related_snapshots"),
+    );
+    expect(cleanup?.transactional).toBe(true);
+    expect(cleanup?.statement).toContain(
+      "generation_id = $failed_generation_id",
+    );
+    expect(cleanup?.params).toEqual({
+      $failed_generation_id: { textValue: "generation-2" },
+    });
+  });
+
+  it.each([
+    {
+      name: "still building",
+      requested: "generation-2",
+      active: "generation-1",
+      previous: "generation-0",
+      status: "building",
+    },
+    {
+      name: "already active",
+      requested: "generation-2",
+      active: "generation-2",
+      previous: "generation-1",
+      status: "failed",
+    },
+    {
+      name: "retained as previous",
+      requested: "generation-2",
+      active: "generation-3",
+      previous: "generation-2",
+      status: "failed",
+    },
+  ])("preserves snapshots when the failed token is $name", async (scenario) => {
+    const harness = createHarness(async (statement) =>
+      statement.includes("SELECT state_id")
+        ? stateResult(scenario)
+        : { resultSets: [] },
+    );
+
+    expect(harness.repository.cleanupFailedGeneration).toBeTypeOf("function");
+    await expect(
+      harness.repository.cleanupFailedGeneration({
+        expectedGenerationId: "generation-2",
+      }),
+    ).resolves.toBe(false);
+    expect(
+      harness.statements.some(({ statement }) =>
+        statement.includes("DELETE FROM codex_pet_related_snapshots"),
+      ),
+    ).toBe(false);
+  });
+
   it("atomically recovers once and returns the same result for an identical retry", async () => {
     let state = {
       requested: "generation-2",

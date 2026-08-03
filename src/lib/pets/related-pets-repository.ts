@@ -74,6 +74,7 @@ export function createRelatedPetsRepository(
     activateGeneration,
     markGenerationFailed,
     cleanupGenerations,
+    cleanupFailedGeneration,
     recoverPreviousGeneration,
   };
 
@@ -385,6 +386,38 @@ WHERE generation_id != $active_generation_id${previousFilter};
     });
   }
 
+  async function cleanupFailedGeneration(input: {
+    expectedGenerationId: string;
+  }): Promise<boolean> {
+    if (!dependencies.isConfigured()) return false;
+    return dependencies.transaction(async (execute) => {
+      const state = await getStateWithExecute(execute);
+      if (
+        state?.requestedGenerationId !== input.expectedGenerationId ||
+        state.status !== "failed" ||
+        state.activeGenerationId === input.expectedGenerationId ||
+        state.previousGenerationId === input.expectedGenerationId
+      ) {
+        return false;
+      }
+
+      await execute(
+        `
+DECLARE $failed_generation_id AS Utf8;
+
+DELETE FROM ${TABLES.relatedSnapshots}
+WHERE generation_id = $failed_generation_id;
+        `,
+        {
+          $failed_generation_id: dependencies.values.utf8(
+            input.expectedGenerationId,
+          ),
+        },
+      );
+      return true;
+    });
+  }
+
   async function recoverPreviousGeneration(
     input: RecoverPreviousRelatedPetsGenerationInput,
   ): Promise<RecoverPreviousRelatedPetsGenerationResult | null> {
@@ -573,5 +606,7 @@ export const writeRelatedPetsSnapshot = repository.writeSnapshot;
 export const activateRelatedPetsGeneration = repository.activateGeneration;
 export const markRelatedPetsGenerationFailed = repository.markGenerationFailed;
 export const cleanupRelatedPetsGenerations = repository.cleanupGenerations;
+export const cleanupFailedRelatedPetsGeneration =
+  repository.cleanupFailedGeneration;
 export const recoverPreviousRelatedPetsGeneration =
   repository.recoverPreviousGeneration;

@@ -8,7 +8,11 @@ export const RELATED_PETS_REBUILD_HELP: string;
 
 export function parseRelatedPetsRebuildArgs(argv: string[]):
   | { mode: "dry-run" | "apply" | "help" }
-  | { mode: "recover-previous"; targetGenerationId: string };
+  | {
+      mode: "recover-previous";
+      targetGenerationId: string;
+      expectedActiveGenerationId: string;
+    };
 
 type RelatedPetsCliService = {
   rebuild: (input: {
@@ -30,6 +34,7 @@ type RelatedPetsCliService = {
   }>;
   recoverPrevious: (input: {
     targetGenerationId: string;
+    expectedActiveGenerationId: string;
   }) => Promise<{
     status: "recovered" | "unavailable";
     generationId: string | null;

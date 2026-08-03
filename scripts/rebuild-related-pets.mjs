@@ -11,13 +11,13 @@ const sourceRoot = path.join(repositoryRoot, "src");
 export const RELATED_PETS_REBUILD_HELP = `Usage:
   npm run related:rebuild -- --dry-run
   npm run related:rebuild -- --apply
-  npm run related:rebuild -- --recover-previous GENERATION_ID
+  npm run related:rebuild -- --recover-previous PREVIOUS_GENERATION_ID --expected-active ACTIVE_GENERATION_ID
   npm run related:rebuild -- --help
 
 Modes:
   --dry-run           Validate stored vectors and compute rankings without writes.
   --apply             Build and conditionally publish a new full generation.
-  --recover-previous  Atomically publish the retained GENERATION_ID; retries with the same ID are idempotent.
+  --recover-previous  Atomically publish the retained generation from the expected active generation; retries with the same pair are idempotent.
   --help              Show this help.`;
 
 export function parseRelatedPetsRebuildArgs(argv) {
@@ -29,17 +29,33 @@ export function parseRelatedPetsRebuildArgs(argv) {
   ]);
   if (argv[0] === "--recover-previous") {
     const targetGenerationId = argv[1];
-    if (
-      argv.length !== 2 ||
-      !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(
-        targetGenerationId ?? "",
-      )
-    ) {
+    const expectedActiveGenerationId = argv[3];
+    const isCanonicalGenerationId = (value) =>
+      /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value ?? "");
+    if (!isCanonicalGenerationId(targetGenerationId)) {
       throw new Error(
-        "--recover-previous requires exactly one canonical generation ID.",
+        "--recover-previous requires one canonical previous generation ID.",
       );
     }
-    return { mode: "recover-previous", targetGenerationId };
+    if (
+      argv.length !== 4 ||
+      argv[2] !== "--expected-active" ||
+      !isCanonicalGenerationId(expectedActiveGenerationId)
+    ) {
+      throw new Error(
+        "--recover-previous requires --expected-active with one canonical active generation ID.",
+      );
+    }
+    if (targetGenerationId === expectedActiveGenerationId) {
+      throw new Error(
+        "Previous and expected active generation IDs must be different.",
+      );
+    }
+    return {
+      mode: "recover-previous",
+      targetGenerationId,
+      expectedActiveGenerationId,
+    };
   }
   const unknown = argv.find((argument) => !supported.has(argument));
   if (unknown) {
@@ -76,6 +92,7 @@ export async function runRelatedPetsRebuildCli({
     if (options.mode === "recover-previous") {
       const result = await service.recoverPrevious({
         targetGenerationId: options.targetGenerationId,
+        expectedActiveGenerationId: options.expectedActiveGenerationId,
       });
       write(
         JSON.stringify({

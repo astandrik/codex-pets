@@ -164,16 +164,18 @@ the rollout and rollback kill switch. Invalid values fail safely to the
 heuristic resolver.
 
 To roll back ordering without discarding derived rows, first disable the
-feature and read the exact `previous_generation_id` from
-`codex_pet_related_state`. Pass that value explicitly:
+feature and read the exact `active_generation_id` and
+`previous_generation_id` pair from `codex_pet_related_state`. Pass both
+values explicitly:
 
 ```bash
-npm run related:rebuild -- --recover-previous GENERATION_ID
+npm run related:rebuild -- --recover-previous PREVIOUS_GENERATION_ID --expected-active ACTIVE_GENERATION_ID
 ```
 
 The recovery command exits nonzero when no compatible previous generation is
-available or the requested generation is not the retained one. Retrying with
-the same generation ID is idempotent. Keep the feature disabled until the
+available, the requested generation is not the retained one, or the expected
+active generation does not match. Retrying with the same generation pair is
+idempotent. Keep the feature disabled until the
 recovered state is confirmed `ready`; re-enable it only after that check.
 Compatibility requires an exact ranking-profile revision match, so deploy the
 application version for the retained revision before recovery when rolling

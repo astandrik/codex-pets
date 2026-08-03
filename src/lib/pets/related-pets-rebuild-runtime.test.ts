@@ -18,6 +18,7 @@ vi.mock("@/lib/pets/search-embeddings-repository", () => ({
 }));
 vi.mock("@/lib/pets/related-pets-repository", () => ({
   activateRelatedPetsGeneration: vi.fn(),
+  cleanupFailedRelatedPetsGeneration: vi.fn(),
   cleanupRelatedPetsGenerations: vi.fn(),
   getRelatedPetsState: vi.fn(),
   markRelatedPetsGenerationFailed: vi.fn(),

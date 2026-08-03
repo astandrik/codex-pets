@@ -41,6 +41,8 @@ describe("related pets rebuild CLI", () => {
       args: [
         "--recover-previous",
         "11111111-1111-4111-8111-111111111111",
+        "--expected-active",
+        "22222222-2222-4222-8222-222222222222",
       ],
     },
   ])(
@@ -90,10 +92,13 @@ describe("related pets rebuild CLI", () => {
       parseRelatedPetsRebuildArgs([
         "--recover-previous",
         "11111111-1111-4111-8111-111111111111",
+        "--expected-active",
+        "22222222-2222-4222-8222-222222222222",
       ]),
     ).toEqual({
       mode: "recover-previous",
       targetGenerationId: "11111111-1111-4111-8111-111111111111",
+      expectedActiveGenerationId: "22222222-2222-4222-8222-222222222222",
     });
     expect(parseRelatedPetsRebuildArgs(["--help"])).toEqual({ mode: "help" });
     expect(() => parseRelatedPetsRebuildArgs([])).toThrow(
@@ -105,6 +110,20 @@ describe("related pets rebuild CLI", () => {
     expect(() =>
       parseRelatedPetsRebuildArgs(["--recover-previous"]),
     ).toThrow(/generation id/i);
+    expect(() =>
+      parseRelatedPetsRebuildArgs([
+        "--recover-previous",
+        "11111111-1111-4111-8111-111111111111",
+      ]),
+    ).toThrow(/expected-active/i);
+    expect(() =>
+      parseRelatedPetsRebuildArgs([
+        "--recover-previous",
+        "11111111-1111-4111-8111-111111111111",
+        "--expected-active",
+        "11111111-1111-4111-8111-111111111111",
+      ]),
+    ).toThrow(/different/i);
     expect(() =>
       parseRelatedPetsRebuildArgs(["--dry-run", "--unknown"]),
     ).toThrow(/unknown argument/i);
@@ -126,7 +145,7 @@ describe("related pets rebuild CLI", () => {
     expect(output[0]).toContain("npm run related:rebuild -- --dry-run");
     expect(output[0]).toContain("npm run related:rebuild -- --apply");
     expect(output[0]).toContain(
-      "npm run related:rebuild -- --recover-previous GENERATION_ID",
+      "npm run related:rebuild -- --recover-previous PREVIOUS_GENERATION_ID --expected-active ACTIVE_GENERATION_ID",
     );
     expect(loadService).not.toHaveBeenCalled();
   });
@@ -165,6 +184,8 @@ describe("related pets rebuild CLI", () => {
       argv: [
         "--recover-previous",
         "11111111-1111-4111-8111-111111111111",
+        "--expected-active",
+        "22222222-2222-4222-8222-222222222222",
       ],
       loadService,
       write: (line: string) => output.push(line),
@@ -176,6 +197,7 @@ describe("related pets rebuild CLI", () => {
     });
     expect(recoverPrevious).toHaveBeenCalledWith({
       targetGenerationId: "11111111-1111-4111-8111-111111111111",
+      expectedActiveGenerationId: "22222222-2222-4222-8222-222222222222",
     });
     expect(dispose).toHaveBeenCalledTimes(2);
     expect(output.map((line) => JSON.parse(line))).toEqual([
@@ -211,6 +233,8 @@ describe("related pets rebuild CLI", () => {
         argv: [
           "--recover-previous",
           "11111111-1111-4111-8111-111111111111",
+          "--expected-active",
+          "22222222-2222-4222-8222-222222222222",
         ],
         loadService: async () => ({
           rebuild: vi.fn(),
