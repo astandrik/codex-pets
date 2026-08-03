@@ -103,7 +103,7 @@ export async function runRelatedPetsRebuildCli({
         durationMs: result.durationMs,
       }),
     );
-    return 0;
+    return result.status === "superseded" ? 1 : 0;
   } finally {
     await service.dispose?.();
   }

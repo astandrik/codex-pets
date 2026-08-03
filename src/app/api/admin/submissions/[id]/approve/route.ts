@@ -2,9 +2,13 @@ import { NextResponse } from "next/server";
 
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
-import { rebuildRelatedPetsBestEffort } from "@/lib/pets/related-pets-rebuild-trigger";
+import {
+  isRelatedPetsTextRefreshCompatible,
+  rebuildRelatedPetsBestEffort,
+} from "@/lib/pets/related-pets-rebuild-trigger";
 import { moderatePet } from "@/lib/pets/repository";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
+import { petSearchRuntimeConfig } from "@/lib/pets/search-provider-runtime";
 import { refreshApprovedPetSearchEmbedding } from "@/lib/pets/search-runtime";
 import { refreshApprovedPetVisionSearchBestEffort } from "@/lib/pets/search-vision-runtime";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
@@ -33,6 +37,9 @@ export async function POST(
 
   revalidateSitemapCache();
   revalidateRelatedPetCandidatesCache();
+  const canPublishRelatedPets = isRelatedPetsTextRefreshCompatible(
+    petSearchRuntimeConfig.semantic,
+  );
 
   try {
     await refreshApprovedPetSearchEmbedding(pet);
@@ -43,13 +50,23 @@ export async function POST(
     });
   }
 
-  await rebuildRelatedPetsBestEffort({
-    trigger: "approve-text",
-    includeVisual: true,
-  });
+  if (canPublishRelatedPets) {
+    await rebuildRelatedPetsBestEffort({
+      trigger: "approve-text",
+      includeVisual: true,
+    });
+  } else {
+    console.warn("[codex-pets][related-pets-rebuild-trigger]", {
+      operation: "rebuild",
+      trigger: "approve-text",
+      status: "skipped",
+      reason: "text-profile-incompatible",
+    });
+  }
 
   void refreshApprovedPetVisionSearchBestEffort(pet, {
     onSuccessfulRefresh: async () => {
+      if (!canPublishRelatedPets) return;
       await rebuildRelatedPetsBestEffort({
         trigger: "approve-visual",
         includeVisual: true,

@@ -1,4 +1,6 @@
 import { rebuildRelatedPets } from "@/lib/pets/related-pets-rebuild";
+import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
+import type { PetSearchSemanticConfig } from "@/lib/pets/search-config";
 
 type RelatedPetsRebuildTrigger =
   | "approve-text"
@@ -6,6 +8,20 @@ type RelatedPetsRebuildTrigger =
   | "reject"
   | "admin-delete"
   | "owner-delete";
+
+export function isRelatedPetsTextRefreshCompatible(
+  semanticConfig: Pick<
+    PetSearchSemanticConfig,
+    "revision" | "dimensions"
+  > | null,
+): boolean {
+  return (
+    semanticConfig?.revision ===
+      CURRENT_RELATED_PETS_RANKING_PROFILE.textRevision &&
+    semanticConfig.dimensions ===
+      CURRENT_RELATED_PETS_RANKING_PROFILE.textDimensions
+  );
+}
 
 export async function rebuildRelatedPetsBestEffort(input: {
   trigger: RelatedPetsRebuildTrigger;

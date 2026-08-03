@@ -13,6 +13,12 @@ vi.mock("@/lib/pets/search-runtime", () => ({
   refreshApprovedPetSearchEmbedding: vi.fn(),
 }));
 
+vi.mock("@/lib/pets/search-provider-runtime", () => ({
+  petSearchRuntimeConfig: {
+    semantic: null,
+  },
+}));
+
 vi.mock("@/lib/pets/related-pets-rebuild", () => ({
   rebuildRelatedPets: vi.fn(),
 }));
@@ -39,9 +45,22 @@ import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
 import { moderatePet } from "@/lib/pets/repository";
 import { rebuildRelatedPets } from "@/lib/pets/related-pets-rebuild";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
+import { petSearchRuntimeConfig } from "@/lib/pets/search-provider-runtime";
 import { refreshApprovedPetSearchEmbedding } from "@/lib/pets/search-runtime";
 import { refreshApprovedPetVisionSearchBestEffort } from "@/lib/pets/search-vision-runtime";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
+
+function currentRelatedPetsSemanticConfig() {
+  return {
+    folderId: "folder-id",
+    apiKey: "api-key",
+    revision: "yandex-text-embeddings-v2-768-2026-07" as const,
+    embeddingModelId: "yandex-text-embeddings-v2-768" as const,
+    dimensions: 768,
+    minSemanticScore: 0.28,
+    timeoutMs: 800,
+  };
+}
 
 describe("POST /api/admin/submissions/[id]/approve", () => {
   afterEach(() => {
@@ -50,6 +69,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    petSearchRuntimeConfig.semantic = currentRelatedPetsSemanticConfig();
     vi.stubEnv("INDEXNOW_KEY", "indexnow-key-123");
     vi.mocked(notifyIndexNowOfApprovedPet).mockResolvedValue({
       status: "skipped",
@@ -242,6 +262,73 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     );
     expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(
       "private visual rebuild detail",
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("does not publish related snapshots when text indexing uses an incompatible profile", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    petSearchRuntimeConfig.semantic = {
+      folderId: "folder-id",
+      apiKey: "api-key",
+      revision: "yandex-text-search-2026-07",
+      embeddingModelId: "yandex-text-search-v1-256",
+      dimensions: 256,
+      minSemanticScore: 0.31,
+      timeoutMs: 800,
+    };
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce({
+      id: "pet_1",
+      slug: "boba",
+      displayName: "Boba",
+      description: "desc",
+      spritesheetUrl: "/api/assets/asset-123/spritesheet.webp",
+      petJsonUrl: "/api/assets/asset-123/pet.json",
+      zipUrl: "/api/assets/asset-123/pet.zip",
+      spritesheetExt: "webp",
+      kind: "creature",
+      tags: [],
+      status: "approved",
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString(),
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    });
+    vi.mocked(refreshApprovedPetVisionSearchBestEffort).mockImplementationOnce(
+      async (_pet, options) => {
+        await options?.onSuccessfulRefresh?.("caption-and-vector");
+        return true;
+      },
+    );
+
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ id: "pet_1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(refreshApprovedPetSearchEmbedding).toHaveBeenCalledOnce();
+    await vi.waitFor(() =>
+      expect(refreshApprovedPetVisionSearchBestEffort).toHaveBeenCalledOnce(),
+    );
+    expect(rebuildRelatedPets).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[codex-pets][related-pets-rebuild-trigger]",
+      {
+        operation: "rebuild",
+        trigger: "approve-text",
+        status: "skipped",
+        reason: "text-profile-incompatible",
+      },
     );
     warnSpy.mockRestore();
   });

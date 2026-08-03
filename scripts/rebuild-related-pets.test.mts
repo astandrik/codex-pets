@@ -238,6 +238,53 @@ describe("related pets rebuild CLI", () => {
     expect(dispose).toHaveBeenCalledOnce();
   });
 
+  it("returns failure when an apply is superseded before activation", async () => {
+    const dispose = vi.fn(async () => undefined);
+    const output: string[] = [];
+
+    await expect(
+      runRelatedPetsRebuildCli({
+        argv: ["--apply"],
+        loadService: async () => ({
+          rebuild: async () => ({
+            operation: "apply" as const,
+            status: "superseded" as const,
+            generationId: "generation-superseded",
+            rankingRevision: "ranking-v1",
+            coverage: {
+              approvedPetCount: 3,
+              snapshotCount: 3,
+              textVectorCount: 3,
+              visualVectorCount: 2,
+            },
+            rankings: [{ sourceSlug: "source", relatedSlugs: ["peer"] }],
+            durationMs: 10,
+          }),
+          recoverPrevious: vi.fn(),
+          dispose,
+        }),
+        write: (line: string) => output.push(line),
+      }),
+    ).resolves.toBe(1);
+
+    expect(output.map((line) => JSON.parse(line))).toEqual([
+      {
+        operation: "apply",
+        status: "superseded",
+        generationId: "generation-superseded",
+        rankingRevision: "ranking-v1",
+        coverage: {
+          approvedPetCount: 3,
+          snapshotCount: 3,
+          textVectorCount: 3,
+          visualVectorCount: 2,
+        },
+        durationMs: 10,
+      },
+    ]);
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
   it("passes dry-run through without exposing ranking rows in CLI logs", async () => {
     const write = vi.fn();
     const rebuild = vi.fn(async () => ({
