@@ -23,13 +23,11 @@ import {
 import {
   activateRelatedPetsGeneration,
   cleanupRelatedPetsGenerations,
-  getRelatedPetsState,
   markRelatedPetsGenerationFailed,
   recoverPreviousRelatedPetsGeneration,
   requestRelatedPetsBuild,
   writeRelatedPetsSnapshot,
   type RelatedPetsSnapshot,
-  type RelatedPetsState,
 } from "@/lib/pets/related-pets-repository";
 import {
   decodeRelatedPetVector,
@@ -39,6 +37,7 @@ import {
 import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
 import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 import type { PublicPet } from "@/lib/pets/types";
+import { isYdbConfigured } from "@/lib/ydb/client";
 
 type RelatedPetsRebuildProfile = RelatedPetsRankingProfile & {
   rankingRevision: string;
@@ -55,7 +54,6 @@ type VisualSourceContext = {
 };
 
 type RelatedPetsRepository = {
-  getState: () => Promise<RelatedPetsState | null>;
   requestBuild: (input: {
     generationId: string;
     rankingRevision: string;
@@ -74,9 +72,8 @@ type RelatedPetsRepository = {
     updatedAt: string;
   }) => Promise<boolean>;
   cleanupGenerations: (input: {
-    activeGenerationId: string;
-    previousGenerationId: string | null;
-  }) => Promise<void>;
+    expectedGenerationId: string;
+  }) => Promise<boolean>;
   recoverPreviousGeneration: (
     updatedAt: string,
   ) => Promise<{
@@ -100,12 +97,13 @@ export type RelatedPetsRebuildLog = {
   rankingRevision: string;
   coverage: RelatedPetsRebuildCoverage;
   durationMs: number;
-  failureReason?: "rebuild_failed";
+  failureReason?: "rebuild_failed" | "storage_unavailable";
 };
 
 type RelatedPetsRebuildDependencies = {
   profile: RelatedPetsRebuildProfile;
   repository: RelatedPetsRepository;
+  isStorageAvailable: () => boolean;
   listApprovedPets: () => Promise<PublicPet[]>;
   listRawVectors: (
     modelRevision: string,
@@ -130,8 +128,11 @@ export type RelatedPetsRebuildResult = {
 };
 
 export class RelatedPetsRebuildError extends Error {
-  constructor() {
-    super("rebuild_failed");
+  constructor(
+    public readonly reason: "rebuild_failed" | "storage_unavailable" =
+      "rebuild_failed",
+  ) {
+    super(reason);
     this.name = "RelatedPetsRebuildError";
   }
 }
@@ -157,12 +158,19 @@ export function createRelatedPetsRebuildService(
   }): Promise<RelatedPetsRebuildResult> {
     const startedAt = dependencies.now().getTime();
     const includeVisual = input.includeVisual ?? true;
+    const storageAvailable =
+      input.mode === "dry-run" || dependencies.isStorageAvailable();
     const generationId =
-      input.mode === "apply" ? dependencies.createGenerationId() : null;
+      input.mode === "apply" && storageAvailable
+        ? dependencies.createGenerationId()
+        : null;
     let coverage = EMPTY_COVERAGE;
     let activated = false;
 
     try {
+      if (!storageAvailable) {
+        throw new RelatedPetsRebuildError("storage_unavailable");
+      }
       if (generationId) {
         await dependencies.repository.requestBuild({
           generationId,
@@ -211,13 +219,9 @@ export function createRelatedPetsRebuildService(
         });
       }
 
-      const state = await dependencies.repository.getState();
-      if (state?.activeGenerationId === generationId) {
-        await dependencies.repository.cleanupGenerations({
-          activeGenerationId: generationId,
-          previousGenerationId: state.previousGenerationId,
-        });
-      }
+      await dependencies.repository.cleanupGenerations({
+        expectedGenerationId: generationId,
+      });
       return resultAndLog({
         operation: "apply",
         status: "ready",
@@ -226,13 +230,17 @@ export function createRelatedPetsRebuildService(
         rankings: built.rankings,
         startedAt,
       });
-    } catch {
+    } catch (error) {
+      const failureReason =
+        error instanceof RelatedPetsRebuildError
+          ? error.reason
+          : "rebuild_failed";
       if (generationId && !activated) {
         try {
           await dependencies.repository.markGenerationFailed({
             generationId,
             rankingRevision: dependencies.profile.rankingRevision,
-            failureReason: "rebuild_failed",
+            failureReason,
             updatedAt: dependencies.now().toISOString(),
           });
         } catch {
@@ -247,9 +255,9 @@ export function createRelatedPetsRebuildService(
         rankingRevision: dependencies.profile.rankingRevision,
         coverage,
         durationMs,
-        failureReason: "rebuild_failed",
+        failureReason,
       });
-      throw new RelatedPetsRebuildError();
+      throw new RelatedPetsRebuildError(failureReason);
     }
   }
 
@@ -464,7 +472,6 @@ function validatedVisualVectors(input: {
 }
 
 const productionRepository: RelatedPetsRepository = {
-  getState: getRelatedPetsState,
   requestBuild: requestRelatedPetsBuild,
   writeSnapshot: writeRelatedPetsSnapshot,
   activateGeneration: activateRelatedPetsGeneration,
@@ -507,6 +514,7 @@ const service = createRelatedPetsRebuildService({
       ].captionRevision,
   },
   repository: productionRepository,
+  isStorageAvailable: isYdbConfigured,
   listApprovedPets: listApprovedPetsForSearch,
   listRawVectors: listRawPetSearchEmbeddings,
   listCaptions: listPetSearchCaptions,

@@ -133,8 +133,10 @@ function createHarness(options: {
   visualRows?: StoredRawPetSearchEmbedding[];
   captions?: ReturnType<typeof captionFor>[];
   superseded?: boolean;
+  storageAvailable?: boolean;
   writeError?: Error;
   cleanupError?: Error;
+  interleaveNewerBuildBeforeCleanup?: boolean;
   visualSourceContext?: { captionRevision: string; modelUri: string } | null;
 } = {}) {
   const pets = options.pets ?? [pet("source"), pet("peer-a"), pet("peer-b")];
@@ -152,6 +154,7 @@ function createHarness(options: {
   const captions = options.captions ?? pets.map((item) => captionFor(item));
   const snapshots: RelatedPetsSnapshot[] = [];
   const mutations: string[] = [];
+  const cleanupExpectedIds: Array<string | null> = [];
   const vectorRevisionReads: string[] = [];
   const logs: unknown[] = [];
   let state: RelatedPetsState | null = null;
@@ -216,9 +219,66 @@ function createHarness(options: {
       };
       return true;
     },
-    cleanupGenerations: async () => {
+    cleanupGenerations: async (
+      input:
+        | { expectedGenerationId: string }
+        | {
+            activeGenerationId: string;
+            previousGenerationId: string | null;
+          },
+    ) => {
       mutations.push("cleanup");
+      if (options.interleaveNewerBuildBeforeCleanup) {
+        state = {
+          requestedGenerationId: "generation-newer",
+          activeGenerationId: "generation-new",
+          previousGenerationId: "generation-old",
+          status: "building",
+          rankingRevision: profile.rankingRevision,
+          failureReason: null,
+          updatedAt: "2026-08-03T10:01:00.000Z",
+        };
+        snapshots.push({
+          generationId: "generation-newer",
+          sourceSlug: "source",
+          rankingRevision: profile.rankingRevision,
+          relatedSlugs: ["peer-a"],
+          createdAt: "2026-08-03T10:01:00.000Z",
+        });
+      }
       if (options.cleanupError) throw options.cleanupError;
+      if ("expectedGenerationId" in input) {
+        cleanupExpectedIds.push(input.expectedGenerationId);
+        if (
+          state?.status !== "ready" ||
+          state.activeGenerationId !== input.expectedGenerationId ||
+          state.requestedGenerationId !== input.expectedGenerationId
+        ) {
+          return false;
+        }
+        snapshots.splice(
+          0,
+          snapshots.length,
+          ...snapshots.filter(
+            ({ generationId }) =>
+              generationId === state?.activeGenerationId ||
+              generationId === state?.previousGenerationId,
+          ),
+        );
+        return true;
+      }
+
+      cleanupExpectedIds.push(null);
+      snapshots.splice(
+        0,
+        snapshots.length,
+        ...snapshots.filter(
+          ({ generationId }) =>
+            generationId === input.activeGenerationId ||
+            generationId === input.previousGenerationId,
+        ),
+      );
+      return true;
     },
     recoverPreviousGeneration: async () => null,
   };
@@ -226,6 +286,7 @@ function createHarness(options: {
   const service = createRelatedPetsRebuildService({
     profile,
     repository,
+    isStorageAvailable: () => options.storageAvailable ?? true,
     listApprovedPets: async () => pets,
     listRawVectors: async (revision) => {
       vectorRevisionReads.push(revision);
@@ -249,6 +310,7 @@ function createHarness(options: {
     service,
     snapshots,
     mutations,
+    cleanupExpectedIds,
     vectorRevisionReads,
     logs,
     get state() {
@@ -286,6 +348,7 @@ describe("related pets rebuild service", () => {
       "activate",
       "cleanup",
     ]);
+    expect(harness.cleanupExpectedIds).toEqual(["generation-new"]);
     expect(harness.state).toMatchObject({
       activeGenerationId: "generation-new",
       previousGenerationId: "generation-old",
@@ -343,6 +406,24 @@ describe("related pets rebuild service", () => {
     expect(harness.mutations.some((item) => item.startsWith("failed:"))).toBe(
       false,
     );
+  });
+
+  it("fails apply when storage is unavailable without reporting supersession", async () => {
+    const harness = createHarness({ storageAvailable: false });
+
+    await expect(
+      harness.service.rebuild({ mode: "apply", includeVisual: true }),
+    ).rejects.toMatchObject({
+      name: "RelatedPetsRebuildError",
+      message: "storage_unavailable",
+    });
+
+    expect(harness.mutations).toEqual([]);
+    expect(harness.logs.at(-1)).toMatchObject({
+      operation: "apply",
+      status: "failed",
+      failureReason: "storage_unavailable",
+    });
   });
 
   it("marks current failures with a bounded reason and never logs raw errors", async () => {
@@ -439,5 +520,29 @@ describe("related pets rebuild service", () => {
       failureReason: null,
     });
     expect(harness.mutations).not.toContain("failed:rebuild_failed");
+  });
+
+  it("preserves a newer partial generation when it starts before cleanup", async () => {
+    const harness = createHarness({
+      interleaveNewerBuildBeforeCleanup: true,
+    });
+
+    const result = await harness.service.rebuild({
+      mode: "apply",
+      includeVisual: true,
+    });
+
+    expect(result.status).toBe("ready");
+    expect(harness.cleanupExpectedIds).toEqual(["generation-new"]);
+    expect(harness.state).toMatchObject({
+      requestedGenerationId: "generation-newer",
+      activeGenerationId: "generation-new",
+      status: "building",
+    });
+    expect(
+      harness.snapshots.some(
+        ({ generationId }) => generationId === "generation-newer",
+      ),
+    ).toBe(true);
   });
 });

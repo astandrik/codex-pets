@@ -298,34 +298,45 @@ WHERE state_id = $state_id
   }
 
   async function cleanupGenerations(input: {
-    activeGenerationId: string;
-    previousGenerationId: string | null;
-  }): Promise<void> {
-    if (!dependencies.isConfigured()) return;
-    const previousFilter = input.previousGenerationId
-      ? "\n  AND generation_id != $previous_generation_id"
-      : "";
-    await dependencies.execute(
-      `
+    expectedGenerationId: string;
+  }): Promise<boolean> {
+    if (!dependencies.isConfigured()) return false;
+    return dependencies.transaction(async (execute) => {
+      const state = await getStateWithExecute(execute);
+      if (
+        state?.status !== "ready" ||
+        state.activeGenerationId !== input.expectedGenerationId ||
+        state.requestedGenerationId !== input.expectedGenerationId
+      ) {
+        return false;
+      }
+
+      const previousFilter = state.previousGenerationId
+        ? "\n  AND generation_id != $previous_generation_id"
+        : "";
+      await execute(
+        `
 DECLARE $active_generation_id AS Utf8;
-${input.previousGenerationId ? "DECLARE $previous_generation_id AS Utf8;" : ""}
+${state.previousGenerationId ? "DECLARE $previous_generation_id AS Utf8;" : ""}
 
 DELETE FROM ${TABLES.relatedSnapshots}
 WHERE generation_id != $active_generation_id${previousFilter};
-      `,
-      {
-        $active_generation_id: dependencies.values.utf8(
-          input.activeGenerationId,
-        ),
-        ...(input.previousGenerationId
-          ? {
-              $previous_generation_id: dependencies.values.utf8(
-                input.previousGenerationId,
-              ),
-            }
-          : {}),
-      },
-    );
+        `,
+        {
+          $active_generation_id: dependencies.values.utf8(
+            state.activeGenerationId,
+          ),
+          ...(state.previousGenerationId
+            ? {
+                $previous_generation_id: dependencies.values.utf8(
+                  state.previousGenerationId,
+                ),
+              }
+            : {}),
+        },
+      );
+      return true;
+    });
   }
 
   async function recoverPreviousGeneration(

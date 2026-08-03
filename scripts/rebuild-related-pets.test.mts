@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const {
   RELATED_PETS_REBUILD_HELP,
@@ -6,7 +8,67 @@ const {
   runRelatedPetsRebuildCli,
 } = await import("./rebuild-related-pets.mjs");
 
+const cliPath = fileURLToPath(
+  new URL("./rebuild-related-pets.mjs", import.meta.url),
+);
+const cliNodeBinary =
+  process.env.RELATED_PETS_CLI_NODE_BINARY ?? process.execPath;
+
+function unconfiguredCliEnvironment(): NodeJS.ProcessEnv {
+  const environment = { ...process.env };
+  delete environment.YDB_PETS_ENDPOINT;
+  delete environment.YDB_PETS_DATABASE;
+  delete environment.USE_MOCK_PETS;
+  return environment;
+}
+
+function lastJsonLine(output: string): Record<string, unknown> {
+  const line = output
+    .trim()
+    .split("\n")
+    .toReversed()
+    .find((candidate) => candidate.startsWith("{"));
+  if (!line) throw new Error("CLI did not emit a JSON summary.");
+  return JSON.parse(line) as Record<string, unknown>;
+}
+
 describe("related pets rebuild CLI", () => {
+  it("loads the production TypeScript service in a real CLI subprocess", () => {
+    const result = spawnSync(cliNodeBinary, [cliPath, "--dry-run"], {
+      cwd: fileURLToPath(new URL("..", import.meta.url)),
+      env: unconfiguredCliEnvironment(),
+      encoding: "utf8",
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(lastJsonLine(result.stdout)).toMatchObject({
+      operation: "dry-run",
+      status: "dry-run",
+      generationId: null,
+      coverage: {
+        approvedPetCount: 0,
+        snapshotCount: 0,
+        textVectorCount: 0,
+        visualVectorCount: 0,
+      },
+    });
+  });
+
+  it("fails unconfigured apply distinctly from supersession", () => {
+    const result = spawnSync(cliNodeBinary, [cliPath, "--apply"], {
+      cwd: fileURLToPath(new URL("..", import.meta.url)),
+      env: unconfiguredCliEnvironment(),
+      encoding: "utf8",
+    });
+
+    expect(result.status).toBe(1);
+    expect(lastJsonLine(result.stderr)).toEqual({
+      operation: "related-pets-rebuild",
+      status: "failed",
+      failureReason: "storage_unavailable",
+    });
+  });
+
   it("parses each discoverable mode and rejects ambiguous mutation modes", () => {
     expect(parseRelatedPetsRebuildArgs(["--dry-run"])).toEqual({
       mode: "dry-run",

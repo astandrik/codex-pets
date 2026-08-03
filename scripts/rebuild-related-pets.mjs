@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from "node:fs";
-import { registerHooks, stripTypeScriptTypes } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -95,45 +93,21 @@ export async function runRelatedPetsRebuildCli({
 }
 
 async function loadProductionService() {
-  const hooks = registerHooks({
-    resolve(specifier, context, nextResolve) {
-      if (!specifier.startsWith("@/")) {
-        return nextResolve(specifier, context);
-      }
-      const sourcePath = path.join(sourceRoot, `${specifier.slice(2)}.ts`);
-      if (!existsSync(sourcePath)) {
-        throw new Error("Related pets runtime module is unavailable.");
-      }
-      return { url: pathToFileURL(sourcePath).href, shortCircuit: true };
-    },
-    load(url, context, nextLoad) {
-      if (!url.endsWith(".ts")) return nextLoad(url, context);
-      const source = readFileSync(fileURLToPath(url), "utf8");
-      return {
-        format: "module",
-        source: stripTypeScriptTypes(source, {
-          mode: "transform",
-          sourceMap: true,
-          sourceUrl: url,
-        }),
-        shortCircuit: true,
-      };
-    },
+  const { register } = await import("node:module");
+  register(new URL("./lib/related-pets-typescript-loader.mjs", import.meta.url), {
+    parentURL: import.meta.url,
+    data: { sourceRootUrl: pathToFileURL(sourceRoot).href },
   });
 
-  try {
-    const runtime = await import(
-      pathToFileURL(
-        path.join(sourceRoot, "lib/pets/related-pets-rebuild.ts"),
-      ).href
-    );
-    return {
-      rebuild: runtime.rebuildRelatedPets,
-      recoverPrevious: runtime.recoverPreviousRelatedPets,
-    };
-  } finally {
-    hooks.deregister();
-  }
+  const runtime = await import(
+    pathToFileURL(
+      path.join(sourceRoot, "lib/pets/related-pets-rebuild.ts"),
+    ).href
+  );
+  return {
+    rebuild: runtime.rebuildRelatedPets,
+    recoverPrevious: runtime.recoverPreviousRelatedPets,
+  };
 }
 
 function isEntrypoint() {
@@ -146,12 +120,16 @@ if (isEntrypoint()) {
     .then((exitCode) => {
       process.exitCode = exitCode;
     })
-    .catch(() => {
+    .catch((error) => {
+      const failureReason =
+        error instanceof Error && error.message === "storage_unavailable"
+          ? "storage_unavailable"
+          : "rebuild_failed";
       console.error(
         JSON.stringify({
           operation: "related-pets-rebuild",
           status: "failed",
-          failureReason: "rebuild_failed",
+          failureReason,
         }),
       );
       process.exitCode = 1;

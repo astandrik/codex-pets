@@ -290,23 +290,67 @@ describe("related pets repository", () => {
     expect(harness.transactions).toBe(0);
   });
 
-  it("cleans generations except the retained active and previous pair", async () => {
-    const harness = createHarness();
-    await harness.repository.cleanupGenerations({
-      activeGenerationId: "generation-2",
-      previousGenerationId: "generation-1",
-    });
+  it("cleans retained generations only for the stable ready token", async () => {
+    const harness = createHarness(async (statement) =>
+      statement.includes("SELECT state_id")
+        ? stateResult({
+            requested: "generation-2",
+            active: "generation-2",
+            previous: "generation-1",
+            status: "ready",
+          })
+        : { resultSets: [] },
+    );
 
-    expect(harness.statements[0]?.statement).toContain(
+    await expect(
+      harness.repository.cleanupGenerations({
+        expectedGenerationId: "generation-2",
+      }),
+    ).resolves.toBe(true);
+
+    expect(harness.transactions).toBe(1);
+    expect(harness.statements.every(({ transactional }) => transactional)).toBe(
+      true,
+    );
+    const cleanup = harness.statements.find(({ statement }) =>
+      statement.includes("DELETE FROM codex_pet_related_snapshots"),
+    );
+    expect(cleanup?.statement).toContain(
       "generation_id != $active_generation_id",
     );
-    expect(harness.statements[0]?.statement).toContain(
+    expect(cleanup?.statement).toContain(
       "generation_id != $previous_generation_id",
     );
-    expect(harness.statements[0]?.params).toEqual({
+    expect(cleanup?.params).toEqual({
       $active_generation_id: { textValue: "generation-2" },
       $previous_generation_id: { textValue: "generation-1" },
     });
+  });
+
+  it("preserves newer inactive rows when another token is building", async () => {
+    const harness = createHarness(async (statement) =>
+      statement.includes("SELECT state_id")
+        ? stateResult({
+            requested: "generation-3",
+            active: "generation-2",
+            previous: "generation-1",
+            status: "building",
+          })
+        : { resultSets: [] },
+    );
+
+    await expect(
+      harness.repository.cleanupGenerations({
+        expectedGenerationId: "generation-2",
+      }),
+    ).resolves.toBe(false);
+
+    expect(harness.transactions).toBe(1);
+    expect(
+      harness.statements.some(({ statement }) =>
+        statement.includes("DELETE FROM codex_pet_related_snapshots"),
+      ),
+    ).toBe(false);
   });
 
   it("atomically swaps the retained previous generation for recovery", async () => {
