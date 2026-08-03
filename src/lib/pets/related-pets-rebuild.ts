@@ -93,14 +93,27 @@ type RelatedPetsRebuildCoverage = {
   visualVectorCount: number;
 };
 
+export type RelatedPetsInvalidationReason = "text_profile_incompatible";
+
+type RelatedPetsRebuildFailureReason =
+  | "rebuild_failed"
+  | "storage_unavailable";
+
 export type RelatedPetsRebuildLog = {
-  operation: "dry-run" | "apply" | "recover-previous";
-  status: "dry-run" | "ready" | "superseded" | "failed" | "recovered" | "unavailable";
+  operation: "dry-run" | "apply" | "invalidate" | "recover-previous";
+  status:
+    | "dry-run"
+    | "ready"
+    | "superseded"
+    | "failed"
+    | "invalidated"
+    | "recovered"
+    | "unavailable";
   generationId: string | null;
   rankingRevision: string;
   coverage: RelatedPetsRebuildCoverage;
   durationMs: number;
-  failureReason?: "rebuild_failed" | "storage_unavailable";
+  failureReason?: RelatedPetsRebuildFailureReason | RelatedPetsInvalidationReason;
   cleanupStatus?: "failed";
 };
 
@@ -131,10 +144,18 @@ export type RelatedPetsRebuildResult = {
   durationMs: number;
 };
 
+export type RelatedPetsInvalidationResult = {
+  operation: "invalidate";
+  status: "invalidated" | "superseded";
+  generationId: string;
+  rankingRevision: string;
+  failureReason: RelatedPetsInvalidationReason;
+  durationMs: number;
+};
+
 export class RelatedPetsRebuildError extends Error {
   constructor(
-    public readonly reason: "rebuild_failed" | "storage_unavailable" =
-      "rebuild_failed",
+    public readonly reason: RelatedPetsRebuildFailureReason = "rebuild_failed",
   ) {
     super(reason);
     this.name = "RelatedPetsRebuildError";
@@ -153,6 +174,7 @@ export function createRelatedPetsRebuildService(
 ) {
   return {
     rebuild,
+    invalidate,
     recoverPrevious,
   };
 
@@ -331,6 +353,62 @@ export function createRelatedPetsRebuildService(
         visualVectorCount: visualVectors.size,
       },
     };
+  }
+
+  async function invalidate(input: {
+    failureReason: RelatedPetsInvalidationReason;
+  }): Promise<RelatedPetsInvalidationResult> {
+    const startedAt = dependencies.now().getTime();
+    const storageAvailable = dependencies.isStorageAvailable();
+    const generationId = storageAvailable
+      ? dependencies.createGenerationId()
+      : null;
+
+    try {
+      if (!generationId) {
+        throw new RelatedPetsRebuildError("storage_unavailable");
+      }
+      await dependencies.repository.requestBuild({
+        generationId,
+        rankingRevision: dependencies.profile.rankingRevision,
+        updatedAt: dependencies.now().toISOString(),
+      });
+      const invalidated =
+        await dependencies.repository.markGenerationFailed({
+          generationId,
+          rankingRevision: dependencies.profile.rankingRevision,
+          failureReason: input.failureReason,
+          updatedAt: dependencies.now().toISOString(),
+        });
+      const result: RelatedPetsInvalidationResult = {
+        operation: "invalidate",
+        status: invalidated ? "invalidated" : "superseded",
+        generationId,
+        rankingRevision: dependencies.profile.rankingRevision,
+        failureReason: input.failureReason,
+        durationMs: elapsedMilliseconds(startedAt),
+      };
+      dependencies.log({
+        ...result,
+        coverage: EMPTY_COVERAGE,
+      });
+      return result;
+    } catch (error) {
+      const failureReason =
+        error instanceof RelatedPetsRebuildError
+          ? error.reason
+          : "rebuild_failed";
+      dependencies.log({
+        operation: "invalidate",
+        status: "failed",
+        generationId,
+        rankingRevision: dependencies.profile.rankingRevision,
+        coverage: EMPTY_COVERAGE,
+        durationMs: elapsedMilliseconds(startedAt),
+        failureReason,
+      });
+      throw new RelatedPetsRebuildError(failureReason);
+    }
   }
 
   async function recoverPrevious(input: {
@@ -614,4 +692,5 @@ const service = createRelatedPetsRebuildService({
 });
 
 export const rebuildRelatedPets = service.rebuild;
+export const invalidateRelatedPets = service.invalidate;
 export const recoverPreviousRelatedPets = service.recoverPrevious;

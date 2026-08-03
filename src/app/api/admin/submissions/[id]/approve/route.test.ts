@@ -20,6 +20,7 @@ vi.mock("@/lib/pets/search-provider-runtime", () => ({
 }));
 
 vi.mock("@/lib/pets/related-pets-rebuild", () => ({
+  invalidateRelatedPets: vi.fn(),
   rebuildRelatedPets: vi.fn(),
 }));
 
@@ -43,7 +44,10 @@ import { POST } from "@/app/api/admin/submissions/[id]/approve/route";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
 import { moderatePet } from "@/lib/pets/repository";
-import { rebuildRelatedPets } from "@/lib/pets/related-pets-rebuild";
+import {
+  invalidateRelatedPets,
+  rebuildRelatedPets,
+} from "@/lib/pets/related-pets-rebuild";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { petSearchRuntimeConfig } from "@/lib/pets/search-provider-runtime";
 import { refreshApprovedPetSearchEmbedding } from "@/lib/pets/search-runtime";
@@ -75,6 +79,14 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
       status: "skipped",
       reason: "missing-key",
       urls: [],
+    });
+    vi.mocked(invalidateRelatedPets).mockResolvedValue({
+      operation: "invalidate",
+      status: "invalidated",
+      generationId: "generation-invalidated",
+      rankingRevision: "related-pets-hybrid-rrf-v1",
+      failureReason: "text_profile_incompatible",
+      durationMs: 1,
     });
     vi.mocked(rebuildRelatedPets).mockResolvedValue({
       operation: "apply",
@@ -321,14 +333,66 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
       expect(refreshApprovedPetVisionSearchBestEffort).toHaveBeenCalledOnce(),
     );
     expect(rebuildRelatedPets).not.toHaveBeenCalled();
+    expect(invalidateRelatedPets).toHaveBeenCalledWith({
+      failureReason: "text_profile_incompatible",
+    });
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("keeps approval successful when incompatible-profile invalidation fails", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    petSearchRuntimeConfig.semantic = null;
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce({
+      id: "pet_1",
+      slug: "boba",
+      displayName: "Boba",
+      description: "desc",
+      spritesheetUrl: "/api/assets/asset-123/spritesheet.webp",
+      petJsonUrl: "/api/assets/asset-123/pet.json",
+      zipUrl: "/api/assets/asset-123/pet.zip",
+      spritesheetExt: "webp",
+      kind: "creature",
+      tags: [],
+      status: "approved",
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString(),
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    });
+    vi.mocked(invalidateRelatedPets).mockRejectedValueOnce(
+      new Error("private storage detail"),
+    );
+
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ id: "pet_1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(rebuildRelatedPets).not.toHaveBeenCalled();
+    expect(refreshApprovedPetVisionSearchBestEffort).toHaveBeenCalledOnce();
+    expect(notifyIndexNowOfApprovedPet).toHaveBeenCalledWith("boba");
     expect(warnSpy).toHaveBeenCalledWith(
       "[codex-pets][related-pets-rebuild-trigger]",
       {
-        operation: "rebuild",
+        operation: "invalidate",
         trigger: "approve-text",
-        status: "skipped",
+        status: "failed",
         reason: "text-profile-incompatible",
       },
+    );
+    expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(
+      "private storage detail",
     );
     warnSpy.mockRestore();
   });

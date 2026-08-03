@@ -141,6 +141,7 @@ function createHarness(options: {
   activationErrorAfterReady?: Error;
   initialState?: RelatedPetsState | null;
   interleaveNewerBuildBeforeCleanup?: boolean;
+  supersedeInvalidationBeforeFailure?: boolean;
   visualSourceContext?: { captionRevision: string; modelUri: string } | null;
 } = {}) {
   const pets = options.pets ?? [pet("source"), pet("peer-a"), pet("peer-b")];
@@ -224,6 +225,17 @@ function createHarness(options: {
       updatedAt: string;
     }) => {
       mutations.push(`failed:${input.failureReason}`);
+      if (options.supersedeInvalidationBeforeFailure) {
+        state = {
+          requestedGenerationId: "generation-newer",
+          activeGenerationId: "generation-old",
+          previousGenerationId: "generation-older",
+          status: "building",
+          rankingRevision: profile.rankingRevision,
+          failureReason: null,
+          updatedAt: "2026-08-03T10:01:00.000Z",
+        };
+      }
       if (
         state?.requestedGenerationId !== input.generationId ||
         state.status !== "building"
@@ -498,6 +510,62 @@ describe("related pets rebuild service", () => {
       operation: "apply",
       status: "failed",
       failureReason: "storage_unavailable",
+    });
+  });
+
+  it("invalidates the retained active generation without reading ranking inputs", async () => {
+    const harness = createHarness();
+    const result = await harness.service.invalidate({
+      failureReason: "text_profile_incompatible",
+    });
+
+    expect(result).toMatchObject({
+      operation: "invalidate",
+      status: "invalidated",
+      generationId: "generation-new",
+      rankingRevision: profile.rankingRevision,
+      failureReason: "text_profile_incompatible",
+    });
+    expect(harness.mutations).toEqual([
+      "request",
+      "failed:text_profile_incompatible",
+    ]);
+    expect(harness.vectorRevisionReads).toEqual([]);
+    expect(harness.snapshots).toEqual([]);
+    expect(harness.state).toMatchObject({
+      requestedGenerationId: "generation-new",
+      activeGenerationId: "generation-old",
+      previousGenerationId: "generation-older",
+      status: "failed",
+      rankingRevision: profile.rankingRevision,
+      failureReason: "text_profile_incompatible",
+    });
+    expect(harness.logs.at(-1)).toMatchObject({
+      operation: "invalidate",
+      status: "invalidated",
+      generationId: "generation-new",
+      failureReason: "text_profile_incompatible",
+    });
+  });
+
+  it("does not overwrite a newer rebuild that supersedes invalidation", async () => {
+    const harness = createHarness({
+      supersedeInvalidationBeforeFailure: true,
+    });
+    const result = await harness.service.invalidate({
+      failureReason: "text_profile_incompatible",
+    });
+
+    expect(result.status).toBe("superseded");
+    expect(harness.state).toMatchObject({
+      requestedGenerationId: "generation-newer",
+      status: "building",
+      failureReason: null,
+    });
+    expect(harness.logs.at(-1)).toMatchObject({
+      operation: "invalidate",
+      status: "superseded",
+      generationId: "generation-new",
     });
   });
 

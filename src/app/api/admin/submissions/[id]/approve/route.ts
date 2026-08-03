@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
 import {
+  invalidateRelatedPetsBestEffort,
   isRelatedPetsTextRefreshCompatible,
   rebuildRelatedPetsBestEffort,
 } from "@/lib/pets/related-pets-rebuild-trigger";
@@ -56,10 +57,8 @@ export async function POST(
       includeVisual: true,
     });
   } else {
-    console.warn("[codex-pets][related-pets-rebuild-trigger]", {
-      operation: "rebuild",
+    await invalidateRelatedPetsBestEffort({
       trigger: "approve-text",
-      status: "skipped",
       reason: "text-profile-incompatible",
     });
   }

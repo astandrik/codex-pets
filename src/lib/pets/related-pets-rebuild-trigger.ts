@@ -1,4 +1,7 @@
-import { rebuildRelatedPets } from "@/lib/pets/related-pets-rebuild";
+import {
+  invalidateRelatedPets,
+  rebuildRelatedPets,
+} from "@/lib/pets/related-pets-rebuild";
 import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
 import type { PetSearchSemanticConfig } from "@/lib/pets/search-config";
 
@@ -39,6 +42,26 @@ export async function rebuildRelatedPetsBestEffort(input: {
       trigger: input.trigger,
       status: "failed",
       includeVisual: input.includeVisual,
+    });
+    return false;
+  }
+}
+
+export async function invalidateRelatedPetsBestEffort(input: {
+  trigger: "approve-text";
+  reason: "text-profile-incompatible";
+}): Promise<boolean> {
+  try {
+    await invalidateRelatedPets({
+      failureReason: "text_profile_incompatible",
+    });
+    return true;
+  } catch {
+    console.warn("[codex-pets][related-pets-rebuild-trigger]", {
+      operation: "invalidate",
+      trigger: input.trigger,
+      status: "failed",
+      reason: input.reason,
     });
     return false;
   }
