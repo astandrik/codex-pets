@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { createRelatedPetsRebuildRequiredLog } from "./related-pets-maintenance.mjs";
+
 const SAFE_SLUG = /^[a-z0-9][a-z0-9-]{0,47}$/;
 
 export function parseBackfillArgs(argv) {
@@ -171,5 +173,8 @@ export async function runPetSearchBackfill({
   }
 
   log({ action: "summary", ...summary });
+  if (options.mode === "apply" && summary.updated > 0) {
+    log(createRelatedPetsRebuildRequiredLog());
+  }
   return summary;
 }

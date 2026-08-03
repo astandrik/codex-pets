@@ -22,6 +22,9 @@ const {
   PET_SEARCH_BACKFILL_REVISIONS,
   createEmbeddingRequest,
 } = await import("./lib/pet-search-provider-config.mjs");
+const { RELATED_PETS_REBUILD_COMMANDS } = await import(
+  "./lib/related-pets-maintenance.mjs"
+);
 
 const pet = {
   slug: "velvet-byte",
@@ -185,6 +188,26 @@ describe("pet search embeddings backfill", () => {
       dimensions: 256,
       embedding: Array(256).fill(0.25),
       updatedAt: "2026-07-22T00:00:00.000Z",
+    });
+  });
+
+  it("emits executable related snapshot follow-up after applied changes", async () => {
+    const logs: unknown[] = [];
+
+    await runPetSearchBackfill({
+      options: { mode: "apply", slug: null, force: false },
+      revision: "model-v1",
+      dimensions: 256,
+      pets: [pet],
+      getMetadata: async () => null,
+      embedDocument: async () => Array(256).fill(0.25),
+      upsert: async () => undefined,
+      log: (entry: unknown) => logs.push(entry),
+    });
+
+    expect(logs.at(-1)).toEqual({
+      action: "related-pets-rebuild-required",
+      commands: RELATED_PETS_REBUILD_COMMANDS,
     });
   });
 

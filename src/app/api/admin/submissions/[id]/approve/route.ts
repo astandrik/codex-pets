@@ -45,7 +45,7 @@ export async function POST(
 
   await rebuildRelatedPetsBestEffort({
     trigger: "approve-text",
-    includeVisual: false,
+    includeVisual: true,
   });
 
   void refreshApprovedPetVisionSearchBestEffort(pet, {

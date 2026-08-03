@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 
 import sharp from "sharp";
 
+import { createRelatedPetsRebuildRequiredLog } from "./related-pets-maintenance.mjs";
+
 const SAFE_SLUG = /^[a-z0-9][a-z0-9-]{0,47}$/;
 
 export const PET_VISION_FRAME_POLICY = {
@@ -383,6 +385,12 @@ export async function runPetVisionSearchBackfill(input) {
   }
 
   input.log({ action: "summary", ...summary });
+  if (
+    input.options.mode === "apply" &&
+    summary.vectorOnly + summary.captionAndVector > 0
+  ) {
+    input.log(createRelatedPetsRebuildRequiredLog());
+  }
   return summary;
 }
 

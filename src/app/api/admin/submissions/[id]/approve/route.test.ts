@@ -111,7 +111,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     expect(notifyIndexNowOfApprovedPet).not.toHaveBeenCalled();
   });
 
-  it("approves a pending pet for admins", async () => {
+  it("preserves compatible stored visual rankings in the immediate approval rebuild", async () => {
     vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
       userId: "admin_1",
       email: null,
@@ -153,7 +153,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     );
     expect(rebuildRelatedPets).toHaveBeenCalledWith({
       mode: "apply",
-      includeVisual: false,
+      includeVisual: true,
     });
     expect(refreshApprovedPetVisionSearchBestEffort).toHaveBeenCalledWith(
       expect.objectContaining({ slug: "boba", status: "approved" }),
@@ -221,7 +221,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     await vi.waitFor(() => expect(rebuildRelatedPets).toHaveBeenCalledTimes(2));
     expect(rebuildRelatedPets).toHaveBeenNthCalledWith(1, {
       mode: "apply",
-      includeVisual: false,
+      includeVisual: true,
     });
     expect(rebuildRelatedPets).toHaveBeenNthCalledWith(2, {
       mode: "apply",
@@ -246,7 +246,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     warnSpy.mockRestore();
   });
 
-  it("awaits text indexing before the text-first rebuild and response work", async () => {
+  it("awaits text indexing before the immediate rebuild and response work", async () => {
     vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
       userId: "admin_1",
       email: null,
@@ -409,7 +409,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     warnSpy.mockRestore();
   });
 
-  it("keeps approval successful when text indexing and text-first rebuild fail independently", async () => {
+  it("keeps approval successful when text indexing and the immediate rebuild fail independently", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
       userId: "admin_1",
@@ -452,7 +452,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     expect(response.status).toBe(200);
     expect(rebuildRelatedPets).toHaveBeenCalledWith({
       mode: "apply",
-      includeVisual: false,
+      includeVisual: true,
     });
     expect(refreshApprovedPetVisionSearchBestEffort).toHaveBeenCalledTimes(1);
     expect(notifyIndexNowOfApprovedPet).toHaveBeenCalledWith("boba");
@@ -466,7 +466,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
         operation: "rebuild",
         trigger: "approve-text",
         status: "failed",
-        includeVisual: false,
+        includeVisual: true,
       },
     );
     const logPayload = JSON.stringify(warnSpy.mock.calls);

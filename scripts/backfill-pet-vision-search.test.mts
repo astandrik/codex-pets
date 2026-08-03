@@ -35,6 +35,9 @@ const {
   PET_VISION_BACKFILL_CAPTION_REVISIONS,
   PET_VISUAL_BACKFILL_REVISIONS,
 } = await import("./lib/pet-search-provider-config.mjs");
+const { RELATED_PETS_REBUILD_COMMANDS } = await import(
+  "./lib/related-pets-maintenance.mjs"
+);
 
 const visualConfig = {
   captionRevision: PET_VISION_CAPTION_REVISION,
@@ -267,6 +270,10 @@ describe("pet vision search backfill", () => {
       dimensions: 256,
       embedding: Array(256).fill(0.25),
       updatedAt: "2026-07-23T00:00:00.000Z",
+    });
+    expect(vectorInput.log).toHaveBeenLastCalledWith({
+      action: "related-pets-rebuild-required",
+      commands: RELATED_PETS_REBUILD_COMMANDS,
     });
   });
 

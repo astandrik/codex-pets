@@ -101,6 +101,7 @@ export type RelatedPetsRebuildLog = {
   coverage: RelatedPetsRebuildCoverage;
   durationMs: number;
   failureReason?: "rebuild_failed" | "storage_unavailable";
+  cleanupStatus?: "failed";
 };
 
 type RelatedPetsRebuildDependencies = {
@@ -221,9 +222,14 @@ export function createRelatedPetsRebuildService(
         });
       }
 
-      await dependencies.repository.cleanupGenerations({
-        expectedGenerationId: generationId,
-      });
+      let cleanupStatus: "failed" | undefined;
+      try {
+        await dependencies.repository.cleanupGenerations({
+          expectedGenerationId: generationId,
+        });
+      } catch {
+        cleanupStatus = "failed";
+      }
       return resultAndLog({
         operation: "apply",
         status: "ready",
@@ -231,6 +237,7 @@ export function createRelatedPetsRebuildService(
         coverage,
         rankings: built.rankings,
         startedAt,
+        cleanupStatus,
       });
     } catch (error) {
       const failureReason =
@@ -326,7 +333,9 @@ export function createRelatedPetsRebuildService(
     };
   }
 
-  async function recoverPrevious(): Promise<{
+  async function recoverPrevious(input: {
+    targetGenerationId: string;
+  }): Promise<{
     status: "recovered" | "unavailable";
     generationId: string | null;
     rankingRevision: string;
@@ -339,9 +348,22 @@ export function createRelatedPetsRebuildService(
       }
       const state = await dependencies.repository.getState();
       if (
+        state?.status === "ready" &&
+        state.requestedGenerationId === input.targetGenerationId &&
+        state.activeGenerationId === input.targetGenerationId &&
+        state.rankingRevision === dependencies.profile.rankingRevision
+      ) {
+        return recoveryResultAndLog({
+          status: "recovered",
+          generationId: input.targetGenerationId,
+          rankingRevision: state.rankingRevision,
+          startedAt,
+        });
+      }
+      if (
         !state?.requestedGenerationId ||
         !state.activeGenerationId ||
-        !state.previousGenerationId
+        state.previousGenerationId !== input.targetGenerationId
       ) {
         return recoveryResultAndLog({
           status: "unavailable",
@@ -356,7 +378,7 @@ export function createRelatedPetsRebuildService(
           expectedRequestedGenerationId: state.requestedGenerationId,
           expectedStatus: state.status,
           expectedActiveGenerationId: state.activeGenerationId,
-          targetPreviousGenerationId: state.previousGenerationId,
+          targetPreviousGenerationId: input.targetGenerationId,
           expectedRankingRevision: dependencies.profile.rankingRevision,
           updatedAt: dependencies.now().toISOString(),
         });
@@ -421,6 +443,7 @@ export function createRelatedPetsRebuildService(
     coverage: RelatedPetsRebuildCoverage;
     rankings: Array<{ sourceSlug: string; relatedSlugs: string[] }>;
     startedAt: number;
+    cleanupStatus?: "failed";
   }): RelatedPetsRebuildResult {
     const durationMs = elapsedMilliseconds(input.startedAt);
     const result: RelatedPetsRebuildResult = {
@@ -439,6 +462,9 @@ export function createRelatedPetsRebuildService(
       rankingRevision: result.rankingRevision,
       coverage: result.coverage,
       durationMs: result.durationMs,
+      ...(input.cleanupStatus
+        ? { cleanupStatus: input.cleanupStatus }
+        : {}),
     });
     return result;
   }

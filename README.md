@@ -301,6 +301,15 @@ base `lexical` and visual `off` → additive migrations → backfills → visual
 `shadow` → calibration → untouched holdout → human review of the combined
 `sexy` top five → both modes `hybrid`.
 
+An applied text or visual backfill that changes vectors prints the required
+related-pet snapshot follow-up. Run both commands after embedding maintenance
+completes so snapshot rankings do not remain stale:
+
+```bash
+npm run related:rebuild -- --dry-run
+npm run related:rebuild -- --apply
+```
+
 Text and visual backfills resolve their embedding provider independently from
 their active revision. Visual ranking is disabled safely when the text and
 visual revisions use incompatible embedding models.

@@ -6,9 +6,9 @@ export type RelatedPetsRebuildCliMode =
 
 export const RELATED_PETS_REBUILD_HELP: string;
 
-export function parseRelatedPetsRebuildArgs(
-  argv: string[],
-): { mode: RelatedPetsRebuildCliMode };
+export function parseRelatedPetsRebuildArgs(argv: string[]):
+  | { mode: "dry-run" | "apply" | "help" }
+  | { mode: "recover-previous"; targetGenerationId: string };
 
 type RelatedPetsCliService = {
   rebuild: (input: {
@@ -28,7 +28,9 @@ type RelatedPetsCliService = {
     rankings: Array<{ sourceSlug: string; relatedSlugs: string[] }>;
     durationMs: number;
   }>;
-  recoverPrevious: () => Promise<{
+  recoverPrevious: (input: {
+    targetGenerationId: string;
+  }) => Promise<{
     status: "recovered" | "unavailable";
     generationId: string | null;
     rankingRevision: string;

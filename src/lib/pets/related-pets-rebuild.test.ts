@@ -320,6 +320,16 @@ function createHarness(options: {
       ) {
         return null;
       }
+      state = {
+        requestedGenerationId: input.targetPreviousGenerationId,
+        activeGenerationId: input.targetPreviousGenerationId,
+        previousGenerationId: input.expectedActiveGenerationId,
+        status: "ready",
+        rankingRevision:
+          options.retainedRankingRevision ?? profile.rankingRevision,
+        failureReason: null,
+        updatedAt: input.updatedAt,
+      };
       return {
         activeGenerationId: input.targetPreviousGenerationId,
         previousGenerationId: input.expectedActiveGenerationId,
@@ -544,7 +554,11 @@ describe("related pets rebuild service", () => {
       },
     });
 
-    await expect(harness.service.recoverPrevious()).resolves.toMatchObject({
+    await expect(
+      harness.service.recoverPrevious({
+        targetGenerationId: "generation-1",
+      }),
+    ).resolves.toMatchObject({
       status: "recovered",
       generationId: "generation-1",
       rankingRevision: "ranking-v1",
@@ -561,6 +575,44 @@ describe("related pets rebuild service", () => {
     ]);
   });
 
+  it("keeps recovery retries on the requested generation", async () => {
+    const harness = createHarness({
+      initialState: {
+        requestedGenerationId: "generation-2",
+        activeGenerationId: "generation-2",
+        previousGenerationId: "generation-1",
+        status: "ready",
+        rankingRevision: "ranking-v1",
+        failureReason: null,
+        updatedAt: "2026-08-03T10:00:00.000Z",
+      },
+    });
+
+    await expect(
+      harness.service.recoverPrevious({
+        targetGenerationId: "generation-1",
+      }),
+    ).resolves.toMatchObject({
+      status: "recovered",
+      generationId: "generation-1",
+    });
+    await expect(
+      harness.service.recoverPrevious({
+        targetGenerationId: "generation-1",
+      }),
+    ).resolves.toMatchObject({
+      status: "recovered",
+      generationId: "generation-1",
+    });
+    expect(harness.state).toMatchObject({
+      requestedGenerationId: "generation-1",
+      activeGenerationId: "generation-1",
+      previousGenerationId: "generation-2",
+      status: "ready",
+    });
+    expect(harness.recoveryInputs).toHaveLength(1);
+  });
+
   it("reports an incompatible retained ranking revision as unavailable", async () => {
     const harness = createHarness({
       retainedRankingRevision: "ranking-v0",
@@ -575,7 +627,11 @@ describe("related pets rebuild service", () => {
       },
     });
 
-    await expect(harness.service.recoverPrevious()).resolves.toMatchObject({
+    await expect(
+      harness.service.recoverPrevious({
+        targetGenerationId: "generation-1",
+      }),
+    ).resolves.toMatchObject({
       status: "unavailable",
       generationId: null,
       rankingRevision: "ranking-v1",
@@ -601,7 +657,11 @@ describe("related pets rebuild service", () => {
         },
       });
 
-      await expect(harness.service.recoverPrevious()).resolves.toMatchObject({
+      await expect(
+        harness.service.recoverPrevious({
+          targetGenerationId: "generation-1",
+        }),
+      ).resolves.toMatchObject({
         status: "recovered",
         generationId: "generation-1",
         rankingRevision: "ranking-v1",
@@ -632,7 +692,11 @@ describe("related pets rebuild service", () => {
       },
     });
 
-    await expect(harness.service.recoverPrevious()).resolves.toMatchObject({
+    await expect(
+      harness.service.recoverPrevious({
+        targetGenerationId: "generation-1",
+      }),
+    ).resolves.toMatchObject({
       status: "unavailable",
       generationId: null,
     });
@@ -646,7 +710,11 @@ describe("related pets rebuild service", () => {
   it("fails recovery with a bounded storage reason when YDB is unconfigured", async () => {
     const harness = createHarness({ storageAvailable: false });
 
-    await expect(harness.service.recoverPrevious()).rejects.toMatchObject({
+    await expect(
+      harness.service.recoverPrevious({
+        targetGenerationId: "generation-1",
+      }),
+    ).rejects.toMatchObject({
       name: "RelatedPetsRebuildError",
       message: "storage_unavailable",
     });
@@ -673,7 +741,11 @@ describe("related pets rebuild service", () => {
       },
     });
 
-    await expect(harness.service.recoverPrevious()).rejects.toMatchObject({
+    await expect(
+      harness.service.recoverPrevious({
+        targetGenerationId: "generation-1",
+      }),
+    ).rejects.toMatchObject({
       name: "RelatedPetsRebuildError",
       message: "rebuild_failed",
     });
@@ -752,14 +824,17 @@ describe("related pets rebuild service", () => {
     expect(harness.vectorRevisionReads).toEqual([profile.textRevision]);
   });
 
-  it("does not replace an activated ready state when retention cleanup fails", async () => {
+  it("reports ready with bounded cleanup diagnostics after activation", async () => {
     const harness = createHarness({
       cleanupError: new Error("cleanup contained private storage detail"),
     });
 
     await expect(
       harness.service.rebuild({ mode: "apply", includeVisual: true }),
-    ).rejects.toThrow("rebuild_failed");
+    ).resolves.toMatchObject({
+      status: "ready",
+      generationId: "generation-new",
+    });
 
     expect(harness.state).toMatchObject({
       status: "ready",
@@ -767,6 +842,14 @@ describe("related pets rebuild service", () => {
       failureReason: null,
     });
     expect(harness.mutations).not.toContain("failed:rebuild_failed");
+    expect(harness.logs.at(-1)).toMatchObject({
+      operation: "apply",
+      status: "ready",
+      cleanupStatus: "failed",
+    });
+    expect(JSON.stringify(harness.logs)).not.toContain(
+      "cleanup contained private storage detail",
+    );
   });
 
   it("preserves a newer partial generation when it starts before cleanup", async () => {

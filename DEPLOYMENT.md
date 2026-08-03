@@ -117,6 +117,12 @@ The v2 text and Qwen visual revisions both use managed Yandex Text Embeddings
 v2 at 768 dimensions. Keep the legacy 256-dimensional rows for rollback; the
 backfills add revision-scoped rows and do not overwrite them.
 
+Whenever an applied text or visual maintenance backfill reports changed
+vectors, it also prints the required related-pet snapshot follow-up. After all
+embedding updates finish, run the printed dry-run and apply commands and
+confirm the apply result is `ready`; otherwise hybrid related cards keep the
+previous snapshot ordering.
+
 The visual dry-run reads and hashes spritesheets but does not call providers or
 write YDB. After the full paced backfill, enable visual `shadow`, inspect only
 aggregate latency/fallback metrics, and run:
@@ -158,17 +164,20 @@ the rollout and rollback kill switch. Invalid values fail safely to the
 heuristic resolver.
 
 To roll back ordering without discarding derived rows, first disable the
-feature, then recover the retained generation:
+feature and read the exact `previous_generation_id` from
+`codex_pet_related_state`. Pass that value explicitly:
 
 ```bash
-npm run related:rebuild -- --recover-previous
+npm run related:rebuild -- --recover-previous GENERATION_ID
 ```
 
 The recovery command exits nonzero when no compatible previous generation is
-available. Keep the feature disabled until the recovered state is confirmed
-`ready`; re-enable it only after that check. Compatibility requires an exact
-ranking-profile revision match, so deploy the application version for the
-retained revision before recovery when rolling back across profile revisions.
+available or the requested generation is not the retained one. Retrying with
+the same generation ID is idempotent. Keep the feature disabled until the
+recovered state is confirmed `ready`; re-enable it only after that check.
+Compatibility requires an exact ranking-profile revision match, so deploy the
+application version for the retained revision before recovery when rolling
+back across profile revisions.
 
 ## Build and run
 

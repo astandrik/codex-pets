@@ -11,6 +11,9 @@ const {
   parseUpdateArgs,
   readDescriptionUpdates,
 } = await import("./lib/pet-description-update.mjs");
+const { RELATED_PETS_REBUILD_COMMANDS } = await import(
+  "./lib/related-pets-maintenance.mjs"
+);
 
 let workDir: string;
 
@@ -220,6 +223,13 @@ describe("buildEmbeddingBackfillCommands", () => {
     expect(buildEmbeddingBackfillCommands(["kesha", "wild-boar"])).toEqual([
       "node scripts/backfill-pet-search-embeddings.mjs --apply --slug kesha",
       "node scripts/backfill-pet-search-embeddings.mjs --apply --slug wild-boar",
+    ]);
+  });
+
+  it("keeps the required snapshot refresh commands executable and ordered", () => {
+    expect(RELATED_PETS_REBUILD_COMMANDS).toEqual([
+      "npm run related:rebuild -- --dry-run",
+      "npm run related:rebuild -- --apply",
     ]);
   });
 });

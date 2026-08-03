@@ -11,13 +11,13 @@ const sourceRoot = path.join(repositoryRoot, "src");
 export const RELATED_PETS_REBUILD_HELP = `Usage:
   npm run related:rebuild -- --dry-run
   npm run related:rebuild -- --apply
-  npm run related:rebuild -- --recover-previous
+  npm run related:rebuild -- --recover-previous GENERATION_ID
   npm run related:rebuild -- --help
 
 Modes:
   --dry-run           Validate stored vectors and compute rankings without writes.
   --apply             Build and conditionally publish a new full generation.
-  --recover-previous  Atomically republish the retained previous generation.
+  --recover-previous  Atomically publish the retained GENERATION_ID; retries with the same ID are idempotent.
   --help              Show this help.`;
 
 export function parseRelatedPetsRebuildArgs(argv) {
@@ -27,6 +27,20 @@ export function parseRelatedPetsRebuildArgs(argv) {
     "--recover-previous",
     "--help",
   ]);
+  if (argv[0] === "--recover-previous") {
+    const targetGenerationId = argv[1];
+    if (
+      argv.length !== 2 ||
+      !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(
+        targetGenerationId ?? "",
+      )
+    ) {
+      throw new Error(
+        "--recover-previous requires exactly one canonical generation ID.",
+      );
+    }
+    return { mode: "recover-previous", targetGenerationId };
+  }
   const unknown = argv.find((argument) => !supported.has(argument));
   if (unknown) {
     throw new Error(`Unknown argument: ${unknown}`);
@@ -40,9 +54,6 @@ export function parseRelatedPetsRebuildArgs(argv) {
   const [argument] = argv;
   if (argument === "--dry-run") return { mode: "dry-run" };
   if (argument === "--apply") return { mode: "apply" };
-  if (argument === "--recover-previous") {
-    return { mode: "recover-previous" };
-  }
   if (argument === "--help") return { mode: "help" };
   throw new Error(
     "Select exactly one of --dry-run, --apply, --recover-previous, or --help.",
@@ -63,7 +74,9 @@ export async function runRelatedPetsRebuildCli({
   const service = await loadService();
   try {
     if (options.mode === "recover-previous") {
-      const result = await service.recoverPrevious();
+      const result = await service.recoverPrevious({
+        targetGenerationId: options.targetGenerationId,
+      });
       write(
         JSON.stringify({
           operation: "recover-previous",
