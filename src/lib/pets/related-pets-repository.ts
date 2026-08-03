@@ -1,0 +1,490 @@
+import type { Session } from "ydb-sdk";
+
+import { isYdbConfigured, TypedValues, withSession } from "@/lib/ydb/client";
+import { rowsFromResult, textAt } from "@/lib/ydb/result";
+import { TABLES } from "@/lib/ydb/schema";
+
+export type RelatedPetsGenerationStatus = "building" | "ready" | "failed";
+
+export type RelatedPetsState = {
+  requestedGenerationId: string | null;
+  activeGenerationId: string | null;
+  previousGenerationId: string | null;
+  status: RelatedPetsGenerationStatus;
+  rankingRevision: string;
+  failureReason: string | null;
+  updatedAt: string;
+};
+
+export type RelatedPetsSnapshot = {
+  generationId: string;
+  sourceSlug: string;
+  rankingRevision: string;
+  relatedSlugs: string[];
+  createdAt: string;
+};
+
+type TypedValueFactory = {
+  utf8: (value: string) => unknown;
+  json: (value: string) => unknown;
+};
+
+type Execute = (
+  statement: string,
+  params: Record<string, unknown>,
+) => Promise<unknown>;
+
+type RelatedPetsRepositoryDependencies = {
+  isConfigured: () => boolean;
+  values: TypedValueFactory;
+  execute: Execute;
+  transaction: <T>(operation: (execute: Execute) => Promise<T>) => Promise<T>;
+};
+
+const RELATED_PETS_STATE_ID = "active";
+const RELATED_PETS_STATUSES = new Set<RelatedPetsGenerationStatus>([
+  "building",
+  "ready",
+  "failed",
+]);
+
+export function createRelatedPetsRepository(
+  dependencies: RelatedPetsRepositoryDependencies,
+) {
+  return {
+    getState,
+    getSnapshot,
+    requestBuild,
+    writeSnapshot,
+    activateGeneration,
+    markGenerationFailed,
+    cleanupGenerations,
+    recoverPreviousGeneration,
+  };
+
+  async function getState(): Promise<RelatedPetsState | null> {
+    if (!dependencies.isConfigured()) return null;
+    return getStateWithExecute(dependencies.execute);
+  }
+
+  async function getStateWithExecute(
+    execute: Execute,
+  ): Promise<RelatedPetsState | null> {
+    const result = await execute(
+      `
+DECLARE $state_id AS Utf8;
+
+SELECT state_id,
+       requested_generation_id,
+       active_generation_id,
+       previous_generation_id,
+       status,
+       ranking_revision,
+       failure_reason,
+       updated_at
+FROM ${TABLES.relatedState}
+WHERE state_id = $state_id
+LIMIT 1;
+      `,
+      { $state_id: dependencies.values.utf8(RELATED_PETS_STATE_ID) },
+    );
+    const row = rowsFromResult(result)[0];
+    if (!row) return null;
+
+    if (textAt(row, 0) !== RELATED_PETS_STATE_ID) {
+      throw new Error("Invalid related pets state id.");
+    }
+    const status = textAt(row, 4);
+    if (!RELATED_PETS_STATUSES.has(status as RelatedPetsGenerationStatus)) {
+      throw new Error("Invalid related pets state status.");
+    }
+    const rankingRevision = textAt(row, 5);
+    if (!rankingRevision) {
+      throw new Error("Invalid related pets ranking revision.");
+    }
+
+    return {
+      requestedGenerationId: textAt(row, 1) || null,
+      activeGenerationId: textAt(row, 2) || null,
+      previousGenerationId: textAt(row, 3) || null,
+      status: status as RelatedPetsGenerationStatus,
+      rankingRevision,
+      failureReason: textAt(row, 6) || null,
+      updatedAt: textAt(row, 7),
+    };
+  }
+
+  async function getSnapshot(
+    generationId: string,
+    sourceSlug: string,
+  ): Promise<RelatedPetsSnapshot | null> {
+    if (!dependencies.isConfigured()) return null;
+    const result = await dependencies.execute(
+      `
+DECLARE $generation_id AS Utf8;
+DECLARE $source_slug AS Utf8;
+
+SELECT generation_id,
+       source_slug,
+       ranking_revision,
+       related_slugs_json,
+       created_at
+FROM ${TABLES.relatedSnapshots}
+WHERE generation_id = $generation_id
+  AND source_slug = $source_slug
+LIMIT 1;
+      `,
+      {
+        $generation_id: dependencies.values.utf8(generationId),
+        $source_slug: dependencies.values.utf8(sourceSlug),
+      },
+    );
+    const row = rowsFromResult(result)[0];
+    if (!row) return null;
+
+    const storedSourceSlug = textAt(row, 1);
+    return {
+      generationId: textAt(row, 0),
+      sourceSlug: storedSourceSlug,
+      rankingRevision: textAt(row, 2),
+      relatedSlugs: parseRelatedSlugs(textAt(row, 3), storedSourceSlug),
+      createdAt: textAt(row, 4),
+    };
+  }
+
+  async function requestBuild(input: {
+    generationId: string;
+    rankingRevision: string;
+    updatedAt: string;
+  }): Promise<void> {
+    if (!dependencies.isConfigured()) return;
+    await dependencies.execute(
+      `
+DECLARE $state_id AS Utf8;
+DECLARE $generation_id AS Utf8;
+DECLARE $status AS Utf8;
+DECLARE $ranking_revision AS Utf8;
+DECLARE $updated_at AS Utf8;
+
+UPSERT INTO ${TABLES.relatedState}
+(state_id, requested_generation_id, status, ranking_revision, failure_reason, updated_at)
+VALUES
+($state_id, $generation_id, $status, $ranking_revision, NULL, $updated_at);
+      `,
+      {
+        $state_id: dependencies.values.utf8(RELATED_PETS_STATE_ID),
+        $generation_id: dependencies.values.utf8(input.generationId),
+        $status: dependencies.values.utf8("building"),
+        $ranking_revision: dependencies.values.utf8(input.rankingRevision),
+        $updated_at: dependencies.values.utf8(input.updatedAt),
+      },
+    );
+  }
+
+  async function writeSnapshot(input: RelatedPetsSnapshot): Promise<void> {
+    if (!dependencies.isConfigured()) return;
+    const relatedSlugs = validateRelatedSlugs(
+      input.relatedSlugs,
+      input.sourceSlug,
+    );
+    await dependencies.execute(
+      `
+DECLARE $generation_id AS Utf8;
+DECLARE $source_slug AS Utf8;
+DECLARE $ranking_revision AS Utf8;
+DECLARE $related_slugs_json AS Json;
+DECLARE $created_at AS Utf8;
+
+UPSERT INTO ${TABLES.relatedSnapshots}
+(generation_id, source_slug, ranking_revision, related_slugs_json, created_at)
+VALUES
+($generation_id, $source_slug, $ranking_revision, $related_slugs_json, $created_at);
+      `,
+      {
+        $generation_id: dependencies.values.utf8(input.generationId),
+        $source_slug: dependencies.values.utf8(input.sourceSlug),
+        $ranking_revision: dependencies.values.utf8(input.rankingRevision),
+        $related_slugs_json: dependencies.values.json(
+          JSON.stringify(relatedSlugs),
+        ),
+        $created_at: dependencies.values.utf8(input.createdAt),
+      },
+    );
+  }
+
+  async function activateGeneration(input: {
+    generationId: string;
+    rankingRevision: string;
+    updatedAt: string;
+  }): Promise<boolean> {
+    if (!dependencies.isConfigured()) return false;
+    return dependencies.transaction(async (execute) => {
+      const state = await getStateWithExecute(execute);
+      if (state?.requestedGenerationId !== input.generationId) return false;
+
+      await execute(
+        `
+DECLARE $state_id AS Utf8;
+DECLARE $generation_id AS Utf8;
+DECLARE $status AS Utf8;
+DECLARE $ranking_revision AS Utf8;
+DECLARE $updated_at AS Utf8;
+
+UPDATE ${TABLES.relatedState}
+SET previous_generation_id = active_generation_id,
+    active_generation_id = $generation_id,
+    requested_generation_id = $generation_id,
+    status = $status,
+    ranking_revision = $ranking_revision,
+    failure_reason = NULL,
+    updated_at = $updated_at
+WHERE state_id = $state_id
+  AND requested_generation_id = $generation_id;
+        `,
+        {
+          $state_id: dependencies.values.utf8(RELATED_PETS_STATE_ID),
+          $generation_id: dependencies.values.utf8(input.generationId),
+          $status: dependencies.values.utf8("ready"),
+          $ranking_revision: dependencies.values.utf8(input.rankingRevision),
+          $updated_at: dependencies.values.utf8(input.updatedAt),
+        },
+      );
+      return true;
+    });
+  }
+
+  async function markGenerationFailed(input: {
+    generationId: string;
+    rankingRevision: string;
+    failureReason: string;
+    updatedAt: string;
+  }): Promise<boolean> {
+    if (!/^[a-z][a-z0-9_]{0,63}$/.test(input.failureReason)) {
+      throw new Error("Invalid related pets failure reason.");
+    }
+    if (!dependencies.isConfigured()) return false;
+    return dependencies.transaction(async (execute) => {
+      const state = await getStateWithExecute(execute);
+      if (state?.requestedGenerationId !== input.generationId) return false;
+
+      await execute(
+        `
+DECLARE $state_id AS Utf8;
+DECLARE $generation_id AS Utf8;
+DECLARE $status AS Utf8;
+DECLARE $ranking_revision AS Utf8;
+DECLARE $failure_reason AS Utf8;
+DECLARE $updated_at AS Utf8;
+
+UPDATE ${TABLES.relatedState}
+SET status = $status,
+    ranking_revision = $ranking_revision,
+    failure_reason = $failure_reason,
+    updated_at = $updated_at
+WHERE state_id = $state_id
+  AND requested_generation_id = $generation_id;
+        `,
+        {
+          $state_id: dependencies.values.utf8(RELATED_PETS_STATE_ID),
+          $generation_id: dependencies.values.utf8(input.generationId),
+          $status: dependencies.values.utf8("failed"),
+          $ranking_revision: dependencies.values.utf8(input.rankingRevision),
+          $failure_reason: dependencies.values.utf8(input.failureReason),
+          $updated_at: dependencies.values.utf8(input.updatedAt),
+        },
+      );
+      return true;
+    });
+  }
+
+  async function cleanupGenerations(input: {
+    activeGenerationId: string;
+    previousGenerationId: string | null;
+  }): Promise<void> {
+    if (!dependencies.isConfigured()) return;
+    const previousFilter = input.previousGenerationId
+      ? "\n  AND generation_id != $previous_generation_id"
+      : "";
+    await dependencies.execute(
+      `
+DECLARE $active_generation_id AS Utf8;
+${input.previousGenerationId ? "DECLARE $previous_generation_id AS Utf8;" : ""}
+
+DELETE FROM ${TABLES.relatedSnapshots}
+WHERE generation_id != $active_generation_id${previousFilter};
+      `,
+      {
+        $active_generation_id: dependencies.values.utf8(
+          input.activeGenerationId,
+        ),
+        ...(input.previousGenerationId
+          ? {
+              $previous_generation_id: dependencies.values.utf8(
+                input.previousGenerationId,
+              ),
+            }
+          : {}),
+      },
+    );
+  }
+
+  async function recoverPreviousGeneration(
+    updatedAt: string,
+  ): Promise<{
+    activeGenerationId: string;
+    previousGenerationId: string;
+    rankingRevision: string;
+  } | null> {
+    if (!dependencies.isConfigured()) return null;
+    return dependencies.transaction(async (execute) => {
+      const state = await getStateWithExecute(execute);
+      if (!state?.activeGenerationId || !state.previousGenerationId) {
+        return null;
+      }
+
+      const revisionResult = await execute(
+        `
+DECLARE $generation_id AS Utf8;
+
+SELECT DISTINCT ranking_revision
+FROM ${TABLES.relatedSnapshots}
+WHERE generation_id = $generation_id;
+        `,
+        {
+          $generation_id: dependencies.values.utf8(
+            state.previousGenerationId,
+          ),
+        },
+      );
+      const revisionRows = rowsFromResult(revisionResult);
+      if (revisionRows.length === 0) return null;
+      if (revisionRows.length !== 1 || !textAt(revisionRows[0], 0)) {
+        throw new Error("Invalid retained related pets generation.");
+      }
+      const rankingRevision = textAt(revisionRows[0], 0);
+
+      await execute(
+        `
+DECLARE $state_id AS Utf8;
+DECLARE $active_generation_id AS Utf8;
+DECLARE $status AS Utf8;
+DECLARE $ranking_revision AS Utf8;
+DECLARE $updated_at AS Utf8;
+
+UPDATE ${TABLES.relatedState}
+SET requested_generation_id = $active_generation_id,
+    previous_generation_id = active_generation_id,
+    active_generation_id = $active_generation_id,
+    status = $status,
+    ranking_revision = $ranking_revision,
+    failure_reason = NULL,
+    updated_at = $updated_at
+WHERE state_id = $state_id;
+        `,
+        {
+          $state_id: dependencies.values.utf8(RELATED_PETS_STATE_ID),
+          $active_generation_id: dependencies.values.utf8(
+            state.previousGenerationId,
+          ),
+          $status: dependencies.values.utf8("ready"),
+          $ranking_revision: dependencies.values.utf8(rankingRevision),
+          $updated_at: dependencies.values.utf8(updatedAt),
+        },
+      );
+      return {
+        activeGenerationId: state.previousGenerationId,
+        previousGenerationId: state.activeGenerationId,
+        rankingRevision,
+      };
+    });
+  }
+}
+
+function parseRelatedSlugs(value: string, sourceSlug: string): string[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("Invalid related pets snapshot slugs.");
+  }
+  return validateRelatedSlugs(parsed, sourceSlug);
+}
+
+function validateRelatedSlugs(
+  value: unknown,
+  sourceSlug: string,
+): string[] {
+  if (
+    !Array.isArray(value) ||
+    value.length > 4 ||
+    value.some(
+      (slug) =>
+        typeof slug !== "string" ||
+        !slug ||
+        slug === sourceSlug ||
+        slug !== slug.trim(),
+    ) ||
+    new Set(value).size !== value.length
+  ) {
+    throw new Error("Invalid related pets snapshot slugs.");
+  }
+  return [...value] as string[];
+}
+
+type TxControl = { txId: string };
+
+async function withSerializableTransaction<T>(
+  operation: (execute: Execute) => Promise<T>,
+): Promise<T> {
+  return withSession(async (session: Session) => {
+    const transaction = await session.beginTransaction({
+      serializableReadWrite: {},
+    });
+    if (!transaction.id) {
+      throw new Error("Unable to start related pets transaction.");
+    }
+    const txControl: TxControl = { txId: transaction.id };
+    const execute: Execute = (statement, params) =>
+      session.executeQuery(
+        statement,
+        params as NonNullable<Parameters<typeof session.executeQuery>[1]>,
+        txControl,
+      );
+
+    try {
+      const result = await operation(execute);
+      await session.commitTransaction(txControl);
+      return result;
+    } catch (error) {
+      try {
+        await session.rollbackTransaction(txControl);
+      } catch {
+        // The transaction may already be aborted or committed by YDB.
+      }
+      throw error;
+    }
+  });
+}
+
+const repository = createRelatedPetsRepository({
+  isConfigured: isYdbConfigured,
+  values: TypedValues,
+  execute: (statement, params) =>
+    withSession((session) =>
+      session.executeQuery(
+        statement,
+        params as NonNullable<Parameters<typeof session.executeQuery>[1]>,
+      ),
+    ),
+  transaction: withSerializableTransaction,
+});
+
+export const getRelatedPetsState = repository.getState;
+export const getRelatedPetsSnapshot = repository.getSnapshot;
+export const requestRelatedPetsBuild = repository.requestBuild;
+export const writeRelatedPetsSnapshot = repository.writeSnapshot;
+export const activateRelatedPetsGeneration = repository.activateGeneration;
+export const markRelatedPetsGenerationFailed = repository.markGenerationFailed;
+export const cleanupRelatedPetsGenerations = repository.cleanupGenerations;
+export const recoverPreviousRelatedPetsGeneration =
+  repository.recoverPreviousGeneration;

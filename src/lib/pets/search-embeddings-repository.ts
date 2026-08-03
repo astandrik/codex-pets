@@ -1,6 +1,12 @@
 import { embeddingToBuffer } from "@/lib/pets/search-embeddings";
 import { isYdbConfigured, TypedValues, withSession } from "@/lib/ydb/client";
-import { floatAt, rowsFromResult, textAt, uintAt } from "@/lib/ydb/result";
+import {
+  bytesAt,
+  floatAt,
+  rowsFromResult,
+  textAt,
+  uintAt,
+} from "@/lib/ydb/result";
 import { TABLES } from "@/lib/ydb/schema";
 
 export type StoredSemanticPetMatch = {
@@ -12,6 +18,15 @@ export type StoredSemanticPetMatch = {
 export type StoredEmbeddingMetadata = {
   sourceHash: string;
   dimensions: number;
+};
+
+export type StoredRawPetSearchEmbedding = {
+  modelRevision: string;
+  slug: string;
+  sourceHash: string;
+  dimensions: number;
+  embedding: Buffer;
+  updatedAt: string;
 };
 
 type TypedValueFactory = {
@@ -35,9 +50,38 @@ export function createSearchEmbeddingsRepository(
   return {
     findSimilar,
     getMetadata,
+    listRawByRevision,
     upsert,
     deleteBySlug,
   };
+
+  async function listRawByRevision(
+    modelRevision: string,
+  ): Promise<StoredRawPetSearchEmbedding[]> {
+    if (!dependencies.isConfigured()) return [];
+
+    const result = await dependencies.execute(
+      `
+DECLARE $model_revision AS Utf8;
+
+SELECT model_revision, pet_slug, source_hash, dimensions, embedding, updated_at
+FROM ${TABLES.searchEmbeddings}
+WHERE model_revision = $model_revision;
+      `,
+      {
+        $model_revision: dependencies.values.utf8(modelRevision),
+      },
+    );
+
+    return rowsFromResult(result).map((row) => ({
+      modelRevision: textAt(row, 0),
+      slug: textAt(row, 1),
+      sourceHash: textAt(row, 2),
+      dimensions: uintAt(row, 3),
+      embedding: bytesAt(row, 4),
+      updatedAt: textAt(row, 5),
+    }));
+  }
 
   async function findSimilar(input: {
     modelRevision: string;
@@ -170,5 +214,6 @@ const repository = createSearchEmbeddingsRepository({
 
 export const findSimilarPetEmbeddings = repository.findSimilar;
 export const getPetSearchEmbeddingMetadata = repository.getMetadata;
+export const listRawPetSearchEmbeddings = repository.listRawByRevision;
 export const upsertPetSearchEmbedding = repository.upsert;
 export const deletePetSearchEmbeddings = repository.deleteBySlug;
