@@ -33,40 +33,40 @@ function lastJsonLine(output: string): Record<string, unknown> {
 }
 
 describe("related pets rebuild CLI", () => {
-  it("loads the production TypeScript service in a real CLI subprocess", () => {
-    const result = spawnSync(cliNodeBinary, [cliPath, "--dry-run"], {
-      cwd: fileURLToPath(new URL("..", import.meta.url)),
-      env: unconfiguredCliEnvironment(),
-      encoding: "utf8",
-    });
+  it.each(["--dry-run", "--apply", "--recover-previous"])(
+    "loads the production TypeScript service and fails unconfigured %s safely",
+    (mode) => {
+      const result = spawnSync(cliNodeBinary, [cliPath, mode], {
+        cwd: fileURLToPath(new URL("..", import.meta.url)),
+        env: unconfiguredCliEnvironment(),
+        encoding: "utf8",
+      });
 
-    expect(result.status, result.stderr).toBe(0);
-    expect(lastJsonLine(result.stdout)).toMatchObject({
-      operation: "dry-run",
-      status: "dry-run",
-      generationId: null,
-      coverage: {
-        approvedPetCount: 0,
-        snapshotCount: 0,
-        textVectorCount: 0,
-        visualVectorCount: 0,
-      },
-    });
-  });
+      expect(result.status, result.stderr).toBe(1);
+      expect(lastJsonLine(result.stderr)).toEqual({
+        operation: "related-pets-rebuild",
+        status: "failed",
+        failureReason: "storage_unavailable",
+      });
+    },
+  );
 
-  it("fails unconfigured apply distinctly from supersession", () => {
-    const result = spawnSync(cliNodeBinary, [cliPath, "--apply"], {
-      cwd: fileURLToPath(new URL("..", import.meta.url)),
-      env: unconfiguredCliEnvironment(),
-      encoding: "utf8",
-    });
+  it("disposes the production service when a rebuild fails", async () => {
+    const dispose = vi.fn(async () => undefined);
 
-    expect(result.status).toBe(1);
-    expect(lastJsonLine(result.stderr)).toEqual({
-      operation: "related-pets-rebuild",
-      status: "failed",
-      failureReason: "storage_unavailable",
-    });
+    await expect(
+      runRelatedPetsRebuildCli({
+        argv: ["--dry-run"],
+        loadService: async () => ({
+          rebuild: async () => {
+            throw new Error("storage_unavailable");
+          },
+          recoverPrevious: vi.fn(),
+          dispose,
+        }),
+      }),
+    ).rejects.toThrow("storage_unavailable");
+    expect(dispose).toHaveBeenCalledOnce();
   });
 
   it("parses each discoverable mode and rejects ambiguous mutation modes", () => {

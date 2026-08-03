@@ -23,11 +23,15 @@ import {
 import {
   activateRelatedPetsGeneration,
   cleanupRelatedPetsGenerations,
+  getRelatedPetsState,
   markRelatedPetsGenerationFailed,
   recoverPreviousRelatedPetsGeneration,
   requestRelatedPetsBuild,
   writeRelatedPetsSnapshot,
+  type RecoverPreviousRelatedPetsGenerationInput,
+  type RecoverPreviousRelatedPetsGenerationResult,
   type RelatedPetsSnapshot,
+  type RelatedPetsState,
 } from "@/lib/pets/related-pets-repository";
 import {
   decodeRelatedPetVector,
@@ -74,13 +78,10 @@ type RelatedPetsRepository = {
   cleanupGenerations: (input: {
     expectedGenerationId: string;
   }) => Promise<boolean>;
+  getState: () => Promise<RelatedPetsState | null>;
   recoverPreviousGeneration: (
-    updatedAt: string,
-  ) => Promise<{
-    activeGenerationId: string;
-    previousGenerationId: string;
-    rankingRevision: string;
-  } | null>;
+    input: RecoverPreviousRelatedPetsGenerationInput,
+  ) => Promise<RecoverPreviousRelatedPetsGenerationResult | null>;
 };
 
 type RelatedPetsRebuildCoverage = {
@@ -158,8 +159,7 @@ export function createRelatedPetsRebuildService(
   }): Promise<RelatedPetsRebuildResult> {
     const startedAt = dependencies.now().getTime();
     const includeVisual = input.includeVisual ?? true;
-    const storageAvailable =
-      input.mode === "dry-run" || dependencies.isStorageAvailable();
+    const storageAvailable = dependencies.isStorageAvailable();
     const generationId =
       input.mode === "apply" && storageAvailable
         ? dependencies.createGenerationId()
@@ -332,29 +332,42 @@ export function createRelatedPetsRebuildService(
   }> {
     const startedAt = dependencies.now().getTime();
     try {
+      if (!dependencies.isStorageAvailable()) {
+        throw new RelatedPetsRebuildError("storage_unavailable");
+      }
+      const state = await dependencies.repository.getState();
+      if (
+        state?.status !== "ready" ||
+        !state.activeGenerationId ||
+        !state.previousGenerationId
+      ) {
+        return recoveryResultAndLog({
+          status: "unavailable",
+          generationId: null,
+          rankingRevision:
+            state?.rankingRevision ?? dependencies.profile.rankingRevision,
+          startedAt,
+        });
+      }
       const recovered =
-        await dependencies.repository.recoverPreviousGeneration(
-          dependencies.now().toISOString(),
-        );
-      const durationMs = elapsedMilliseconds(startedAt);
+        await dependencies.repository.recoverPreviousGeneration({
+          expectedActiveGenerationId: state.activeGenerationId,
+          targetPreviousGenerationId: state.previousGenerationId,
+          updatedAt: dependencies.now().toISOString(),
+        });
       const status = recovered ? "recovered" : "unavailable";
-      dependencies.log({
-        operation: "recover-previous",
+      return recoveryResultAndLog({
         status,
         generationId: recovered?.activeGenerationId ?? null,
         rankingRevision:
           recovered?.rankingRevision ?? dependencies.profile.rankingRevision,
-        coverage: EMPTY_COVERAGE,
-        durationMs,
+        startedAt,
       });
-      return {
-        status,
-        generationId: recovered?.activeGenerationId ?? null,
-        rankingRevision:
-          recovered?.rankingRevision ?? dependencies.profile.rankingRevision,
-        durationMs,
-      };
-    } catch {
+    } catch (error) {
+      const failureReason =
+        error instanceof RelatedPetsRebuildError
+          ? error.reason
+          : "rebuild_failed";
       dependencies.log({
         operation: "recover-previous",
         status: "failed",
@@ -362,10 +375,38 @@ export function createRelatedPetsRebuildService(
         rankingRevision: dependencies.profile.rankingRevision,
         coverage: EMPTY_COVERAGE,
         durationMs: elapsedMilliseconds(startedAt),
-        failureReason: "rebuild_failed",
+        failureReason,
       });
-      throw new RelatedPetsRebuildError("rebuild_failed");
+      throw new RelatedPetsRebuildError(failureReason);
     }
+  }
+
+  function recoveryResultAndLog(input: {
+    status: "recovered" | "unavailable";
+    generationId: string | null;
+    rankingRevision: string;
+    startedAt: number;
+  }): {
+    status: "recovered" | "unavailable";
+    generationId: string | null;
+    rankingRevision: string;
+    durationMs: number;
+  } {
+    const result = {
+      status: input.status,
+      generationId: input.generationId,
+      rankingRevision: input.rankingRevision,
+      durationMs: elapsedMilliseconds(input.startedAt),
+    };
+    dependencies.log({
+      operation: "recover-previous",
+      status: result.status,
+      generationId: result.generationId,
+      rankingRevision: result.rankingRevision,
+      coverage: EMPTY_COVERAGE,
+      durationMs: result.durationMs,
+    });
+    return result;
   }
 
   function resultAndLog(input: {
@@ -491,6 +532,7 @@ const productionRepository: RelatedPetsRepository = {
   activateGeneration: activateRelatedPetsGeneration,
   markGenerationFailed: markRelatedPetsGenerationFailed,
   cleanupGenerations: cleanupRelatedPetsGenerations,
+  getState: getRelatedPetsState,
   recoverPreviousGeneration: recoverPreviousRelatedPetsGeneration,
 };
 

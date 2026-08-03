@@ -24,6 +24,18 @@ export type RelatedPetsSnapshot = {
   createdAt: string;
 };
 
+export type RecoverPreviousRelatedPetsGenerationInput = {
+  expectedActiveGenerationId: string;
+  targetPreviousGenerationId: string;
+  updatedAt: string;
+};
+
+export type RecoverPreviousRelatedPetsGenerationResult = {
+  activeGenerationId: string;
+  previousGenerationId: string;
+  rankingRevision: string;
+};
+
 type TypedValueFactory = {
   utf8: (value: string) => unknown;
   json: (value: string) => unknown;
@@ -220,13 +232,29 @@ VALUES
     if (!dependencies.isConfigured()) return false;
     return dependencies.transaction(async (execute) => {
       const state = await getStateWithExecute(execute);
-      if (state?.requestedGenerationId !== input.generationId) return false;
+      if (
+        state?.status === "ready" &&
+        state.requestedGenerationId === input.generationId &&
+        state.activeGenerationId === input.generationId &&
+        state.rankingRevision === input.rankingRevision
+      ) {
+        return true;
+      }
+      if (
+        state?.requestedGenerationId !== input.generationId ||
+        state.status !== "building" ||
+        state.activeGenerationId === input.generationId ||
+        state.rankingRevision !== input.rankingRevision
+      ) {
+        return false;
+      }
 
       await execute(
         `
 DECLARE $state_id AS Utf8;
 DECLARE $generation_id AS Utf8;
-DECLARE $status AS Utf8;
+DECLARE $building_status AS Utf8;
+DECLARE $ready_status AS Utf8;
 DECLARE $ranking_revision AS Utf8;
 DECLARE $updated_at AS Utf8;
 
@@ -234,17 +262,22 @@ UPDATE ${TABLES.relatedState}
 SET previous_generation_id = active_generation_id,
     active_generation_id = $generation_id,
     requested_generation_id = $generation_id,
-    status = $status,
+    status = $ready_status,
     ranking_revision = $ranking_revision,
     failure_reason = NULL,
     updated_at = $updated_at
 WHERE state_id = $state_id
-  AND requested_generation_id = $generation_id;
+  AND requested_generation_id = $generation_id
+  AND status = $building_status
+  AND ranking_revision = $ranking_revision
+  AND (active_generation_id IS NULL
+       OR active_generation_id != $generation_id);
         `,
         {
           $state_id: dependencies.values.utf8(RELATED_PETS_STATE_ID),
           $generation_id: dependencies.values.utf8(input.generationId),
-          $status: dependencies.values.utf8("ready"),
+          $building_status: dependencies.values.utf8("building"),
+          $ready_status: dependencies.values.utf8("ready"),
           $ranking_revision: dependencies.values.utf8(input.rankingRevision),
           $updated_at: dependencies.values.utf8(input.updatedAt),
         },
@@ -265,29 +298,39 @@ WHERE state_id = $state_id
     if (!dependencies.isConfigured()) return false;
     return dependencies.transaction(async (execute) => {
       const state = await getStateWithExecute(execute);
-      if (state?.requestedGenerationId !== input.generationId) return false;
+      if (
+        state?.requestedGenerationId !== input.generationId ||
+        state.status !== "building" ||
+        state.rankingRevision !== input.rankingRevision
+      ) {
+        return false;
+      }
 
       await execute(
         `
 DECLARE $state_id AS Utf8;
 DECLARE $generation_id AS Utf8;
-DECLARE $status AS Utf8;
+DECLARE $building_status AS Utf8;
+DECLARE $failed_status AS Utf8;
 DECLARE $ranking_revision AS Utf8;
 DECLARE $failure_reason AS Utf8;
 DECLARE $updated_at AS Utf8;
 
 UPDATE ${TABLES.relatedState}
-SET status = $status,
+SET status = $failed_status,
     ranking_revision = $ranking_revision,
     failure_reason = $failure_reason,
     updated_at = $updated_at
 WHERE state_id = $state_id
-  AND requested_generation_id = $generation_id;
+  AND requested_generation_id = $generation_id
+  AND status = $building_status
+  AND ranking_revision = $ranking_revision;
         `,
         {
           $state_id: dependencies.values.utf8(RELATED_PETS_STATE_ID),
           $generation_id: dependencies.values.utf8(input.generationId),
-          $status: dependencies.values.utf8("failed"),
+          $building_status: dependencies.values.utf8("building"),
+          $failed_status: dependencies.values.utf8("failed"),
           $ranking_revision: dependencies.values.utf8(input.rankingRevision),
           $failure_reason: dependencies.values.utf8(input.failureReason),
           $updated_at: dependencies.values.utf8(input.updatedAt),
@@ -340,16 +383,29 @@ WHERE generation_id != $active_generation_id${previousFilter};
   }
 
   async function recoverPreviousGeneration(
-    updatedAt: string,
-  ): Promise<{
-    activeGenerationId: string;
-    previousGenerationId: string;
-    rankingRevision: string;
-  } | null> {
+    input: RecoverPreviousRelatedPetsGenerationInput,
+  ): Promise<RecoverPreviousRelatedPetsGenerationResult | null> {
     if (!dependencies.isConfigured()) return null;
     return dependencies.transaction(async (execute) => {
       const state = await getStateWithExecute(execute);
-      if (!state?.activeGenerationId || !state.previousGenerationId) {
+      if (
+        state?.status === "ready" &&
+        state.requestedGenerationId === input.targetPreviousGenerationId &&
+        state.activeGenerationId === input.targetPreviousGenerationId &&
+        state.previousGenerationId === input.expectedActiveGenerationId
+      ) {
+        return {
+          activeGenerationId: input.targetPreviousGenerationId,
+          previousGenerationId: input.expectedActiveGenerationId,
+          rankingRevision: state.rankingRevision,
+        };
+      }
+      if (
+        state?.status !== "ready" ||
+        state.requestedGenerationId !== input.expectedActiveGenerationId ||
+        state.activeGenerationId !== input.expectedActiveGenerationId ||
+        state.previousGenerationId !== input.targetPreviousGenerationId
+      ) {
         return null;
       }
 
@@ -363,7 +419,7 @@ WHERE generation_id = $generation_id;
         `,
         {
           $generation_id: dependencies.values.utf8(
-            state.previousGenerationId,
+            input.targetPreviousGenerationId,
           ),
         },
       );
@@ -377,34 +433,42 @@ WHERE generation_id = $generation_id;
       await execute(
         `
 DECLARE $state_id AS Utf8;
-DECLARE $active_generation_id AS Utf8;
+DECLARE $expected_active_generation_id AS Utf8;
+DECLARE $target_previous_generation_id AS Utf8;
 DECLARE $status AS Utf8;
 DECLARE $ranking_revision AS Utf8;
 DECLARE $updated_at AS Utf8;
 
 UPDATE ${TABLES.relatedState}
-SET requested_generation_id = $active_generation_id,
-    previous_generation_id = active_generation_id,
-    active_generation_id = $active_generation_id,
+SET requested_generation_id = $target_previous_generation_id,
+    previous_generation_id = $expected_active_generation_id,
+    active_generation_id = $target_previous_generation_id,
     status = $status,
     ranking_revision = $ranking_revision,
     failure_reason = NULL,
     updated_at = $updated_at
-WHERE state_id = $state_id;
+WHERE state_id = $state_id
+  AND requested_generation_id = $expected_active_generation_id
+  AND active_generation_id = $expected_active_generation_id
+  AND previous_generation_id = $target_previous_generation_id
+  AND status = $status;
         `,
         {
           $state_id: dependencies.values.utf8(RELATED_PETS_STATE_ID),
-          $active_generation_id: dependencies.values.utf8(
-            state.previousGenerationId,
+          $expected_active_generation_id: dependencies.values.utf8(
+            input.expectedActiveGenerationId,
+          ),
+          $target_previous_generation_id: dependencies.values.utf8(
+            input.targetPreviousGenerationId,
           ),
           $status: dependencies.values.utf8("ready"),
           $ranking_revision: dependencies.values.utf8(rankingRevision),
-          $updated_at: dependencies.values.utf8(updatedAt),
+          $updated_at: dependencies.values.utf8(input.updatedAt),
         },
       );
       return {
-        activeGenerationId: state.previousGenerationId,
-        previousGenerationId: state.activeGenerationId,
+        activeGenerationId: input.targetPreviousGenerationId,
+        previousGenerationId: input.expectedActiveGenerationId,
         rankingRevision,
       };
     });

@@ -137,6 +137,8 @@ function createHarness(options: {
   writeError?: Error;
   cleanupError?: Error;
   recoveryError?: Error;
+  activationErrorAfterReady?: Error;
+  initialState?: RelatedPetsState | null;
   interleaveNewerBuildBeforeCleanup?: boolean;
   visualSourceContext?: { captionRevision: string; modelUri: string } | null;
 } = {}) {
@@ -156,9 +158,14 @@ function createHarness(options: {
   const snapshots: RelatedPetsSnapshot[] = [];
   const mutations: string[] = [];
   const cleanupExpectedIds: Array<string | null> = [];
+  const recoveryInputs: Array<{
+    expectedActiveGenerationId: string;
+    targetPreviousGenerationId: string;
+    updatedAt: string;
+  }> = [];
   const vectorRevisionReads: string[] = [];
   const logs: unknown[] = [];
-  let state: RelatedPetsState | null = null;
+  let state: RelatedPetsState | null = options.initialState ?? null;
   let clock = Date.parse("2026-08-03T10:00:00.000Z");
 
   const repository = {
@@ -201,6 +208,9 @@ function createHarness(options: {
         failureReason: null,
         updatedAt: input.updatedAt,
       };
+      if (options.activationErrorAfterReady) {
+        throw options.activationErrorAfterReady;
+      }
       return true;
     },
     markGenerationFailed: async (input: {
@@ -210,7 +220,12 @@ function createHarness(options: {
       updatedAt: string;
     }) => {
       mutations.push(`failed:${input.failureReason}`);
-      if (state?.requestedGenerationId !== input.generationId) return false;
+      if (
+        state?.requestedGenerationId !== input.generationId ||
+        state.status !== "building"
+      ) {
+        return false;
+      }
       state = {
         ...state,
         status: "failed",
@@ -281,9 +296,25 @@ function createHarness(options: {
       );
       return true;
     },
-    recoverPreviousGeneration: async () => {
+    recoverPreviousGeneration: async (input: {
+      expectedActiveGenerationId: string;
+      targetPreviousGenerationId: string;
+      updatedAt: string;
+    }) => {
+      recoveryInputs.push(input);
       if (options.recoveryError) throw options.recoveryError;
-      return null;
+      if (
+        state?.status !== "ready" ||
+        state.activeGenerationId !== input.expectedActiveGenerationId ||
+        state.previousGenerationId !== input.targetPreviousGenerationId
+      ) {
+        return null;
+      }
+      return {
+        activeGenerationId: input.targetPreviousGenerationId,
+        previousGenerationId: input.expectedActiveGenerationId,
+        rankingRevision: "ranking-v0",
+      };
     },
   };
 
@@ -315,6 +346,7 @@ function createHarness(options: {
     snapshots,
     mutations,
     cleanupExpectedIds,
+    recoveryInputs,
     vectorRevisionReads,
     logs,
     get state() {
@@ -396,6 +428,24 @@ describe("related pets rebuild service", () => {
     expect(harness.snapshots).toEqual([]);
   });
 
+  it("fails dry-run when storage is unavailable before reading catalog data", async () => {
+    const harness = createHarness({ storageAvailable: false });
+
+    await expect(
+      harness.service.rebuild({ mode: "dry-run", includeVisual: true }),
+    ).rejects.toMatchObject({
+      name: "RelatedPetsRebuildError",
+      message: "storage_unavailable",
+    });
+
+    expect(harness.vectorRevisionReads).toEqual([]);
+    expect(harness.logs.at(-1)).toMatchObject({
+      operation: "dry-run",
+      status: "failed",
+      failureReason: "storage_unavailable",
+    });
+  });
+
   it("returns superseded without cleaning or overwriting newer state", async () => {
     const harness = createHarness({ superseded: true });
 
@@ -451,9 +501,105 @@ describe("related pets rebuild service", () => {
     expect(JSON.stringify(harness.logs)).not.toContain("[1,2,3]");
   });
 
+  it("does not mark an already activated generation failed after an ambiguous activation error", async () => {
+    const harness = createHarness({
+      activationErrorAfterReady: new Error("transport lost after commit"),
+    });
+
+    await expect(
+      harness.service.rebuild({ mode: "apply", includeVisual: true }),
+    ).rejects.toThrow("rebuild_failed");
+
+    expect(harness.state).toMatchObject({
+      requestedGenerationId: "generation-new",
+      activeGenerationId: "generation-new",
+      previousGenerationId: "generation-old",
+      status: "ready",
+      failureReason: null,
+    });
+    expect(harness.mutations).toContain("failed:rebuild_failed");
+  });
+
+  it("recovers the captured active and retained generation pair", async () => {
+    const harness = createHarness({
+      initialState: {
+        requestedGenerationId: "generation-2",
+        activeGenerationId: "generation-2",
+        previousGenerationId: "generation-1",
+        status: "ready",
+        rankingRevision: "ranking-v1",
+        failureReason: null,
+        updatedAt: "2026-08-03T10:00:00.000Z",
+      },
+    });
+
+    await expect(harness.service.recoverPrevious()).resolves.toMatchObject({
+      status: "recovered",
+      generationId: "generation-1",
+      rankingRevision: "ranking-v0",
+    });
+    expect(harness.recoveryInputs).toEqual([
+      {
+        expectedActiveGenerationId: "generation-2",
+        targetPreviousGenerationId: "generation-1",
+        updatedAt: "2026-08-03T10:00:00.010Z",
+      },
+    ]);
+  });
+
+  it("reports no retained generation without treating configured storage as a failure", async () => {
+    const harness = createHarness({
+      initialState: {
+        requestedGenerationId: "generation-2",
+        activeGenerationId: "generation-2",
+        previousGenerationId: null,
+        status: "ready",
+        rankingRevision: "ranking-v1",
+        failureReason: null,
+        updatedAt: "2026-08-03T10:00:00.000Z",
+      },
+    });
+
+    await expect(harness.service.recoverPrevious()).resolves.toMatchObject({
+      status: "unavailable",
+      generationId: null,
+    });
+    expect(harness.recoveryInputs).toEqual([]);
+    expect(harness.logs.at(-1)).toMatchObject({
+      operation: "recover-previous",
+      status: "unavailable",
+    });
+  });
+
+  it("fails recovery with a bounded storage reason when YDB is unconfigured", async () => {
+    const harness = createHarness({ storageAvailable: false });
+
+    await expect(harness.service.recoverPrevious()).rejects.toMatchObject({
+      name: "RelatedPetsRebuildError",
+      message: "storage_unavailable",
+    });
+    expect(harness.recoveryInputs).toEqual([]);
+    expect(harness.logs.at(-1)).toMatchObject({
+      operation: "recover-previous",
+      status: "failed",
+      failureReason: "storage_unavailable",
+    });
+  });
+
   it("logs recovery failures with the same bounded structured fields", async () => {
     const rawMessage = "credential=secret retained-generation=private";
-    const harness = createHarness({ recoveryError: new Error(rawMessage) });
+    const harness = createHarness({
+      recoveryError: new Error(rawMessage),
+      initialState: {
+        requestedGenerationId: "generation-2",
+        activeGenerationId: "generation-2",
+        previousGenerationId: "generation-1",
+        status: "ready",
+        rankingRevision: "ranking-v1",
+        failureReason: null,
+        updatedAt: "2026-08-03T10:00:00.000Z",
+      },
+    });
 
     await expect(harness.service.recoverPrevious()).rejects.toMatchObject({
       name: "RelatedPetsRebuildError",
