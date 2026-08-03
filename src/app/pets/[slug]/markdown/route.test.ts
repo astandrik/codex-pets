@@ -4,11 +4,16 @@ const repositoryMocks = vi.hoisted(() => ({
   getApprovedPetBySlug: vi.fn(),
   listRelatedPetCandidates: vi.fn(),
 }));
+const relatedSnapshotMocks = vi.hoisted(() => ({
+  getRelatedPetsState: vi.fn(),
+  getRelatedPetsSnapshot: vi.fn(),
+}));
 
 vi.mock("next/cache", () => ({
   unstable_cache: (callback: unknown) => callback,
 }));
 vi.mock("@/lib/pets/repository", () => repositoryMocks);
+vi.mock("@/lib/pets/related-pets-repository", () => relatedSnapshotMocks);
 
 const approvedPet = {
   id: "pet_kuroa",
@@ -39,6 +44,8 @@ describe("GET /pets/[slug]/markdown", () => {
     vi.resetModules();
     vi.unstubAllEnvs();
     repositoryMocks.listRelatedPetCandidates.mockResolvedValue([]);
+    relatedSnapshotMocks.getRelatedPetsState.mockResolvedValue(null);
+    relatedSnapshotMocks.getRelatedPetsSnapshot.mockResolvedValue(null);
   });
 
   it("returns approved pet markdown with install and share links", async () => {

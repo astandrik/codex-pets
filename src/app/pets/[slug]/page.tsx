@@ -37,11 +37,8 @@ import { listPublicUserProfilesByIds } from "@/lib/auth/repository";
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import { serializeJsonLd } from "@/lib/json-ld";
 import { createAgentPet } from "@/lib/pets/agent-dto";
-import {
-  selectRelatedPets,
-  type RelatedPetCandidate,
-} from "@/lib/pets/related-pets";
-import { getRelatedPetCandidates } from "@/lib/pets/related-pets-server";
+import type { RelatedPetCandidate } from "@/lib/pets/related-pets";
+import { getResolvedRelatedPets } from "@/lib/pets/related-pets-server";
 import {
   getPetBySlug,
   getPetMetrics,
@@ -160,7 +157,7 @@ export default async function PetPage({ params }: PetPageProps) {
   const metrics = await getCachedPetMetrics(slug);
   const relatedCandidates =
     pet.status === "approved"
-      ? selectRelatedPets(await getRelatedPetCandidatesBestEffort(), pet)
+      ? await getResolvedRelatedPetsBestEffort(pet)
       : [];
   const relatedPets = await listApprovedRelatedPetsBestEffort(
     relatedCandidates.map((candidate) => candidate.slug),
@@ -368,14 +365,14 @@ export default async function PetPage({ params }: PetPageProps) {
   );
 }
 
-async function getRelatedPetCandidatesBestEffort(): Promise<
-  RelatedPetCandidate[]
-> {
+async function getResolvedRelatedPetsBestEffort(
+  pet: Pick<RelatedPetCandidate, "slug" | "kind" | "tags">,
+): Promise<RelatedPetCandidate[]> {
   try {
-    return await getRelatedPetCandidates();
+    return await getResolvedRelatedPets(pet);
   } catch {
     console.warn("[codex-pets][related-pets]", {
-      operation: "list-candidates",
+      operation: "resolve",
       status: "failed",
     });
     return [];
