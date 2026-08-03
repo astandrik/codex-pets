@@ -3,7 +3,6 @@ const RELATED_SNAPSHOTS_TABLE = "codex_pet_related_snapshots";
 
 export async function up({ sdk, withSession }) {
   await createTableIfMissing({
-    sdk,
     withSession,
     tableName: RELATED_STATE_TABLE,
     createDescription: () =>
@@ -37,7 +36,6 @@ export async function up({ sdk, withSession }) {
   });
 
   await createTableIfMissing({
-    sdk,
     withSession,
     tableName: RELATED_SNAPSHOTS_TABLE,
     createDescription: () =>
@@ -52,7 +50,7 @@ export async function up({ sdk, withSession }) {
   });
 }
 
-async function createTableIfMissing({ sdk, withSession, tableName, createDescription }) {
+async function createTableIfMissing({ withSession, tableName, createDescription }) {
   const exists = await withSession(async (session) => {
     try {
       await session.describeTable(tableName);

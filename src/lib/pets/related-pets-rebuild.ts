@@ -331,27 +331,41 @@ export function createRelatedPetsRebuildService(
     durationMs: number;
   }> {
     const startedAt = dependencies.now().getTime();
-    const recovered = await dependencies.repository.recoverPreviousGeneration(
-      dependencies.now().toISOString(),
-    );
-    const durationMs = elapsedMilliseconds(startedAt);
-    const status = recovered ? "recovered" : "unavailable";
-    dependencies.log({
-      operation: "recover-previous",
-      status,
-      generationId: recovered?.activeGenerationId ?? null,
-      rankingRevision:
-        recovered?.rankingRevision ?? dependencies.profile.rankingRevision,
-      coverage: EMPTY_COVERAGE,
-      durationMs,
-    });
-    return {
-      status,
-      generationId: recovered?.activeGenerationId ?? null,
-      rankingRevision:
-        recovered?.rankingRevision ?? dependencies.profile.rankingRevision,
-      durationMs,
-    };
+    try {
+      const recovered =
+        await dependencies.repository.recoverPreviousGeneration(
+          dependencies.now().toISOString(),
+        );
+      const durationMs = elapsedMilliseconds(startedAt);
+      const status = recovered ? "recovered" : "unavailable";
+      dependencies.log({
+        operation: "recover-previous",
+        status,
+        generationId: recovered?.activeGenerationId ?? null,
+        rankingRevision:
+          recovered?.rankingRevision ?? dependencies.profile.rankingRevision,
+        coverage: EMPTY_COVERAGE,
+        durationMs,
+      });
+      return {
+        status,
+        generationId: recovered?.activeGenerationId ?? null,
+        rankingRevision:
+          recovered?.rankingRevision ?? dependencies.profile.rankingRevision,
+        durationMs,
+      };
+    } catch {
+      dependencies.log({
+        operation: "recover-previous",
+        status: "failed",
+        generationId: null,
+        rankingRevision: dependencies.profile.rankingRevision,
+        coverage: EMPTY_COVERAGE,
+        durationMs: elapsedMilliseconds(startedAt),
+        failureReason: "rebuild_failed",
+      });
+      throw new RelatedPetsRebuildError("rebuild_failed");
+    }
   }
 
   function resultAndLog(input: {

@@ -34,6 +34,7 @@ type RelatedPetsCliService = {
     rankingRevision: string;
     durationMs: number;
   }>;
+  dispose?: () => Promise<void>;
 };
 
 export function runRelatedPetsRebuildCli(input?: {

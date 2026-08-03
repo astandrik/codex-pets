@@ -136,6 +136,7 @@ function createHarness(options: {
   storageAvailable?: boolean;
   writeError?: Error;
   cleanupError?: Error;
+  recoveryError?: Error;
   interleaveNewerBuildBeforeCleanup?: boolean;
   visualSourceContext?: { captionRevision: string; modelUri: string } | null;
 } = {}) {
@@ -280,7 +281,10 @@ function createHarness(options: {
       );
       return true;
     },
-    recoverPreviousGeneration: async () => null,
+    recoverPreviousGeneration: async () => {
+      if (options.recoveryError) throw options.recoveryError;
+      return null;
+    },
   };
 
   const service = createRelatedPetsRebuildService({
@@ -445,6 +449,31 @@ describe("related pets rebuild service", () => {
     });
     expect(JSON.stringify(harness.logs)).not.toContain(rawMessage);
     expect(JSON.stringify(harness.logs)).not.toContain("[1,2,3]");
+  });
+
+  it("logs recovery failures with the same bounded structured fields", async () => {
+    const rawMessage = "credential=secret retained-generation=private";
+    const harness = createHarness({ recoveryError: new Error(rawMessage) });
+
+    await expect(harness.service.recoverPrevious()).rejects.toMatchObject({
+      name: "RelatedPetsRebuildError",
+      message: "rebuild_failed",
+    });
+    expect(harness.logs.at(-1)).toMatchObject({
+      operation: "recover-previous",
+      status: "failed",
+      generationId: null,
+      rankingRevision: profile.rankingRevision,
+      coverage: {
+        approvedPetCount: 0,
+        snapshotCount: 0,
+        textVectorCount: 0,
+        visualVectorCount: 0,
+      },
+      durationMs: expect.any(Number),
+      failureReason: "rebuild_failed",
+    });
+    expect(JSON.stringify(harness.logs)).not.toContain(rawMessage);
   });
 
   it("omits stale captions and corrupt visual vectors without rejecting text", async () => {

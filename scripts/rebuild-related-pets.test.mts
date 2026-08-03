@@ -134,7 +134,8 @@ describe("related pets rebuild CLI", () => {
       durationMs: 5,
     }));
     const output: string[] = [];
-    const loadService = async () => ({ rebuild, recoverPrevious });
+    const dispose = vi.fn(async () => undefined);
+    const loadService = async () => ({ rebuild, recoverPrevious, dispose });
 
     await runRelatedPetsRebuildCli({
       argv: ["--apply"],
@@ -152,6 +153,7 @@ describe("related pets rebuild CLI", () => {
       includeVisual: true,
     });
     expect(recoverPrevious).toHaveBeenCalledOnce();
+    expect(dispose).toHaveBeenCalledTimes(2);
     expect(output.map((line) => JSON.parse(line))).toEqual([
       {
         operation: "apply",

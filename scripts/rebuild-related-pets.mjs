@@ -61,35 +61,39 @@ export async function runRelatedPetsRebuildCli({
   }
 
   const service = await loadService();
-  if (options.mode === "recover-previous") {
-    const result = await service.recoverPrevious();
+  try {
+    if (options.mode === "recover-previous") {
+      const result = await service.recoverPrevious();
+      write(
+        JSON.stringify({
+          operation: "recover-previous",
+          status: result.status,
+          generationId: result.generationId,
+          rankingRevision: result.rankingRevision,
+          durationMs: result.durationMs,
+        }),
+      );
+      return 0;
+    }
+
+    const result = await service.rebuild({
+      mode: options.mode,
+      includeVisual: true,
+    });
     write(
       JSON.stringify({
-        operation: "recover-previous",
+        operation: result.operation,
         status: result.status,
         generationId: result.generationId,
         rankingRevision: result.rankingRevision,
+        coverage: result.coverage,
         durationMs: result.durationMs,
       }),
     );
     return 0;
+  } finally {
+    await service.dispose?.();
   }
-
-  const result = await service.rebuild({
-    mode: options.mode,
-    includeVisual: true,
-  });
-  write(
-    JSON.stringify({
-      operation: result.operation,
-      status: result.status,
-      generationId: result.generationId,
-      rankingRevision: result.rankingRevision,
-      coverage: result.coverage,
-      durationMs: result.durationMs,
-    }),
-  );
-  return 0;
 }
 
 async function loadProductionService() {
@@ -104,9 +108,13 @@ async function loadProductionService() {
       path.join(sourceRoot, "lib/pets/related-pets-rebuild.ts"),
     ).href
   );
+  const { destroyYdbDriver } = await import(
+    pathToFileURL(path.join(sourceRoot, "lib/ydb/client.ts")).href
+  );
   return {
     rebuild: runtime.rebuildRelatedPets,
     recoverPrevious: runtime.recoverPreviousRelatedPets,
+    dispose: destroyYdbDriver,
   };
 }
 
