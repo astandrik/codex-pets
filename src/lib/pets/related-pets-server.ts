@@ -8,6 +8,7 @@ import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-pr
 import {
   getRelatedPetsSnapshot,
   getRelatedPetsState,
+  type RelatedPetsGenerationStatus,
   type RelatedPetsSnapshot,
   type RelatedPetsState,
 } from "@/lib/pets/related-pets-repository";
@@ -31,11 +32,22 @@ type RelatedPetSource = Pick<
   "slug" | "kind" | "tags"
 >;
 
-type RelatedPetsResolverDiagnostic =
+export type RelatedPetsResolverDiagnostic =
   | {
       operation: "resolve";
       status: "heuristic";
       reason: "invalid-enabled-flag" | "state-read-failed";
+    }
+  | {
+      operation: "state-fallback";
+      status: "heuristic";
+      reason:
+        | "state-not-ready"
+        | "state-missing"
+        | "active-generation-missing"
+        | "ranking-revision-incompatible";
+      generationCategory: "active" | "missing";
+      generationStatus: RelatedPetsGenerationStatus | "missing";
     }
   | {
       operation: "snapshot-read";
@@ -45,10 +57,13 @@ type RelatedPetsResolverDiagnostic =
         | "snapshot-missing"
         | "snapshot-incompatible"
         | "snapshot-read-failed";
-      generation: "active";
+      generationCategory: "active";
+      generationId: string;
       generationStatus: "ready";
       durationMs: number;
     };
+
+export type RelatedPetsResolverLogLevel = "info" | "warn";
 
 export type RelatedPetsResolverDependencies = {
   getCandidates: () => Promise<RelatedPetCandidate[]>;
@@ -59,7 +74,10 @@ export type RelatedPetsResolverDependencies = {
   ) => Promise<RelatedPetsSnapshot | null>;
   getHybridEnabledValue: () => string | undefined;
   nowMs: () => number;
-  log: (diagnostic: RelatedPetsResolverDiagnostic) => void;
+  log: (
+    level: RelatedPetsResolverLogLevel,
+    diagnostic: RelatedPetsResolverDiagnostic,
+  ) => void;
 };
 
 export function createRelatedPetsResolver(
@@ -74,7 +92,7 @@ export function createRelatedPetsResolver(
     const enabledValue = dependencies.getHybridEnabledValue();
     if (enabledValue === "false") return heuristic;
     if (enabledValue !== undefined && enabledValue !== "true") {
-      dependencies.log({
+      dependencies.log("warn", {
         operation: "resolve",
         status: "heuristic",
         reason: "invalid-enabled-flag",
@@ -86,22 +104,59 @@ export function createRelatedPetsResolver(
     try {
       state = await dependencies.getState();
     } catch {
-      dependencies.log({
+      dependencies.log("warn", {
         operation: "resolve",
         status: "heuristic",
         reason: "state-read-failed",
       });
       return heuristic;
     }
-    const activeGenerationId = state?.activeGenerationId;
-    if (
-      state?.status !== "ready" ||
-      !activeGenerationId ||
-      state.rankingRevision !==
-        CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision
-    ) {
+    if (!state) {
+      dependencies.log("warn", {
+        operation: "state-fallback",
+        status: "heuristic",
+        reason: "state-missing",
+        generationCategory: "missing",
+        generationStatus: "missing",
+      });
       return heuristic;
     }
+    const activeGenerationId = state?.activeGenerationId;
+    if (state.status !== "ready") {
+      dependencies.log("warn", {
+        operation: "state-fallback",
+        status: "heuristic",
+        reason: "state-not-ready",
+        generationCategory: activeGenerationId ? "active" : "missing",
+        generationStatus: state.status,
+      });
+      return heuristic;
+    }
+    if (!activeGenerationId) {
+      dependencies.log("warn", {
+        operation: "state-fallback",
+        status: "heuristic",
+        reason: "active-generation-missing",
+        generationCategory: "missing",
+        generationStatus: "ready",
+      });
+      return heuristic;
+    }
+    if (
+      state.rankingRevision !==
+      CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision
+    ) {
+      dependencies.log("warn", {
+        operation: "state-fallback",
+        status: "heuristic",
+        reason: "ranking-revision-incompatible",
+        generationCategory: "active",
+        generationStatus: "ready",
+      });
+      return heuristic;
+    }
+    const diagnosticGenerationId =
+      sanitizeRelatedPetsGenerationId(activeGenerationId);
 
     let snapshot: RelatedPetsSnapshot | null;
     const snapshotReadStartedAt = dependencies.nowMs();
@@ -111,11 +166,12 @@ export function createRelatedPetsResolver(
         current.slug,
       );
     } catch {
-      dependencies.log({
+      dependencies.log("warn", {
         operation: "snapshot-read",
         status: "heuristic",
         reason: "snapshot-read-failed",
-        generation: "active",
+        generationCategory: "active",
+        generationId: diagnosticGenerationId,
         generationStatus: "ready",
         durationMs: snapshotReadDuration(
           snapshotReadStartedAt,
@@ -129,11 +185,12 @@ export function createRelatedPetsResolver(
       dependencies.nowMs(),
     );
     if (!snapshot) {
-      dependencies.log({
+      dependencies.log("warn", {
         operation: "snapshot-read",
         status: "heuristic",
         reason: "snapshot-missing",
-        generation: "active",
+        generationCategory: "active",
+        generationId: diagnosticGenerationId,
         generationStatus: "ready",
         durationMs,
       });
@@ -146,22 +203,24 @@ export function createRelatedPetsResolver(
         CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision ||
       !Array.isArray(snapshot.relatedSlugs)
     ) {
-      dependencies.log({
+      dependencies.log("warn", {
         operation: "snapshot-read",
         status: "heuristic",
         reason: "snapshot-incompatible",
-        generation: "active",
+        generationCategory: "active",
+        generationId: diagnosticGenerationId,
         generationStatus: "ready",
         durationMs,
       });
       return heuristic;
     }
 
-    dependencies.log({
+    dependencies.log("info", {
       operation: "snapshot-read",
       status: "ready",
       reason: "snapshot-current",
-      generation: "active",
+      generationCategory: "active",
+      generationId: diagnosticGenerationId,
       generationStatus: "ready",
       durationMs,
     });
@@ -175,10 +234,19 @@ const resolveRelatedPets = createRelatedPetsResolver({
   getSnapshot: getRelatedPetsSnapshot,
   getHybridEnabledValue: () => process.env.PET_RELATED_HYBRID_ENABLED,
   nowMs: () => performance.now(),
-  log: (diagnostic) => {
-    console.warn("[codex-pets][related-pets]", diagnostic);
-  },
+  log: logRelatedPetsResolverDiagnostic,
 });
+
+export function logRelatedPetsResolverDiagnostic(
+  level: RelatedPetsResolverLogLevel,
+  diagnostic: RelatedPetsResolverDiagnostic,
+): void {
+  if (level === "info") {
+    console.info("[codex-pets][related-pets]", diagnostic);
+    return;
+  }
+  console.warn("[codex-pets][related-pets]", diagnostic);
+}
 
 export function getResolvedRelatedPets(
   current: RelatedPetSource,
@@ -237,4 +305,12 @@ function snapshotReadDuration(startedAt: number, finishedAt: number): number {
   const duration = finishedAt - startedAt;
   if (!Number.isFinite(duration)) return 0;
   return Math.min(3_600_000, Math.max(0, Math.round(duration)));
+}
+
+function sanitizeRelatedPetsGenerationId(generationId: string): string {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    generationId,
+  )
+    ? generationId
+    : "invalid-generation-id";
 }

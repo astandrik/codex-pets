@@ -282,15 +282,31 @@ function thresholdCandidates(
   values: readonly number[],
   modality: "text" | "visual",
 ): number[] {
-  const candidates = Array.from(
-    new Set(values.filter(Number.isFinite)),
-  ).sort((left, right) => right - left);
-  if (candidates.length === 0) {
+  const finiteValues = values.filter(Number.isFinite);
+  if (finiteValues.length === 0) {
     throw new Error(
       `Related-pet ${modality} calibration needs finite similarity scores.`,
     );
   }
-  return candidates;
+  const maximum = finiteValues.reduce(
+    (currentMaximum, value) => Math.max(currentMaximum, value),
+    Number.NEGATIVE_INFINITY,
+  );
+  const upperBound = Math.max(1, maximum);
+  const rejectAllThreshold =
+    upperBound +
+    Number.EPSILON * Math.max(1, Math.abs(upperBound));
+  if (
+    !Number.isFinite(rejectAllThreshold) ||
+    rejectAllThreshold <= maximum
+  ) {
+    throw new Error(
+      `Related-pet ${modality} calibration similarity scores are outside the supported cosine range.`,
+    );
+  }
+  return Array.from(
+    new Set([...finiteValues, rejectAllThreshold]),
+  ).sort((left, right) => right - left);
 }
 
 function assertObservationSplit(

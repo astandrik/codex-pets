@@ -89,17 +89,34 @@ describe("related pet profile selection", () => {
     ).toMatchObject({
       textMinSimilarity: 0.8,
       ndcgAt4: 1,
-      evaluatedThresholdCount: 2,
+      evaluatedThresholdCount: 3,
     });
   });
 
   it("selects the higher text threshold when calibration nDCG ties", () => {
-    expect(
-      selectRelatedTextThreshold([observation()], [0.4, 0.9]),
-    ).toMatchObject({
-      textMinSimilarity: 0.9,
-      evaluatedThresholdCount: 2,
+    const report = selectRelatedTextThreshold(
+      [observation()],
+      [0.4, 0.9],
+    );
+
+    expect(report.textMinSimilarity).toBeGreaterThan(0.9);
+    expect(report).toMatchObject({
+      evaluatedThresholdCount: 3,
     });
+  });
+
+  it("can reject every text match when metadata-only ranking is strictly better", () => {
+    const report = selectRelatedTextThreshold([
+      observation({
+        metadataSlugs: ["peer", "other"],
+        textMatches: [{ slug: "other", score: 0.9 }],
+        visualMatches: [],
+      }),
+    ]);
+
+    expect(report.textMinSimilarity).toBeGreaterThan(0.9);
+    expect(report.ndcgAt4).toBe(1);
+    expect(report.evaluatedThresholdCount).toBe(2);
   });
 
   it("selects a later visual profile when it strictly improves nDCG@4", () => {
@@ -119,7 +136,7 @@ describe("related pet profile selection", () => {
       visualMinSimilarity: 0.8,
       visualWeight: 0.25,
       ndcgAt4: 1,
-      evaluatedProfileCount: 6,
+      evaluatedProfileCount: 9,
     });
   });
 
@@ -127,23 +144,48 @@ describe("related pet profile selection", () => {
     expect(RELATED_PETS_VISUAL_WEIGHT_CANDIDATES).toEqual([
       0.25, 0.5, 0.75,
     ]);
-    expect(
-      selectRelatedVisualProfile([observation()], 0.9, [0.9]),
-    ).toMatchObject({
-      visualMinSimilarity: 0.9,
+    const report = selectRelatedVisualProfile(
+      [observation()],
+      0.9,
+      [0.9],
+    );
+    expect(report.visualMinSimilarity).toBeGreaterThan(0.9);
+    expect(report).toMatchObject({
       visualWeight: 0.25,
-      evaluatedProfileCount: 3,
+      evaluatedProfileCount: 6,
     });
   });
 
   it("breaks remaining visual profile ties by higher threshold", () => {
-    expect(
-      selectRelatedVisualProfile([observation()], 0.9, [0.4, 0.9]),
-    ).toMatchObject({
-      visualMinSimilarity: 0.9,
+    const report = selectRelatedVisualProfile(
+      [observation()],
+      0.9,
+      [0.4, 0.9],
+    );
+
+    expect(report.visualMinSimilarity).toBeGreaterThan(0.9);
+    expect(report).toMatchObject({
       visualWeight: 0.25,
-      evaluatedProfileCount: 6,
+      evaluatedProfileCount: 9,
     });
+  });
+
+  it("can reject every visual match when metadata-only ranking is strictly better", () => {
+    const report = selectRelatedVisualProfile(
+      [
+        observation({
+          metadataSlugs: ["peer", "other"],
+          textMatches: [],
+          visualMatches: [{ slug: "other", score: 0.9 }],
+        }),
+      ],
+      Number.POSITIVE_INFINITY,
+    );
+
+    expect(report.visualMinSimilarity).toBeGreaterThan(0.9);
+    expect(report.visualWeight).toBe(0.25);
+    expect(report.ndcgAt4).toBe(1);
+    expect(report.evaluatedProfileCount).toBe(6);
   });
 
   it("rejects holdout observations during profile selection", () => {

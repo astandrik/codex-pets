@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
 import {
   createRelatedPetsResolver,
+  logRelatedPetsResolverDiagnostic,
   type RelatedPetsResolverDependencies,
 } from "@/lib/pets/related-pets-server";
 import type { RelatedPetCandidate } from "@/lib/pets/related-pets";
@@ -27,9 +28,9 @@ const candidates: RelatedPetCandidate[] = [
 ];
 
 const readyState: RelatedPetsState = {
-  requestedGenerationId: "generation-ready",
-  activeGenerationId: "generation-ready",
-  previousGenerationId: "generation-old",
+  requestedGenerationId: "9f87654d-1234-4abc-8def-1234567890ab",
+  activeGenerationId: "9f87654d-1234-4abc-8def-1234567890ab",
+  previousGenerationId: "87654321-4321-4abc-8def-1234567890ab",
   status: "ready",
   rankingRevision: CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
   failureReason: null,
@@ -37,7 +38,7 @@ const readyState: RelatedPetsState = {
 };
 
 const readySnapshot: RelatedPetsSnapshot = {
-  generationId: "generation-ready",
+  generationId: "9f87654d-1234-4abc-8def-1234567890ab",
   sourceSlug: "source",
   rankingRevision: CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
   relatedSlugs: ["b", "missing", "b", "source", "d"],
@@ -92,26 +93,63 @@ describe("createRelatedPetsResolver", () => {
 
     expect(result.map((pet) => pet.slug)).toEqual(["b", "d", "e", "a"]);
     expect(deps.getSnapshot).toHaveBeenCalledWith(
-      "generation-ready",
+      "9f87654d-1234-4abc-8def-1234567890ab",
       "source",
     );
     expect(deps.log).toHaveBeenCalledTimes(1);
-    expect(deps.log).toHaveBeenCalledWith({
+    expect(deps.log).toHaveBeenCalledWith("info", {
       operation: "snapshot-read",
       status: "ready",
       reason: "snapshot-current",
-      generation: "active",
+      generationCategory: "active",
+      generationId: "9f87654d-1234-4abc-8def-1234567890ab",
       generationStatus: "ready",
       durationMs: 7,
     });
   });
 
   it.each([
-    ["building", { status: "building" as const }],
-    ["failed", { status: "failed" as const }],
-    ["missing active generation", { activeGenerationId: null }],
-    ["stale state revision", { rankingRevision: "stale-revision" }],
-  ])("uses heuristic order for %s state", async (_name, stateOverride) => {
+    [
+      "building",
+      { status: "building" as const },
+      {
+        reason: "state-not-ready",
+        generationCategory: "active",
+        generationStatus: "building",
+      },
+    ],
+    [
+      "failed",
+      { status: "failed" as const },
+      {
+        reason: "state-not-ready",
+        generationCategory: "active",
+        generationStatus: "failed",
+      },
+    ],
+    [
+      "missing active generation",
+      { activeGenerationId: null },
+      {
+        reason: "active-generation-missing",
+        generationCategory: "missing",
+        generationStatus: "ready",
+      },
+    ],
+    [
+      "stale state revision",
+      { rankingRevision: "stale-revision" },
+      {
+        reason: "ranking-revision-incompatible",
+        generationCategory: "active",
+        generationStatus: "ready",
+      },
+    ],
+  ])("uses heuristic order for %s state", async (
+    _name,
+    stateOverride,
+    expectedDiagnostic,
+  ) => {
     const deps = dependencies({
       getState: vi.fn(async () => ({ ...readyState, ...stateOverride })),
     });
@@ -120,7 +158,14 @@ describe("createRelatedPetsResolver", () => {
 
     expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c"]);
     expect(deps.getSnapshot).not.toHaveBeenCalled();
-    expect(deps.log).not.toHaveBeenCalled();
+    expect(deps.log).toHaveBeenCalledWith("warn", {
+      operation: "state-fallback",
+      status: "heuristic",
+      ...expectedDiagnostic,
+    });
+    expect(vi.mocked(deps.log).mock.calls[0]?.[1]).not.toHaveProperty(
+      "durationMs",
+    );
   });
 
   it("uses heuristic order when state is missing", async () => {
@@ -130,6 +175,16 @@ describe("createRelatedPetsResolver", () => {
 
     expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c"]);
     expect(deps.getSnapshot).not.toHaveBeenCalled();
+    expect(deps.log).toHaveBeenCalledWith("warn", {
+      operation: "state-fallback",
+      status: "heuristic",
+      reason: "state-missing",
+      generationCategory: "missing",
+      generationStatus: "missing",
+    });
+    expect(vi.mocked(deps.log).mock.calls[0]?.[1]).not.toHaveProperty(
+      "durationMs",
+    );
   });
 
   it.each([
@@ -151,11 +206,12 @@ describe("createRelatedPetsResolver", () => {
 
     expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c"]);
     expect(deps.log).toHaveBeenCalledTimes(1);
-    expect(deps.log).toHaveBeenCalledWith({
+    expect(deps.log).toHaveBeenCalledWith("warn", {
       operation: "snapshot-read",
       status: "heuristic",
       reason: "snapshot-incompatible",
-      generation: "active",
+      generationCategory: "active",
+      generationId: "9f87654d-1234-4abc-8def-1234567890ab",
       generationStatus: "ready",
       durationMs: 0,
     });
@@ -168,11 +224,12 @@ describe("createRelatedPetsResolver", () => {
 
     expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c"]);
     expect(deps.log).toHaveBeenCalledTimes(1);
-    expect(deps.log).toHaveBeenCalledWith({
+    expect(deps.log).toHaveBeenCalledWith("warn", {
       operation: "snapshot-read",
       status: "heuristic",
       reason: "snapshot-missing",
-      generation: "active",
+      generationCategory: "active",
+      generationId: "9f87654d-1234-4abc-8def-1234567890ab",
       generationStatus: "ready",
       durationMs: 0,
     });
@@ -205,6 +262,7 @@ describe("createRelatedPetsResolver", () => {
       expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c"]);
       expect(deps.log).toHaveBeenCalledTimes(1);
       expect(deps.log).toHaveBeenCalledWith(
+        "warn",
         read === "state"
           ? {
               operation: "resolve",
@@ -215,7 +273,8 @@ describe("createRelatedPetsResolver", () => {
               operation: "snapshot-read",
               status: "heuristic",
               reason: "snapshot-read-failed",
-              generation: "active",
+              generationCategory: "active",
+              generationId: "9f87654d-1234-4abc-8def-1234567890ab",
               generationStatus: "ready",
               durationMs: 15,
             },
@@ -255,7 +314,7 @@ describe("createRelatedPetsResolver", () => {
 
     expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c"]);
     expect(deps.getState).not.toHaveBeenCalled();
-    expect(deps.log).toHaveBeenCalledWith({
+    expect(deps.log).toHaveBeenCalledWith("warn", {
       operation: "resolve",
       status: "heuristic",
       reason: "invalid-enabled-flag",
@@ -263,5 +322,75 @@ describe("createRelatedPetsResolver", () => {
     expect(JSON.stringify(vi.mocked(deps.log).mock.calls)).not.toContain(
       "TRUE-secret-value",
     );
+  });
+
+  it.each([
+    ["invalid", "secret-generation"],
+    [
+      "unbounded",
+      `9f87654d-1234-4abc-8def-1234567890ab-${"x".repeat(200)}`,
+    ],
+  ])(
+    "replaces an %s active generation id with a fixed marker",
+    async (_caseName, unsafeGenerationId) => {
+      const deps = dependencies({
+        getState: vi.fn(async () => ({
+          ...readyState,
+          requestedGenerationId: unsafeGenerationId,
+          activeGenerationId: unsafeGenerationId,
+        })),
+        getSnapshot: vi.fn(async () => ({
+          ...readySnapshot,
+          generationId: unsafeGenerationId,
+        })),
+      });
+
+      await createRelatedPetsResolver(deps)(current);
+
+      expect(deps.log).toHaveBeenCalledWith(
+        "info",
+        expect.objectContaining({
+          generationId: "invalid-generation-id",
+        }),
+      );
+      expect(JSON.stringify(vi.mocked(deps.log).mock.calls)).not.toContain(
+        unsafeGenerationId,
+      );
+    },
+  );
+
+  it("uses info for successful production snapshot diagnostics and warn for fallbacks", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const successfulDiagnostic = {
+      operation: "snapshot-read" as const,
+      status: "ready" as const,
+      reason: "snapshot-current" as const,
+      generationCategory: "active" as const,
+      generationId: "9f87654d-1234-4abc-8def-1234567890ab",
+      generationStatus: "ready" as const,
+      durationMs: 7,
+    };
+    const fallbackDiagnostic = {
+      operation: "state-fallback" as const,
+      status: "heuristic" as const,
+      reason: "state-missing" as const,
+      generationCategory: "missing" as const,
+      generationStatus: "missing" as const,
+    };
+
+    logRelatedPetsResolverDiagnostic("info", successfulDiagnostic);
+    logRelatedPetsResolverDiagnostic("warn", fallbackDiagnostic);
+
+    expect(info).toHaveBeenCalledWith(
+      "[codex-pets][related-pets]",
+      successfulDiagnostic,
+    );
+    expect(warn).toHaveBeenCalledWith(
+      "[codex-pets][related-pets]",
+      fallbackDiagnostic,
+    );
+    info.mockRestore();
+    warn.mockRestore();
   });
 });
