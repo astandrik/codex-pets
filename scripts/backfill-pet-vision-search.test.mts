@@ -300,6 +300,10 @@ describe("pet vision search backfill", () => {
     expect(JSON.stringify(firstRun.log.mock.calls)).not.toContain(
       "secret payload",
     );
+    expect(firstRun.log).toHaveBeenLastCalledWith({
+      action: "related-pets-rebuild-required",
+      commands: RELATED_PETS_REBUILD_COMMANDS,
+    });
 
     const resumed = dependencies({
       getCaption: vi.fn(async () => freshCaption()),
@@ -307,5 +311,37 @@ describe("pet vision search backfill", () => {
     const summary = await runPetVisionSearchBackfill(resumed);
     expect(summary.vectorOnly).toBe(1);
     expect(resumed.createCaption).not.toHaveBeenCalled();
+  });
+
+  it("emits the related snapshot follow-up when a later pet fails", async () => {
+    const logs: unknown[] = [];
+    let spritesheetRead = 0;
+    const input = dependencies({
+      pets: [
+        pet,
+        {
+          ...pet,
+          slug: "nightshade",
+          spritesheetUrl: "/api/assets/asset-nightshade/spritesheet.webp",
+        },
+      ],
+      readSpritesheet: vi.fn(async () => {
+        spritesheetRead += 1;
+        if (spritesheetRead === 2) {
+          throw new Error("asset unavailable");
+        }
+        return Buffer.from("atlas");
+      }),
+      log: (entry: unknown) => logs.push(entry),
+    });
+
+    await expect(runPetVisionSearchBackfill(input)).rejects.toMatchObject({
+      reason: "asset_error",
+    });
+
+    expect(logs.at(-1)).toEqual({
+      action: "related-pets-rebuild-required",
+      commands: RELATED_PETS_REBUILD_COMMANDS,
+    });
   });
 });

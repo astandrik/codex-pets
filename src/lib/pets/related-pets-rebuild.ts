@@ -46,7 +46,7 @@ import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 import type { PublicPet } from "@/lib/pets/types";
 import { isYdbConfigured } from "@/lib/ydb/client";
 
-type RelatedPetsRebuildProfile = RelatedPetsRankingProfile & {
+export type RelatedPetsRebuildProfile = RelatedPetsRankingProfile & {
   rankingRevision: string;
   textRevision: string;
   textDimensions: number;
@@ -55,7 +55,7 @@ type RelatedPetsRebuildProfile = RelatedPetsRankingProfile & {
   visualDimensions: number;
 };
 
-type VisualSourceContext = {
+export type VisualSourceContext = {
   captionRevision: string;
   modelUri: string;
 };
@@ -348,12 +348,6 @@ export function createRelatedPetsRebuildService(
     rankings: Array<{ sourceSlug: string; relatedSlugs: string[] }>;
     coverage: RelatedPetsRebuildCoverage;
   }> {
-    const approvedPets = uniqueApprovedPets(
-      await dependencies.listApprovedPets(),
-    );
-    const petsBySlug = new Map(
-      approvedPets.map((item) => [item.slug, item]),
-    );
     const requestedVisualContext = includeVisual
       ? dependencies.getVisualSourceContext()
       : null;
@@ -363,6 +357,7 @@ export function createRelatedPetsRebuildService(
       requestedVisualContext.modelUri.trim()
         ? requestedVisualContext
         : null;
+    const pets = await dependencies.listApprovedPets();
     const [textRows, visualRows, captions] = await Promise.all([
       dependencies.listRawVectors(dependencies.profile.textRevision),
       visualContext
@@ -372,37 +367,31 @@ export function createRelatedPetsRebuildService(
         ? dependencies.listCaptions(visualContext.captionRevision)
         : Promise.resolve([]),
     ]);
-    const textVectors = validatedTextVectors(
-      approvedPets,
+    const prepared = prepareRelatedPetsRankingInputs({
+      pets,
       textRows,
-      dependencies.profile,
-    );
-    const visualVectors = visualContext
-      ? validatedVisualVectors({
-          petsBySlug,
-          rows: visualRows,
-          captions,
-          profile: dependencies.profile,
-          context: visualContext,
-        })
-      : new Map<string, readonly number[]>();
-    const rankings = approvedPets.map((source) => ({
+      visualRows,
+      captions,
+      profile: dependencies.profile,
+      visualContext,
+    });
+    const rankings = prepared.approvedPets.map((source) => ({
       sourceSlug: source.slug,
       relatedSlugs: rankRelatedPets({
         source,
-        candidates: approvedPets,
-        textVectors,
-        visualVectors,
+        candidates: prepared.approvedPets,
+        textVectors: prepared.textVectors,
+        visualVectors: prepared.visualVectors,
         profile: dependencies.profile,
       }),
     }));
     return {
       rankings,
       coverage: {
-        approvedPetCount: approvedPets.length,
+        approvedPetCount: prepared.approvedPets.length,
         snapshotCount: rankings.length,
-        textVectorCount: textVectors.size,
-        visualVectorCount: visualVectors.size,
+        textVectorCount: prepared.textVectors.size,
+        visualVectorCount: prepared.visualVectors.size,
       },
     };
   }
@@ -619,6 +608,38 @@ function uniqueApprovedPets(pets: readonly PublicPet[]): PublicPet[] {
   return Array.from(unique.values());
 }
 
+export function prepareRelatedPetsRankingInputs(input: {
+  pets: readonly PublicPet[];
+  textRows: readonly StoredRawPetSearchEmbedding[];
+  visualRows: readonly StoredRawPetSearchEmbedding[];
+  captions: readonly StoredPetSearchCaption[];
+  profile: RelatedPetsRebuildProfile;
+  visualContext: VisualSourceContext | null;
+}): {
+  approvedPets: PublicPet[];
+  textVectors: Map<string, readonly number[]>;
+  visualVectors: Map<string, readonly number[]>;
+} {
+  const approvedPets = uniqueApprovedPets(input.pets);
+  const textVectors = validatedTextVectors(
+    approvedPets,
+    input.textRows,
+    input.profile,
+  );
+  const visualVectors = input.visualContext
+    ? validatedVisualVectors({
+        petsBySlug: new Map(
+          approvedPets.map((item) => [item.slug, item]),
+        ),
+        rows: input.visualRows,
+        captions: input.captions,
+        profile: input.profile,
+        context: input.visualContext,
+      })
+    : new Map<string, readonly number[]>();
+  return { approvedPets, textVectors, visualVectors };
+}
+
 function validatedTextVectors(
   pets: readonly PublicPet[],
   rows: readonly StoredRawPetSearchEmbedding[],
@@ -703,7 +724,7 @@ const productionRepository: RelatedPetsRepository = {
   recoverPreviousGeneration: recoverPreviousRelatedPetsGeneration,
 };
 
-function currentVisualSourceContext(): VisualSourceContext | null {
+export function getCurrentRelatedPetsVisualSourceContext(): VisualSourceContext | null {
   const profile = CURRENT_RELATED_PETS_RANKING_PROFILE;
   const visualDefinition = PET_VISUAL_MODEL_REVISIONS[profile.visualRevision];
   const captionRevision = visualDefinition.captionRevision;
@@ -741,7 +762,7 @@ const service = createRelatedPetsRebuildService({
   listApprovedPets: listApprovedPetsForSearch,
   listRawVectors: listRawPetSearchEmbeddings,
   listCaptions: listPetSearchCaptions,
-  getVisualSourceContext: currentVisualSourceContext,
+  getVisualSourceContext: getCurrentRelatedPetsVisualSourceContext,
   createGenerationId: randomUUID,
   now: () => new Date(),
   log: (event) => {

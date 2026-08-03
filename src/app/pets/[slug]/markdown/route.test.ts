@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
+
 const repositoryMocks = vi.hoisted(() => ({
   getApprovedPetBySlug: vi.fn(),
   listApprovedPetsBySlugs: vi.fn(),
@@ -248,7 +250,7 @@ describe("GET /pets/[slug]/markdown", () => {
       previousGenerationId: null,
       status: "ready",
       rankingRevision:
-        "related-pets-rrf60-v1:text=yandex-text-embeddings-v2-768-2026-07:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
+        CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
       failureReason: null,
       updatedAt: "2026-08-03T10:00:00.000Z",
     });
@@ -256,7 +258,7 @@ describe("GET /pets/[slug]/markdown", () => {
       generationId: "generation-ready",
       sourceSlug: "kuroa",
       rankingRevision:
-        "related-pets-rrf60-v1:text=yandex-text-embeddings-v2-768-2026-07:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
+        CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
       relatedSlugs: [
         "removed-pet",
         "terminal-cube",

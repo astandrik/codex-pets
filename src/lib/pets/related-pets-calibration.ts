@@ -1,8 +1,13 @@
 import {
   fuseRelatedPetRankings,
+  rankRelatedPetVectorMatches,
   type RelatedPetSimilarity,
   type RelatedPetsRankingProfile,
 } from "@/lib/pets/related-pets-ranking";
+import {
+  selectRelatedPets,
+  type RelatedPetCandidate,
+} from "@/lib/pets/related-pets";
 
 export const RELATED_PETS_VISUAL_WEIGHT_CANDIDATES = [
   0.25,
@@ -80,6 +85,42 @@ export function createRelatedPetsCalibrationCases(
   }
 
   return cases;
+}
+
+export function createRelatedPetsCalibrationObservations(input: {
+  cases: readonly RelatedPetCalibrationCase[];
+  candidates: readonly RelatedPetCandidate[];
+  textVectors: ReadonlyMap<string, readonly number[]>;
+  visualVectors: ReadonlyMap<string, readonly number[]>;
+}): RelatedPetCalibrationObservation[] {
+  const candidatesBySlug = new Map(
+    input.candidates.map((candidate) => [candidate.slug, candidate]),
+  );
+
+  return input.cases.map((calibrationCase) => {
+    const source = candidatesBySlug.get(calibrationCase.sourceSlug);
+    if (!source) {
+      throw new Error(
+        `Related-pet calibration source ${calibrationCase.sourceSlug} is missing from the approved catalog.`,
+      );
+    }
+    return {
+      ...calibrationCase,
+      metadataSlugs: selectRelatedPets(
+        Array.from(candidatesBySlug.values()),
+        source,
+        candidatesBySlug.size,
+      ).map(({ slug }) => slug),
+      textMatches: rankRelatedPetVectorMatches(
+        source.slug,
+        input.textVectors,
+      ),
+      visualMatches: rankRelatedPetVectorMatches(
+        source.slug,
+        input.visualVectors,
+      ),
+    };
+  });
 }
 
 export function ndcgAt4(
@@ -201,6 +242,44 @@ export function selectRelatedVisualProfile(
     ...selected,
     evaluatedProfileCount:
       candidates.length * RELATED_PETS_VISUAL_WEIGHT_CANDIDATES.length,
+  };
+}
+
+export function evaluateRelatedPetsCalibration(
+  observations: readonly RelatedPetCalibrationObservation[],
+  pinnedProfile: RelatedPetsRankingProfile,
+) {
+  const textSelection = selectRelatedTextThreshold(observations);
+  const visualSelection = selectRelatedVisualProfile(
+    observations,
+    textSelection.textMinSimilarity,
+  );
+  const selectedProfile = {
+    textMinSimilarity: textSelection.textMinSimilarity,
+    visualMinSimilarity: visualSelection.visualMinSimilarity,
+    visualWeight: visualSelection.visualWeight,
+  };
+  const profileMatches =
+    selectedProfile.textMinSimilarity ===
+      pinnedProfile.textMinSimilarity &&
+    selectedProfile.visualMinSimilarity ===
+      pinnedProfile.visualMinSimilarity &&
+    selectedProfile.visualWeight === pinnedProfile.visualWeight;
+
+  return {
+    selectedProfile,
+    pinnedProfile: {
+      textMinSimilarity: pinnedProfile.textMinSimilarity,
+      visualMinSimilarity: pinnedProfile.visualMinSimilarity,
+      visualWeight: pinnedProfile.visualWeight,
+    },
+    profileMatches,
+    passed: profileMatches,
+    textEvaluatedThresholdCount:
+      textSelection.evaluatedThresholdCount,
+    visualEvaluatedProfileCount:
+      visualSelection.evaluatedProfileCount,
+    report: evaluateRelatedPetsProfile(observations, selectedProfile),
   };
 }
 

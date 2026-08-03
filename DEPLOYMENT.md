@@ -149,7 +149,26 @@ place it directly in the environment file. Captions, images, prompts, and
 embeddings must not be copied into deployment logs.
 
 For hybrid related pets, keep `PET_RELATED_HYBRID_ENABLED=false` while applying
-the additive migrations and building the initial snapshots:
+the additive migrations and calibrating the revision-bound ranking profile.
+Both evaluation commands read only the approved catalog and existing
+text/visual/caption rows; they do not call an embedding provider:
+
+```bash
+npm run related:eval:calibrate
+npm run related:eval:holdout
+```
+
+The calibration command uses exactly 10 frozen calibration source cases and
+exits nonzero unless the selected text threshold, visual threshold, and visual
+weight exactly match `CURRENT_RELATED_PETS_RANKING_PROFILE`. When it reports a
+different `selectedProfile`, update the dedicated pinned values and ranking
+revision, commit and deploy that profile with the feature still disabled, and
+rerun calibration. The holdout command uses four untouched source cases and
+must report `passed: true`; full hybrid nDCG@4 must be no worse than both
+metadata-only and text-plus-metadata. Missing approved fixture pets or missing
+current text/visual vectors fail either command.
+
+Only after both evaluation commands pass, build the initial snapshots:
 
 ```bash
 npm run related:rebuild -- --dry-run

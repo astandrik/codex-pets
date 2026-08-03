@@ -13,23 +13,29 @@ import {
 const TEXT_REVISION = "yandex-text-embeddings-v2-768-2026-07";
 const VISUAL_REVISION =
   "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1";
+const CALIBRATION_REVISION = "search-eval-related-groups-v1";
 const textDefinition = PET_SEARCH_MODEL_REVISIONS[TEXT_REVISION];
 const visualDefinition = PET_VISUAL_MODEL_REVISIONS[VISUAL_REVISION];
+const PINNED_CALIBRATED_PROFILE = {
+  textMinSimilarity: 1.0000000000000002,
+  visualMinSimilarity: 0.8537168126311578,
+  visualWeight: 0.25,
+} as const;
 
 export const CURRENT_RELATED_PETS_RANKING_PROFILE = {
-  rankingRevision:
-    "related-pets-rrf60-v1:text=yandex-text-embeddings-v2-768-2026-07:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
+  rankingRevision: `related-pets-rrf60-v2:cal=${CALIBRATION_REVISION}:text=${TEXT_REVISION}:visual=${VISUAL_REVISION}`,
   textRevision: TEXT_REVISION,
   textDimensions:
     PET_SEARCH_EMBEDDING_MODELS[textDefinition.embeddingModelId].dimensions,
-  textMinSimilarity: textDefinition.minSemanticScore,
+  textMinSimilarity: PINNED_CALIBRATED_PROFILE.textMinSimilarity,
   textWeight: RELATED_PETS_TEXT_WEIGHT,
   metadataWeight: RELATED_PETS_METADATA_WEIGHT,
   visualRevision: VISUAL_REVISION,
   visualDimensions:
     PET_SEARCH_EMBEDDING_MODELS[visualDefinition.embeddingModelId].dimensions,
-  visualMinSimilarity: visualDefinition.profile.minSemanticScore,
-  visualWeight: visualDefinition.profile.weight,
+  visualMinSimilarity:
+    PINNED_CALIBRATED_PROFILE.visualMinSimilarity,
+  visualWeight: PINNED_CALIBRATED_PROFILE.visualWeight,
   rrfK: RELATED_PETS_RRF_K,
 } as const satisfies RelatedPetsRankingProfile & {
   rankingRevision: string;

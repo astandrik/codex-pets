@@ -211,6 +211,41 @@ describe("pet search embeddings backfill", () => {
     });
   });
 
+  it("emits the related snapshot follow-up after a later applied update fails", async () => {
+    const logs: unknown[] = [];
+    const providerFailure = new Error("provider unavailable");
+    let embeddingAttempt = 0;
+
+    await expect(
+      runPetSearchBackfill({
+        options: { mode: "apply", slug: null, force: false },
+        revision: "model-v1",
+        dimensions: 256,
+        pets: [
+          pet,
+          {
+            ...pet,
+            slug: "nightshade",
+            displayName: "Nightshade",
+          },
+        ],
+        getMetadata: async () => null,
+        embedDocument: async () => {
+          embeddingAttempt += 1;
+          if (embeddingAttempt === 2) throw providerFailure;
+          return Array(256).fill(0.25);
+        },
+        upsert: async () => undefined,
+        log: (entry: unknown) => logs.push(entry),
+      }),
+    ).rejects.toBe(providerFailure);
+
+    expect(logs.at(-1)).toEqual({
+      action: "related-pets-rebuild-required",
+      commands: RELATED_PETS_REBUILD_COMMANDS,
+    });
+  });
+
   it("fails closed for missing slugs and invalid provider dimensions", async () => {
     await expect(
       runPetSearchBackfill({

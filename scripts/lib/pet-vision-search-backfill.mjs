@@ -363,38 +363,44 @@ export async function runPetVisionSearchBackfill(input) {
     vectorOnly: 0,
     captionAndVector: 0,
   };
+  let hasCommittedSnapshotInput = false;
 
-  for (const pet of selectedPets) {
-    try {
-      const action = await processPet(input, pet);
-      if (action === "unchanged") summary.unchanged += 1;
-      if (action === "vector-only") summary.vectorOnly += 1;
-      if (action === "caption-and-vector") {
-        summary.captionAndVector += 1;
+  try {
+    for (const pet of selectedPets) {
+      try {
+        const action = await processPet(input, pet, () => {
+          hasCommittedSnapshotInput = true;
+        });
+        if (action === "unchanged") summary.unchanged += 1;
+        if (action === "vector-only") summary.vectorOnly += 1;
+        if (action === "caption-and-vector") {
+          summary.captionAndVector += 1;
+        }
+        input.log({ slug: pet.slug, action });
+      } catch (error) {
+        const failure = safeFailure(error);
+        input.log({
+          slug: pet.slug,
+          action: "failed",
+          reason: failure.reason,
+        });
+        throw failure;
       }
-      input.log({ slug: pet.slug, action });
-    } catch (error) {
-      const failure = safeFailure(error);
-      input.log({
-        slug: pet.slug,
-        action: "failed",
-        reason: failure.reason,
-      });
-      throw failure;
+    }
+
+    input.log({ action: "summary", ...summary });
+    return summary;
+  } finally {
+    if (
+      input.options.mode === "apply" &&
+      hasCommittedSnapshotInput
+    ) {
+      input.log(createRelatedPetsRebuildRequiredLog());
     }
   }
-
-  input.log({ action: "summary", ...summary });
-  if (
-    input.options.mode === "apply" &&
-    summary.vectorOnly + summary.captionAndVector > 0
-  ) {
-    input.log(createRelatedPetsRebuildRequiredLog());
-  }
-  return summary;
 }
 
-async function processPet(input, pet) {
+async function processPet(input, pet, onSnapshotInputCommitted) {
   const assetId = petAssetId(pet.spritesheetUrl);
   if (!assetId) throw new PetVisionBackfillError("asset_error");
 
@@ -467,6 +473,7 @@ async function processPet(input, pet) {
         embedding,
         updatedAt: input.now().toISOString(),
       });
+      onSnapshotInputCommitted();
     } catch {
       throw new PetVisionBackfillError("persistence_error");
     }
@@ -495,6 +502,7 @@ async function processPet(input, pet) {
       captionText,
       updatedAt: input.now().toISOString(),
     });
+    onSnapshotInputCommitted();
   } catch {
     throw new PetVisionBackfillError("persistence_error");
   }
@@ -517,6 +525,7 @@ async function processPet(input, pet) {
       embedding,
       updatedAt: input.now().toISOString(),
     });
+    onSnapshotInputCommitted();
   } catch {
     throw new PetVisionBackfillError("persistence_error");
   }

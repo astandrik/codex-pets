@@ -131,50 +131,53 @@ export async function runPetSearchBackfill({
     updated: 0,
   };
 
-  for (const pet of selectedPets) {
-    const sourceHash = createPetSearchSourceHash(pet, revision);
-    const metadata = options.force
-      ? null
-      : await getMetadata(revision, pet.slug);
-    if (
-      metadata?.sourceHash === sourceHash &&
-      metadata.dimensions === dimensions
-    ) {
-      summary.unchanged += 1;
-      continue;
+  try {
+    for (const pet of selectedPets) {
+      const sourceHash = createPetSearchSourceHash(pet, revision);
+      const metadata = options.force
+        ? null
+        : await getMetadata(revision, pet.slug);
+      if (
+        metadata?.sourceHash === sourceHash &&
+        metadata.dimensions === dimensions
+      ) {
+        summary.unchanged += 1;
+        continue;
+      }
+
+      summary.planned += 1;
+      if (options.mode === "dry-run") {
+        log({ action: "would-update", slug: pet.slug });
+        continue;
+      }
+
+      const embedding = await embedDocument(buildPetSearchDocument(pet));
+      if (
+        !Array.isArray(embedding) ||
+        embedding.length !== dimensions ||
+        embedding.some((value) => !Number.isFinite(value))
+      ) {
+        throw new Error(
+          `Embedding provider returned ${embedding?.length ?? 0} values; expected ${dimensions}.`,
+        );
+      }
+      await upsert({
+        modelRevision: revision,
+        slug: pet.slug,
+        sourceHash,
+        dimensions,
+        embedding,
+        updatedAt: now().toISOString(),
+      });
+      summary.updated += 1;
+      log({ action: "updated", slug: pet.slug });
     }
 
-    summary.planned += 1;
-    if (options.mode === "dry-run") {
-      log({ action: "would-update", slug: pet.slug });
-      continue;
+    log({ action: "summary", ...summary });
+    return summary;
+  } finally {
+    if (options.mode === "apply" && summary.updated > 0) {
+      log(createRelatedPetsRebuildRequiredLog());
     }
-
-    const embedding = await embedDocument(buildPetSearchDocument(pet));
-    if (
-      !Array.isArray(embedding) ||
-      embedding.length !== dimensions ||
-      embedding.some((value) => !Number.isFinite(value))
-    ) {
-      throw new Error(
-        `Embedding provider returned ${embedding?.length ?? 0} values; expected ${dimensions}.`,
-      );
-    }
-    await upsert({
-      modelRevision: revision,
-      slug: pet.slug,
-      sourceHash,
-      dimensions,
-      embedding,
-      updatedAt: now().toISOString(),
-    });
-    summary.updated += 1;
-    log({ action: "updated", slug: pet.slug });
   }
-
-  log({ action: "summary", ...summary });
-  if (options.mode === "apply" && summary.updated > 0) {
-    log(createRelatedPetsRebuildRequiredLog());
-  }
-  return summary;
 }

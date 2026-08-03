@@ -4,6 +4,8 @@ import searchFixtures from "@/lib/pets/search-eval-fixtures.json";
 import {
   RELATED_PETS_VISUAL_WEIGHT_CANDIDATES,
   createRelatedPetsCalibrationCases,
+  createRelatedPetsCalibrationObservations,
+  evaluateRelatedPetsCalibration,
   evaluateRelatedPetsHoldout,
   ndcgAt4,
   selectRelatedTextThreshold,
@@ -44,6 +46,74 @@ describe("related pet calibration fixtures", () => {
   });
 });
 
+describe("related pet calibration observations", () => {
+  it("derives complete metadata and pairwise modality ranks from stored vectors", () => {
+    const candidates = [
+      calibrationCandidate("source", ["night"]),
+      calibrationCandidate("peer", ["night"]),
+      calibrationCandidate("other", []),
+    ];
+
+    expect(
+      createRelatedPetsCalibrationObservations({
+        cases: [
+          {
+            groupId: "group",
+            split: "calibration",
+            sourceSlug: "source",
+            relevantSlugs: ["peer"],
+          },
+        ],
+        candidates,
+        textVectors: new Map([
+          ["source", [1, 0]],
+          ["peer", [1, 0]],
+          ["other", [0, 1]],
+        ]),
+        visualVectors: new Map([
+          ["source", [0, 1]],
+          ["peer", [1, 0]],
+          ["other", [0, 1]],
+        ]),
+      }),
+    ).toEqual([
+      {
+        groupId: "group",
+        split: "calibration",
+        sourceSlug: "source",
+        relevantSlugs: ["peer"],
+        metadataSlugs: ["peer", "other"],
+        textMatches: [
+          { slug: "peer", score: 1 },
+          { slug: "other", score: 0 },
+        ],
+        visualMatches: [
+          { slug: "other", score: 1 },
+          { slug: "peer", score: 0 },
+        ],
+      },
+    ]);
+  });
+
+  it("rejects calibration cases whose source pet is unavailable", () => {
+    expect(() =>
+      createRelatedPetsCalibrationObservations({
+        cases: [
+          {
+            groupId: "group",
+            split: "holdout",
+            sourceSlug: "missing",
+            relevantSlugs: ["peer"],
+          },
+        ],
+        candidates: [calibrationCandidate("peer", ["night"])],
+        textVectors: new Map(),
+        visualVectors: new Map(),
+      }),
+    ).toThrow(/missing.*approved catalog/i);
+  });
+});
+
 describe("related pet nDCG@4", () => {
   it("scores binary relevance at four without counting duplicate hits twice", () => {
     const idealDcg = 1 + 1 / Math.log2(3);
@@ -57,6 +127,18 @@ describe("related pet nDCG@4", () => {
     );
   });
 });
+
+function calibrationCandidate(slug: string, tags: string[]) {
+  return {
+    slug,
+    displayName: slug,
+    kind: "character" as const,
+    tags,
+    description: slug,
+    approvedAt: "2026-08-03T00:00:00.000Z",
+    createdAt: "2026-08-03T00:00:00.000Z",
+  };
+}
 
 function observation(
   overrides: Partial<RelatedPetCalibrationObservation> = {},
@@ -117,6 +199,47 @@ describe("related pet profile selection", () => {
     expect(report.textMinSimilarity).toBeGreaterThan(0.9);
     expect(report.ndcgAt4).toBe(1);
     expect(report.evaluatedThresholdCount).toBe(2);
+  });
+
+  it("passes calibration only when the selected profile is pinned exactly", () => {
+    const observations = [
+      observation({
+        sourceSlug: "text-source",
+        metadataSlugs: ["other", "peer"],
+        textMatches: [{ slug: "peer", score: 0.8 }],
+        visualMatches: [],
+      }),
+      observation({
+        sourceSlug: "visual-source",
+        metadataSlugs: ["other", "peer"],
+        textMatches: [],
+        visualMatches: [{ slug: "peer", score: 0.85 }],
+      }),
+    ];
+    const pinnedProfile = {
+      textMinSimilarity: 0.8,
+      visualMinSimilarity: 0.85,
+      visualWeight: 0.25,
+    } as const;
+
+    expect(
+      evaluateRelatedPetsCalibration(observations, pinnedProfile),
+    ).toMatchObject({
+      selectedProfile: pinnedProfile,
+      pinnedProfile,
+      profileMatches: true,
+      passed: true,
+    });
+    expect(
+      evaluateRelatedPetsCalibration(observations, {
+        ...pinnedProfile,
+        textMinSimilarity: 0.81,
+      }),
+    ).toMatchObject({
+      selectedProfile: pinnedProfile,
+      profileMatches: false,
+      passed: false,
+    });
   });
 
   it("selects a later visual profile when it strictly improves nDCG@4", () => {
