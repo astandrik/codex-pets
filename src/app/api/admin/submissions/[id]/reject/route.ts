@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
+import { rebuildRelatedPetsBestEffort } from "@/lib/pets/related-pets-rebuild-trigger";
 import { moderatePet } from "@/lib/pets/repository";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
@@ -37,6 +38,10 @@ export async function POST(
 
   revalidateSitemapCache();
   revalidateRelatedPetCandidatesCache();
+  await rebuildRelatedPetsBestEffort({
+    trigger: "reject",
+    includeVisual: true,
+  });
 
   return NextResponse.json({ ok: true, pet });
 }

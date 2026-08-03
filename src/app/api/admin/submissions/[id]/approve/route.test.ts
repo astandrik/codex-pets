@@ -13,6 +13,10 @@ vi.mock("@/lib/pets/search-runtime", () => ({
   refreshApprovedPetSearchEmbedding: vi.fn(),
 }));
 
+vi.mock("@/lib/pets/related-pets-rebuild", () => ({
+  rebuildRelatedPets: vi.fn(),
+}));
+
 vi.mock("@/lib/pets/search-vision-runtime", () => ({
   refreshApprovedPetVisionSearchBestEffort: vi.fn(async () => true),
 }));
@@ -33,6 +37,7 @@ import { POST } from "@/app/api/admin/submissions/[id]/approve/route";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
 import { moderatePet } from "@/lib/pets/repository";
+import { rebuildRelatedPets } from "@/lib/pets/related-pets-rebuild";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { refreshApprovedPetSearchEmbedding } from "@/lib/pets/search-runtime";
 import { refreshApprovedPetVisionSearchBestEffort } from "@/lib/pets/search-vision-runtime";
@@ -50,6 +55,20 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
       status: "skipped",
       reason: "missing-key",
       urls: [],
+    });
+    vi.mocked(rebuildRelatedPets).mockResolvedValue({
+      operation: "apply",
+      status: "ready",
+      generationId: "generation-1",
+      rankingRevision: "related-pets-hybrid-rrf-v1",
+      coverage: {
+        approvedPetCount: 1,
+        snapshotCount: 1,
+        textVectorCount: 1,
+        visualVectorCount: 0,
+      },
+      rankings: [{ sourceSlug: "boba", relatedSlugs: [] }],
+      durationMs: 1,
     });
   });
 
@@ -132,9 +151,174 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     expect(refreshApprovedPetSearchEmbedding).toHaveBeenCalledWith(
       expect.objectContaining({ slug: "boba", status: "approved" }),
     );
+    expect(rebuildRelatedPets).toHaveBeenCalledWith({
+      mode: "apply",
+      includeVisual: false,
+    });
     expect(refreshApprovedPetVisionSearchBestEffort).toHaveBeenCalledWith(
       expect.objectContaining({ slug: "boba", status: "approved" }),
+      { onSuccessfulRefresh: expect.any(Function) },
     );
+  });
+
+  it("starts a separately logged best-effort rebuild after successful asynchronous visual indexing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce({
+      id: "pet_1",
+      slug: "boba",
+      displayName: "Boba",
+      description: "desc",
+      spritesheetUrl: "/api/assets/asset-123/spritesheet.webp",
+      petJsonUrl: "/api/assets/asset-123/pet.json",
+      zipUrl: "/api/assets/asset-123/pet.zip",
+      spritesheetExt: "webp",
+      kind: "creature",
+      tags: [],
+      status: "approved",
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString(),
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    });
+    vi.mocked(refreshApprovedPetVisionSearchBestEffort).mockImplementationOnce(
+      async (_pet, options) => {
+        await options?.onSuccessfulRefresh?.("caption-and-vector");
+        return true;
+      },
+    );
+    vi.mocked(rebuildRelatedPets)
+      .mockResolvedValueOnce({
+        operation: "apply",
+        status: "ready",
+        generationId: "generation-1",
+        rankingRevision: "related-pets-hybrid-rrf-v1",
+        coverage: {
+          approvedPetCount: 1,
+          snapshotCount: 1,
+          textVectorCount: 1,
+          visualVectorCount: 0,
+        },
+        rankings: [{ sourceSlug: "boba", relatedSlugs: [] }],
+        durationMs: 1,
+      })
+      .mockRejectedValueOnce(new Error("private visual rebuild detail"));
+
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ id: "pet_1" }),
+    });
+
+    expect(response.status).toBe(200);
+    await vi.waitFor(() => expect(rebuildRelatedPets).toHaveBeenCalledTimes(2));
+    expect(rebuildRelatedPets).toHaveBeenNthCalledWith(1, {
+      mode: "apply",
+      includeVisual: false,
+    });
+    expect(rebuildRelatedPets).toHaveBeenNthCalledWith(2, {
+      mode: "apply",
+      includeVisual: true,
+    });
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[codex-pets][related-pets-rebuild-trigger]",
+      {
+        operation: "rebuild",
+        trigger: "approve-visual",
+        status: "failed",
+        includeVisual: true,
+      },
+    );
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      "[codex-pets][pet-vision-search]",
+      expect.anything(),
+    );
+    expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(
+      "private visual rebuild detail",
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("awaits text indexing before the text-first rebuild and response work", async () => {
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce({
+      id: "pet_1",
+      slug: "boba",
+      displayName: "Boba",
+      description: "desc",
+      spritesheetUrl: "/api/assets/asset-123/spritesheet.webp",
+      petJsonUrl: "/api/assets/asset-123/pet.json",
+      zipUrl: "/api/assets/asset-123/pet.zip",
+      spritesheetExt: "webp",
+      kind: "creature",
+      tags: [],
+      status: "approved",
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString(),
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    });
+    let finishTextIndexing: (() => void) | undefined;
+    vi.mocked(refreshApprovedPetSearchEmbedding).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishTextIndexing = () => resolve("updated");
+      }),
+    );
+    let finishRebuild: (() => void) | undefined;
+    vi.mocked(rebuildRelatedPets).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishRebuild = () =>
+          resolve({
+            operation: "apply",
+            status: "ready",
+            generationId: "generation-1",
+            rankingRevision: "related-pets-hybrid-rrf-v1",
+            coverage: {
+              approvedPetCount: 1,
+              snapshotCount: 1,
+              textVectorCount: 1,
+              visualVectorCount: 0,
+            },
+            rankings: [{ sourceSlug: "boba", relatedSlugs: [] }],
+            durationMs: 1,
+          });
+      }),
+    );
+
+    const responsePromise = POST(new Request("http://localhost"), {
+      params: Promise.resolve({ id: "pet_1" }),
+    });
+
+    await vi.waitFor(() =>
+      expect(refreshApprovedPetSearchEmbedding).toHaveBeenCalledTimes(1),
+    );
+    expect(rebuildRelatedPets).not.toHaveBeenCalled();
+    expect(notifyIndexNowOfApprovedPet).not.toHaveBeenCalled();
+
+    finishTextIndexing?.();
+    await vi.waitFor(() => expect(rebuildRelatedPets).toHaveBeenCalledTimes(1));
+    expect(notifyIndexNowOfApprovedPet).not.toHaveBeenCalled();
+
+    finishRebuild?.();
+    const response = await responsePromise;
+    expect(response.status).toBe(200);
+    expect(notifyIndexNowOfApprovedPet).toHaveBeenCalledWith("boba");
   });
 
   it("does not wait for the best-effort visual refresh", async () => {
@@ -222,6 +406,72 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     expect(response.status).toBe(200);
     expect(notifyIndexNowOfApprovedPet).toHaveBeenCalledWith("boba");
     expect(JSON.stringify(warnSpy.mock.calls)).not.toContain("provider failed");
+    warnSpy.mockRestore();
+  });
+
+  it("keeps approval successful when text indexing and text-first rebuild fail independently", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce({
+      id: "pet_1",
+      slug: "boba",
+      displayName: "Boba",
+      description: "desc",
+      spritesheetUrl: "/api/assets/asset-123/spritesheet.webp",
+      petJsonUrl: "/api/assets/asset-123/pet.json",
+      zipUrl: "/api/assets/asset-123/pet.zip",
+      spritesheetExt: "webp",
+      kind: "creature",
+      tags: [],
+      status: "approved",
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString(),
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    });
+    vi.mocked(refreshApprovedPetSearchEmbedding).mockRejectedValueOnce(
+      new Error("text provider secret"),
+    );
+    vi.mocked(rebuildRelatedPets).mockRejectedValueOnce(
+      new Error("snapshot storage secret"),
+    );
+
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ id: "pet_1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(rebuildRelatedPets).toHaveBeenCalledWith({
+      mode: "apply",
+      includeVisual: false,
+    });
+    expect(refreshApprovedPetVisionSearchBestEffort).toHaveBeenCalledTimes(1);
+    expect(notifyIndexNowOfApprovedPet).toHaveBeenCalledWith("boba");
+    expect(warnSpy).toHaveBeenCalledWith("[codex-pets][pet-search-embedding]", {
+      operation: "refresh",
+      status: "failed",
+    });
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[codex-pets][related-pets-rebuild-trigger]",
+      {
+        operation: "rebuild",
+        trigger: "approve-text",
+        status: "failed",
+        includeVisual: false,
+      },
+    );
+    const logPayload = JSON.stringify(warnSpy.mock.calls);
+    expect(logPayload).not.toContain("text provider secret");
+    expect(logPayload).not.toContain("snapshot storage secret");
     warnSpy.mockRestore();
   });
 

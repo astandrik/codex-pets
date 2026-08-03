@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
+import { rebuildRelatedPetsBestEffort } from "@/lib/pets/related-pets-rebuild-trigger";
 import { moderatePet } from "@/lib/pets/repository";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { refreshApprovedPetSearchEmbedding } from "@/lib/pets/search-runtime";
@@ -42,7 +43,19 @@ export async function POST(
     });
   }
 
-  void refreshApprovedPetVisionSearchBestEffort(pet).catch(() => undefined);
+  await rebuildRelatedPetsBestEffort({
+    trigger: "approve-text",
+    includeVisual: false,
+  });
+
+  void refreshApprovedPetVisionSearchBestEffort(pet, {
+    onSuccessfulRefresh: async () => {
+      await rebuildRelatedPetsBestEffort({
+        trigger: "approve-visual",
+        includeVisual: true,
+      });
+    },
+  }).catch(() => undefined);
 
   const indexNow = await notifyIndexNowOfApprovedPet(pet.slug);
   if (indexNow.status === "submitted") {

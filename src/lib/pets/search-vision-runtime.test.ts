@@ -99,6 +99,107 @@ function dependencies(overrides: Record<string, unknown> = {}) {
 }
 
 describe("pet vision search indexing runtime", () => {
+  it("reports successful visual indexing to an optional completion callback", async () => {
+    const deps = dependencies({
+      getCaption: vi.fn(async () => ({
+        slug: pet.slug,
+        sourceHash: captionSourceHash,
+        captionJson,
+        captionText,
+        updatedAt: "2026-07-22T11:00:00.000Z",
+      })),
+    });
+    const runtime = createPetVisionSearchRuntime(deps) as ReturnType<
+      typeof createPetVisionSearchRuntime
+    > & {
+      refreshBestEffort: (
+        target: typeof pet,
+        options: {
+          onSuccessfulRefresh: (
+            result: Exclude<PetVisionRefreshResult, "skipped">,
+          ) => Promise<void>;
+        },
+      ) => Promise<boolean>;
+    };
+    const onSuccessfulRefresh = vi.fn(async () => undefined);
+
+    await expect(
+      runtime.refreshBestEffort(pet, { onSuccessfulRefresh }),
+    ).resolves.toBe(true);
+    expect(onSuccessfulRefresh).toHaveBeenCalledWith("vector-only");
+  });
+
+  it("does not report skipped or failed indexing as successful", async () => {
+    const onSuccessfulRefresh = vi.fn(async () => undefined);
+    const skippedRuntime = createPetVisionSearchRuntime(
+      dependencies({ config: { ...config, visual: null } }),
+    ) as ReturnType<typeof createPetVisionSearchRuntime> & {
+      refreshBestEffort: (
+        target: typeof pet,
+        options: { onSuccessfulRefresh: typeof onSuccessfulRefresh },
+      ) => Promise<boolean>;
+    };
+
+    await expect(
+      skippedRuntime.refreshBestEffort(pet, { onSuccessfulRefresh }),
+    ).resolves.toBe(true);
+    expect(onSuccessfulRefresh).not.toHaveBeenCalled();
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const failedRuntime = createPetVisionSearchRuntime(
+      dependencies({
+        readSpritesheet: vi.fn(async () => {
+          throw new Error("private asset detail");
+        }),
+      }),
+    ) as ReturnType<typeof createPetVisionSearchRuntime> & {
+      refreshBestEffort: (
+        target: typeof pet,
+        options: { onSuccessfulRefresh: typeof onSuccessfulRefresh },
+      ) => Promise<boolean>;
+    };
+
+    await expect(
+      failedRuntime.refreshBestEffort(pet, { onSuccessfulRefresh }),
+    ).resolves.toBe(false);
+    expect(onSuccessfulRefresh).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith("[codex-pets][pet-vision-search]", {
+      operation: "refresh",
+      status: "failed",
+      reason: "asset_error",
+    });
+    expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(
+      "private asset detail",
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("does not classify completion callback failures as vision indexing failures", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const runtime = createPetVisionSearchRuntime(dependencies()) as ReturnType<
+      typeof createPetVisionSearchRuntime
+    > & {
+      refreshBestEffort: (
+        target: typeof pet,
+        options: {
+          onSuccessfulRefresh: (
+            result: Exclude<PetVisionRefreshResult, "skipped">,
+          ) => Promise<void>;
+        },
+      ) => Promise<boolean>;
+    };
+
+    await expect(
+      runtime.refreshBestEffort(pet, {
+        onSuccessfulRefresh: async () => {
+          throw new Error("rebuild failed");
+        },
+      }),
+    ).rejects.toThrow("rebuild failed");
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
   it("skips non-approved pets without reading assets", async () => {
     const deps = dependencies();
     const runtime = createPetVisionSearchRuntime(deps);

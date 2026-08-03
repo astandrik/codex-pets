@@ -9,6 +9,10 @@ vi.mock("@/lib/pets/repository", () => ({
   moderatePet: vi.fn(),
 }));
 
+vi.mock("@/lib/pets/related-pets-rebuild", () => ({
+  rebuildRelatedPets: vi.fn(),
+}));
+
 vi.mock("@/lib/sitemap-cache", () => ({
   revalidateSitemapCache: vi.fn(),
 }));
@@ -20,12 +24,27 @@ vi.mock("@/lib/pets/related-pets-server", () => ({
 import { POST } from "@/app/api/admin/submissions/[id]/reject/route";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { moderatePet } from "@/lib/pets/repository";
+import { rebuildRelatedPets } from "@/lib/pets/related-pets-rebuild";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 describe("POST /api/admin/submissions/[id]/reject", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(rebuildRelatedPets).mockResolvedValue({
+      operation: "apply",
+      status: "ready",
+      generationId: "generation-1",
+      rankingRevision: "related-pets-hybrid-rrf-v1",
+      coverage: {
+        approvedPetCount: 1,
+        snapshotCount: 1,
+        textVectorCount: 1,
+        visualVectorCount: 1,
+      },
+      rankings: [{ sourceSlug: "boba", relatedSlugs: [] }],
+      durationMs: 1,
+    });
   });
 
   it("rejects non-admin requests", async () => {
@@ -107,5 +126,128 @@ describe("POST /api/admin/submissions/[id]/reject", () => {
     expect(response.status).toBe(200);
     expect(revalidateSitemapCache).toHaveBeenCalledTimes(1);
     expect(revalidateRelatedPetCandidatesCache).toHaveBeenCalledTimes(1);
+    expect(rebuildRelatedPets).toHaveBeenCalledWith({
+      mode: "apply",
+      includeVisual: true,
+    });
+  });
+
+  it("awaits the full rebuild after rejection", async () => {
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce({
+      id: "pet_1",
+      slug: "boba",
+      displayName: "Boba",
+      description: "desc",
+      spritesheetUrl: "https://assets/pets/boba.webp",
+      petJsonUrl: "https://assets/pets/boba.json",
+      zipUrl: "https://assets/pets/boba.zip",
+      spritesheetExt: "webp",
+      kind: "creature",
+      tags: [],
+      status: "rejected",
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: new Date().toISOString(),
+      approvedAt: null,
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    });
+    let finishRebuild: (() => void) | undefined;
+    vi.mocked(rebuildRelatedPets).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishRebuild = () =>
+          resolve({
+            operation: "apply",
+            status: "ready",
+            generationId: "generation-1",
+            rankingRevision: "related-pets-hybrid-rrf-v1",
+            coverage: {
+              approvedPetCount: 1,
+              snapshotCount: 1,
+              textVectorCount: 1,
+              visualVectorCount: 1,
+            },
+            rankings: [{ sourceSlug: "boba", relatedSlugs: [] }],
+            durationMs: 1,
+          });
+      }),
+    );
+
+    const responsePromise = POST(
+      new Request("http://localhost", { method: "POST" }),
+      { params: Promise.resolve({ id: "pet_1" }) },
+    );
+    await vi.waitFor(() => expect(rebuildRelatedPets).toHaveBeenCalledTimes(1));
+    let settled = false;
+    void responsePromise.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    finishRebuild?.();
+    expect((await responsePromise).status).toBe(200);
+  });
+
+  it("keeps rejection successful when the full rebuild fails", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce({
+      id: "pet_1",
+      slug: "boba",
+      displayName: "Boba",
+      description: "desc",
+      spritesheetUrl: "https://assets/pets/boba.webp",
+      petJsonUrl: "https://assets/pets/boba.json",
+      zipUrl: "https://assets/pets/boba.zip",
+      spritesheetExt: "webp",
+      kind: "creature",
+      tags: [],
+      status: "rejected",
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: new Date().toISOString(),
+      approvedAt: null,
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    });
+    vi.mocked(rebuildRelatedPets).mockRejectedValueOnce(
+      new Error("private storage detail"),
+    );
+
+    const response = await POST(
+      new Request("http://localhost", { method: "POST" }),
+      { params: Promise.resolve({ id: "pet_1" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[codex-pets][related-pets-rebuild-trigger]",
+      {
+        operation: "rebuild",
+        trigger: "reject",
+        status: "failed",
+        includeVisual: true,
+      },
+    );
+    expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(
+      "private storage detail",
+    );
+    warnSpy.mockRestore();
   });
 });
