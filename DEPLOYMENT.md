@@ -55,6 +55,7 @@ PET_SEARCH_VISUAL_MODE=off
 PET_SEARCH_VISUAL_MODEL_REVISION=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1
 YANDEX_AI_STUDIO_FOLDER_ID=
 YANDEX_AI_STUDIO_API_KEY_FILE=/run/secrets/yandex-ai-studio.key
+PET_RELATED_HYBRID_ENABLED=false
 
 AUTH_MODE=app-session
 SESSION_COOKIE_SECRET=replace-with-random-secret
@@ -86,6 +87,8 @@ The schema currently includes:
 - `codex_pet_assets`
 - `codex_pet_search_embeddings`
 - `codex_pet_search_captions`
+- `codex_pet_related_state`
+- `codex_pet_related_snapshots`
 - `codex_users`
 - `codex_sessions`
 - `codex_email_verification_tokens`
@@ -138,6 +141,32 @@ Caption and embedding tables can remain. The AI Studio API key must be mounted
 as a read-only file and referenced by `YANDEX_AI_STUDIO_API_KEY_FILE`; do not
 place it directly in the environment file. Captions, images, prompts, and
 embeddings must not be copied into deployment logs.
+
+For hybrid related pets, keep `PET_RELATED_HYBRID_ENABLED=false` while applying
+the additive migrations and building the initial snapshots:
+
+```bash
+npm run related:rebuild -- --dry-run
+npm run related:rebuild -- --apply
+```
+
+Inspect the structured output before enabling the feature. The apply result must
+have `status: "ready"`, and `coverage.snapshotCount` must equal
+`coverage.approvedPetCount`. Then set `PET_RELATED_HYBRID_ENABLED=true` and
+restart the app. Unset and exact `true` enable snapshot reads; exact `false` is
+the rollout and rollback kill switch. Invalid values fail safely to the
+heuristic resolver.
+
+To roll back ordering without discarding derived rows, first disable the
+feature, then recover the retained generation:
+
+```bash
+npm run related:rebuild -- --recover-previous
+```
+
+The recovery command exits nonzero when no compatible previous generation is
+available. Keep the feature disabled until the recovered state is confirmed
+`ready`; re-enable it only after that check.
 
 ## Build and run
 

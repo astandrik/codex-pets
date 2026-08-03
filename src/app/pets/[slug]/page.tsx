@@ -37,14 +37,9 @@ import { listPublicUserProfilesByIds } from "@/lib/auth/repository";
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import { serializeJsonLd } from "@/lib/json-ld";
 import { createAgentPet } from "@/lib/pets/agent-dto";
-import type { RelatedPetCandidate } from "@/lib/pets/related-pets";
-import { getResolvedRelatedPets } from "@/lib/pets/related-pets-server";
-import {
-  getPetBySlug,
-  getPetMetrics,
-  listApprovedPetsBySlugs,
-} from "@/lib/pets/repository";
-import type { ApprovalStatus, PublicPet } from "@/lib/pets/types";
+import { getApprovedResolvedRelatedPets } from "@/lib/pets/related-pets-server";
+import { getPetBySlug, getPetMetrics } from "@/lib/pets/repository";
+import type { ApprovalStatus } from "@/lib/pets/types";
 import {
   buildPageTitle,
   getBreadcrumbJsonLd,
@@ -155,13 +150,10 @@ export default async function PetPage({ params }: PetPageProps) {
   if (pet.status === "deleted") notFound();
 
   const metrics = await getCachedPetMetrics(slug);
-  const relatedCandidates =
+  const relatedPets =
     pet.status === "approved"
-      ? await getResolvedRelatedPetsBestEffort(pet)
+      ? await getApprovedResolvedRelatedPetsBestEffort(pet)
       : [];
-  const relatedPets = await listApprovedRelatedPetsBestEffort(
-    relatedCandidates.map((candidate) => candidate.slug),
-  );
   const ownerProfile = pet.ownerId
     ? (await listPublicUserProfilesByIds([pet.ownerId])).get(pet.ownerId)
     : undefined;
@@ -365,29 +357,14 @@ export default async function PetPage({ params }: PetPageProps) {
   );
 }
 
-async function getResolvedRelatedPetsBestEffort(
-  pet: Pick<RelatedPetCandidate, "slug" | "kind" | "tags">,
-): Promise<RelatedPetCandidate[]> {
+async function getApprovedResolvedRelatedPetsBestEffort(
+  pet: Parameters<typeof getApprovedResolvedRelatedPets>[0],
+): ReturnType<typeof getApprovedResolvedRelatedPets> {
   try {
-    return await getResolvedRelatedPets(pet);
+    return await getApprovedResolvedRelatedPets(pet);
   } catch {
     console.warn("[codex-pets][related-pets]", {
       operation: "resolve",
-      status: "failed",
-    });
-    return [];
-  }
-}
-
-async function listApprovedRelatedPetsBestEffort(
-  slugs: string[],
-): Promise<PublicPet[]> {
-  if (slugs.length === 0) return [];
-  try {
-    return await listApprovedPetsBySlugs(slugs);
-  } catch {
-    console.warn("[codex-pets][related-pets]", {
-      operation: "hydrate-related",
       status: "failed",
     });
     return [];

@@ -73,7 +73,7 @@ export async function runRelatedPetsRebuildCli({
           durationMs: result.durationMs,
         }),
       );
-      return 0;
+      return result.status === "recovered" ? 0 : 1;
     }
 
     const result = await service.rebuild({

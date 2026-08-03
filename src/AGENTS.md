@@ -1,4 +1,4 @@
-<!-- Managed by agent: keep sections and order; edit content, not structure. Last updated: 2026-05-14 -->
+<!-- Managed by agent: keep sections and order; edit content, not structure. Last updated: 2026-08-03 -->
 
 # AGENTS.md — src
 
@@ -22,6 +22,7 @@ Source tree for the `codex-pets` Next.js app: App Router pages, API routes, clie
 | `components/WebMCP/CurrentPetWebMCPTool.tsx` | approved pet detail page WebMCP tool |
 | `lib/pets/repository.ts` | YDB-backed persistence for pets, uploads, reviews, metrics |
 | `lib/pets/assets-repository.ts` | YDB-backed binary asset storage and retrieval |
+| `lib/pets/related-pets-repository.ts` | YDB-backed derived related-ranking generations and snapshots |
 | `lib/auth/session.ts` | internal auth resolution and admin check |
 | `lib/metrics/yandex.ts` | Yandex counter ID and goal tracking |
 
@@ -88,7 +89,7 @@ Prefer the files in the Golden Samples section over inventing new local styles. 
 
 ## House Rules (project-specific)
 - Do not move manual YDB schema concerns into runtime code.
-- `lib/pets/repository.ts` is the canonical place for pet-related persistence.
+- `lib/pets/repository.ts` is canonical for primary catalog and moderation persistence; feature-scoped derived stores may use focused `*-repository.ts` modules.
 - Keep `SubmitForm` and `StatePreview` interactive logic client-only; keep list/detail pages server-rendered when possible.
 - Owner delete and admin delete are soft delete operations; do not introduce hard-delete semantics casually.
 - Approved pets should automatically appear in dynamic sitemap output; no manual cron/rebuild path should be required.

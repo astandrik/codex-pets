@@ -15,6 +15,8 @@ import {
   type StoredRawPetSearchEmbedding,
 } from "@/lib/pets/search-embeddings-repository";
 import {
+  PET_VISION_CAPTION_REVISION,
+  PET_VISUAL_MODEL_REVISION,
   buildPetVisionCaptionText,
   createPetVisionCaptionSourceHash,
   createPetVisualEmbeddingSourceHash,
@@ -544,16 +546,16 @@ function currentVisualSourceContext(): VisualSourceContext | null {
   const captionRevision = visualDefinition.captionRevision;
   const captionDefinition = PET_VISION_CAPTION_REVISIONS[captionRevision];
   const configuredCaptionRevision =
-    process.env.PET_SEARCH_VISION_CAPTION_REVISION?.trim();
+    process.env.PET_SEARCH_VISION_CAPTION_REVISION?.trim() ||
+    PET_VISION_CAPTION_REVISION;
   const configuredVisualRevision =
-    process.env.PET_SEARCH_VISUAL_MODEL_REVISION?.trim();
+    process.env.PET_SEARCH_VISUAL_MODEL_REVISION?.trim() ||
+    PET_VISUAL_MODEL_REVISION;
   const folderId = process.env.YANDEX_AI_STUDIO_FOLDER_ID?.trim();
   if (
     !folderId ||
-    (configuredCaptionRevision &&
-      configuredCaptionRevision !== captionRevision) ||
-    (configuredVisualRevision &&
-      configuredVisualRevision !== profile.visualRevision)
+    configuredCaptionRevision !== captionRevision ||
+    configuredVisualRevision !== profile.visualRevision
   ) {
     return null;
   }

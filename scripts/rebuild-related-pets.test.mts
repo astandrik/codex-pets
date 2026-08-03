@@ -178,6 +178,39 @@ describe("related pets rebuild CLI", () => {
     ]);
   });
 
+  it("returns failure when no previous generation is available to recover", async () => {
+    const dispose = vi.fn(async () => undefined);
+    const output: string[] = [];
+
+    await expect(
+      runRelatedPetsRebuildCli({
+        argv: ["--recover-previous"],
+        loadService: async () => ({
+          rebuild: vi.fn(),
+          recoverPrevious: async () => ({
+            status: "unavailable" as const,
+            generationId: null,
+            rankingRevision: "ranking-v1",
+            durationMs: 5,
+          }),
+          dispose,
+        }),
+        write: (line: string) => output.push(line),
+      }),
+    ).resolves.toBe(1);
+
+    expect(output.map((line) => JSON.parse(line))).toEqual([
+      {
+        operation: "recover-previous",
+        status: "unavailable",
+        generationId: null,
+        rankingRevision: "ranking-v1",
+        durationMs: 5,
+      },
+    ]);
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
   it("passes dry-run through without exposing ranking rows in CLI logs", async () => {
     const write = vi.fn();
     const rebuild = vi.fn(async () => ({

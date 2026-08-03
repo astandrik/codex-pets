@@ -12,7 +12,11 @@ import {
   type RelatedPetsSnapshot,
   type RelatedPetsState,
 } from "@/lib/pets/related-pets-repository";
-import { listRelatedPetCandidates } from "@/lib/pets/repository";
+import {
+  listApprovedPetsBySlugs,
+  listRelatedPetCandidates,
+} from "@/lib/pets/repository";
+import type { PublicPet } from "@/lib/pets/types";
 
 export const RELATED_PETS_CANDIDATES_CACHE_TAG =
   "codex-pets:related-pets-candidates";
@@ -252,6 +256,45 @@ export function getResolvedRelatedPets(
   current: RelatedPetSource,
 ): Promise<RelatedPetCandidate[]> {
   return resolveRelatedPets(current);
+}
+
+export async function getApprovedResolvedRelatedPets(
+  current: RelatedPetSource,
+): Promise<PublicPet[]> {
+  const resolvedCandidates = await getResolvedRelatedPets(current);
+  if (resolvedCandidates.length === 0) return [];
+
+  const approvedPets = await listApprovedPetsBySlugs(
+    resolvedCandidates.map((candidate) => candidate.slug),
+  );
+  if (approvedPets.length === resolvedCandidates.length) {
+    return approvedPets.slice(0, 4);
+  }
+
+  const seen = new Set(approvedPets.map((pet) => pet.slug));
+  const freshCandidates = uniqueApprovedCandidates(
+    await listRelatedPetCandidates(),
+    current.slug,
+  );
+  const fallbackSlugs = selectRelatedPets(
+    freshCandidates,
+    current,
+    freshCandidates.length,
+  )
+    .map((candidate) => candidate.slug)
+    .filter((slug) => !seen.has(slug))
+    .slice(0, 4 - approvedPets.length);
+  if (fallbackSlugs.length === 0) return approvedPets.slice(0, 4);
+
+  const fallbackPets = await listApprovedPetsBySlugs(fallbackSlugs);
+  const result = [...approvedPets];
+  for (const pet of fallbackPets) {
+    if (seen.has(pet.slug)) continue;
+    seen.add(pet.slug);
+    result.push(pet);
+    if (result.length === 4) break;
+  }
+  return result;
 }
 
 export function revalidateRelatedPetCandidatesCache(): void {
