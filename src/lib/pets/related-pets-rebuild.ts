@@ -228,11 +228,30 @@ export function createRelatedPetsRebuildService(
         });
       }
 
-      activated = await dependencies.repository.activateGeneration({
-        generationId,
-        rankingRevision: dependencies.profile.rankingRevision,
-        updatedAt: dependencies.now().toISOString(),
-      });
+      try {
+        activated = await dependencies.repository.activateGeneration({
+          generationId,
+          rankingRevision: dependencies.profile.rankingRevision,
+          updatedAt: dependencies.now().toISOString(),
+        });
+      } catch (error) {
+        let persistedState: RelatedPetsState | null = null;
+        try {
+          persistedState = await dependencies.repository.getState();
+        } catch {
+          // Preserve the original activation failure if reconciliation also fails.
+        }
+        if (
+          persistedState?.status !== "ready" ||
+          persistedState.requestedGenerationId !== generationId ||
+          persistedState.activeGenerationId !== generationId ||
+          persistedState.rankingRevision !==
+            dependencies.profile.rankingRevision
+        ) {
+          throw error;
+        }
+        activated = true;
+      }
       if (!activated) {
         return resultAndLog({
           operation: "apply",

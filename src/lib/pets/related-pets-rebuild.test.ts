@@ -590,14 +590,19 @@ describe("related pets rebuild service", () => {
     expect(JSON.stringify(harness.logs)).not.toContain("[1,2,3]");
   });
 
-  it("does not mark an already activated generation failed after an ambiguous activation error", async () => {
+  it("reconciles an already activated generation after an ambiguous activation error", async () => {
     const harness = createHarness({
       activationErrorAfterReady: new Error("transport lost after commit"),
     });
 
     await expect(
       harness.service.rebuild({ mode: "apply", includeVisual: true }),
-    ).rejects.toThrow("rebuild_failed");
+    ).resolves.toMatchObject({
+      operation: "apply",
+      status: "ready",
+      generationId: "generation-new",
+      rankingRevision: "ranking-v1",
+    });
 
     expect(harness.state).toMatchObject({
       requestedGenerationId: "generation-new",
@@ -606,7 +611,11 @@ describe("related pets rebuild service", () => {
       status: "ready",
       failureReason: null,
     });
-    expect(harness.mutations).toContain("failed:rebuild_failed");
+    expect(harness.mutations).toContain("cleanup");
+    expect(harness.mutations).not.toContain("failed:rebuild_failed");
+    expect(JSON.stringify(harness.logs)).not.toContain(
+      "transport lost after commit",
+    );
   });
 
   it("recovers the captured active and retained generation pair", async () => {

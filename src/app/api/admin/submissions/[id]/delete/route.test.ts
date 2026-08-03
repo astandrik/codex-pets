@@ -9,7 +9,17 @@ vi.mock("@/lib/pets/repository", () => ({
   softDeletePetById: vi.fn(),
 }));
 
+vi.mock("@/lib/pets/search-provider-runtime", () => ({
+  petSearchRuntimeConfig: {
+    semantic: {
+      revision: "yandex-text-embeddings-v2-768-2026-07",
+      dimensions: 768,
+    },
+  },
+}));
+
 vi.mock("@/lib/pets/related-pets-rebuild", () => ({
+  invalidateRelatedPets: vi.fn(),
   rebuildRelatedPets: vi.fn(),
 }));
 

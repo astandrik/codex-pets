@@ -4,6 +4,7 @@ import {
 } from "@/lib/pets/related-pets-rebuild";
 import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
 import type { PetSearchSemanticConfig } from "@/lib/pets/search-config";
+import { petSearchRuntimeConfig } from "@/lib/pets/search-provider-runtime";
 
 type RelatedPetsRebuildTrigger =
   | "approve-text"
@@ -30,6 +31,15 @@ export async function rebuildRelatedPetsBestEffort(input: {
   trigger: RelatedPetsRebuildTrigger;
   includeVisual: boolean;
 }): Promise<boolean> {
+  if (
+    !isRelatedPetsTextRefreshCompatible(petSearchRuntimeConfig.semantic)
+  ) {
+    return invalidateRelatedPetsBestEffort({
+      trigger: input.trigger,
+      reason: "text-profile-incompatible",
+    });
+  }
+
   try {
     await rebuildRelatedPets({
       mode: "apply",
@@ -48,7 +58,7 @@ export async function rebuildRelatedPetsBestEffort(input: {
 }
 
 export async function invalidateRelatedPetsBestEffort(input: {
-  trigger: "approve-text";
+  trigger: RelatedPetsRebuildTrigger;
   reason: "text-profile-incompatible";
 }): Promise<boolean> {
   try {
