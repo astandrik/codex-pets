@@ -387,6 +387,35 @@ describe("related pets repository", () => {
     ).toBe(false);
   });
 
+  it("accepts an identical already-persisted failure as an idempotent retry", async () => {
+    const harness = createHarness(async (statement) =>
+      statement.includes("SELECT state_id")
+        ? stateResult({
+            requested: "generation-2",
+            active: "generation-1",
+            previous: "generation-0",
+            status: "failed",
+            rankingRevision: "ranking-v1",
+            failureReason: "vector_validation_failed",
+          })
+        : { resultSets: [] },
+    );
+
+    await expect(
+      harness.repository.markGenerationFailed({
+        generationId: "generation-2",
+        rankingRevision: "ranking-v1",
+        failureReason: "vector_validation_failed",
+        updatedAt: "2026-08-03T10:04:00.000Z",
+      }),
+    ).resolves.toBe(true);
+    expect(
+      harness.statements.some(({ statement }) =>
+        statement.includes("UPDATE codex_pet_related_state"),
+      ),
+    ).toBe(false);
+  });
+
   it("rejects unbounded failure messages before they can reach state", async () => {
     const harness = createHarness();
 
@@ -464,21 +493,34 @@ describe("related pets repository", () => {
     ).toBe(false);
   });
 
-  it("deletes snapshots only for the exact failed requested generation", async () => {
+  it.each([
+    {
+      name: "failed requested generation",
+      state: {
+        requested: "generation-2",
+        active: "generation-1",
+        previous: "generation-0",
+        status: "failed",
+      },
+    },
+    {
+      name: "superseded unretained generation",
+      state: {
+        requested: "generation-3",
+        active: "generation-1",
+        previous: "generation-0",
+        status: "building",
+      },
+    },
+  ])("deletes snapshots only for the exact $name", async ({ state }) => {
     const harness = createHarness(async (statement) =>
       statement.includes("SELECT state_id")
-        ? stateResult({
-            requested: "generation-2",
-            active: "generation-1",
-            previous: "generation-0",
-            status: "failed",
-          })
+        ? stateResult(state)
         : { resultSets: [] },
     );
 
-    expect(harness.repository.cleanupFailedGeneration).toBeTypeOf("function");
     await expect(
-      harness.repository.cleanupFailedGeneration({
+      harness.repository.cleanupInactiveGeneration({
         expectedGenerationId: "generation-2",
       }),
     ).resolves.toBe(true);
@@ -488,10 +530,10 @@ describe("related pets repository", () => {
     );
     expect(cleanup?.transactional).toBe(true);
     expect(cleanup?.statement).toContain(
-      "generation_id = $failed_generation_id",
+      "generation_id = $inactive_generation_id",
     );
     expect(cleanup?.params).toEqual({
-      $failed_generation_id: { textValue: "generation-2" },
+      $inactive_generation_id: { textValue: "generation-2" },
     });
   });
 
@@ -517,16 +559,15 @@ describe("related pets repository", () => {
       previous: "generation-2",
       status: "failed",
     },
-  ])("preserves snapshots when the failed token is $name", async (scenario) => {
+  ])("preserves snapshots when the inactive token is $name", async (scenario) => {
     const harness = createHarness(async (statement) =>
       statement.includes("SELECT state_id")
         ? stateResult(scenario)
         : { resultSets: [] },
     );
 
-    expect(harness.repository.cleanupFailedGeneration).toBeTypeOf("function");
     await expect(
-      harness.repository.cleanupFailedGeneration({
+      harness.repository.cleanupInactiveGeneration({
         expectedGenerationId: "generation-2",
       }),
     ).resolves.toBe(false);

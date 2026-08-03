@@ -24,7 +24,7 @@ import {
 } from "@/lib/pets/search-vision-contract";
 import {
   activateRelatedPetsGeneration,
-  cleanupFailedRelatedPetsGeneration,
+  cleanupInactiveRelatedPetsGeneration,
   cleanupRelatedPetsGenerations,
   getRelatedPetsState,
   markRelatedPetsGenerationFailed,
@@ -81,7 +81,7 @@ type RelatedPetsRepository = {
   cleanupGenerations: (input: {
     expectedGenerationId: string;
   }) => Promise<boolean>;
-  cleanupFailedGeneration: (input: {
+  cleanupInactiveGeneration: (input: {
     expectedGenerationId: string;
   }) => Promise<boolean>;
   getState: () => Promise<RelatedPetsState | null>;
@@ -257,6 +257,7 @@ export function createRelatedPetsRebuildService(
         activated = true;
       }
       if (!activated) {
+        const cleanupStatus = await cleanupInactiveGeneration(generationId);
         return resultAndLog({
           operation: "apply",
           status: "superseded",
@@ -264,14 +265,25 @@ export function createRelatedPetsRebuildService(
           coverage,
           rankings: built.rankings,
           startedAt,
+          cleanupStatus,
         });
       }
 
       let cleanupStatus: "failed" | undefined;
       try {
-        await dependencies.repository.cleanupGenerations({
+        const cleaned = await dependencies.repository.cleanupGenerations({
           expectedGenerationId: generationId,
         });
+        if (!cleaned) {
+          return resultAndLog({
+            operation: "apply",
+            status: "superseded",
+            generationId,
+            coverage,
+            rankings: built.rankings,
+            startedAt,
+          });
+        }
       } catch {
         cleanupStatus = "failed";
       }
@@ -291,9 +303,8 @@ export function createRelatedPetsRebuildService(
           : "rebuild_failed";
       let cleanupStatus: "failed" | undefined;
       if (generationId && !activated) {
-        let markedFailed = false;
         try {
-          markedFailed = await dependencies.repository.markGenerationFailed({
+          await dependencies.repository.markGenerationFailed({
             generationId,
             rankingRevision: dependencies.profile.rankingRevision,
             failureReason,
@@ -302,17 +313,7 @@ export function createRelatedPetsRebuildService(
         } catch {
           // Preserve the sanitized rebuild failure when state marking also fails.
         }
-        if (markedFailed) {
-          try {
-            const cleaned =
-              await dependencies.repository.cleanupFailedGeneration({
-                expectedGenerationId: generationId,
-              });
-            if (!cleaned) cleanupStatus = "failed";
-          } catch {
-            cleanupStatus = "failed";
-          }
-        }
+        cleanupStatus = await cleanupInactiveGeneration(generationId);
       }
       const durationMs = elapsedMilliseconds(startedAt);
       dependencies.log({
@@ -326,6 +327,20 @@ export function createRelatedPetsRebuildService(
         cleanupStatus,
       });
       throw new RelatedPetsRebuildError(failureReason);
+    }
+  }
+
+  async function cleanupInactiveGeneration(
+    generationId: string,
+  ): Promise<"failed" | undefined> {
+    try {
+      const cleaned =
+        await dependencies.repository.cleanupInactiveGeneration({
+          expectedGenerationId: generationId,
+        });
+      return cleaned ? undefined : "failed";
+    } catch {
+      return "failed";
     }
   }
 
@@ -683,7 +698,7 @@ const productionRepository: RelatedPetsRepository = {
   activateGeneration: activateRelatedPetsGeneration,
   markGenerationFailed: markRelatedPetsGenerationFailed,
   cleanupGenerations: cleanupRelatedPetsGenerations,
-  cleanupFailedGeneration: cleanupFailedRelatedPetsGeneration,
+  cleanupInactiveGeneration: cleanupInactiveRelatedPetsGeneration,
   getState: getRelatedPetsState,
   recoverPreviousGeneration: recoverPreviousRelatedPetsGeneration,
 };

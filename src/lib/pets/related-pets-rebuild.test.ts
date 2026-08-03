@@ -211,7 +211,25 @@ function createHarness(options: {
       updatedAt: string;
     }) => {
       mutations.push("activate");
-      if (options.superseded) return false;
+      if (options.superseded) {
+        state = {
+          requestedGenerationId: "generation-newer",
+          activeGenerationId: "generation-old",
+          previousGenerationId: "generation-older",
+          status: "building",
+          rankingRevision: profile.rankingRevision,
+          failureReason: null,
+          updatedAt: "2026-08-03T10:01:00.000Z",
+        };
+        snapshots.push({
+          generationId: "generation-newer",
+          sourceSlug: "source",
+          rankingRevision: profile.rankingRevision,
+          relatedSlugs: ["peer-a"],
+          createdAt: "2026-08-03T10:01:00.000Z",
+        });
+        return false;
+      }
       state = {
         requestedGenerationId: input.generationId,
         activeGenerationId: input.generationId,
@@ -320,15 +338,16 @@ function createHarness(options: {
       );
       return true;
     },
-    cleanupFailedGeneration: async (input: {
+    cleanupInactiveGeneration: async (input: {
       expectedGenerationId: string;
     }) => {
-      mutations.push("cleanup-failed");
+      mutations.push("cleanup-inactive");
       if (
-        state?.requestedGenerationId !== input.expectedGenerationId ||
-        state.status !== "failed" ||
+        !state ||
         state.activeGenerationId === input.expectedGenerationId ||
-        state.previousGenerationId === input.expectedGenerationId
+        state.previousGenerationId === input.expectedGenerationId ||
+        (state.requestedGenerationId === input.expectedGenerationId &&
+          state.status !== "failed")
       ) {
         return false;
       }
@@ -509,7 +528,7 @@ describe("related pets rebuild service", () => {
     });
   });
 
-  it("returns superseded without cleaning or overwriting newer state", async () => {
+  it("cleans its snapshots after supersession without touching newer state", async () => {
     const harness = createHarness({ superseded: true });
 
     const result = await harness.service.rebuild({
@@ -518,11 +537,14 @@ describe("related pets rebuild service", () => {
     });
 
     expect(result.status).toBe("superseded");
-    expect(harness.mutations.at(-1)).toBe("activate");
+    expect(harness.mutations.at(-1)).toBe("cleanup-inactive");
     expect(harness.mutations).not.toContain("cleanup");
     expect(harness.mutations.some((item) => item.startsWith("failed:"))).toBe(
       false,
     );
+    expect(
+      harness.snapshots.map(({ generationId }) => generationId),
+    ).toEqual(["generation-newer"]);
   });
 
   it("fails apply when storage is unavailable without reporting supersession", async () => {
@@ -634,7 +656,7 @@ describe("related pets rebuild service", () => {
       requestedGenerationId: "generation-new",
       status: "failed",
     });
-    expect(harness.mutations).toContain("cleanup-failed");
+    expect(harness.mutations).toContain("cleanup-inactive");
     expect(harness.snapshots).toEqual([]);
   });
 
@@ -1020,7 +1042,7 @@ describe("related pets rebuild service", () => {
       includeVisual: true,
     });
 
-    expect(result.status).toBe("ready");
+    expect(result.status).toBe("superseded");
     expect(harness.cleanupExpectedIds).toEqual(["generation-new"]);
     expect(harness.state).toMatchObject({
       requestedGenerationId: "generation-newer",
