@@ -32,25 +32,14 @@ export type RelatedPetCalibrationCase = {
   relevantSlugs: string[];
 };
 
-type SearchEvalFixture = {
+type RelatedPetEvalFixture = {
   id: string;
   split: string;
   relevantSlugs: readonly string[];
 };
 
-const RELATED_GROUPS = [
-  {
-    id: "multi-token-gothic-anime",
-    split: "calibration",
-    size: 3,
-  },
-  { id: "style-cute", split: "calibration", size: 3 },
-  { id: "style-sexy", split: "calibration", size: 4 },
-  { id: "style-badass", split: "holdout", size: 4 },
-] as const;
-
 export function createRelatedPetsCalibrationCases(
-  fixtures: readonly SearchEvalFixture[],
+  fixtures: readonly RelatedPetEvalFixture[],
 ): {
   calibration: RelatedPetCalibrationCase[];
   holdout: RelatedPetCalibrationCase[];
@@ -60,22 +49,27 @@ export function createRelatedPetsCalibrationCases(
     holdout: [] as RelatedPetCalibrationCase[],
   };
 
-  for (const requiredGroup of RELATED_GROUPS) {
-    const fixture = fixtures.find(({ id }) => id === requiredGroup.id);
+  const groupIds = new Set<string>();
+  for (const fixture of fixtures) {
     if (
-      !fixture ||
-      fixture.split !== requiredGroup.split ||
-      fixture.relevantSlugs.length !== requiredGroup.size
+      fixture.id.length === 0 ||
+      groupIds.has(fixture.id) ||
+      (fixture.split !== "calibration" && fixture.split !== "holdout") ||
+      fixture.relevantSlugs.length < 2 ||
+      new Set(fixture.relevantSlugs).size !== fixture.relevantSlugs.length ||
+      fixture.relevantSlugs.some((slug) => slug.length === 0)
     ) {
       throw new Error(
-        `Related-pet calibration fixture ${requiredGroup.id} is missing or incompatible.`,
+        `Related-pet calibration fixture ${fixture.id || "<unnamed>"} is incompatible.`,
       );
     }
-    const splitCases = cases[requiredGroup.split];
+    groupIds.add(fixture.id);
+    const split = fixture.split;
+    const splitCases = cases[split];
     for (const sourceSlug of fixture.relevantSlugs) {
       splitCases.push({
         groupId: fixture.id,
-        split: requiredGroup.split,
+        split,
         sourceSlug,
         relevantSlugs: fixture.relevantSlugs.filter(
           (slug) => slug !== sourceSlug,
@@ -90,7 +84,8 @@ export function createRelatedPetsCalibrationCases(
 export function createRelatedPetsCalibrationObservations(input: {
   cases: readonly RelatedPetCalibrationCase[];
   candidates: readonly RelatedPetCandidate[];
-  textVectors: ReadonlyMap<string, readonly number[]>;
+  textQueryVectors: ReadonlyMap<string, readonly number[]>;
+  textDocumentVectors: ReadonlyMap<string, readonly number[]>;
   visualVectors: ReadonlyMap<string, readonly number[]>;
 }): RelatedPetCalibrationObservation[] {
   const candidatesBySlug = new Map(
@@ -113,7 +108,8 @@ export function createRelatedPetsCalibrationObservations(input: {
       ).map(({ slug }) => slug),
       textMatches: rankRelatedPetVectorMatches(
         source.slug,
-        input.textVectors,
+        input.textQueryVectors,
+        input.textDocumentVectors,
       ),
       visualMatches: rankRelatedPetVectorMatches(
         source.slug,
@@ -165,9 +161,16 @@ export function selectRelatedTextThreshold(
   for (const textMinSimilarity of candidates) {
     const report = evaluateRelatedPetsProfile(observations, {
       textMinSimilarity,
-      visualMinSimilarity: Number.POSITIVE_INFINITY,
-      visualWeight: RELATED_PETS_VISUAL_WEIGHT_CANDIDATES[0],
+      visualMinSimilarity: null,
+      visualWeight: 0,
     });
+    if (
+      !report.textContribution.aggregateNoWorseThanMetadata ||
+      report.textContribution.improvedCaseCount === 0 ||
+      report.textContribution.changedTop4CaseCount === 0
+    ) {
+      continue;
+    }
     if (
       !selected ||
       report.textMetadataNdcgAt4 > selected.ndcgAt4 ||
@@ -181,7 +184,9 @@ export function selectRelatedTextThreshold(
     }
   }
   if (!selected) {
-    throw new Error("Related-pet text calibration selected no profile.");
+    throw new Error(
+      "Related-pet calibration found no safe, contributing text profile.",
+    );
   }
 
   return {
@@ -203,6 +208,11 @@ export function selectRelatedVisualProfile(
       ),
     "visual",
   );
+  const baseline = evaluateRelatedPetsProfile(observations, {
+    textMinSimilarity,
+    visualMinSimilarity: null,
+    visualWeight: 0,
+  });
   let selected:
     | {
         visualMinSimilarity: number;
@@ -218,6 +228,9 @@ export function selectRelatedVisualProfile(
         visualMinSimilarity,
         visualWeight,
       });
+      if (report.hybridNdcgAt4 < report.textMetadataNdcgAt4) {
+        continue;
+      }
       if (
         !selected ||
         report.hybridNdcgAt4 > selected.ndcgAt4 ||
@@ -235,13 +248,21 @@ export function selectRelatedVisualProfile(
     }
   }
   if (!selected) {
-    throw new Error("Related-pet visual calibration selected no profile.");
+    return {
+      visualMinSimilarity: null,
+      visualWeight: 0,
+      ndcgAt4: baseline.textMetadataNdcgAt4,
+      evaluatedProfileCount:
+        candidates.length * RELATED_PETS_VISUAL_WEIGHT_CANDIDATES.length +
+        1,
+    };
   }
 
   return {
     ...selected,
     evaluatedProfileCount:
-      candidates.length * RELATED_PETS_VISUAL_WEIGHT_CANDIDATES.length,
+      candidates.length * RELATED_PETS_VISUAL_WEIGHT_CANDIDATES.length +
+      1,
   };
 }
 
@@ -266,6 +287,16 @@ export function evaluateRelatedPetsCalibration(
       pinnedProfile.visualMinSimilarity &&
     selectedProfile.visualWeight === pinnedProfile.visualWeight;
 
+  const report = evaluateRelatedPetsProfile(observations, selectedProfile);
+  const comparisons = {
+    textMetadataNoWorseThanMetadata:
+      report.textContribution.aggregateNoWorseThanMetadata,
+    textImprovesAtLeastOneCase:
+      report.textContribution.improvedCaseCount > 0,
+    textChangesAtLeastOneTop4:
+      report.textContribution.changedTop4CaseCount > 0,
+  };
+
   return {
     selectedProfile,
     pinnedProfile: {
@@ -274,12 +305,13 @@ export function evaluateRelatedPetsCalibration(
       visualWeight: pinnedProfile.visualWeight,
     },
     profileMatches,
-    passed: profileMatches,
+    comparisons,
+    passed: profileMatches && Object.values(comparisons).every(Boolean),
     textEvaluatedThresholdCount:
       textSelection.evaluatedThresholdCount,
     visualEvaluatedProfileCount:
       visualSelection.evaluatedProfileCount,
-    report: evaluateRelatedPetsProfile(observations, selectedProfile),
+    report,
   };
 }
 
@@ -316,8 +348,8 @@ export function evaluateRelatedPetsProfile(
       metadataSlugs: observation.metadataSlugs,
       textMatches: observation.textMatches,
       textMinSimilarity: profile.textMinSimilarity,
-      visualMinSimilarity: profile.visualMinSimilarity,
-      visualWeight: profile.visualWeight,
+      visualMinSimilarity: null,
+      visualWeight: 0,
     });
     const hybridSlugs = fuseRelatedPetRankings({
       sourceSlug: observation.sourceSlug,
@@ -347,12 +379,27 @@ export function evaluateRelatedPetsProfile(
     };
   });
 
+  const metadataNdcgAt4 = mean(
+    cases.map((item) => item.metadataNdcgAt4),
+  );
+  const textMetadataNdcgAt4 = mean(
+    cases.map((item) => item.textMetadataNdcgAt4),
+  );
   return {
-    metadataNdcgAt4: mean(cases.map((item) => item.metadataNdcgAt4)),
-    textMetadataNdcgAt4: mean(
-      cases.map((item) => item.textMetadataNdcgAt4),
-    ),
+    metadataNdcgAt4,
+    textMetadataNdcgAt4,
     hybridNdcgAt4: mean(cases.map((item) => item.hybridNdcgAt4)),
+    textContribution: {
+      aggregateNoWorseThanMetadata:
+        textMetadataNdcgAt4 >= metadataNdcgAt4,
+      improvedCaseCount: cases.filter(
+        (item) => item.textMetadataNdcgAt4 > item.metadataNdcgAt4,
+      ).length,
+      changedTop4CaseCount: cases.filter(
+        (item) =>
+          !sameRanking(item.textMetadataSlugs, item.metadataSlugs),
+      ).length,
+    },
     cases,
   };
 }
@@ -361,31 +408,19 @@ function thresholdCandidates(
   values: readonly number[],
   modality: "text" | "visual",
 ): number[] {
-  const finiteValues = values.filter(Number.isFinite);
-  if (finiteValues.length === 0) {
-    throw new Error(
-      `Related-pet ${modality} calibration needs finite similarity scores.`,
-    );
-  }
-  const maximum = finiteValues.reduce(
-    (currentMaximum, value) => Math.max(currentMaximum, value),
-    Number.NEGATIVE_INFINITY,
-  );
-  const upperBound = Math.max(1, maximum);
-  const rejectAllThreshold =
-    upperBound +
-    Number.EPSILON * Math.max(1, Math.abs(upperBound));
   if (
-    !Number.isFinite(rejectAllThreshold) ||
-    rejectAllThreshold <= maximum
+    values.length === 0 ||
+    values.some(
+      (value) => !Number.isFinite(value) || value < -1 || value > 1,
+    )
   ) {
     throw new Error(
-      `Related-pet ${modality} calibration similarity scores are outside the supported cosine range.`,
+      `Related-pet ${modality} calibration needs finite similarity scores inside the supported cosine range [-1, 1].`,
     );
   }
-  return Array.from(
-    new Set([...finiteValues, rejectAllThreshold]),
-  ).sort((left, right) => right - left);
+  return Array.from(new Set(values)).sort(
+    (left, right) => right - left,
+  );
 }
 
 function assertObservationSplit(
@@ -407,6 +442,16 @@ function uniqueSlugs(
   sourceSlug: string,
 ): string[] {
   return Array.from(new Set(slugs.filter((slug) => slug !== sourceSlug)));
+}
+
+function sameRanking(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((slug, index) => slug === right[index])
+  );
 }
 
 function mean(values: readonly number[]): number {

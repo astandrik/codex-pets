@@ -187,6 +187,33 @@ describe("related pet weighted RRF", () => {
     ).toEqual(["third", "first", "second"]);
   });
 
+  it("rejects a text threshold outside the cosine range", () => {
+    expect(() =>
+      fuseRelatedPetRankings({
+        sourceSlug: "source",
+        metadataSlugs: ["peer"],
+        textMatches: [{ slug: "peer", score: 1 }],
+        textMinSimilarity: 1 + Number.EPSILON,
+        visualMinSimilarity: null,
+        visualWeight: 0,
+      }),
+    ).toThrow(/text.*similarity.*\[-1, 1\]/i);
+  });
+
+  it("skips visual contribution explicitly when its threshold is null", () => {
+    expect(
+      fuseRelatedPetRankings({
+        sourceSlug: "source",
+        metadataSlugs: ["metadata-first", "visual-peer"],
+        textMatches: [],
+        visualMatches: [{ slug: "visual-peer", score: 0.99 }],
+        textMinSimilarity: 0.5,
+        visualMinSimilarity: null,
+        visualWeight: 0.75,
+      }),
+    ).toEqual(["metadata-first", "visual-peer"]);
+  });
+
   it("removes duplicate, unknown, and self matches before fusion", () => {
     expect(
       fuseRelatedPetRankings({
@@ -237,6 +264,23 @@ describe("related pet ranking", () => {
     ).toEqual([{ slug: "good", score: 1 / Math.sqrt(2) }]);
   });
 
+  it("ranks a source query vector against candidate document vectors", () => {
+    expect(
+      rankRelatedPetVectorMatches(
+        "source",
+        new Map([["source", [1, 0]]]),
+        new Map([
+          ["source", [0, 1]],
+          ["semantic-peer", [1, 0]],
+          ["other", [0, 1]],
+        ]),
+      ),
+    ).toEqual([
+      { slug: "semantic-peer", score: 1 },
+      { slug: "other", score: 0 },
+    ]);
+  });
+
   it("reuses metadata ordering, removes duplicate candidates, and fills to four", () => {
     const source = candidate("source", { tags: ["shared"] });
     const ranked = rankRelatedPets({
@@ -251,7 +295,8 @@ describe("related pet ranking", () => {
         }),
         candidate("tag-peer", { tags: ["shared"] }),
       ],
-      textVectors: new Map([
+      textQueryVectors: new Map([["source", [1, 0]]]),
+      textDocumentVectors: new Map([
         ["source", [1, 0]],
         ["vector-peer", [1, 0]],
       ]),
@@ -273,18 +318,20 @@ describe("related pet ranking", () => {
 });
 
 describe("related pet ranking profile", () => {
-  it("binds compatibility to the deployed v4 text and Qwen visual revisions", () => {
+  it("binds compatibility to the calibrated v5 query, text, and visual revisions", () => {
     expect(CURRENT_RELATED_PETS_RANKING_PROFILE).toMatchObject({
       rankingRevision:
-        "related-pets-rrf60-v4:cal=search-eval-related-groups-v1:text=yandex-text-embeddings-v2-768-2026-07:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
+        "related-pets-rrf60-v5:cal=related-pets-eval-groups-v2:text=yandex-text-embeddings-v2-768-2026-07:text-query=yandex-text-embeddings-v2-768-related-tags-query-2026-08:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
       textRevision: "yandex-text-embeddings-v2-768-2026-07",
+      textQueryRevision:
+        "yandex-text-embeddings-v2-768-related-tags-query-2026-08",
       textDimensions: 768,
-      textMinSimilarity: 1.0000000000000002,
+      textMinSimilarity: 0.4523258982119597,
       visualRevision:
         "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
       visualDimensions: 768,
-      visualMinSimilarity: 0.853716812631158,
-      visualWeight: 0.25,
+      visualMinSimilarity: 0.7573239783550058,
+      visualWeight: 0.5,
     });
     expect(
       isCurrentRelatedPetsRankingRevision(

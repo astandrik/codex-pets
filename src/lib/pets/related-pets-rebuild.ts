@@ -9,7 +9,10 @@ import {
   PET_VISION_CAPTION_REVISIONS,
   PET_VISUAL_MODEL_REVISIONS,
 } from "@/lib/pets/search-config";
-import { createPetSearchSourceHash } from "@/lib/pets/search-embeddings";
+import {
+  createPetSearchSourceHash,
+  createRelatedPetQuerySourceHash,
+} from "@/lib/pets/search-embeddings";
 import {
   listRawPetSearchEmbeddings,
   type StoredRawPetSearchEmbedding,
@@ -49,6 +52,7 @@ import { isYdbConfigured } from "@/lib/ydb/client";
 export type RelatedPetsRebuildProfile = RelatedPetsRankingProfile & {
   rankingRevision: string;
   textRevision: string;
+  textQueryRevision: string;
   textDimensions: number;
   visualRevision: string;
   visualCaptionRevision: string;
@@ -101,7 +105,9 @@ export type RelatedPetsInvalidationReason = "text_profile_incompatible";
 
 type RelatedPetsRebuildFailureReason =
   | "rebuild_failed"
-  | "storage_unavailable";
+  | "storage_unavailable"
+  | "text_vectors_incomplete"
+  | "visual_vectors_incomplete";
 
 export type RelatedPetsRebuildLog = {
   operation: "dry-run" | "apply" | "invalidate" | "recover-previous";
@@ -358,29 +364,48 @@ export function createRelatedPetsRebuildService(
         ? requestedVisualContext
         : null;
     const pets = await dependencies.listApprovedPets();
-    const [textRows, visualRows, captions] = await Promise.all([
-      dependencies.listRawVectors(dependencies.profile.textRevision),
-      visualContext
-        ? dependencies.listRawVectors(dependencies.profile.visualRevision)
-        : Promise.resolve([]),
-      visualContext
-        ? dependencies.listCaptions(visualContext.captionRevision)
-        : Promise.resolve([]),
-    ]);
+    const [textQueryRows, textRows, visualRows, captions] =
+      await Promise.all([
+        dependencies.listRawVectors(dependencies.profile.textQueryRevision),
+        dependencies.listRawVectors(dependencies.profile.textRevision),
+        visualContext
+          ? dependencies.listRawVectors(dependencies.profile.visualRevision)
+          : Promise.resolve([]),
+        visualContext
+          ? dependencies.listCaptions(visualContext.captionRevision)
+          : Promise.resolve([]),
+      ]);
     const prepared = prepareRelatedPetsRankingInputs({
       pets,
+      textQueryRows,
       textRows,
       visualRows,
       captions,
       profile: dependencies.profile,
       visualContext,
     });
+    const textVectorCount = prepared.approvedPets.filter(
+      ({ slug }) =>
+        prepared.textQueryVectors.has(slug) &&
+        prepared.textDocumentVectors.has(slug),
+    ).length;
+    if (textVectorCount !== prepared.approvedPets.length) {
+      throw new RelatedPetsRebuildError("text_vectors_incomplete");
+    }
+    if (
+      includeVisual &&
+      dependencies.profile.visualMinSimilarity !== null &&
+      prepared.visualVectors.size !== prepared.approvedPets.length
+    ) {
+      throw new RelatedPetsRebuildError("visual_vectors_incomplete");
+    }
     const rankings = prepared.approvedPets.map((source) => ({
       sourceSlug: source.slug,
       relatedSlugs: rankRelatedPets({
         source,
         candidates: prepared.approvedPets,
-        textVectors: prepared.textVectors,
+        textQueryVectors: prepared.textQueryVectors,
+        textDocumentVectors: prepared.textDocumentVectors,
         visualVectors: prepared.visualVectors,
         profile: dependencies.profile,
       }),
@@ -390,7 +415,7 @@ export function createRelatedPetsRebuildService(
       coverage: {
         approvedPetCount: prepared.approvedPets.length,
         snapshotCount: rankings.length,
-        textVectorCount: prepared.textVectors.size,
+        textVectorCount,
         visualVectorCount: prepared.visualVectors.size,
       },
     };
@@ -610,6 +635,7 @@ function uniqueApprovedPets(pets: readonly PublicPet[]): PublicPet[] {
 
 export function prepareRelatedPetsRankingInputs(input: {
   pets: readonly PublicPet[];
+  textQueryRows: readonly StoredRawPetSearchEmbedding[];
   textRows: readonly StoredRawPetSearchEmbedding[];
   visualRows: readonly StoredRawPetSearchEmbedding[];
   captions: readonly StoredPetSearchCaption[];
@@ -617,14 +643,28 @@ export function prepareRelatedPetsRankingInputs(input: {
   visualContext: VisualSourceContext | null;
 }): {
   approvedPets: PublicPet[];
-  textVectors: Map<string, readonly number[]>;
+  textQueryVectors: Map<string, readonly number[]>;
+  textDocumentVectors: Map<string, readonly number[]>;
   visualVectors: Map<string, readonly number[]>;
 } {
   const approvedPets = uniqueApprovedPets(input.pets);
-  const textVectors = validatedTextVectors(
+  const textQueryVectors = validatedTextVectors(
+    approvedPets,
+    input.textQueryRows,
+    {
+      revision: input.profile.textQueryRevision,
+      dimensions: input.profile.textDimensions,
+      sourceHash: createRelatedPetQuerySourceHash,
+    },
+  );
+  const textDocumentVectors = validatedTextVectors(
     approvedPets,
     input.textRows,
-    input.profile,
+    {
+      revision: input.profile.textRevision,
+      dimensions: input.profile.textDimensions,
+      sourceHash: createPetSearchSourceHash,
+    },
   );
   const visualVectors = input.visualContext
     ? validatedVisualVectors({
@@ -637,13 +677,22 @@ export function prepareRelatedPetsRankingInputs(input: {
         context: input.visualContext,
       })
     : new Map<string, readonly number[]>();
-  return { approvedPets, textVectors, visualVectors };
+  return {
+    approvedPets,
+    textQueryVectors,
+    textDocumentVectors,
+    visualVectors,
+  };
 }
 
 function validatedTextVectors(
   pets: readonly PublicPet[],
   rows: readonly StoredRawPetSearchEmbedding[],
-  profile: RelatedPetsRebuildProfile,
+  expected: {
+    revision: string;
+    dimensions: number;
+    sourceHash: (pet: PublicPet, revision: string) => string;
+  },
 ): Map<string, readonly number[]> {
   const petsBySlug = new Map(pets.map((item) => [item.slug, item]));
   const vectors = new Map<string, readonly number[]>();
@@ -651,9 +700,9 @@ function validatedTextVectors(
     const item = petsBySlug.get(row.slug);
     if (!item) continue;
     const vector = decodeRelatedPetVector(row, {
-      modelRevision: profile.textRevision,
-      dimensions: profile.textDimensions,
-      sourceHash: createPetSearchSourceHash(item, profile.textRevision),
+      modelRevision: expected.revision,
+      dimensions: expected.dimensions,
+      sourceHash: expected.sourceHash(item, expected.revision),
     });
     if (vector) vectors.set(row.slug, vector);
   }

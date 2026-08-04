@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   EmbeddingProviderError,
+  buildRelatedPetQuery,
   buildPetSearchDocument,
+  createRelatedPetQuerySourceHash,
   createPetSearchSourceHash,
   createYandexEmbeddingClient,
   embeddingToBuffer,
@@ -26,6 +28,27 @@ describe("pet search embeddings", () => {
     );
     expect(createPetSearchSourceHash(pet, "model-v2")).not.toBe(
       createPetSearchSourceHash(pet, "model-v1"),
+    );
+  });
+
+  it("builds a stable related query from tags with a description fallback", () => {
+    expect(
+      buildRelatedPetQuery({
+        ...pet,
+        tags: [" Night ", "gothic", "night", "ＰＩＸＥＬ"],
+      }),
+    ).toBe("night gothic pixel");
+    expect(buildRelatedPetQuery({ ...pet, tags: [] })).toBe(
+      pet.description,
+    );
+    expect(createRelatedPetQuerySourceHash(pet, "query-v1")).not.toBe(
+      createRelatedPetQuerySourceHash(
+        { ...pet, tags: ["gothic", "night"] },
+        "query-v1",
+      ),
+    );
+    expect(createRelatedPetQuerySourceHash(pet, "query-v2")).not.toBe(
+      createRelatedPetQuerySourceHash(pet, "query-v1"),
     );
   });
 

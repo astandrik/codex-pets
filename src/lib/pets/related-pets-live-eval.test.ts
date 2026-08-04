@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import fixtures from "@/lib/pets/search-eval-fixtures.json";
+import fixtures from "@/lib/pets/related-pets-eval-fixtures.json";
 import { listPetSearchCaptions } from "@/lib/pets/search-captions-repository";
 import { PET_VISUAL_MODEL_REVISIONS } from "@/lib/pets/search-config";
 import { listRawPetSearchEmbeddings } from "@/lib/pets/search-embeddings-repository";
@@ -47,14 +47,17 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
         );
       }
 
-      const [pets, textRows, visualRows, captions] = await Promise.all([
+      const [pets, textQueryRows, textRows, visualRows, captions] =
+        await Promise.all([
         listApprovedPetsForSearch(),
+        listRawPetSearchEmbeddings(profile.textQueryRevision),
         listRawPetSearchEmbeddings(profile.textRevision),
         listRawPetSearchEmbeddings(profile.visualRevision),
         listPetSearchCaptions(profile.visualCaptionRevision),
-      ]);
+        ]);
       const prepared = prepareRelatedPetsRankingInputs({
         pets,
+        textQueryRows,
         textRows,
         visualRows,
         captions,
@@ -79,7 +82,11 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
         missingApprovedSlugs: missingSlugs(requiredSlugs, approvedSlugs),
         missingTextSlugs: missingSlugs(
           requiredSlugs,
-          prepared.textVectors,
+          prepared.textDocumentVectors,
+        ),
+        missingTextQuerySlugs: missingSlugs(
+          requiredSlugs,
+          prepared.textQueryVectors,
         ),
         missingVisualSlugs: missingSlugs(
           requiredSlugs,
@@ -89,18 +96,21 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
       expect(coverage).toEqual({
         missingApprovedSlugs: [],
         missingTextSlugs: [],
+        missingTextQuerySlugs: [],
         missingVisualSlugs: [],
       });
 
       const observations = createRelatedPetsCalibrationObservations({
         cases: selectedCases,
         candidates: prepared.approvedPets,
-        textVectors: prepared.textVectors,
+        textQueryVectors: prepared.textQueryVectors,
+        textDocumentVectors: prepared.textDocumentVectors,
         visualVectors: prepared.visualVectors,
       });
       const profileIdentity = {
         rankingRevision: profile.rankingRevision,
         textRevision: profile.textRevision,
+        textQueryRevision: profile.textQueryRevision,
         visualRevision: profile.visualRevision,
         visualCaptionRevision: profile.visualCaptionRevision,
       };
@@ -115,6 +125,25 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
           caseCount: observations.length,
           report,
         });
+        const sansCase = report.report.cases.find(
+          ({ sourceSlug }) => sourceSlug === "sans",
+        );
+        const sansObservation = observations.find(
+          ({ sourceSlug }) => sourceSlug === "sans",
+        );
+        const fireSkullTextMatch = sansObservation?.textMatches.find(
+          ({ slug }) => slug === "fire-skull",
+        );
+        expect(sansCase, "Sans calibration case is required").toBeDefined();
+        expect(sansCase?.metadataSlugs).not.toContain("fire-skull");
+        expect(fireSkullTextMatch?.score).toBeGreaterThanOrEqual(
+          profile.textMinSimilarity,
+        );
+        expect(sansCase?.textMetadataSlugs).toContain("fire-skull");
+        expect(sansCase?.hybridSlugs).toContain("fire-skull");
+        expect(sansCase?.textMetadataSlugs).not.toEqual(
+          sansCase?.metadataSlugs,
+        );
         expect(report.passed).toBe(true);
         return;
       }

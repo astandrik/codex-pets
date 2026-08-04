@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { embeddingToBuffer, createPetSearchSourceHash } from "@/lib/pets/search-embeddings";
+import {
+  createPetSearchSourceHash,
+  createRelatedPetQuerySourceHash,
+  embeddingToBuffer,
+} from "@/lib/pets/search-embeddings";
 import type { StoredRawPetSearchEmbedding } from "@/lib/pets/search-embeddings-repository";
 import {
   buildPetVisionCaptionText,
@@ -22,6 +26,7 @@ import type { PublicPet } from "@/lib/pets/types";
 const profile = {
   rankingRevision: "ranking-v1",
   textRevision: "text-v1",
+  textQueryRevision: "text-query-v1",
   textDimensions: 2,
   textMinSimilarity: 0.1,
   visualRevision: "visual-v1",
@@ -129,6 +134,7 @@ function visualVectorFor(item: PublicPet, vector: readonly number[] = [1, 0]) {
 
 function createHarness(options: {
   pets?: PublicPet[];
+  textQueryRows?: StoredRawPetSearchEmbedding[];
   textRows?: StoredRawPetSearchEmbedding[];
   visualRows?: StoredRawPetSearchEmbedding[];
   captions?: ReturnType<typeof captionFor>[];
@@ -154,6 +160,18 @@ function createHarness(options: {
         modelRevision: profile.textRevision,
         sourceHash: createPetSearchSourceHash(item, profile.textRevision),
         vector: index === 2 ? [0, 1] : [1, 0],
+      }),
+    );
+  const textQueryRows =
+    options.textQueryRows ??
+    pets.map((item) =>
+      rawVector({
+        slug: item.slug,
+        modelRevision: profile.textQueryRevision,
+        sourceHash: createRelatedPetQuerySourceHash(
+          item,
+          profile.textQueryRevision,
+        ),
       }),
     );
   const visualRows = options.visualRows ?? pets.map((item) => visualVectorFor(item));
@@ -407,6 +425,7 @@ function createHarness(options: {
     listApprovedPets: async () => pets,
     listRawVectors: async (revision) => {
       vectorRevisionReads.push(revision);
+      if (revision === profile.textQueryRevision) return textQueryRows;
       return revision === profile.textRevision ? textRows : visualRows;
     },
     listCaptions: async () => captions,
@@ -491,7 +510,10 @@ describe("related pets rebuild service", () => {
 
     expect(result.status).toBe("ready");
     expect(result.coverage.visualVectorCount).toBe(0);
-    expect(harness.vectorRevisionReads).toEqual([profile.textRevision]);
+    expect(harness.vectorRevisionReads).toEqual([
+      profile.textQueryRevision,
+      profile.textRevision,
+    ]);
   });
 
   it("dry-runs real rankings with zero state or snapshot writes", async () => {
@@ -946,7 +968,7 @@ describe("related pets rebuild service", () => {
     expect(JSON.stringify(harness.logs)).not.toContain(rawMessage);
   });
 
-  it("omits stale captions and corrupt visual vectors without rejecting text", async () => {
+  it("fails closed when enabled visual vectors are stale or corrupt", async () => {
     const pets = [pet("source"), pet("stale"), pet("corrupt")];
     const staleCaption = captionFor(pets[1], { staleSource: true });
     const corruptCaption = captionFor(pets[2]);
@@ -974,20 +996,84 @@ describe("related pets rebuild service", () => {
       ],
     });
 
-    const result = await harness.service.rebuild({
-      mode: "dry-run",
-      includeVisual: true,
-    });
-
-    expect(result.coverage).toEqual({
-      approvedPetCount: 3,
-      snapshotCount: 3,
-      textVectorCount: 3,
-      visualVectorCount: 1,
+    await expect(
+      harness.service.rebuild({
+        mode: "dry-run",
+        includeVisual: true,
+      }),
+    ).rejects.toMatchObject({
+      name: "RelatedPetsRebuildError",
+      reason: "visual_vectors_incomplete",
     });
   });
 
-  it("omits visual loading when the current caption context is incompatible", async () => {
+  it("fails closed unless query and document vectors are both current", async () => {
+    const pets = [pet("source"), pet("peer-a"), pet("peer-b")];
+    const harness = createHarness({
+      pets,
+      textQueryRows: pets.slice(0, 2).map((item) =>
+        rawVector({
+          slug: item.slug,
+          modelRevision: profile.textQueryRevision,
+          sourceHash: createRelatedPetQuerySourceHash(
+            item,
+            profile.textQueryRevision,
+          ),
+        }),
+      ),
+    });
+
+    await expect(
+      harness.service.rebuild({
+        mode: "dry-run",
+        includeVisual: true,
+      }),
+    ).rejects.toMatchObject({
+      name: "RelatedPetsRebuildError",
+      reason: "text_vectors_incomplete",
+    });
+  });
+
+  it("keeps the active generation when apply has incomplete text vectors", async () => {
+    const pets = [pet("source"), pet("peer-a"), pet("peer-b")];
+    const harness = createHarness({
+      pets,
+      textQueryRows: pets.slice(0, 2).map((item) =>
+        rawVector({
+          slug: item.slug,
+          modelRevision: profile.textQueryRevision,
+          sourceHash: createRelatedPetQuerySourceHash(
+            item,
+            profile.textQueryRevision,
+          ),
+        }),
+      ),
+    });
+
+    await expect(
+      harness.service.rebuild({
+        mode: "apply",
+        includeVisual: true,
+      }),
+    ).rejects.toMatchObject({
+      name: "RelatedPetsRebuildError",
+      reason: "text_vectors_incomplete",
+    });
+    expect(harness.state).toMatchObject({
+      requestedGenerationId: "generation-new",
+      activeGenerationId: "generation-old",
+      status: "failed",
+      failureReason: "text_vectors_incomplete",
+    });
+    expect(harness.snapshots).toEqual([]);
+    expect(harness.mutations).toEqual([
+      "request",
+      "failed:text_vectors_incomplete",
+      "cleanup-inactive",
+    ]);
+  });
+
+  it("fails closed when enabled visual context is incompatible", async () => {
     const harness = createHarness({
       visualSourceContext: {
         captionRevision: "caption-stale",
@@ -995,13 +1081,19 @@ describe("related pets rebuild service", () => {
       },
     });
 
-    const result = await harness.service.rebuild({
-      mode: "dry-run",
-      includeVisual: true,
+    await expect(
+      harness.service.rebuild({
+        mode: "dry-run",
+        includeVisual: true,
+      }),
+    ).rejects.toMatchObject({
+      name: "RelatedPetsRebuildError",
+      reason: "visual_vectors_incomplete",
     });
-
-    expect(result.coverage.visualVectorCount).toBe(0);
-    expect(harness.vectorRevisionReads).toEqual([profile.textRevision]);
+    expect(harness.vectorRevisionReads).toEqual([
+      profile.textQueryRevision,
+      profile.textRevision,
+    ]);
   });
 
   it("reports ready with bounded cleanup diagnostics after activation", async () => {

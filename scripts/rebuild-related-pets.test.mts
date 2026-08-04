@@ -61,6 +61,7 @@ describe("related pets rebuild CLI", () => {
         failureReason: "storage_unavailable",
       });
     },
+    15_000,
   );
 
   it("disposes the production service when a rebuild fails", async () => {

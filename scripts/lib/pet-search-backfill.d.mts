@@ -22,7 +22,12 @@ export type BackfillSummary = {
 
 export function parseBackfillArgs(argv: string[]): BackfillOptions;
 export function buildPetSearchDocument(pet: BackfillPet): string;
+export function buildRelatedPetQuery(pet: BackfillPet): string;
 export function createPetSearchSourceHash(
+  pet: BackfillPet,
+  modelRevision: string,
+): string;
+export function createRelatedPetQuerySourceHash(
   pet: BackfillPet,
   modelRevision: string,
 ): string;
@@ -50,6 +55,8 @@ export function runPetSearchBackfill(input: {
     embedding: readonly number[];
     updatedAt: string;
   }) => Promise<void>;
+  buildInput?: (pet: BackfillPet) => string;
+  createSourceHash?: (pet: BackfillPet, modelRevision: string) => string;
   now?: () => Date;
   log?: (entry: unknown) => void;
 }): Promise<BackfillSummary>;

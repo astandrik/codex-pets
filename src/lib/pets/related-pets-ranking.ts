@@ -23,7 +23,7 @@ export type RelatedPetSimilarity = {
 
 export type RelatedPetsRankingProfile = {
   textMinSimilarity: number;
-  visualMinSimilarity: number;
+  visualMinSimilarity: number | null;
   visualWeight: number;
 };
 
@@ -91,13 +91,14 @@ export function cosineSimilarity(
 
 export function rankRelatedPetVectorMatches(
   sourceSlug: string,
-  vectors: ReadonlyMap<string, readonly number[]>,
+  sourceVectors: ReadonlyMap<string, readonly number[]>,
+  candidateVectors: ReadonlyMap<string, readonly number[]> = sourceVectors,
 ): RelatedPetSimilarity[] {
-  const sourceVector = vectors.get(sourceSlug);
+  const sourceVector = sourceVectors.get(sourceSlug);
   if (!sourceVector) return [];
 
   const matches: RelatedPetSimilarity[] = [];
-  for (const [slug, vector] of vectors) {
+  for (const [slug, vector] of candidateVectors) {
     if (slug === sourceSlug) continue;
     const score = cosineSimilarity(sourceVector, vector);
     if (score !== null) matches.push({ slug, score });
@@ -114,10 +115,15 @@ export function fuseRelatedPetRankings(input: {
   textMatches?: readonly RelatedPetSimilarity[];
   visualMatches?: readonly RelatedPetSimilarity[];
   textMinSimilarity: number;
-  visualMinSimilarity: number;
+  visualMinSimilarity: number | null;
   visualWeight: number;
   limit?: number;
 }): string[] {
+  assertCosineThreshold("text", input.textMinSimilarity);
+  if (input.visualMinSimilarity !== null) {
+    assertCosineThreshold("visual", input.visualMinSimilarity);
+  }
+
   const metadataSlugs = uniqueKnownSlugs(
     input.metadataSlugs,
     input.sourceSlug,
@@ -142,16 +148,18 @@ export function fuseRelatedPetRankings(input: {
     ),
     RELATED_PETS_TEXT_WEIGHT,
   );
-  addRankScores(
-    scores,
-    acceptedMatches(
-      input.visualMatches ?? [],
-      input.visualMinSimilarity,
-      input.sourceSlug,
-      metadataPosition,
-    ),
-    input.visualWeight,
-  );
+  if (input.visualMinSimilarity !== null) {
+    addRankScores(
+      scores,
+      acceptedMatches(
+        input.visualMatches ?? [],
+        input.visualMinSimilarity,
+        input.sourceSlug,
+        metadataPosition,
+      ),
+      input.visualWeight,
+    );
+  }
 
   const limit = normalizedLimit(input.limit);
   return sortRelatedPetScores(
@@ -181,7 +189,8 @@ export function sortRelatedPetScores(
 export function rankRelatedPets(input: {
   source: Pick<RelatedPetCandidate, "slug" | "kind" | "tags">;
   candidates: readonly RelatedPetCandidate[];
-  textVectors?: ReadonlyMap<string, readonly number[]>;
+  textQueryVectors?: ReadonlyMap<string, readonly number[]>;
+  textDocumentVectors?: ReadonlyMap<string, readonly number[]>;
   visualVectors?: ReadonlyMap<string, readonly number[]>;
   profile: RelatedPetsRankingProfile;
   limit?: number;
@@ -201,8 +210,13 @@ export function rankRelatedPets(input: {
   return fuseRelatedPetRankings({
     sourceSlug: input.source.slug,
     metadataSlugs,
-    textMatches: input.textVectors
-      ? rankRelatedPetVectorMatches(input.source.slug, input.textVectors)
+    textMatches:
+      input.textQueryVectors && input.textDocumentVectors
+      ? rankRelatedPetVectorMatches(
+          input.source.slug,
+          input.textQueryVectors,
+          input.textDocumentVectors,
+        )
       : [],
     visualMatches: input.visualVectors
       ? rankRelatedPetVectorMatches(input.source.slug, input.visualVectors)
@@ -235,6 +249,17 @@ function acceptedMatches(
     accepted.set(match.slug, match);
   }
   return Array.from(accepted.values());
+}
+
+function assertCosineThreshold(
+  modality: "text" | "visual",
+  value: number,
+): void {
+  if (!Number.isFinite(value) || value < -1 || value > 1) {
+    throw new RangeError(
+      `Related-pet ${modality} minimum similarity must be finite and within [-1, 1].`,
+    );
+  }
 }
 
 function addRankScores(

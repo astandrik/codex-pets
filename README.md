@@ -306,9 +306,18 @@ related-pet snapshot follow-up. Run both commands after embedding maintenance
 completes so snapshot rankings do not remain stale:
 
 ```bash
+npm run related:backfill-query -- --dry-run
+npm run related:backfill-query -- --apply
 npm run related:rebuild -- --dry-run
 npm run related:rebuild -- --apply
 ```
+
+Related pets use the existing search document vectors as candidates and an
+additive query-vector revision built from normalized tags, with description as
+the fallback for pets without tags. Query vectors use the query side of the
+managed embedding model; document-to-document similarity is not used as a
+silent substitute. The dedicated related relevance groups live in
+`src/lib/pets/related-pets-eval-fixtures.json` and do not affect search eval.
 
 Text and visual backfills resolve their embedding provider independently from
 their active revision. Visual ranking is disabled safely when the text and

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import relatedFixtures from "@/lib/pets/related-pets-eval-fixtures.json";
 import searchFixtures from "@/lib/pets/search-eval-fixtures.json";
 import {
   RELATED_PETS_VISUAL_WEIGHT_CANDIDATES,
@@ -7,6 +8,7 @@ import {
   createRelatedPetsCalibrationObservations,
   evaluateRelatedPetsCalibration,
   evaluateRelatedPetsHoldout,
+  evaluateRelatedPetsProfile,
   ndcgAt4,
   selectRelatedTextThreshold,
   selectRelatedVisualProfile,
@@ -14,10 +16,10 @@ import {
 } from "@/lib/pets/related-pets-calibration";
 
 describe("related pet calibration fixtures", () => {
-  it("derives exactly 10 calibration and 4 untouched holdout source cases", () => {
-    const cases = createRelatedPetsCalibrationCases(searchFixtures);
+  it("derives exactly 12 calibration and 4 untouched holdout source cases", () => {
+    const cases = createRelatedPetsCalibrationCases(relatedFixtures);
 
-    expect(cases.calibration).toHaveLength(10);
+    expect(cases.calibration).toHaveLength(12);
     expect(cases.holdout).toHaveLength(4);
     expect(cases.calibration[0]).toEqual({
       groupId: "multi-token-gothic-anime",
@@ -38,10 +40,32 @@ describe("related pet calibration fixtures", () => {
         "multi-token-gothic-anime",
         "style-cute",
         "style-sexy",
+        "concept-skeleton-pixel-art",
       ]),
     );
     expect(new Set(cases.holdout.map(({ groupId }) => groupId))).toEqual(
       new Set(["style-badass"]),
+    );
+    expect(
+      cases.calibration.filter(
+        ({ groupId }) => groupId === "concept-skeleton-pixel-art",
+      ),
+    ).toEqual([
+      {
+        groupId: "concept-skeleton-pixel-art",
+        sourceSlug: "sans",
+        relevantSlugs: ["fire-skull"],
+        split: "calibration",
+      },
+      {
+        groupId: "concept-skeleton-pixel-art",
+        sourceSlug: "fire-skull",
+        relevantSlugs: ["sans"],
+        split: "calibration",
+      },
+    ]);
+    expect(searchFixtures.some(({ id }) => id === "concept-skeleton-pixel-art")).toBe(
+      false,
     );
   });
 });
@@ -65,7 +89,8 @@ describe("related pet calibration observations", () => {
           },
         ],
         candidates,
-        textVectors: new Map([
+        textQueryVectors: new Map([["source", [1, 0]]]),
+        textDocumentVectors: new Map([
           ["source", [1, 0]],
           ["peer", [1, 0]],
           ["other", [0, 1]],
@@ -107,7 +132,8 @@ describe("related pet calibration observations", () => {
           },
         ],
         candidates: [calibrationCandidate("peer", ["night"])],
-        textVectors: new Map(),
+        textQueryVectors: new Map(),
+        textDocumentVectors: new Map(),
         visualVectors: new Map(),
       }),
     ).toThrow(/missing.*approved catalog/i);
@@ -171,34 +197,57 @@ describe("related pet profile selection", () => {
     ).toMatchObject({
       textMinSimilarity: 0.8,
       ndcgAt4: 1,
-      evaluatedThresholdCount: 3,
+      evaluatedThresholdCount: 2,
     });
   });
 
   it("selects the higher text threshold when calibration nDCG ties", () => {
     const report = selectRelatedTextThreshold(
-      [observation()],
+      [
+        observation({
+          metadataSlugs: ["other", "peer"],
+          textMatches: [{ slug: "peer", score: 0.9 }],
+        }),
+      ],
       [0.4, 0.9],
     );
 
-    expect(report.textMinSimilarity).toBeGreaterThan(0.9);
+    expect(report.textMinSimilarity).toBe(0.9);
     expect(report).toMatchObject({
-      evaluatedThresholdCount: 3,
+      evaluatedThresholdCount: 2,
     });
   });
 
-  it("can reject every text match when metadata-only ranking is strictly better", () => {
-    const report = selectRelatedTextThreshold([
-      observation({
-        metadataSlugs: ["peer", "other"],
-        textMatches: [{ slug: "other", score: 0.9 }],
-        visualMatches: [],
-      }),
-    ]);
+  it("fails when every real text profile degrades metadata nDCG@4", () => {
+    expect(() =>
+      selectRelatedTextThreshold([
+        observation({
+          metadataSlugs: ["peer", "other"],
+          textMatches: [{ slug: "other", score: 0.9 }],
+          visualMatches: [],
+        }),
+      ]),
+    ).toThrow(/safe.*contributing text profile/i);
+  });
 
-    expect(report.textMinSimilarity).toBeGreaterThan(0.9);
-    expect(report.ndcgAt4).toBe(1);
-    expect(report.evaluatedThresholdCount).toBe(2);
+  it("fails when text is a no-op for the final top four", () => {
+    expect(() => selectRelatedTextThreshold([observation()])).toThrow(
+      /safe.*contributing text profile/i,
+    );
+  });
+
+  it("rejects text threshold candidates outside the cosine range", () => {
+    expect(() =>
+      selectRelatedTextThreshold(
+        [
+          observation({
+            metadataSlugs: ["other", "peer"],
+            textMatches: [{ slug: "peer", score: 0.9 }],
+          }),
+        ],
+        [1 + Number.EPSILON],
+      ),
+    ).toThrow(/cosine range/i);
   });
 
   it("passes calibration only when the selected profile is pinned exactly", () => {
@@ -252,18 +301,18 @@ describe("related pet profile selection", () => {
             visualMatches: [{ slug: "peer", score: 0.8 }],
           }),
         ],
-        Number.POSITIVE_INFINITY,
+        1,
         [0.8, 0.9],
       ),
     ).toMatchObject({
       visualMinSimilarity: 0.8,
       visualWeight: 0.25,
       ndcgAt4: 1,
-      evaluatedProfileCount: 9,
+      evaluatedProfileCount: 7,
     });
   });
 
-  it("uses only approved visual weights and breaks ties by lower weight", () => {
+  it("uses only approved visual weights and prefers enabled visual on a tie", () => {
     expect(RELATED_PETS_VISUAL_WEIGHT_CANDIDATES).toEqual([
       0.25, 0.5, 0.75,
     ]);
@@ -272,10 +321,10 @@ describe("related pet profile selection", () => {
       0.9,
       [0.9],
     );
-    expect(report.visualMinSimilarity).toBeGreaterThan(0.9);
+    expect(report.visualMinSimilarity).toBe(0.9);
     expect(report).toMatchObject({
       visualWeight: 0.25,
-      evaluatedProfileCount: 6,
+      evaluatedProfileCount: 4,
     });
   });
 
@@ -286,14 +335,14 @@ describe("related pet profile selection", () => {
       [0.4, 0.9],
     );
 
-    expect(report.visualMinSimilarity).toBeGreaterThan(0.9);
+    expect(report.visualMinSimilarity).toBe(0.9);
     expect(report).toMatchObject({
       visualWeight: 0.25,
-      evaluatedProfileCount: 9,
+      evaluatedProfileCount: 7,
     });
   });
 
-  it("can reject every visual match when metadata-only ranking is strictly better", () => {
+  it("uses explicit visual-off only when every enabled profile degrades the baseline", () => {
     const report = selectRelatedVisualProfile(
       [
         observation({
@@ -302,13 +351,13 @@ describe("related pet profile selection", () => {
           visualMatches: [{ slug: "other", score: 0.9 }],
         }),
       ],
-      Number.POSITIVE_INFINITY,
+      1,
     );
 
-    expect(report.visualMinSimilarity).toBeGreaterThan(0.9);
-    expect(report.visualWeight).toBe(0.25);
+    expect(report.visualMinSimilarity).toBeNull();
+    expect(report.visualWeight).toBe(0);
     expect(report.ndcgAt4).toBe(1);
-    expect(report.evaluatedProfileCount).toBe(6);
+    expect(report.evaluatedProfileCount).toBe(4);
   });
 
   it("rejects holdout observations during profile selection", () => {
@@ -320,6 +369,42 @@ describe("related pet profile selection", () => {
     expect(() =>
       selectRelatedVisualProfile([holdout], 0.9, [0.9]),
     ).toThrow(/calibration observations/i);
+  });
+});
+
+describe("related pet semantic regressions", () => {
+  it("puts Fire Skull in Sans top four only through text semantics", () => {
+    const report = evaluateRelatedPetsProfile(
+      [
+        observation({
+          groupId: "concept-skeleton-pixel-art",
+          sourceSlug: "sans",
+          relevantSlugs: ["fire-skull"],
+          metadataSlugs: [
+            "new-a",
+            "new-b",
+            "new-c",
+            "new-d",
+            "fire-skull",
+          ],
+          textMatches: [{ slug: "fire-skull", score: 0.9 }],
+          visualMatches: [],
+        }),
+      ],
+      {
+        textMinSimilarity: 0.9,
+        visualMinSimilarity: null,
+        visualWeight: 0,
+      },
+    );
+
+    expect(report.cases[0]?.metadataSlugs).not.toContain("fire-skull");
+    expect(report.cases[0]?.textMetadataSlugs).toContain("fire-skull");
+    expect(report.textContribution).toEqual({
+      aggregateNoWorseThanMetadata: true,
+      improvedCaseCount: 1,
+      changedTop4CaseCount: 1,
+    });
   });
 });
 

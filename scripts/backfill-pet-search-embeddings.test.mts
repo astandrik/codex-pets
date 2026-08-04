@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildRelatedPetQuery as buildRuntimeRelatedQuery,
   buildPetSearchDocument as buildRuntimeDocument,
+  createRelatedPetQuerySourceHash as createRuntimeRelatedQueryHash,
   createPetSearchSourceHash as createRuntimeHash,
   embeddingToBuffer as runtimeEmbeddingToBuffer,
 } from "../src/lib/pets/search-embeddings";
@@ -9,9 +11,12 @@ import {
   PET_SEARCH_EMBEDDING_MODELS,
   PET_SEARCH_MODEL_REVISIONS,
 } from "../src/lib/pets/search-config";
+import { RELATED_PETS_TEXT_QUERY_REVISION } from "../src/lib/pets/related-pets-profile";
 
 const {
+  buildRelatedPetQuery,
   buildPetSearchDocument,
+  createRelatedPetQuerySourceHash,
   createPetSearchSourceHash,
   createRequestStartLimiter,
   embeddingToBuffer,
@@ -61,6 +66,28 @@ describe("pet search embeddings backfill", () => {
       text: "document",
       dim: "768",
     });
+    expect(
+      PET_SEARCH_BACKFILL_REVISIONS[RELATED_PETS_TEXT_QUERY_REVISION],
+    ).toEqual({
+      dimensions: 768,
+      modelPath: "text-embeddings-v2-query",
+      requestDimensions: 768,
+      inputKind: "related-query",
+    });
+    expect(
+      createEmbeddingRequest({
+        folderId: "folder-1",
+        definition:
+          PET_SEARCH_BACKFILL_REVISIONS[
+            RELATED_PETS_TEXT_QUERY_REVISION
+          ],
+        text: "skeleton pixel art",
+      }),
+    ).toEqual({
+      modelUri: "emb://folder-1/text-embeddings-v2-query",
+      text: "skeleton pixel art",
+      dim: "768",
+    });
   });
 
   it("parses explicit dry-run/apply modes and optional flags", () => {
@@ -99,6 +126,13 @@ describe("pet search embeddings backfill", () => {
     const commandBuffer = embeddingToBuffer([1.5, -2.25]);
     expect(commandBuffer).toEqual(runtimeEmbeddingToBuffer([1.5, -2.25]));
     expect(commandBuffer.at(-1)).toBe(0x01);
+  });
+
+  it("keeps the related query and source hash in runtime parity", () => {
+    expect(buildRelatedPetQuery(pet)).toBe(buildRuntimeRelatedQuery(pet));
+    expect(createRelatedPetQuerySourceHash(pet, "query-v1")).toBe(
+      createRuntimeRelatedQueryHash(pet, "query-v1"),
+    );
   });
 
   it("spaces provider starts across the configured per-minute limit", async () => {
@@ -149,6 +183,35 @@ describe("pet search embeddings backfill", () => {
     expect(upsert).not.toHaveBeenCalled();
     expect(JSON.stringify(logs)).not.toContain(pet.displayName);
     expect(JSON.stringify(logs)).not.toContain(pet.description);
+  });
+
+  it("uses the related query builder and hash for its additive revision", async () => {
+    const embedDocument = vi.fn(async () => Array(768).fill(0.25));
+    const upsert = vi.fn(async () => undefined);
+
+    await runPetSearchBackfill({
+      options: { mode: "apply", slug: null, force: false },
+      revision: RELATED_PETS_TEXT_QUERY_REVISION,
+      dimensions: 768,
+      pets: [pet],
+      getMetadata: async () => null,
+      embedDocument,
+      upsert,
+      buildInput: buildRelatedPetQuery,
+      createSourceHash: createRelatedPetQuerySourceHash,
+      log: () => undefined,
+    });
+
+    expect(embedDocument).toHaveBeenCalledWith("night gothic");
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelRevision: RELATED_PETS_TEXT_QUERY_REVISION,
+        sourceHash: createRelatedPetQuerySourceHash(
+          pet,
+          RELATED_PETS_TEXT_QUERY_REVISION,
+        ),
+      }),
+    );
   });
 
   it("skips fresh vectors and applies stale or forced vectors", async () => {
