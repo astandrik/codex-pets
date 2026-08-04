@@ -20,6 +20,20 @@ Modes:
   --recover-previous  Atomically publish the retained generation from the expected active generation; retries with the same pair are idempotent.
   --help              Show this help.`;
 
+const SAFE_REBUILD_FAILURE_REASONS = new Set([
+  "rebuild_failed",
+  "storage_unavailable",
+  "text_vectors_incomplete",
+  "visual_vectors_incomplete",
+]);
+
+export function sanitizeRelatedPetsRebuildFailureReason(error) {
+  return error instanceof Error &&
+    SAFE_REBUILD_FAILURE_REASONS.has(error.message)
+    ? error.message
+    : "rebuild_failed";
+}
+
 export function parseRelatedPetsRebuildArgs(argv) {
   const supported = new Set([
     "--dry-run",
@@ -159,10 +173,7 @@ if (isEntrypoint()) {
       process.exitCode = exitCode;
     })
     .catch((error) => {
-      const failureReason =
-        error instanceof Error && error.message === "storage_unavailable"
-          ? "storage_unavailable"
-          : "rebuild_failed";
+      const failureReason = sanitizeRelatedPetsRebuildFailureReason(error);
       console.error(
         JSON.stringify({
           operation: "related-pets-rebuild",

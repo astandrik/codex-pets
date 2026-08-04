@@ -6,6 +6,7 @@ const {
   RELATED_PETS_REBUILD_HELP,
   parseRelatedPetsRebuildArgs,
   runRelatedPetsRebuildCli,
+  sanitizeRelatedPetsRebuildFailureReason,
 } = await import("./rebuild-related-pets.mjs");
 
 const cliPath = fileURLToPath(
@@ -80,6 +81,24 @@ describe("related pets rebuild CLI", () => {
       }),
     ).rejects.toThrow("storage_unavailable");
     expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it("preserves safe incomplete-vector reasons at the CLI boundary", () => {
+    expect(
+      sanitizeRelatedPetsRebuildFailureReason(
+        new Error("text_vectors_incomplete"),
+      ),
+    ).toBe("text_vectors_incomplete");
+    expect(
+      sanitizeRelatedPetsRebuildFailureReason(
+        new Error("visual_vectors_incomplete"),
+      ),
+    ).toBe("visual_vectors_incomplete");
+    expect(
+      sanitizeRelatedPetsRebuildFailureReason(
+        new Error("private provider detail"),
+      ),
+    ).toBe("rebuild_failed");
   });
 
   it("parses each discoverable mode and rejects ambiguous mutation modes", () => {

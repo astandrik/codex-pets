@@ -6,6 +6,14 @@ export type RelatedPetsRebuildCliMode =
 
 export const RELATED_PETS_REBUILD_HELP: string;
 
+export function sanitizeRelatedPetsRebuildFailureReason(
+  error: unknown,
+):
+  | "rebuild_failed"
+  | "storage_unavailable"
+  | "text_vectors_incomplete"
+  | "visual_vectors_incomplete";
+
 export function parseRelatedPetsRebuildArgs(argv: string[]):
   | { mode: "dry-run" | "apply" | "help" }
   | {
