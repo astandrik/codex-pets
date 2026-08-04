@@ -18,12 +18,12 @@ const textDefinition = PET_SEARCH_MODEL_REVISIONS[TEXT_REVISION];
 const visualDefinition = PET_VISUAL_MODEL_REVISIONS[VISUAL_REVISION];
 const PINNED_CALIBRATED_PROFILE = {
   textMinSimilarity: 1.0000000000000002,
-  visualMinSimilarity: 0.8537168126311578,
+  visualMinSimilarity: 0.853716812631158,
   visualWeight: 0.25,
 } as const;
 
 export const CURRENT_RELATED_PETS_RANKING_PROFILE = {
-  rankingRevision: `related-pets-rrf60-v3:cal=${CALIBRATION_REVISION}:text=${TEXT_REVISION}:visual=${VISUAL_REVISION}`,
+  rankingRevision: `related-pets-rrf60-v4:cal=${CALIBRATION_REVISION}:text=${TEXT_REVISION}:visual=${VISUAL_REVISION}`,
   textRevision: TEXT_REVISION,
   textDimensions:
     PET_SEARCH_EMBEDDING_MODELS[textDefinition.embeddingModelId].dimensions,

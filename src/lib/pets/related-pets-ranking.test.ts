@@ -273,17 +273,17 @@ describe("related pet ranking", () => {
 });
 
 describe("related pet ranking profile", () => {
-  it("binds compatibility to the deployed v3 text and Qwen visual revisions", () => {
+  it("binds compatibility to the deployed v4 text and Qwen visual revisions", () => {
     expect(CURRENT_RELATED_PETS_RANKING_PROFILE).toMatchObject({
       rankingRevision:
-        "related-pets-rrf60-v3:cal=search-eval-related-groups-v1:text=yandex-text-embeddings-v2-768-2026-07:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
+        "related-pets-rrf60-v4:cal=search-eval-related-groups-v1:text=yandex-text-embeddings-v2-768-2026-07:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
       textRevision: "yandex-text-embeddings-v2-768-2026-07",
       textDimensions: 768,
       textMinSimilarity: 1.0000000000000002,
       visualRevision:
         "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
       visualDimensions: 768,
-      visualMinSimilarity: 0.8537168126311578,
+      visualMinSimilarity: 0.853716812631158,
       visualWeight: 0.25,
     });
     expect(
