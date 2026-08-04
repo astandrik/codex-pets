@@ -84,7 +84,9 @@ export function cosineSimilarity(
 
   const similarity =
     dotProduct / Math.sqrt(leftSquaredNorm * rightSquaredNorm);
-  return Number.isFinite(similarity) ? similarity : null;
+  return Number.isFinite(similarity)
+    ? Math.max(-1, Math.min(1, similarity))
+    : null;
 }
 
 export function rankRelatedPetVectorMatches(

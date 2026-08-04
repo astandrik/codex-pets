@@ -23,7 +23,7 @@ const PINNED_CALIBRATED_PROFILE = {
 } as const;
 
 export const CURRENT_RELATED_PETS_RANKING_PROFILE = {
-  rankingRevision: `related-pets-rrf60-v2:cal=${CALIBRATION_REVISION}:text=${TEXT_REVISION}:visual=${VISUAL_REVISION}`,
+  rankingRevision: `related-pets-rrf60-v3:cal=${CALIBRATION_REVISION}:text=${TEXT_REVISION}:visual=${VISUAL_REVISION}`,
   textRevision: TEXT_REVISION,
   textDimensions:
     PET_SEARCH_EMBEDDING_MODELS[textDefinition.embeddingModelId].dimensions,

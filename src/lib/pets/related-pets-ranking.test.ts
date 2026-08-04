@@ -100,6 +100,20 @@ describe("related pet cosine similarity", () => {
     );
   });
 
+  it("clamps Float32 rounding drift to the cosine range", () => {
+    const left = Array.from({ length: 768 }, (_, index) =>
+      Math.fround(((index % 17) - 8) / 7),
+    );
+    const scale = Math.fround(2.1);
+    const parallel = left.map((value) => Math.fround(value * scale));
+    const antiparallel = left.map((value) =>
+      Math.fround(value * -scale),
+    );
+
+    expect(cosineSimilarity(left, parallel)).toBe(1);
+    expect(cosineSimilarity(left, antiparallel)).toBe(-1);
+  });
+
   it.each([
     [[0, 0], [1, 1]],
     [[1, 1], [0, 0]],
@@ -259,10 +273,10 @@ describe("related pet ranking", () => {
 });
 
 describe("related pet ranking profile", () => {
-  it("binds compatibility to the deployed v2 text and Qwen visual revisions", () => {
+  it("binds compatibility to the deployed v3 text and Qwen visual revisions", () => {
     expect(CURRENT_RELATED_PETS_RANKING_PROFILE).toMatchObject({
       rankingRevision:
-        "related-pets-rrf60-v2:cal=search-eval-related-groups-v1:text=yandex-text-embeddings-v2-768-2026-07:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
+        "related-pets-rrf60-v3:cal=search-eval-related-groups-v1:text=yandex-text-embeddings-v2-768-2026-07:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
       textRevision: "yandex-text-embeddings-v2-768-2026-07",
       textDimensions: 768,
       textMinSimilarity: 1.0000000000000002,
