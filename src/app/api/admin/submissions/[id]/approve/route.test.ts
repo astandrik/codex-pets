@@ -13,6 +13,10 @@ vi.mock("@/lib/pets/search-runtime", () => ({
   refreshApprovedPetSearchEmbedding: vi.fn(),
 }));
 
+vi.mock("@/lib/pets/related-pets-query-runtime", () => ({
+  refreshApprovedPetRelatedQueryEmbedding: vi.fn(),
+}));
+
 vi.mock("@/lib/pets/search-provider-runtime", () => ({
   petSearchRuntimeConfig: {
     semantic: null,
@@ -44,6 +48,8 @@ import { POST } from "@/app/api/admin/submissions/[id]/approve/route";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
 import { moderatePet } from "@/lib/pets/repository";
+import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
+import { refreshApprovedPetRelatedQueryEmbedding } from "@/lib/pets/related-pets-query-runtime";
 import {
   invalidateRelatedPets,
   rebuildRelatedPets,
@@ -53,6 +59,9 @@ import { petSearchRuntimeConfig } from "@/lib/pets/search-provider-runtime";
 import { refreshApprovedPetSearchEmbedding } from "@/lib/pets/search-runtime";
 import { refreshApprovedPetVisionSearchBestEffort } from "@/lib/pets/search-vision-runtime";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
+
+const currentVisualMinSimilarity =
+  CURRENT_RELATED_PETS_RANKING_PROFILE.visualMinSimilarity;
 
 function currentRelatedPetsSemanticConfig() {
   return {
@@ -69,11 +78,20 @@ function currentRelatedPetsSemanticConfig() {
 describe("POST /api/admin/submissions/[id]/approve", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+    (
+      CURRENT_RELATED_PETS_RANKING_PROFILE as {
+        visualMinSimilarity: number | null;
+      }
+    ).visualMinSimilarity = currentVisualMinSimilarity;
   });
 
   beforeEach(() => {
     vi.clearAllMocks();
     petSearchRuntimeConfig.semantic = currentRelatedPetsSemanticConfig();
+    vi.mocked(refreshApprovedPetSearchEmbedding).mockResolvedValue("updated");
+    vi.mocked(refreshApprovedPetRelatedQueryEmbedding).mockResolvedValue(
+      "updated",
+    );
     vi.stubEnv("INDEXNOW_KEY", "indexnow-key-123");
     vi.mocked(notifyIndexNowOfApprovedPet).mockResolvedValue({
       status: "skipped",
@@ -143,7 +161,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     expect(notifyIndexNowOfApprovedPet).not.toHaveBeenCalled();
   });
 
-  it("preserves compatible stored visual rankings in the immediate approval rebuild", async () => {
+  it("waits for successful visual indexing before publishing a visual generation", async () => {
     vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
       userId: "admin_1",
       email: null,
@@ -183,10 +201,10 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     expect(refreshApprovedPetSearchEmbedding).toHaveBeenCalledWith(
       expect.objectContaining({ slug: "boba", status: "approved" }),
     );
-    expect(rebuildRelatedPets).toHaveBeenCalledWith({
-      mode: "apply",
-      includeVisual: true,
-    });
+    expect(refreshApprovedPetRelatedQueryEmbedding).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: "boba", status: "approved" }),
+    );
+    expect(rebuildRelatedPets).not.toHaveBeenCalled();
     expect(refreshApprovedPetVisionSearchBestEffort).toHaveBeenCalledWith(
       expect.objectContaining({ slug: "boba", status: "approved" }),
       { onSuccessfulRefresh: expect.any(Function) },
@@ -228,34 +246,17 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
         return true;
       },
     );
-    vi.mocked(rebuildRelatedPets)
-      .mockResolvedValueOnce({
-        operation: "apply",
-        status: "ready",
-        generationId: "generation-1",
-        rankingRevision: "related-pets-hybrid-rrf-v1",
-        coverage: {
-          approvedPetCount: 1,
-          snapshotCount: 1,
-          textVectorCount: 1,
-          visualVectorCount: 0,
-        },
-        rankings: [{ sourceSlug: "boba", relatedSlugs: [] }],
-        durationMs: 1,
-      })
-      .mockRejectedValueOnce(new Error("private visual rebuild detail"));
+    vi.mocked(rebuildRelatedPets).mockRejectedValueOnce(
+      new Error("private visual rebuild detail"),
+    );
 
     const response = await POST(new Request("http://localhost"), {
       params: Promise.resolve({ id: "pet_1" }),
     });
 
     expect(response.status).toBe(200);
-    await vi.waitFor(() => expect(rebuildRelatedPets).toHaveBeenCalledTimes(2));
-    expect(rebuildRelatedPets).toHaveBeenNthCalledWith(1, {
-      mode: "apply",
-      includeVisual: true,
-    });
-    expect(rebuildRelatedPets).toHaveBeenNthCalledWith(2, {
+    await vi.waitFor(() => expect(rebuildRelatedPets).toHaveBeenCalledTimes(1));
+    expect(rebuildRelatedPets).toHaveBeenCalledWith({
       mode: "apply",
       includeVisual: true,
     });
@@ -322,6 +323,9 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
         return true;
       },
     );
+    vi.mocked(refreshApprovedPetRelatedQueryEmbedding).mockResolvedValueOnce(
+      "skipped",
+    );
 
     const response = await POST(new Request("http://localhost"), {
       params: Promise.resolve({ id: "pet_1" }),
@@ -329,6 +333,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
 
     expect(response.status).toBe(200);
     expect(refreshApprovedPetSearchEmbedding).toHaveBeenCalledOnce();
+    expect(refreshApprovedPetRelatedQueryEmbedding).toHaveBeenCalledOnce();
     await vi.waitFor(() =>
       expect(refreshApprovedPetVisionSearchBestEffort).toHaveBeenCalledOnce(),
     );
@@ -336,7 +341,15 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     expect(invalidateRelatedPets).toHaveBeenCalledWith({
       failureReason: "text_profile_incompatible",
     });
-    expect(warnSpy).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[codex-pets][related-pets-text-refresh]",
+      {
+        operation: "refresh",
+        status: "incomplete",
+        document: "updated",
+        query: "skipped",
+      },
+    );
     warnSpy.mockRestore();
   });
 
@@ -397,7 +410,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     warnSpy.mockRestore();
   });
 
-  it("awaits text indexing before the immediate rebuild and response work", async () => {
+  it("awaits both text vectors before starting visual indexing", async () => {
     vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
       userId: "admin_1",
       email: null,
@@ -431,25 +444,17 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
         finishTextIndexing = () => resolve("updated");
       }),
     );
-    let finishRebuild: (() => void) | undefined;
-    vi.mocked(rebuildRelatedPets).mockReturnValueOnce(
+    let finishQueryIndexing: (() => void) | undefined;
+    vi.mocked(refreshApprovedPetRelatedQueryEmbedding).mockReturnValueOnce(
       new Promise((resolve) => {
-        finishRebuild = () =>
-          resolve({
-            operation: "apply",
-            status: "ready",
-            generationId: "generation-1",
-            rankingRevision: "related-pets-hybrid-rrf-v1",
-            coverage: {
-              approvedPetCount: 1,
-              snapshotCount: 1,
-              textVectorCount: 1,
-              visualVectorCount: 0,
-            },
-            rankings: [{ sourceSlug: "boba", relatedSlugs: [] }],
-            durationMs: 1,
-          });
+        finishQueryIndexing = () => resolve("unchanged");
       }),
+    );
+    vi.mocked(refreshApprovedPetVisionSearchBestEffort).mockImplementationOnce(
+      async (_pet, options) => {
+        await options?.onSuccessfulRefresh?.("vector-only");
+        return true;
+      },
     );
 
     const responsePromise = POST(new Request("http://localhost"), {
@@ -459,16 +464,24 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     await vi.waitFor(() =>
       expect(refreshApprovedPetSearchEmbedding).toHaveBeenCalledTimes(1),
     );
+    expect(refreshApprovedPetRelatedQueryEmbedding).toHaveBeenCalledTimes(1);
     expect(rebuildRelatedPets).not.toHaveBeenCalled();
+    expect(refreshApprovedPetVisionSearchBestEffort).not.toHaveBeenCalled();
     expect(notifyIndexNowOfApprovedPet).not.toHaveBeenCalled();
 
     finishTextIndexing?.();
-    await vi.waitFor(() => expect(rebuildRelatedPets).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    expect(refreshApprovedPetVisionSearchBestEffort).not.toHaveBeenCalled();
     expect(notifyIndexNowOfApprovedPet).not.toHaveBeenCalled();
 
-    finishRebuild?.();
+    finishQueryIndexing?.();
     const response = await responsePromise;
     expect(response.status).toBe(200);
+    await vi.waitFor(() => expect(rebuildRelatedPets).toHaveBeenCalledTimes(1));
+    expect(rebuildRelatedPets).toHaveBeenCalledWith({
+      mode: "apply",
+      includeVisual: true,
+    });
     expect(notifyIndexNowOfApprovedPet).toHaveBeenCalledWith("boba");
   });
 
@@ -517,6 +530,58 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     expect(response.status).toBe(200);
   });
 
+  it("publishes text-only immediately when the ranking profile explicitly disables visual", async () => {
+    (
+      CURRENT_RELATED_PETS_RANKING_PROFILE as {
+        visualMinSimilarity: number | null;
+      }
+    ).visualMinSimilarity = null;
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce({
+      id: "pet_1",
+      slug: "boba",
+      displayName: "Boba",
+      description: "desc",
+      spritesheetUrl: "/api/assets/asset-123/spritesheet.webp",
+      petJsonUrl: "/api/assets/asset-123/pet.json",
+      zipUrl: "/api/assets/asset-123/pet.zip",
+      spritesheetExt: "webp",
+      kind: "creature",
+      tags: [],
+      status: "approved",
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString(),
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    });
+    vi.mocked(refreshApprovedPetVisionSearchBestEffort).mockImplementationOnce(
+      async (_pet, options) => {
+        await options?.onSuccessfulRefresh?.("vector-only");
+        return true;
+      },
+    );
+
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ id: "pet_1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(rebuildRelatedPets).toHaveBeenCalledTimes(1);
+    expect(rebuildRelatedPets).toHaveBeenCalledWith({
+      mode: "apply",
+      includeVisual: false,
+    });
+  });
+
   it("does not roll back approval when embedding refresh fails", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
@@ -555,12 +620,24 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     });
 
     expect(response.status).toBe(200);
+    expect(refreshApprovedPetRelatedQueryEmbedding).toHaveBeenCalledOnce();
+    expect(rebuildRelatedPets).not.toHaveBeenCalled();
+    expect(refreshApprovedPetVisionSearchBestEffort).toHaveBeenCalledOnce();
     expect(notifyIndexNowOfApprovedPet).toHaveBeenCalledWith("boba");
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[codex-pets][related-pets-text-refresh]",
+      {
+        operation: "refresh",
+        status: "incomplete",
+        document: "failed",
+        query: "updated",
+      },
+    );
     expect(JSON.stringify(warnSpy.mock.calls)).not.toContain("provider failed");
     warnSpy.mockRestore();
   });
 
-  it("keeps approval successful when text indexing and the immediate rebuild fail independently", async () => {
+  it("keeps approval successful and skips visual-triggered rebuild when query indexing fails", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
       userId: "admin_1",
@@ -589,11 +666,14 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
       installCount: 0,
       likeCount: 0,
     });
-    vi.mocked(refreshApprovedPetSearchEmbedding).mockRejectedValueOnce(
-      new Error("text provider secret"),
+    vi.mocked(refreshApprovedPetRelatedQueryEmbedding).mockRejectedValueOnce(
+      new Error("query provider secret"),
     );
-    vi.mocked(rebuildRelatedPets).mockRejectedValueOnce(
-      new Error("snapshot storage secret"),
+    vi.mocked(refreshApprovedPetVisionSearchBestEffort).mockImplementationOnce(
+      async (_pet, options) => {
+        await options?.onSuccessfulRefresh?.("caption-and-vector");
+        return true;
+      },
     );
 
     const response = await POST(new Request("http://localhost"), {
@@ -601,29 +681,67 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(rebuildRelatedPets).toHaveBeenCalledWith({
-      mode: "apply",
-      includeVisual: true,
-    });
+    expect(rebuildRelatedPets).not.toHaveBeenCalled();
     expect(refreshApprovedPetVisionSearchBestEffort).toHaveBeenCalledTimes(1);
     expect(notifyIndexNowOfApprovedPet).toHaveBeenCalledWith("boba");
-    expect(warnSpy).toHaveBeenCalledWith("[codex-pets][pet-search-embedding]", {
-      operation: "refresh",
-      status: "failed",
-    });
     expect(warnSpy).toHaveBeenCalledWith(
-      "[codex-pets][related-pets-rebuild-trigger]",
+      "[codex-pets][related-pets-text-refresh]",
       {
-        operation: "rebuild",
-        trigger: "approve-text",
-        status: "failed",
-        includeVisual: true,
+        operation: "refresh",
+        status: "incomplete",
+        document: "updated",
+        query: "failed",
       },
     );
     const logPayload = JSON.stringify(warnSpy.mock.calls);
-    expect(logPayload).not.toContain("text provider secret");
-    expect(logPayload).not.toContain("snapshot storage secret");
+    expect(logPayload).not.toContain("query provider secret");
     warnSpy.mockRestore();
+  });
+
+  it("does not publish when a required text refresh is skipped", async () => {
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce({
+      id: "pet_1",
+      slug: "boba",
+      displayName: "Boba",
+      description: "desc",
+      spritesheetUrl: "/api/assets/asset-123/spritesheet.webp",
+      petJsonUrl: "/api/assets/asset-123/pet.json",
+      zipUrl: "/api/assets/asset-123/pet.zip",
+      spritesheetExt: "webp",
+      kind: "creature",
+      tags: [],
+      status: "approved",
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString(),
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    });
+    vi.mocked(refreshApprovedPetRelatedQueryEmbedding).mockResolvedValueOnce(
+      "skipped",
+    );
+    vi.mocked(refreshApprovedPetVisionSearchBestEffort).mockImplementationOnce(
+      async (_pet, options) => {
+        await options?.onSuccessfulRefresh?.("unchanged");
+        return true;
+      },
+    );
+
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ id: "pet_1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(rebuildRelatedPets).not.toHaveBeenCalled();
   });
 
   it("logs successful IndexNow submissions without URL payloads", async () => {

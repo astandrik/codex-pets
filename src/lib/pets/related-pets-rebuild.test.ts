@@ -1038,6 +1038,15 @@ describe("related pets rebuild service", () => {
     const pets = [pet("source"), pet("peer-a"), pet("peer-b")];
     const harness = createHarness({
       pets,
+      initialState: {
+        requestedGenerationId: "generation-ready",
+        activeGenerationId: "generation-ready",
+        previousGenerationId: "generation-previous",
+        status: "ready",
+        rankingRevision: profile.rankingRevision,
+        failureReason: null,
+        updatedAt: "2026-08-03T09:00:00.000Z",
+      },
       textQueryRows: pets.slice(0, 2).map((item) =>
         rawVector({
           slug: item.slug,
@@ -1060,17 +1069,49 @@ describe("related pets rebuild service", () => {
       reason: "text_vectors_incomplete",
     });
     expect(harness.state).toMatchObject({
-      requestedGenerationId: "generation-new",
-      activeGenerationId: "generation-old",
-      status: "failed",
-      failureReason: "text_vectors_incomplete",
+      requestedGenerationId: "generation-ready",
+      activeGenerationId: "generation-ready",
+      status: "ready",
+      failureReason: null,
     });
     expect(harness.snapshots).toEqual([]);
-    expect(harness.mutations).toEqual([
-      "request",
-      "failed:text_vectors_incomplete",
-      "cleanup-inactive",
-    ]);
+    expect(harness.mutations).toEqual([]);
+  });
+
+  it("keeps the active generation when apply has incomplete visual vectors", async () => {
+    const pets = [pet("source"), pet("peer-a"), pet("peer-b")];
+    const harness = createHarness({
+      pets,
+      initialState: {
+        requestedGenerationId: "generation-ready",
+        activeGenerationId: "generation-ready",
+        previousGenerationId: "generation-previous",
+        status: "ready",
+        rankingRevision: profile.rankingRevision,
+        failureReason: null,
+        updatedAt: "2026-08-03T09:00:00.000Z",
+      },
+      visualRows: pets.slice(0, 2).map((item) => visualVectorFor(item)),
+      captions: pets.slice(0, 2).map((item) => captionFor(item)),
+    });
+
+    await expect(
+      harness.service.rebuild({
+        mode: "apply",
+        includeVisual: true,
+      }),
+    ).rejects.toMatchObject({
+      name: "RelatedPetsRebuildError",
+      reason: "visual_vectors_incomplete",
+    });
+    expect(harness.state).toMatchObject({
+      requestedGenerationId: "generation-ready",
+      activeGenerationId: "generation-ready",
+      status: "ready",
+      failureReason: null,
+    });
+    expect(harness.snapshots).toEqual([]);
+    expect(harness.mutations).toEqual([]);
   });
 
   it("fails closed when enabled visual context is incompatible", async () => {

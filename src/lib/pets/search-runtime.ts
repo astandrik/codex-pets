@@ -48,7 +48,10 @@ type ApprovedSearchPet = PetSearchCatalogItem & {
 type ApprovedPetSearchRuntimeDependencies<T extends ApprovedSearchPet> = {
   config: PetSearchConfig;
   listApprovedPets: () => Promise<T[]>;
-  embeddingClient: YandexEmbeddingClient | null;
+  embeddingClient: Pick<
+    YandexEmbeddingClient,
+    "embedQuery" | "embedDocument"
+  > | null;
   findSimilar: (input: {
     modelRevision: string;
     dimensions: number;

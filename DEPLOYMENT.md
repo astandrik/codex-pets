@@ -204,9 +204,24 @@ Inspect the structured output before enabling the feature. The apply result must
 have `status: "ready"`, and `coverage.snapshotCount` must equal
 `coverage.approvedPetCount`; `coverage.textVectorCount` counts only pets with
 both current query and document vectors and must also equal the approved count.
+The rebuild validates all required vector coverage and computes every ranking
+before it requests a new generation. A `text_vectors_incomplete` or
+`visual_vectors_incomplete` preflight failure therefore leaves the last ready
+generation unchanged and does not create or clean up a failed generation.
 Then set `PET_RELATED_HYBRID_ENABLED=true` and restart the app. Unset and exact
 `true` enable snapshot reads; exact `false` is the rollout and rollback kill
 switch. Invalid values fail safely to the heuristic resolver.
+
+Approval refreshes the search document vector and the related query vector in
+parallel. `updated` and `unchanged` are the only ready outcomes. With an enabled
+visual profile, approval publishes no generation until the visual refresh also
+succeeds; its callback then rebuilds with complete document, query, and visual
+coverage. A skipped or failed text refresh, or a failed visual refresh, keeps
+the previous generation ready while approval itself remains successful. Retry
+the ordinary embedding refresh/backfill and rebuild operationally; there is no
+separate approval retry queue. If a future pinned profile explicitly sets
+`visualMinSimilarity: null`, successful text refresh publishes a text-only
+generation immediately and does not wait for the visual callback.
 
 To roll back ordering without discarding derived rows, first disable the
 feature and read the exact `active_generation_id` and

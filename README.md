@@ -323,6 +323,12 @@ Text and visual backfills resolve their embedding provider independently from
 their active revision. Visual ranking is disabled safely when the text and
 visual revisions use incompatible embedding models.
 
+Admin approval refreshes both the search document vector and the related-query
+vector. For the current visual-enabled related profile, a new snapshot
+generation is published only after the visual refresh also succeeds. Missing
+required vectors leave the previous ready generation active; operators can use
+the existing backfill and rebuild commands to retry without a separate queue.
+
 The first rollback is `PET_SEARCH_VISUAL_MODE=off`; use
 `PET_SEARCH_MODE=lexical` to disable the text-semantic contour too. The additive
 caption and embeddings tables may remain.

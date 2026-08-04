@@ -194,30 +194,19 @@ export function createRelatedPetsRebuildService(
   }): Promise<RelatedPetsRebuildResult> {
     const startedAt = dependencies.now().getTime();
     const includeVisual = input.includeVisual ?? true;
-    const storageAvailable = dependencies.isStorageAvailable();
-    const generationId =
-      input.mode === "apply" && storageAvailable
-        ? dependencies.createGenerationId()
-        : null;
+    let generationId: string | null = null;
     let coverage = EMPTY_COVERAGE;
     let activated = false;
 
     try {
-      if (!storageAvailable) {
+      if (!dependencies.isStorageAvailable()) {
         throw new RelatedPetsRebuildError("storage_unavailable");
-      }
-      if (generationId) {
-        await dependencies.repository.requestBuild({
-          generationId,
-          rankingRevision: dependencies.profile.rankingRevision,
-          updatedAt: dependencies.now().toISOString(),
-        });
       }
 
       const built = await buildRankings(includeVisual);
       coverage = built.coverage;
 
-      if (!generationId) {
+      if (input.mode === "dry-run") {
         return resultAndLog({
           operation: "dry-run",
           status: "dry-run",
@@ -227,6 +216,13 @@ export function createRelatedPetsRebuildService(
           startedAt,
         });
       }
+
+      generationId = dependencies.createGenerationId();
+      await dependencies.repository.requestBuild({
+        generationId,
+        rankingRevision: dependencies.profile.rankingRevision,
+        updatedAt: dependencies.now().toISOString(),
+      });
 
       for (const ranking of built.rankings) {
         await dependencies.repository.writeSnapshot({

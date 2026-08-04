@@ -43,6 +43,7 @@ export type YandexEmbeddingClient = {
   revision: string;
   dimensions: number;
   embedQuery: (text: string) => Promise<number[]>;
+  embedPreparedQuery: (text: string) => Promise<number[]>;
   embedDocument: (text: string) => Promise<number[]>;
 };
 
@@ -139,6 +140,8 @@ export function createYandexEmbeddingClient(
     revision: options.revision,
     dimensions,
     embedQuery,
+    embedPreparedQuery: (text) =>
+      requestEmbedding("query", normalizeDocument(text)),
     embedDocument: (text) => requestEmbedding("doc", normalizeDocument(text)),
   };
 
