@@ -6,7 +6,7 @@ vi.mock("@/lib/auth/session", () => ({
 }));
 
 vi.mock("@/lib/pets/repository", () => ({
-  softDeletePetById: vi.fn(),
+  softDeletePetByIdWithPreviousStatus: vi.fn(),
 }));
 
 vi.mock("@/lib/pets/search-provider-runtime", () => ({
@@ -33,7 +33,7 @@ vi.mock("@/lib/pets/related-pets-server", () => ({
 
 import { POST } from "@/app/api/admin/submissions/[id]/delete/route";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
-import { softDeletePetById } from "@/lib/pets/repository";
+import { softDeletePetByIdWithPreviousStatus } from "@/lib/pets/repository";
 import { rebuildRelatedPets } from "@/lib/pets/related-pets-rebuild";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
@@ -83,14 +83,16 @@ describe("POST /api/admin/submissions/[id]/delete", () => {
       role: "admin",
     });
     vi.mocked(isAdminUser).mockReturnValueOnce(true);
-    vi.mocked(softDeletePetById).mockResolvedValueOnce(true);
+    vi.mocked(softDeletePetByIdWithPreviousStatus).mockResolvedValueOnce({
+      previousStatus: "approved",
+    });
 
     const response = await POST(new Request("http://localhost"), {
       params: Promise.resolve({ id: "pet_1" }),
     });
 
     expect(response.status).toBe(200);
-    expect(softDeletePetById).toHaveBeenCalledWith({
+    expect(softDeletePetByIdWithPreviousStatus).toHaveBeenCalledWith({
       petId: "pet_1",
       actorUserId: "admin_1",
       actorRole: "admin",
@@ -112,7 +114,9 @@ describe("POST /api/admin/submissions/[id]/delete", () => {
       role: "admin",
     });
     vi.mocked(isAdminUser).mockReturnValueOnce(true);
-    vi.mocked(softDeletePetById).mockResolvedValueOnce(true);
+    vi.mocked(softDeletePetByIdWithPreviousStatus).mockResolvedValueOnce({
+      previousStatus: "approved",
+    });
     let rejectRebuild: ((error: Error) => void) | undefined;
     vi.mocked(rebuildRelatedPets).mockReturnValueOnce(
       new Promise((_resolve, reject) => {
@@ -148,6 +152,28 @@ describe("POST /api/admin/submissions/[id]/delete", () => {
     warnSpy.mockRestore();
   });
 
+  it("does not rebuild related pets after deleting a rejected pet", async () => {
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(softDeletePetByIdWithPreviousStatus).mockResolvedValueOnce({
+      previousStatus: "rejected",
+    });
+
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ id: "pet_1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(revalidateSitemapCache).not.toHaveBeenCalled();
+    expect(revalidateRelatedPetCandidatesCache).not.toHaveBeenCalled();
+    expect(rebuildRelatedPets).not.toHaveBeenCalled();
+  });
+
   it("does not revalidate sitemap cache when the pet is missing", async () => {
     vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
       userId: "admin_1",
@@ -156,7 +182,7 @@ describe("POST /api/admin/submissions/[id]/delete", () => {
       role: "admin",
     });
     vi.mocked(isAdminUser).mockReturnValueOnce(true);
-    vi.mocked(softDeletePetById).mockResolvedValueOnce(false);
+    vi.mocked(softDeletePetByIdWithPreviousStatus).mockResolvedValueOnce(null);
 
     const response = await POST(new Request("http://localhost"), {
       params: Promise.resolve({ id: "pet_1" }),

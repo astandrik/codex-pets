@@ -120,6 +120,16 @@ function captionRevisionResult(updatedAt: string) {
   };
 }
 
+function generationRevisionResult(rankingRevision: string) {
+  return {
+    resultSets: [
+      {
+        rows: [{ items: [{ textValue: rankingRevision }] }],
+      },
+    ],
+  };
+}
+
 function createHarness(
   responder: (
     statement: string,
@@ -602,6 +612,66 @@ describe("related pets repository", () => {
     });
   });
 
+  it("restores the last ready generation instead of an abandoned building generation", async () => {
+    let catalogUpdatedAt = "2026-08-03T10:00:00.000Z";
+    const harness = createHarness(async (statement) => {
+      if (statement.includes("SELECT slug,")) {
+        return catalogRevisionResult(catalogUpdatedAt);
+      }
+      if (statement.includes("SELECT state_id")) {
+        return stateResult({
+          requested: "generation-3",
+          active: "generation-1",
+          previous: "generation-0",
+          status: "building",
+          rankingRevision: "ranking-v2",
+        });
+      }
+      if (statement.includes("SELECT DISTINCT ranking_revision")) {
+        return generationRevisionResult("ranking-v1");
+      }
+      return { resultSets: [] };
+    });
+    const expectedInputRevision =
+      await harness.repository.getRankingInputRevision(EMPTY_INPUT_SCOPE);
+    if (expectedInputRevision === null) {
+      throw new Error("Expected configured ranking input revision.");
+    }
+    catalogUpdatedAt = "2026-08-03T10:01:00.000Z";
+
+    await expect(
+      harness.repository.activateGeneration({
+        generationId: "generation-3",
+        rankingRevision: "ranking-v2",
+        updatedAt: "2026-08-03T10:02:00.000Z",
+        inputScope: EMPTY_INPUT_SCOPE,
+        expectedInputRevision,
+        previousState: {
+          requestedGenerationId: "generation-2",
+          activeGenerationId: "generation-1",
+          previousGenerationId: "generation-0",
+          status: "building",
+          rankingRevision: "ranking-v2",
+          failureReason: null,
+          updatedAt: "2026-08-03T10:00:30.000Z",
+        },
+      }),
+    ).resolves.toBe(false);
+
+    const restore = harness.statements.find(({ statement }) =>
+      statement.includes(
+        "SET requested_generation_id = $previous_requested_generation_id",
+      ),
+    );
+    expect(restore?.params).toMatchObject({
+      $previous_requested_generation_id: { textValue: "generation-1" },
+      $previous_active_generation_id: { textValue: "generation-1" },
+      $previous_generation_id: { textValue: "generation-0" },
+      $previous_status: { textValue: "ready" },
+      $previous_ranking_revision: { textValue: "ranking-v1" },
+    });
+  });
+
   it("retries activation without replacing or cleaning the retained previous generation", async () => {
     let state = {
       requested: "generation-2",
@@ -895,6 +965,24 @@ describe("related pets repository", () => {
     expect(cleanup?.statement).toContain(
       "generation_id = $inactive_generation_id",
     );
+    expect(cleanup?.params).toEqual({
+      $inactive_generation_id: { textValue: "generation-2" },
+    });
+  });
+
+  it("deletes an inactive generation when no singleton state remains", async () => {
+    const harness = createHarness();
+
+    await expect(
+      harness.repository.cleanupInactiveGeneration({
+        expectedGenerationId: "generation-2",
+      }),
+    ).resolves.toBe(true);
+
+    const cleanup = harness.statements.find(({ statement }) =>
+      statement.includes("DELETE FROM codex_pet_related_snapshots"),
+    );
+    expect(cleanup?.transactional).toBe(true);
     expect(cleanup?.params).toEqual({
       $inactive_generation_id: { textValue: "generation-2" },
     });

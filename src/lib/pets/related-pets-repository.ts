@@ -524,7 +524,11 @@ WHERE state_id = $state_id
       previousState: RelatedPetsState | null;
     },
   ): Promise<void> {
-    if (!input.previousState) {
+    const previous = await getRestorableStateAfterStaleBuild(
+      execute,
+      input.previousState,
+    );
+    if (!previous) {
       await execute(
         `
 DECLARE $state_id AS Utf8;
@@ -548,7 +552,6 @@ WHERE state_id = $state_id
       return;
     }
 
-    const previous = input.previousState;
     const requestedValue = previous.requestedGenerationId
       ? "$previous_requested_generation_id"
       : "NULL";
@@ -628,6 +631,52 @@ WHERE state_id = $state_id
           : {}),
       },
     );
+  }
+
+  async function getRestorableStateAfterStaleBuild(
+    execute: Execute,
+    previous: RelatedPetsState | null,
+  ): Promise<RelatedPetsState | null> {
+    if (!previous || previous.status !== "building") return previous;
+    if (!previous.activeGenerationId) return null;
+
+    const rankingRevision = await getGenerationRankingRevisionWithExecute(
+      execute,
+      previous.activeGenerationId,
+    );
+    if (!rankingRevision) return null;
+
+    return {
+      ...previous,
+      requestedGenerationId: previous.activeGenerationId,
+      status: "ready",
+      rankingRevision,
+      failureReason: null,
+    };
+  }
+
+  async function getGenerationRankingRevisionWithExecute(
+    execute: Execute,
+    generationId: string,
+  ): Promise<string | null> {
+    const result = await execute(
+      `
+DECLARE $generation_id AS Utf8;
+
+SELECT DISTINCT ranking_revision
+FROM ${TABLES.relatedSnapshots}
+WHERE generation_id = $generation_id;
+      `,
+      {
+        $generation_id: dependencies.values.utf8(generationId),
+      },
+    );
+    const rows = rowsFromResult(result);
+    if (rows.length === 0) return null;
+    if (rows.length !== 1 || !textAt(rows[0], 0)) {
+      throw new Error("Invalid related pets generation ranking revision.");
+    }
+    return textAt(rows[0], 0);
   }
 
   async function markGenerationFailed(input: {
@@ -741,10 +790,9 @@ WHERE generation_id != $active_generation_id${previousFilter};
     return dependencies.transaction(async (execute) => {
       const state = await getStateWithExecute(execute);
       if (
-        !state ||
-        state.activeGenerationId === input.expectedGenerationId ||
-        state.previousGenerationId === input.expectedGenerationId ||
-        (state.requestedGenerationId === input.expectedGenerationId &&
+        state?.activeGenerationId === input.expectedGenerationId ||
+        state?.previousGenerationId === input.expectedGenerationId ||
+        (state?.requestedGenerationId === input.expectedGenerationId &&
           state.status !== "failed")
       ) {
         return false;
@@ -796,26 +844,11 @@ WHERE generation_id = $inactive_generation_id;
         return null;
       }
 
-      const revisionResult = await execute(
-        `
-DECLARE $generation_id AS Utf8;
-
-SELECT DISTINCT ranking_revision
-FROM ${TABLES.relatedSnapshots}
-WHERE generation_id = $generation_id;
-        `,
-        {
-          $generation_id: dependencies.values.utf8(
-            input.targetPreviousGenerationId,
-          ),
-        },
+      const rankingRevision = await getGenerationRankingRevisionWithExecute(
+        execute,
+        input.targetPreviousGenerationId,
       );
-      const revisionRows = rowsFromResult(revisionResult);
-      if (revisionRows.length === 0) return null;
-      if (revisionRows.length !== 1 || !textAt(revisionRows[0], 0)) {
-        throw new Error("Invalid retained related pets generation.");
-      }
-      const rankingRevision = textAt(revisionRows[0], 0);
+      if (!rankingRevision) return null;
       if (rankingRevision !== input.expectedRankingRevision) return null;
 
       await execute(

@@ -739,21 +739,30 @@ export async function softDeletePetById(input: {
   actorUserId: string;
   actorRole: "user" | "admin";
 }): Promise<boolean> {
+  return Boolean(await softDeletePetByIdWithPreviousStatus(input));
+}
+
+export async function softDeletePetByIdWithPreviousStatus(input: {
+  petId: string;
+  actorUserId: string;
+  actorRole: "user" | "admin";
+}): Promise<{ previousStatus: ApprovalStatus } | null> {
   if (isMockPetsDataSource()) {
     const pet = getMockPetById(input.petId);
     const deleted = softDeleteMockPetById(input);
     if (deleted && pet) {
       await deletePetSearchIndexBestEffort(pet.slug);
+      return { previousStatus: pet.status };
     }
-    return deleted;
+    return null;
   }
 
   const pet = await getPetById(input.petId);
   if (!pet || pet.status === "deleted") {
-    return false;
+    return null;
   }
   if (input.actorRole !== "admin" && pet.ownerId !== input.actorUserId) {
-    return false;
+    return null;
   }
 
   await withSession((session) =>
@@ -778,7 +787,7 @@ WHERE slug = $slug;
 
   await deletePetSearchIndexBestEffort(pet.slug);
 
-  return true;
+  return { previousStatus: pet.status };
 }
 
 export async function incrementDownload(slug: string): Promise<void> {

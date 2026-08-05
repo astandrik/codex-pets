@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentPrincipal } from "@/lib/auth/session";
 import { rebuildRelatedPetsBestEffort } from "@/lib/pets/related-pets-rebuild-trigger";
-import { softDeletePetById } from "@/lib/pets/repository";
+import { softDeletePetByIdWithPreviousStatus } from "@/lib/pets/repository";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
@@ -19,22 +19,24 @@ export async function POST(
   }
 
   const { id } = await params;
-  const deleted = await softDeletePetById({
+  const deletion = await softDeletePetByIdWithPreviousStatus({
     petId: id,
     actorUserId: principal.userId,
     actorRole: principal.role,
   });
 
-  if (!deleted) {
+  if (!deletion) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
-  revalidateSitemapCache();
-  revalidateRelatedPetCandidatesCache();
-  await rebuildRelatedPetsBestEffort({
-    trigger: "owner-delete",
-    includeVisual: true,
-  });
+  if (deletion.previousStatus === "approved") {
+    revalidateSitemapCache();
+    revalidateRelatedPetCandidatesCache();
+    await rebuildRelatedPetsBestEffort({
+      trigger: "owner-delete",
+      includeVisual: true,
+    });
+  }
 
   return NextResponse.json({ ok: true });
 }
