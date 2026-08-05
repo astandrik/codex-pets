@@ -46,6 +46,7 @@ const EMPTY_METRICS: PetMetrics = {
   installCount: 0,
   likeCount: 0,
 };
+const SOFT_DELETE_MAX_ATTEMPTS = 3;
 
 type PetRow = {
   slug: string;
@@ -757,37 +758,59 @@ export async function softDeletePetByIdWithPreviousStatus(input: {
     return null;
   }
 
-  const pet = await getPetById(input.petId);
-  if (!pet || pet.status === "deleted") {
-    return null;
-  }
-  if (input.actorRole !== "admin" && pet.ownerId !== input.actorUserId) {
-    return null;
-  }
+  let pet = await getPetById(input.petId);
+  for (
+    let attempt = 0;
+    attempt < SOFT_DELETE_MAX_ATTEMPTS;
+    attempt += 1
+  ) {
+    if (!pet || pet.status === "deleted") {
+      return null;
+    }
+    if (input.actorRole !== "admin" && pet.ownerId !== input.actorUserId) {
+      return null;
+    }
 
-  await withSession((session) =>
-    session.executeQuery(
-      `
+    const candidate = pet;
+    const deletedAt = new Date().toISOString();
+    await withSession((session) =>
+      session.executeQuery(
+        `
 DECLARE $slug AS Utf8;
 DECLARE $status AS Utf8;
 DECLARE $updated_at AS Utf8;
+DECLARE $expected_status AS Utf8;
+DECLARE $expected_updated_at AS Utf8;
 
 UPDATE ${TABLES.pets}
 SET status = $status,
     updated_at = $updated_at
-WHERE slug = $slug;
-      `,
-      {
-        $slug: TypedValues.utf8(pet.slug),
-        $status: TypedValues.utf8("deleted"),
-        $updated_at: TypedValues.utf8(new Date().toISOString()),
-      },
-    ),
-  );
+WHERE slug = $slug
+  AND status = $expected_status
+  AND updated_at = $expected_updated_at;
+        `,
+        {
+          $slug: TypedValues.utf8(candidate.slug),
+          $status: TypedValues.utf8("deleted"),
+          $updated_at: TypedValues.utf8(deletedAt),
+          $expected_status: TypedValues.utf8(candidate.status),
+          $expected_updated_at: TypedValues.utf8(candidate.updatedAt),
+        },
+      ),
+    );
 
-  await deletePetSearchIndexBestEffort(pet.slug);
+    const confirmed = await getPetById(input.petId);
+    if (
+      confirmed?.status === "deleted" &&
+      confirmed.updatedAt === deletedAt
+    ) {
+      await deletePetSearchIndexBestEffort(candidate.slug);
+      return { previousStatus: candidate.status };
+    }
+    pet = confirmed;
+  }
 
-  return { previousStatus: pet.status };
+  return null;
 }
 
 export async function incrementDownload(slug: string): Promise<void> {

@@ -340,13 +340,13 @@ LIMIT 1;
   }): Promise<boolean> {
     if (!dependencies.isConfigured()) return false;
     return dependencies.transaction(async (execute) => {
+      const state = await getStateWithExecute(execute);
+      if (isRequestedBuildState(state, input)) return true;
       const inputRevision = await getRankingInputRevisionWithExecute(
         execute,
         input.inputScope,
       );
       if (inputRevision !== input.expectedInputRevision) return false;
-      const state = await getStateWithExecute(execute);
-      if (isRequestedBuildState(state, input)) return true;
       if (!areRelatedPetsStatesEqual(state, input.expectedState)) return false;
 
       const params = {
@@ -446,11 +446,19 @@ VALUES
   }): Promise<boolean> {
     if (!dependencies.isConfigured()) return false;
     return dependencies.transaction(async (execute) => {
+      const state = await getStateWithExecute(execute);
+      if (
+        state?.status === "ready" &&
+        state.requestedGenerationId === input.generationId &&
+        state.activeGenerationId === input.generationId &&
+        state.rankingRevision === input.rankingRevision
+      ) {
+        return true;
+      }
       const inputRevision = await getRankingInputRevisionWithExecute(
         execute,
         input.inputScope,
       );
-      const state = await getStateWithExecute(execute);
       if (inputRevision !== input.expectedInputRevision) {
         if (
           state?.requestedGenerationId === input.generationId &&
@@ -460,14 +468,6 @@ VALUES
           await restoreStateAfterStaleBuild(execute, input);
         }
         return false;
-      }
-      if (
-        state?.status === "ready" &&
-        state.requestedGenerationId === input.generationId &&
-        state.activeGenerationId === input.generationId &&
-        state.rankingRevision === input.rankingRevision
-      ) {
-        return true;
       }
       if (
         state?.requestedGenerationId !== input.generationId ||

@@ -380,6 +380,67 @@ describe("related pets repository", () => {
     expect(state.requestedGenerationId).toBe("generation-3");
   });
 
+  it("accepts an identical committed build request after ranking inputs change", async () => {
+    let catalogUpdatedAt = "2026-08-03T10:00:00.000Z";
+    let state: RelatedPetsState = { ...PREVIOUS_READY_STATE };
+    const harness = createHarness(async (statement, params) => {
+      if (statement.includes("SELECT slug,")) {
+        return catalogRevisionResult(catalogUpdatedAt);
+      }
+      if (statement.includes("SELECT state_id")) {
+        return stateResult({
+          requested: state.requestedGenerationId,
+          active: state.activeGenerationId,
+          previous: state.previousGenerationId,
+          status: state.status,
+          rankingRevision: state.rankingRevision,
+          failureReason: state.failureReason,
+          updatedAt: state.updatedAt,
+        });
+      }
+      if (statement.includes("UPDATE codex_pet_related_state")) {
+        state = {
+          ...state,
+          requestedGenerationId: String(
+            (params.$generation_id as { textValue: string }).textValue,
+          ),
+          status: "building",
+          rankingRevision: String(
+            (params.$ranking_revision as { textValue: string }).textValue,
+          ),
+          failureReason: null,
+          updatedAt: String(
+            (params.$updated_at as { textValue: string }).textValue,
+          ),
+        };
+      }
+      return { resultSets: [] };
+    });
+    const expectedInputRevision =
+      await harness.repository.getRankingInputRevision(EMPTY_INPUT_SCOPE);
+    if (expectedInputRevision === null) {
+      throw new Error("Expected configured ranking input revision.");
+    }
+    const input = {
+      generationId: "generation-2",
+      rankingRevision: "ranking-v1",
+      updatedAt: "2026-08-03T10:01:00.000Z",
+      expectedState: PREVIOUS_READY_STATE,
+      inputScope: EMPTY_INPUT_SCOPE,
+      expectedInputRevision,
+    };
+
+    await expect(harness.repository.requestBuild(input)).resolves.toBe(true);
+    catalogUpdatedAt = "2026-08-03T10:02:00.000Z";
+    await expect(harness.repository.requestBuild(input)).resolves.toBe(true);
+
+    expect(
+      harness.statements.filter(({ statement }) =>
+        statement.includes("UPDATE codex_pet_related_state"),
+      ),
+    ).toHaveLength(1);
+  });
+
   it("rejects rankings captured before the approved catalog changed", async () => {
     let catalogUpdatedAt = "2026-08-03T10:00:00.000Z";
     const harness = createHarness(async (statement) => {
@@ -413,8 +474,10 @@ describe("related pets repository", () => {
     expect(catalogReads[0]?.transactional).toBe(false);
     expect(catalogReads[1]?.transactional).toBe(true);
     expect(
-      harness.statements.some(({ statement }) =>
-        statement.includes("codex_pet_related_state"),
+      harness.statements.some(
+        ({ statement }) =>
+          statement.includes("UPDATE codex_pet_related_state") ||
+          statement.includes("UPSERT INTO codex_pet_related_state"),
       ),
     ).toBe(false);
   });
@@ -460,8 +523,10 @@ describe("related pets repository", () => {
       true,
     );
     expect(
-      harness.statements.some(({ statement }) =>
-        statement.includes("codex_pet_related_state"),
+      harness.statements.some(
+        ({ statement }) =>
+          statement.includes("UPDATE codex_pet_related_state") ||
+          statement.includes("UPSERT INTO codex_pet_related_state"),
       ),
     ).toBe(false);
   });
@@ -503,8 +568,10 @@ describe("related pets repository", () => {
     expect(captionReads[0]?.transactional).toBe(false);
     expect(captionReads[1]?.transactional).toBe(true);
     expect(
-      harness.statements.some(({ statement }) =>
-        statement.includes("codex_pet_related_state"),
+      harness.statements.some(
+        ({ statement }) =>
+          statement.includes("UPDATE codex_pet_related_state") ||
+          statement.includes("UPSERT INTO codex_pet_related_state"),
       ),
     ).toBe(false);
   });
@@ -729,6 +796,67 @@ describe("related pets repository", () => {
       $active_generation_id: { textValue: "generation-2" },
       $previous_generation_id: { textValue: "generation-1" },
     });
+  });
+
+  it("accepts an identical committed activation after ranking inputs change", async () => {
+    let catalogUpdatedAt = "2026-08-03T10:00:00.000Z";
+    let state = {
+      requested: "generation-2",
+      active: "generation-1",
+      previous: "generation-0",
+      status: "building",
+      rankingRevision: "ranking-v1",
+    };
+    const harness = createHarness(async (statement) => {
+      if (statement.includes("SELECT slug,")) {
+        return catalogRevisionResult(catalogUpdatedAt);
+      }
+      if (statement.includes("SELECT state_id")) {
+        return stateResult(state);
+      }
+      if (
+        statement.includes("UPDATE codex_pet_related_state") &&
+        statement.includes("previous_generation_id = active_generation_id")
+      ) {
+        state = {
+          requested: "generation-2",
+          active: "generation-2",
+          previous: "generation-1",
+          status: "ready",
+          rankingRevision: "ranking-v1",
+        };
+      }
+      return { resultSets: [] };
+    });
+    const expectedInputRevision =
+      await harness.repository.getRankingInputRevision(EMPTY_INPUT_SCOPE);
+    if (expectedInputRevision === null) {
+      throw new Error("Expected configured ranking input revision.");
+    }
+    const input = {
+      generationId: "generation-2",
+      rankingRevision: "ranking-v1",
+      updatedAt: "2026-08-03T10:03:00.000Z",
+      inputScope: EMPTY_INPUT_SCOPE,
+      expectedInputRevision,
+      previousState: PREVIOUS_READY_STATE,
+    };
+
+    await expect(harness.repository.activateGeneration(input)).resolves.toBe(
+      true,
+    );
+    catalogUpdatedAt = "2026-08-03T10:04:00.000Z";
+    await expect(harness.repository.activateGeneration(input)).resolves.toBe(
+      true,
+    );
+
+    expect(
+      harness.statements.filter(
+        ({ statement }) =>
+          statement.includes("UPDATE codex_pet_related_state") &&
+          statement.includes("previous_generation_id = active_generation_id"),
+      ),
+    ).toHaveLength(1);
   });
 
   it("rejects activation retries with a different ranking revision", async () => {
