@@ -630,13 +630,29 @@ export async function moderatePet(input: {
   decision: "approved" | "rejected";
   reason?: string;
 }): Promise<PublicPet | null> {
+  return (await moderatePetWithPreviousStatus(input))?.pet ?? null;
+}
+
+export async function moderatePetWithPreviousStatus(input: {
+  petId: string;
+  reviewerId: string;
+  decision: "approved" | "rejected";
+  reason?: string;
+}): Promise<{
+  pet: PublicPet;
+  previousStatus: ApprovalStatus;
+} | null> {
   if (isMockPetsDataSource()) {
+    const previousStatus = getMockPetById(input.petId)?.status;
     const pet = moderateMockPet(input);
     if (pet?.status === "rejected") {
       await deletePetSearchIndexBestEffort(pet.slug);
     }
-    return pet
-      ? toPublicPet(pet, pet.metrics, mockOwnerReference(pet))
+    return pet && previousStatus
+      ? {
+          pet: toPublicPet(pet, pet.metrics, mockOwnerReference(pet)),
+          previousStatus,
+        }
       : null;
   }
 
@@ -697,11 +713,14 @@ WHERE slug = $slug;
     rejectedAt: rejectedAt || null,
     rejectionReason: reason || null,
   };
-  return toPublicPet(
-    updatedPet,
-    EMPTY_METRICS,
-    await getOwnerProfileByRow(updatedPet),
-  );
+  return {
+    pet: toPublicPet(
+      updatedPet,
+      EMPTY_METRICS,
+      await getOwnerProfileByRow(updatedPet),
+    ),
+    previousStatus: pet.status,
+  };
 }
 
 export async function softDeletePetByIdForOwner(input: {

@@ -143,6 +143,7 @@ function createHarness(options: {
   supersedeDuringRanking?: boolean;
   mutateCatalogDuringRanking?: boolean;
   mutateEmbeddingsBeforeRequest?: boolean;
+  mutateInputsBeforeActivation?: boolean;
   storageAvailable?: boolean;
   writeError?: Error;
   writeErrorAt?: number;
@@ -270,8 +271,20 @@ function createHarness(options: {
       generationId: string;
       rankingRevision: string;
       updatedAt: string;
+      expectedInputRevision: string;
+      previousState: RelatedPetsState | null;
     }) => {
       mutations.push("activate");
+      if (options.mutateInputsBeforeActivation) {
+        catalogRevision = "catalog-revision-2";
+      }
+      if (
+        input.expectedInputRevision !==
+        `${catalogRevision}:${embeddingRevision}`
+      ) {
+        state = input.previousState;
+        return false;
+      }
       if (options.superseded) {
         state = {
           requestedGenerationId: "generation-newer",
@@ -721,6 +734,32 @@ describe("related pets rebuild service", () => {
       activeGenerationId: "generation-newer",
       status: "ready",
     });
+  });
+
+  it("does not activate snapshots after ranking inputs change", async () => {
+    const initialState: RelatedPetsState = {
+      requestedGenerationId: "generation-old",
+      activeGenerationId: "generation-old",
+      previousGenerationId: "generation-older",
+      status: "ready",
+      rankingRevision: profile.rankingRevision,
+      failureReason: null,
+      updatedAt: "2026-08-03T09:59:00.000Z",
+    };
+    const harness = createHarness({
+      initialState,
+      mutateInputsBeforeActivation: true,
+    });
+
+    const result = await harness.service.rebuild({
+      mode: "apply",
+      includeVisual: true,
+    });
+
+    expect(result.status).toBe("superseded");
+    expect(harness.mutations).toContain("activate");
+    expect(harness.state).toEqual(initialState);
+    expect(harness.snapshots).toEqual([]);
   });
 
   it("fails apply when storage is unavailable without reporting supersession", async () => {

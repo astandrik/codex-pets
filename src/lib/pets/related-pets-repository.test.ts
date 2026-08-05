@@ -14,6 +14,20 @@ const EMPTY_INPUT_SCOPE = {
   embeddingModelRevisions: [],
   captionRevision: null,
 };
+const EMPTY_INPUT_REVISION = JSON.stringify({
+  catalog: "[]",
+  embeddings: "[]",
+  captions: null,
+});
+const PREVIOUS_READY_STATE: RelatedPetsState = {
+  requestedGenerationId: "generation-1",
+  activeGenerationId: "generation-1",
+  previousGenerationId: "generation-0",
+  status: "ready",
+  rankingRevision: "ranking-v1",
+  failureReason: null,
+  updatedAt: "2026-08-03T09:59:00.000Z",
+};
 
 type RecordedStatement = {
   statement: string;
@@ -501,6 +515,9 @@ describe("related pets repository", () => {
         generationId: "generation-2",
         rankingRevision: "ranking-v1",
         updatedAt: "2026-08-03T10:03:00.000Z",
+        inputScope: EMPTY_INPUT_SCOPE,
+        expectedInputRevision: EMPTY_INPUT_REVISION,
+        previousState: null,
       }),
     ).resolves.toBe(true);
     expect(current.transactions).toBe(1);
@@ -525,6 +542,9 @@ describe("related pets repository", () => {
         generationId: "generation-2",
         rankingRevision: "ranking-v1",
         updatedAt: "2026-08-03T10:03:00.000Z",
+        inputScope: EMPTY_INPUT_SCOPE,
+        expectedInputRevision: EMPTY_INPUT_REVISION,
+        previousState: null,
       }),
     ).resolves.toBe(false);
     expect(
@@ -532,6 +552,54 @@ describe("related pets repository", () => {
         statement.includes("UPDATE codex_pet_related_state"),
       ),
     ).toBe(false);
+  });
+
+  it("rejects activation after a ranking input changed", async () => {
+    let catalogUpdatedAt = "2026-08-03T10:00:00.000Z";
+    const harness = createHarness(async (statement) => {
+      if (statement.includes("SELECT slug,")) {
+        return catalogRevisionResult(catalogUpdatedAt);
+      }
+      if (statement.includes("SELECT state_id")) {
+        return stateResult({
+          requested: "generation-2",
+          active: "generation-1",
+          status: "building",
+        });
+      }
+      return { resultSets: [] };
+    });
+    const expectedInputRevision =
+      await harness.repository.getRankingInputRevision(EMPTY_INPUT_SCOPE);
+    if (expectedInputRevision === null) {
+      throw new Error("Expected configured ranking input revision.");
+    }
+    catalogUpdatedAt = "2026-08-03T10:01:00.000Z";
+
+    await expect(
+      harness.repository.activateGeneration({
+        generationId: "generation-2",
+        rankingRevision: "ranking-v1",
+        updatedAt: "2026-08-03T10:02:00.000Z",
+        inputScope: EMPTY_INPUT_SCOPE,
+        expectedInputRevision,
+        previousState: PREVIOUS_READY_STATE,
+      }),
+    ).resolves.toBe(false);
+
+    const restore = harness.statements.find(({ statement }) =>
+      statement.includes(
+        "SET requested_generation_id = $previous_requested_generation_id",
+      ),
+    );
+    expect(restore?.transactional).toBe(true);
+    expect(restore?.params).toMatchObject({
+      $previous_requested_generation_id: { textValue: "generation-1" },
+      $previous_active_generation_id: { textValue: "generation-1" },
+      $previous_generation_id: { textValue: "generation-0" },
+      $previous_status: { textValue: "ready" },
+      $previous_ranking_revision: { textValue: "ranking-v1" },
+    });
   });
 
   it("retries activation without replacing or cleaning the retained previous generation", async () => {
@@ -561,6 +629,9 @@ describe("related pets repository", () => {
       generationId: "generation-2",
       rankingRevision: "ranking-v1",
       updatedAt: "2026-08-03T10:03:00.000Z",
+      inputScope: EMPTY_INPUT_SCOPE,
+      expectedInputRevision: EMPTY_INPUT_REVISION,
+      previousState: null,
     };
 
     await expect(harness.repository.activateGeneration(input)).resolves.toBe(
@@ -608,6 +679,9 @@ describe("related pets repository", () => {
         generationId: "generation-2",
         rankingRevision: "ranking-v1",
         updatedAt: "2026-08-03T10:03:00.000Z",
+        inputScope: EMPTY_INPUT_SCOPE,
+        expectedInputRevision: EMPTY_INPUT_REVISION,
+        previousState: null,
       }),
     ).resolves.toBe(false);
     expect(
@@ -1104,6 +1178,9 @@ describe("related pets repository", () => {
             generationId: "generation-incomplete",
             rankingRevision: "ranking-v1",
             updatedAt: "2026-08-03T10:06:00.000Z",
+            inputScope: EMPTY_INPUT_SCOPE,
+            expectedInputRevision: EMPTY_INPUT_REVISION,
+            previousState: null,
           }),
         ).resolves.toBe(false);
       }

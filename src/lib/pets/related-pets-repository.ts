@@ -440,10 +440,27 @@ VALUES
     generationId: string;
     rankingRevision: string;
     updatedAt: string;
+    inputScope: RelatedPetsRankingInputScope;
+    expectedInputRevision: string;
+    previousState: RelatedPetsState | null;
   }): Promise<boolean> {
     if (!dependencies.isConfigured()) return false;
     return dependencies.transaction(async (execute) => {
+      const inputRevision = await getRankingInputRevisionWithExecute(
+        execute,
+        input.inputScope,
+      );
       const state = await getStateWithExecute(execute);
+      if (inputRevision !== input.expectedInputRevision) {
+        if (
+          state?.requestedGenerationId === input.generationId &&
+          state.status === "building" &&
+          state.rankingRevision === input.rankingRevision
+        ) {
+          await restoreStateAfterStaleBuild(execute, input);
+        }
+        return false;
+      }
       if (
         state?.status === "ready" &&
         state.requestedGenerationId === input.generationId &&
@@ -496,6 +513,121 @@ WHERE state_id = $state_id
       );
       return true;
     });
+  }
+
+  async function restoreStateAfterStaleBuild(
+    execute: Execute,
+    input: {
+      generationId: string;
+      rankingRevision: string;
+      updatedAt: string;
+      previousState: RelatedPetsState | null;
+    },
+  ): Promise<void> {
+    if (!input.previousState) {
+      await execute(
+        `
+DECLARE $state_id AS Utf8;
+DECLARE $generation_id AS Utf8;
+DECLARE $building_status AS Utf8;
+DECLARE $ranking_revision AS Utf8;
+
+DELETE FROM ${TABLES.relatedState}
+WHERE state_id = $state_id
+  AND requested_generation_id = $generation_id
+  AND status = $building_status
+  AND ranking_revision = $ranking_revision;
+        `,
+        {
+          $state_id: dependencies.values.utf8(RELATED_PETS_STATE_ID),
+          $generation_id: dependencies.values.utf8(input.generationId),
+          $building_status: dependencies.values.utf8("building"),
+          $ranking_revision: dependencies.values.utf8(input.rankingRevision),
+        },
+      );
+      return;
+    }
+
+    const previous = input.previousState;
+    const requestedValue = previous.requestedGenerationId
+      ? "$previous_requested_generation_id"
+      : "NULL";
+    const activeValue = previous.activeGenerationId
+      ? "$previous_active_generation_id"
+      : "NULL";
+    const retainedValue = previous.previousGenerationId
+      ? "$previous_generation_id"
+      : "NULL";
+    const failureValue = previous.failureReason
+      ? "$previous_failure_reason"
+      : "NULL";
+    await execute(
+      `
+DECLARE $state_id AS Utf8;
+DECLARE $generation_id AS Utf8;
+DECLARE $building_status AS Utf8;
+DECLARE $ranking_revision AS Utf8;
+DECLARE $previous_status AS Utf8;
+DECLARE $previous_ranking_revision AS Utf8;
+DECLARE $updated_at AS Utf8;
+${previous.requestedGenerationId ? "DECLARE $previous_requested_generation_id AS Utf8;" : ""}
+${previous.activeGenerationId ? "DECLARE $previous_active_generation_id AS Utf8;" : ""}
+${previous.previousGenerationId ? "DECLARE $previous_generation_id AS Utf8;" : ""}
+${previous.failureReason ? "DECLARE $previous_failure_reason AS Utf8;" : ""}
+
+UPDATE ${TABLES.relatedState}
+SET requested_generation_id = ${requestedValue},
+    active_generation_id = ${activeValue},
+    previous_generation_id = ${retainedValue},
+    status = $previous_status,
+    ranking_revision = $previous_ranking_revision,
+    failure_reason = ${failureValue},
+    updated_at = $updated_at
+WHERE state_id = $state_id
+  AND requested_generation_id = $generation_id
+  AND status = $building_status
+  AND ranking_revision = $ranking_revision;
+      `,
+      {
+        $state_id: dependencies.values.utf8(RELATED_PETS_STATE_ID),
+        $generation_id: dependencies.values.utf8(input.generationId),
+        $building_status: dependencies.values.utf8("building"),
+        $ranking_revision: dependencies.values.utf8(input.rankingRevision),
+        $previous_status: dependencies.values.utf8(previous.status),
+        $previous_ranking_revision: dependencies.values.utf8(
+          previous.rankingRevision,
+        ),
+        $updated_at: dependencies.values.utf8(input.updatedAt),
+        ...(previous.requestedGenerationId
+          ? {
+              $previous_requested_generation_id: dependencies.values.utf8(
+                previous.requestedGenerationId,
+              ),
+            }
+          : {}),
+        ...(previous.activeGenerationId
+          ? {
+              $previous_active_generation_id: dependencies.values.utf8(
+                previous.activeGenerationId,
+              ),
+            }
+          : {}),
+        ...(previous.previousGenerationId
+          ? {
+              $previous_generation_id: dependencies.values.utf8(
+                previous.previousGenerationId,
+              ),
+            }
+          : {}),
+        ...(previous.failureReason
+          ? {
+              $previous_failure_reason: dependencies.values.utf8(
+                previous.failureReason,
+              ),
+            }
+          : {}),
+      },
+    );
   }
 
   async function markGenerationFailed(input: {

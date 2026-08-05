@@ -80,6 +80,9 @@ type RelatedPetsRepository = {
     generationId: string;
     rankingRevision: string;
     updatedAt: string;
+    inputScope: RelatedPetsRankingInputScope;
+    expectedInputRevision: string;
+    previousState: RelatedPetsState | null;
   }) => Promise<boolean>;
   markGenerationFailed: (input: {
     generationId: string;
@@ -272,6 +275,9 @@ export function createRelatedPetsRebuildService(
           generationId,
           rankingRevision: dependencies.profile.rankingRevision,
           updatedAt: dependencies.now().toISOString(),
+          inputScope,
+          expectedInputRevision,
+          previousState: expectedState,
         });
       } catch (error) {
         let persistedState: RelatedPetsState | null = null;

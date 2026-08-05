@@ -6,7 +6,7 @@ vi.mock("@/lib/auth/session", () => ({
 }));
 
 vi.mock("@/lib/pets/repository", () => ({
-  moderatePet: vi.fn(),
+  moderatePetWithPreviousStatus: vi.fn(),
 }));
 
 vi.mock("@/lib/pets/search-provider-runtime", () => ({
@@ -33,10 +33,37 @@ vi.mock("@/lib/pets/related-pets-server", () => ({
 
 import { POST } from "@/app/api/admin/submissions/[id]/reject/route";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
-import { moderatePet } from "@/lib/pets/repository";
+import { moderatePetWithPreviousStatus } from "@/lib/pets/repository";
 import { rebuildRelatedPets } from "@/lib/pets/related-pets-rebuild";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
+
+function rejectedModeration(previousStatus: "pending" | "approved") {
+  return {
+    previousStatus,
+    pet: {
+      id: "pet_1",
+      slug: "boba",
+      displayName: "Boba",
+      description: "desc",
+      spritesheetUrl: "https://assets/pets/boba.webp",
+      petJsonUrl: "https://assets/pets/boba.json",
+      zipUrl: "https://assets/pets/boba.zip",
+      spritesheetExt: "webp" as const,
+      kind: "creature" as const,
+      tags: [],
+      status: "rejected" as const,
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: new Date().toISOString(),
+      approvedAt:
+        previousStatus === "approved" ? new Date().toISOString() : null,
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    },
+  };
+}
 
 describe("POST /api/admin/submissions/[id]/reject", () => {
   beforeEach(() => {
@@ -83,7 +110,7 @@ describe("POST /api/admin/submissions/[id]/reject", () => {
       role: "admin",
     });
     vi.mocked(isAdminUser).mockReturnValueOnce(true);
-    vi.mocked(moderatePet).mockResolvedValueOnce(null);
+    vi.mocked(moderatePetWithPreviousStatus).mockResolvedValueOnce(null);
 
     const response = await POST(new Request("http://localhost"), {
       params: Promise.resolve({ id: "pet_1" }),
@@ -102,26 +129,9 @@ describe("POST /api/admin/submissions/[id]/reject", () => {
       role: "admin",
     });
     vi.mocked(isAdminUser).mockReturnValueOnce(true);
-    vi.mocked(moderatePet).mockResolvedValueOnce({
-      id: "pet_1",
-      slug: "boba",
-      displayName: "Boba",
-      description: "desc",
-      spritesheetUrl: "https://assets/pets/boba.webp",
-      petJsonUrl: "https://assets/pets/boba.json",
-      zipUrl: "https://assets/pets/boba.zip",
-      spritesheetExt: "webp",
-      kind: "creature",
-      tags: [],
-      status: "rejected",
-      ownerName: "user",
-      contactEmail: null,
-      createdAt: new Date().toISOString(),
-      approvedAt: null,
-      downloadCount: 0,
-      installCount: 0,
-      likeCount: 0,
-    });
+    vi.mocked(moderatePetWithPreviousStatus).mockResolvedValueOnce(
+      rejectedModeration("approved"),
+    );
 
     const response = await POST(
       new Request("http://localhost", {
@@ -142,6 +152,33 @@ describe("POST /api/admin/submissions/[id]/reject", () => {
     });
   });
 
+  it("does not rebuild related snapshots when rejecting a pending pet", async () => {
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePetWithPreviousStatus).mockResolvedValueOnce(
+      rejectedModeration("pending"),
+    );
+
+    const response = await POST(
+      new Request("http://localhost", { method: "POST" }),
+      { params: Promise.resolve({ id: "pet_1" }) },
+    );
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload).toMatchObject({
+      ok: true,
+      pet: { slug: "boba", status: "rejected" },
+    });
+    expect(payload.pet).not.toHaveProperty("previousStatus");
+    expect(rebuildRelatedPets).not.toHaveBeenCalled();
+  });
+
   it("awaits the full rebuild after rejection", async () => {
     vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
       userId: "admin_1",
@@ -150,26 +187,9 @@ describe("POST /api/admin/submissions/[id]/reject", () => {
       role: "admin",
     });
     vi.mocked(isAdminUser).mockReturnValueOnce(true);
-    vi.mocked(moderatePet).mockResolvedValueOnce({
-      id: "pet_1",
-      slug: "boba",
-      displayName: "Boba",
-      description: "desc",
-      spritesheetUrl: "https://assets/pets/boba.webp",
-      petJsonUrl: "https://assets/pets/boba.json",
-      zipUrl: "https://assets/pets/boba.zip",
-      spritesheetExt: "webp",
-      kind: "creature",
-      tags: [],
-      status: "rejected",
-      ownerName: "user",
-      contactEmail: null,
-      createdAt: new Date().toISOString(),
-      approvedAt: null,
-      downloadCount: 0,
-      installCount: 0,
-      likeCount: 0,
-    });
+    vi.mocked(moderatePetWithPreviousStatus).mockResolvedValueOnce(
+      rejectedModeration("approved"),
+    );
     let finishRebuild: (() => void) | undefined;
     vi.mocked(rebuildRelatedPets).mockReturnValueOnce(
       new Promise((resolve) => {
@@ -216,26 +236,9 @@ describe("POST /api/admin/submissions/[id]/reject", () => {
       role: "admin",
     });
     vi.mocked(isAdminUser).mockReturnValueOnce(true);
-    vi.mocked(moderatePet).mockResolvedValueOnce({
-      id: "pet_1",
-      slug: "boba",
-      displayName: "Boba",
-      description: "desc",
-      spritesheetUrl: "https://assets/pets/boba.webp",
-      petJsonUrl: "https://assets/pets/boba.json",
-      zipUrl: "https://assets/pets/boba.zip",
-      spritesheetExt: "webp",
-      kind: "creature",
-      tags: [],
-      status: "rejected",
-      ownerName: "user",
-      contactEmail: null,
-      createdAt: new Date().toISOString(),
-      approvedAt: null,
-      downloadCount: 0,
-      installCount: 0,
-      likeCount: 0,
-    });
+    vi.mocked(moderatePetWithPreviousStatus).mockResolvedValueOnce(
+      rejectedModeration("approved"),
+    );
     vi.mocked(rebuildRelatedPets).mockRejectedValueOnce(
       new Error("private storage detail"),
     );

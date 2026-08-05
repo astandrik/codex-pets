@@ -83,6 +83,50 @@ describe("related pets rebuild CLI", () => {
     expect(dispose).toHaveBeenCalledOnce();
   });
 
+  it("keeps a successful rebuild result when disposal fails", async () => {
+    const output: string[] = [];
+    const diagnostics: string[] = [];
+
+    await expect(
+      runRelatedPetsRebuildCli({
+        argv: ["--apply"],
+        loadService: async () => ({
+          rebuild: async () => ({
+            operation: "apply" as const,
+            status: "ready" as const,
+            generationId: "generation-new",
+            rankingRevision: "ranking-v1",
+            coverage: {
+              approvedPetCount: 1,
+              snapshotCount: 1,
+              textVectorCount: 1,
+              visualVectorCount: 1,
+            },
+            rankings: [],
+            durationMs: 1,
+          }),
+          recoverPrevious: vi.fn(),
+          dispose: async () => {
+            throw new Error("private disposal detail");
+          },
+        }),
+        write: (line: string) => output.push(line),
+        writeDiagnostic: (line: string) => diagnostics.push(line),
+      }),
+    ).resolves.toBe(0);
+    expect(output.map((line) => JSON.parse(line))).toEqual([
+      expect.objectContaining({ operation: "apply", status: "ready" }),
+    ]);
+    expect(diagnostics.map((line) => JSON.parse(line))).toEqual([
+      {
+        operation: "related-pets-rebuild-dispose",
+        status: "failed",
+        failureReason: "dispose_failed",
+      },
+    ]);
+    expect(diagnostics.join(" ")).not.toContain("private disposal detail");
+  });
+
   it("preserves safe incomplete-vector reasons at the CLI boundary", () => {
     expect(
       sanitizeRelatedPetsRebuildFailureReason(

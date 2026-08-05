@@ -56,4 +56,5 @@ export function runRelatedPetsRebuildCli(input?: {
   argv?: string[];
   loadService?: () => Promise<RelatedPetsCliService>;
   write?: (line: string) => void;
+  writeDiagnostic?: (line: string) => void;
 }): Promise<number>;

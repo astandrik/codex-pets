@@ -94,6 +94,7 @@ export async function runRelatedPetsRebuildCli({
   argv = process.argv.slice(2),
   loadService = loadProductionService,
   write = (line) => console.log(line),
+  writeDiagnostic = (line) => console.error(line),
 } = {}) {
   const options = parseRelatedPetsRebuildArgs(argv);
   if (options.mode === "help") {
@@ -136,7 +137,17 @@ export async function runRelatedPetsRebuildCli({
     );
     return result.status === "superseded" ? 1 : 0;
   } finally {
-    await service.dispose?.();
+    try {
+      await service.dispose?.();
+    } catch {
+      writeDiagnostic(
+        JSON.stringify({
+          operation: "related-pets-rebuild-dispose",
+          status: "failed",
+          failureReason: "dispose_failed",
+        }),
+      );
+    }
   }
 }
 
