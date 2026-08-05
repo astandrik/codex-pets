@@ -101,6 +101,7 @@ export function createRelatedPetsRepository(
 ) {
   return {
     getState,
+    getCatalogRevision,
     getSnapshot,
     requestBuild,
     writeSnapshot,
@@ -163,6 +164,38 @@ LIMIT 1;
     };
   }
 
+  async function getCatalogRevision(): Promise<string | null> {
+    if (!dependencies.isConfigured()) return null;
+    return getCatalogRevisionWithExecute(dependencies.execute);
+  }
+
+  async function getCatalogRevisionWithExecute(
+    execute: Execute,
+  ): Promise<string> {
+    const result = await execute(
+      `
+DECLARE $status AS Utf8;
+
+SELECT slug,
+       updated_at
+FROM ${TABLES.pets}
+WHERE status = $status
+ORDER BY slug;
+      `,
+      { $status: dependencies.values.utf8("approved") },
+    );
+    return JSON.stringify(
+      rowsFromResult(result).map((row) => {
+        const slug = textAt(row, 0);
+        const updatedAt = textAt(row, 1);
+        if (!slug || !updatedAt) {
+          throw new Error("Invalid related pets catalog revision row.");
+        }
+        return [slug, updatedAt];
+      }),
+    );
+  }
+
   async function getSnapshot(
     generationId: string,
     sourceSlug: string,
@@ -206,9 +239,12 @@ LIMIT 1;
     rankingRevision: string;
     updatedAt: string;
     expectedState: RelatedPetsState | null;
+    expectedCatalogRevision: string;
   }): Promise<boolean> {
     if (!dependencies.isConfigured()) return false;
     return dependencies.transaction(async (execute) => {
+      const catalogRevision = await getCatalogRevisionWithExecute(execute);
+      if (catalogRevision !== input.expectedCatalogRevision) return false;
       const state = await getStateWithExecute(execute);
       if (isRequestedBuildState(state, input)) return true;
       if (!areRelatedPetsStatesEqual(state, input.expectedState)) return false;
@@ -681,6 +717,7 @@ const repository = createRelatedPetsRepository({
 });
 
 export const getRelatedPetsState = repository.getState;
+export const getRelatedPetsCatalogRevision = repository.getCatalogRevision;
 export const getRelatedPetsSnapshot = repository.getSnapshot;
 export const requestRelatedPetsBuild = repository.requestBuild;
 export const writeRelatedPetsSnapshot = repository.writeSnapshot;

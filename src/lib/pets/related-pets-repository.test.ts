@@ -47,6 +47,23 @@ function stateResult(input: {
   };
 }
 
+function catalogRevisionResult(updatedAt: string) {
+  return {
+    resultSets: [
+      {
+        rows: [
+          {
+            items: [
+              { textValue: "source-pet" },
+              { textValue: updatedAt },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
 function createHarness(
   responder: (
     statement: string,
@@ -180,6 +197,7 @@ describe("related pets repository", () => {
         rankingRevision: "ranking-v1",
         updatedAt: "2026-08-03T10:01:00.000Z",
         expectedState: null,
+        expectedCatalogRevision: "[]",
       }),
     ).resolves.toBe(true);
     await harness.repository.writeSnapshot({
@@ -262,6 +280,7 @@ describe("related pets repository", () => {
       rankingRevision: "ranking-v1",
       updatedAt: "2026-08-03T10:01:00.000Z",
       expectedState: capturedState,
+      expectedCatalogRevision: "[]",
     };
 
     await expect(harness.repository.requestBuild(input)).resolves.toBe(true);
@@ -281,6 +300,44 @@ describe("related pets repository", () => {
       ),
     ).toHaveLength(1);
     expect(state.requestedGenerationId).toBe("generation-3");
+  });
+
+  it("rejects rankings captured before the approved catalog changed", async () => {
+    let catalogUpdatedAt = "2026-08-03T10:00:00.000Z";
+    const harness = createHarness(async (statement) => {
+      if (statement.includes("SELECT slug,")) {
+        return catalogRevisionResult(catalogUpdatedAt);
+      }
+      return { resultSets: [] };
+    });
+    const expectedCatalogRevision =
+      await harness.repository.getCatalogRevision();
+    if (expectedCatalogRevision === null) {
+      throw new Error("Expected configured catalog revision.");
+    }
+    catalogUpdatedAt = "2026-08-03T10:01:00.000Z";
+
+    await expect(
+      harness.repository.requestBuild({
+        generationId: "generation-2",
+        rankingRevision: "ranking-v1",
+        updatedAt: "2026-08-03T10:02:00.000Z",
+        expectedState: null,
+        expectedCatalogRevision,
+      }),
+    ).resolves.toBe(false);
+
+    const catalogReads = harness.statements.filter(({ statement }) =>
+      statement.includes("SELECT slug,"),
+    );
+    expect(catalogReads).toHaveLength(2);
+    expect(catalogReads[0]?.transactional).toBe(false);
+    expect(catalogReads[1]?.transactional).toBe(true);
+    expect(
+      harness.statements.some(({ statement }) =>
+        statement.includes("codex_pet_related_state"),
+      ),
+    ).toBe(false);
   });
 
   it("conditionally activates only the requested generation", async () => {

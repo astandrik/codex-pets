@@ -20,6 +20,7 @@ vi.mock("@/lib/pets/related-pets-repository", () => ({
   activateRelatedPetsGeneration: vi.fn(),
   cleanupInactiveRelatedPetsGeneration: vi.fn(),
   cleanupRelatedPetsGenerations: vi.fn(),
+  getRelatedPetsCatalogRevision: vi.fn(),
   getRelatedPetsState: vi.fn(),
   markRelatedPetsGenerationFailed: vi.fn(),
   recoverPreviousRelatedPetsGeneration: vi.fn(),

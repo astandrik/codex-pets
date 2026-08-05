@@ -141,6 +141,7 @@ function createHarness(options: {
   superseded?: boolean;
   requestSuperseded?: boolean;
   supersedeDuringRanking?: boolean;
+  mutateCatalogDuringRanking?: boolean;
   storageAvailable?: boolean;
   writeError?: Error;
   writeErrorAt?: number;
@@ -192,18 +193,22 @@ function createHarness(options: {
   const vectorRevisionReads: string[] = [];
   const logs: unknown[] = [];
   let state: RelatedPetsState | null = options.initialState ?? null;
+  let catalogRevision = "catalog-revision-1";
   let clock = Date.parse("2026-08-03T10:00:00.000Z");
   let snapshotWriteCount = 0;
   let rankingSuperseded = false;
+  let catalogMutated = false;
 
   const repository = {
     getState: async () => state,
+    getCatalogRevision: async () => catalogRevision,
     getSnapshot: async () => null,
     requestBuild: async (input: {
       generationId: string;
       rankingRevision: string;
       updatedAt: string;
       expectedState: RelatedPetsState | null;
+      expectedCatalogRevision: string;
     }) => {
       mutations.push("request");
       if (options.requestSuperseded) {
@@ -219,6 +224,9 @@ function createHarness(options: {
         return false;
       }
       if (JSON.stringify(state) !== JSON.stringify(input.expectedState)) {
+        return false;
+      }
+      if (input.expectedCatalogRevision !== catalogRevision) {
         return false;
       }
       state = {
@@ -455,6 +463,10 @@ function createHarness(options: {
           updatedAt: "2026-08-03T10:01:00.000Z",
         };
       }
+      if (options.mutateCatalogDuringRanking && !catalogMutated) {
+        catalogMutated = true;
+        catalogRevision = "catalog-revision-2";
+      }
       return pets;
     },
     listRawVectors: async (revision) => {
@@ -623,6 +635,20 @@ describe("related pets rebuild service", () => {
       status: "superseded",
       generationId: "generation-new",
     });
+  });
+
+  it("rejects rankings computed before an approved catalog mutation", async () => {
+    const harness = createHarness({ mutateCatalogDuringRanking: true });
+
+    const result = await harness.service.rebuild({
+      mode: "apply",
+      includeVisual: true,
+    });
+
+    expect(result.status).toBe("superseded");
+    expect(harness.mutations).toEqual(["request"]);
+    expect(harness.snapshots).toEqual([]);
+    expect(harness.state).toBeNull();
   });
 
   it("rejects rankings computed before a newer generation is published", async () => {

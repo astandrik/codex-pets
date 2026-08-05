@@ -29,6 +29,7 @@ import {
   activateRelatedPetsGeneration,
   cleanupInactiveRelatedPetsGeneration,
   cleanupRelatedPetsGenerations,
+  getRelatedPetsCatalogRevision,
   getRelatedPetsState,
   markRelatedPetsGenerationFailed,
   recoverPreviousRelatedPetsGeneration,
@@ -70,6 +71,7 @@ type RelatedPetsRepository = {
     rankingRevision: string;
     updatedAt: string;
     expectedState: RelatedPetsState | null;
+    expectedCatalogRevision: string;
   }) => Promise<boolean>;
   writeSnapshot: (input: RelatedPetsSnapshot) => Promise<void>;
   activateGeneration: (input: {
@@ -90,6 +92,7 @@ type RelatedPetsRepository = {
     expectedGenerationId: string;
   }) => Promise<boolean>;
   getState: () => Promise<RelatedPetsState | null>;
+  getCatalogRevision: () => Promise<string | null>;
   recoverPreviousGeneration: (
     input: RecoverPreviousRelatedPetsGenerationInput,
   ) => Promise<RecoverPreviousRelatedPetsGenerationResult | null>;
@@ -204,10 +207,13 @@ export function createRelatedPetsRebuildService(
         throw new RelatedPetsRebuildError("storage_unavailable");
       }
 
-      const expectedState =
+      const [expectedState, expectedCatalogRevision] =
         input.mode === "apply"
-          ? await dependencies.repository.getState()
-          : null;
+          ? await Promise.all([
+              dependencies.repository.getState(),
+              dependencies.repository.getCatalogRevision(),
+            ])
+          : [null, null];
       const built = await buildRankings(includeVisual);
       coverage = built.coverage;
 
@@ -222,12 +228,17 @@ export function createRelatedPetsRebuildService(
         });
       }
 
+      if (expectedCatalogRevision === null) {
+        throw new RelatedPetsRebuildError("storage_unavailable");
+      }
+
       generationId = dependencies.createGenerationId();
       const requested = await dependencies.repository.requestBuild({
         generationId,
         rankingRevision: dependencies.profile.rankingRevision,
         updatedAt: dependencies.now().toISOString(),
         expectedState,
+        expectedCatalogRevision,
       });
       if (!requested) {
         return resultAndLog({
@@ -446,12 +457,19 @@ export function createRelatedPetsRebuildService(
       if (!generationId) {
         throw new RelatedPetsRebuildError("storage_unavailable");
       }
-      const expectedState = await dependencies.repository.getState();
+      const [expectedState, expectedCatalogRevision] = await Promise.all([
+        dependencies.repository.getState(),
+        dependencies.repository.getCatalogRevision(),
+      ]);
+      if (expectedCatalogRevision === null) {
+        throw new RelatedPetsRebuildError("storage_unavailable");
+      }
       const requested = await dependencies.repository.requestBuild({
         generationId,
         rankingRevision: dependencies.profile.rankingRevision,
         updatedAt: dependencies.now().toISOString(),
         expectedState,
+        expectedCatalogRevision,
       });
       const invalidated =
         requested &&
@@ -785,6 +803,7 @@ const productionRepository: RelatedPetsRepository = {
   cleanupGenerations: cleanupRelatedPetsGenerations,
   cleanupInactiveGeneration: cleanupInactiveRelatedPetsGeneration,
   getState: getRelatedPetsState,
+  getCatalogRevision: getRelatedPetsCatalogRevision,
   recoverPreviousGeneration: recoverPreviousRelatedPetsGeneration,
 };
 
