@@ -142,6 +142,7 @@ function createHarness(options: {
   requestSuperseded?: boolean;
   supersedeDuringRanking?: boolean;
   mutateCatalogDuringRanking?: boolean;
+  mutateEmbeddingsBeforeRequest?: boolean;
   storageAvailable?: boolean;
   writeError?: Error;
   writeErrorAt?: number;
@@ -191,9 +192,14 @@ function createHarness(options: {
     updatedAt: string;
   }> = [];
   const vectorRevisionReads: string[] = [];
+  const rankingInputScopes: Array<{
+    embeddingModelRevisions: readonly string[];
+    captionRevision: string | null;
+  }> = [];
   const logs: unknown[] = [];
   let state: RelatedPetsState | null = options.initialState ?? null;
   let catalogRevision = "catalog-revision-1";
+  let embeddingRevision = "embedding-revision-1";
   let clock = Date.parse("2026-08-03T10:00:00.000Z");
   let snapshotWriteCount = 0;
   let rankingSuperseded = false;
@@ -201,14 +207,20 @@ function createHarness(options: {
 
   const repository = {
     getState: async () => state,
-    getCatalogRevision: async () => catalogRevision,
+    getRankingInputRevision: async (scope: {
+      embeddingModelRevisions: readonly string[];
+      captionRevision: string | null;
+    }) => {
+      rankingInputScopes.push(scope);
+      return `${catalogRevision}:${embeddingRevision}`;
+    },
     getSnapshot: async () => null,
     requestBuild: async (input: {
       generationId: string;
       rankingRevision: string;
       updatedAt: string;
       expectedState: RelatedPetsState | null;
-      expectedCatalogRevision: string;
+      expectedInputRevision: string;
     }) => {
       mutations.push("request");
       if (options.requestSuperseded) {
@@ -226,7 +238,10 @@ function createHarness(options: {
       if (JSON.stringify(state) !== JSON.stringify(input.expectedState)) {
         return false;
       }
-      if (input.expectedCatalogRevision !== catalogRevision) {
+      if (
+        input.expectedInputRevision !==
+        `${catalogRevision}:${embeddingRevision}`
+      ) {
         return false;
       }
       state = {
@@ -479,7 +494,12 @@ function createHarness(options: {
       options.visualSourceContext === undefined
         ? visualContext
         : options.visualSourceContext,
-    createGenerationId: () => "generation-new",
+    createGenerationId: () => {
+      if (options.mutateEmbeddingsBeforeRequest) {
+        embeddingRevision = "embedding-revision-2";
+      }
+      return "generation-new";
+    },
     now: () => {
       const result = new Date(clock);
       clock += 10;
@@ -495,6 +515,7 @@ function createHarness(options: {
     cleanupExpectedIds,
     recoveryInputs,
     vectorRevisionReads,
+    rankingInputScopes,
     logs,
     get state() {
       return state;
@@ -532,6 +553,16 @@ describe("related pets rebuild service", () => {
       "cleanup",
     ]);
     expect(harness.cleanupExpectedIds).toEqual(["generation-new"]);
+    expect(harness.rankingInputScopes).toEqual([
+      {
+        embeddingModelRevisions: [
+          profile.textQueryRevision,
+          profile.textRevision,
+          profile.visualRevision,
+        ],
+        captionRevision: profile.visualCaptionRevision,
+      },
+    ]);
     expect(harness.state).toMatchObject({
       activeGenerationId: "generation-new",
       previousGenerationId: "generation-old",
@@ -559,6 +590,15 @@ describe("related pets rebuild service", () => {
     expect(harness.vectorRevisionReads).toEqual([
       profile.textQueryRevision,
       profile.textRevision,
+    ]);
+    expect(harness.rankingInputScopes).toEqual([
+      {
+        embeddingModelRevisions: [
+          profile.textQueryRevision,
+          profile.textRevision,
+        ],
+        captionRevision: null,
+      },
     ]);
   });
 
@@ -639,6 +679,20 @@ describe("related pets rebuild service", () => {
 
   it("rejects rankings computed before an approved catalog mutation", async () => {
     const harness = createHarness({ mutateCatalogDuringRanking: true });
+
+    const result = await harness.service.rebuild({
+      mode: "apply",
+      includeVisual: true,
+    });
+
+    expect(result.status).toBe("superseded");
+    expect(harness.mutations).toEqual(["request"]);
+    expect(harness.snapshots).toEqual([]);
+    expect(harness.state).toBeNull();
+  });
+
+  it("rejects rankings computed before an embedding backfill completes", async () => {
+    const harness = createHarness({ mutateEmbeddingsBeforeRequest: true });
 
     const result = await harness.service.rebuild({
       mode: "apply",

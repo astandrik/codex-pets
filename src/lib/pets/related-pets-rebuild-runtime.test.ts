@@ -20,7 +20,7 @@ vi.mock("@/lib/pets/related-pets-repository", () => ({
   activateRelatedPetsGeneration: vi.fn(),
   cleanupInactiveRelatedPetsGeneration: vi.fn(),
   cleanupRelatedPetsGenerations: vi.fn(),
-  getRelatedPetsCatalogRevision: vi.fn(),
+  getRelatedPetsRankingInputRevision: vi.fn(),
   getRelatedPetsState: vi.fn(),
   markRelatedPetsGenerationFailed: vi.fn(),
   recoverPreviousRelatedPetsGeneration: vi.fn(),
@@ -85,5 +85,30 @@ describe("related pets production visual source compatibility", () => {
     expect(runtimeMocks.listPetSearchCaptions).toHaveBeenCalledWith(
       CAPTION_REVISION,
     );
+  });
+
+  it("keeps production rebuild diagnostics off stdout", async () => {
+    const stdoutDiagnostic = vi
+      .spyOn(console, "info")
+      .mockImplementation(() => undefined);
+    const stderrDiagnostic = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const { rebuildRelatedPets } = await import(
+      "@/lib/pets/related-pets-rebuild"
+    );
+
+    try {
+      await rebuildRelatedPets({ mode: "dry-run", includeVisual: false });
+
+      expect(stdoutDiagnostic).not.toHaveBeenCalled();
+      expect(stderrDiagnostic).toHaveBeenCalledWith(
+        "[codex-pets][related-pets-rebuild]",
+        expect.objectContaining({ operation: "dry-run", status: "dry-run" }),
+      );
+    } finally {
+      stdoutDiagnostic.mockRestore();
+      stderrDiagnostic.mockRestore();
+    }
   });
 });

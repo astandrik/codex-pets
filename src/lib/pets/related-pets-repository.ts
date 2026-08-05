@@ -1,7 +1,7 @@
 import type { Session } from "ydb-sdk";
 
 import { isYdbConfigured, TypedValues, withSession } from "@/lib/ydb/client";
-import { rowsFromResult, textAt } from "@/lib/ydb/result";
+import { rowsFromResult, textAt, uintAt } from "@/lib/ydb/result";
 import { TABLES } from "@/lib/ydb/schema";
 
 export type RelatedPetsGenerationStatus = "building" | "ready" | "failed";
@@ -22,6 +22,11 @@ export type RelatedPetsSnapshot = {
   rankingRevision: string;
   relatedSlugs: string[];
   createdAt: string;
+};
+
+export type RelatedPetsRankingInputScope = {
+  embeddingModelRevisions: readonly string[];
+  captionRevision: string | null;
 };
 
 export type RecoverPreviousRelatedPetsGenerationInput = {
@@ -101,7 +106,7 @@ export function createRelatedPetsRepository(
 ) {
   return {
     getState,
-    getCatalogRevision,
+    getRankingInputRevision,
     getSnapshot,
     requestBuild,
     writeSnapshot,
@@ -164,9 +169,27 @@ LIMIT 1;
     };
   }
 
-  async function getCatalogRevision(): Promise<string | null> {
+  async function getRankingInputRevision(
+    scope: RelatedPetsRankingInputScope,
+  ): Promise<string | null> {
     if (!dependencies.isConfigured()) return null;
-    return getCatalogRevisionWithExecute(dependencies.execute);
+    return getRankingInputRevisionWithExecute(dependencies.execute, scope);
+  }
+
+  async function getRankingInputRevisionWithExecute(
+    execute: Execute,
+    scope: RelatedPetsRankingInputScope,
+  ): Promise<string> {
+    return JSON.stringify({
+      catalog: await getCatalogRevisionWithExecute(execute),
+      embeddings: await getEmbeddingRevisionWithExecute(
+        execute,
+        scope.embeddingModelRevisions,
+      ),
+      captions: scope.captionRevision
+        ? await getCaptionRevisionWithExecute(execute, scope.captionRevision)
+        : null,
+    });
   }
 
   async function getCatalogRevisionWithExecute(
@@ -194,6 +217,79 @@ ORDER BY slug;
         return [slug, updatedAt];
       }),
     );
+  }
+
+  async function getEmbeddingRevisionWithExecute(
+    execute: Execute,
+    modelRevisions: readonly string[],
+  ): Promise<string> {
+    const revisions = [...new Set(modelRevisions.map((item) => item.trim()))]
+      .filter(Boolean)
+      .sort();
+    const revisionRows: Array<
+      [string, Array<[string, string, number, string]>]
+    > = [];
+    for (const modelRevision of revisions) {
+      const result = await execute(
+        `
+DECLARE $model_revision AS Utf8;
+
+SELECT pet_slug,
+       source_hash,
+       dimensions,
+       updated_at
+FROM ${TABLES.searchEmbeddings}
+WHERE model_revision = $model_revision
+ORDER BY pet_slug;
+        `,
+        { $model_revision: dependencies.values.utf8(modelRevision) },
+      );
+      revisionRows.push([
+        modelRevision,
+        rowsFromResult(result).map((row) => {
+          const slug = textAt(row, 0);
+          const sourceHash = textAt(row, 1);
+          const dimensions = uintAt(row, 2);
+          const updatedAt = textAt(row, 3);
+          if (!slug || !sourceHash || dimensions <= 0 || !updatedAt) {
+            throw new Error("Invalid related pets embedding revision row.");
+          }
+          return [slug, sourceHash, dimensions, updatedAt];
+        }),
+      ]);
+    }
+    return JSON.stringify(revisionRows);
+  }
+
+  async function getCaptionRevisionWithExecute(
+    execute: Execute,
+    captionRevision: string,
+  ): Promise<string> {
+    const result = await execute(
+      `
+DECLARE $caption_revision AS Utf8;
+
+SELECT pet_slug,
+       source_hash,
+       updated_at
+FROM ${TABLES.searchCaptions}
+WHERE caption_revision = $caption_revision
+ORDER BY pet_slug;
+      `,
+      { $caption_revision: dependencies.values.utf8(captionRevision) },
+    );
+    return JSON.stringify([
+      captionRevision,
+      rowsFromResult(result).map((row) => {
+        const slug = textAt(row, 0);
+        const sourceHash = textAt(row, 1);
+        const updatedAt = textAt(row, 2);
+        if (!slug || !sourceHash || !updatedAt) {
+          throw new Error("Invalid related pets caption revision row.");
+        }
+        return [slug, sourceHash, updatedAt];
+      }),
+    ]);
   }
 
   async function getSnapshot(
@@ -239,12 +335,16 @@ LIMIT 1;
     rankingRevision: string;
     updatedAt: string;
     expectedState: RelatedPetsState | null;
-    expectedCatalogRevision: string;
+    inputScope: RelatedPetsRankingInputScope;
+    expectedInputRevision: string;
   }): Promise<boolean> {
     if (!dependencies.isConfigured()) return false;
     return dependencies.transaction(async (execute) => {
-      const catalogRevision = await getCatalogRevisionWithExecute(execute);
-      if (catalogRevision !== input.expectedCatalogRevision) return false;
+      const inputRevision = await getRankingInputRevisionWithExecute(
+        execute,
+        input.inputScope,
+      );
+      if (inputRevision !== input.expectedInputRevision) return false;
       const state = await getStateWithExecute(execute);
       if (isRequestedBuildState(state, input)) return true;
       if (!areRelatedPetsStatesEqual(state, input.expectedState)) return false;
@@ -717,7 +817,8 @@ const repository = createRelatedPetsRepository({
 });
 
 export const getRelatedPetsState = repository.getState;
-export const getRelatedPetsCatalogRevision = repository.getCatalogRevision;
+export const getRelatedPetsRankingInputRevision =
+  repository.getRankingInputRevision;
 export const getRelatedPetsSnapshot = repository.getSnapshot;
 export const requestRelatedPetsBuild = repository.requestBuild;
 export const writeRelatedPetsSnapshot = repository.writeSnapshot;

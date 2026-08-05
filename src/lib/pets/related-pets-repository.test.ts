@@ -10,6 +10,11 @@ const values = {
   json: (value: string) => ({ textValue: value }),
 };
 
+const EMPTY_INPUT_SCOPE = {
+  embeddingModelRevisions: [],
+  captionRevision: null,
+};
+
 type RecordedStatement = {
   statement: string;
   params: Record<string, unknown>;
@@ -55,6 +60,43 @@ function catalogRevisionResult(updatedAt: string) {
           {
             items: [
               { textValue: "source-pet" },
+              { textValue: updatedAt },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function embeddingRevisionResult(updatedAt: string) {
+  return {
+    resultSets: [
+      {
+        rows: [
+          {
+            items: [
+              { textValue: "source-pet" },
+              { textValue: "source-hash" },
+              { uint32Value: 2 },
+              { textValue: updatedAt },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function captionRevisionResult(updatedAt: string) {
+  return {
+    resultSets: [
+      {
+        rows: [
+          {
+            items: [
+              { textValue: "source-pet" },
+              { textValue: "caption-source-hash" },
               { textValue: updatedAt },
             ],
           },
@@ -190,6 +232,11 @@ describe("related pets repository", () => {
       }
       return { resultSets: [] };
     });
+    const expectedInputRevision =
+      await harness.repository.getRankingInputRevision(EMPTY_INPUT_SCOPE);
+    if (expectedInputRevision === null) {
+      throw new Error("Expected configured ranking input revision.");
+    }
 
     await expect(
       harness.repository.requestBuild({
@@ -197,7 +244,8 @@ describe("related pets repository", () => {
         rankingRevision: "ranking-v1",
         updatedAt: "2026-08-03T10:01:00.000Z",
         expectedState: null,
-        expectedCatalogRevision: "[]",
+        inputScope: EMPTY_INPUT_SCOPE,
+        expectedInputRevision,
       }),
     ).resolves.toBe(true);
     await harness.repository.writeSnapshot({
@@ -275,12 +323,18 @@ describe("related pets repository", () => {
       }
       return { resultSets: [] };
     });
+    const expectedInputRevision =
+      await harness.repository.getRankingInputRevision(EMPTY_INPUT_SCOPE);
+    if (expectedInputRevision === null) {
+      throw new Error("Expected configured ranking input revision.");
+    }
     const input = {
       generationId: "generation-2",
       rankingRevision: "ranking-v1",
       updatedAt: "2026-08-03T10:01:00.000Z",
       expectedState: capturedState,
-      expectedCatalogRevision: "[]",
+      inputScope: EMPTY_INPUT_SCOPE,
+      expectedInputRevision,
     };
 
     await expect(harness.repository.requestBuild(input)).resolves.toBe(true);
@@ -310,10 +364,10 @@ describe("related pets repository", () => {
       }
       return { resultSets: [] };
     });
-    const expectedCatalogRevision =
-      await harness.repository.getCatalogRevision();
-    if (expectedCatalogRevision === null) {
-      throw new Error("Expected configured catalog revision.");
+    const expectedInputRevision =
+      await harness.repository.getRankingInputRevision(EMPTY_INPUT_SCOPE);
+    if (expectedInputRevision === null) {
+      throw new Error("Expected configured ranking input revision.");
     }
     catalogUpdatedAt = "2026-08-03T10:01:00.000Z";
 
@@ -323,7 +377,8 @@ describe("related pets repository", () => {
         rankingRevision: "ranking-v1",
         updatedAt: "2026-08-03T10:02:00.000Z",
         expectedState: null,
-        expectedCatalogRevision,
+        inputScope: EMPTY_INPUT_SCOPE,
+        expectedInputRevision,
       }),
     ).resolves.toBe(false);
 
@@ -333,6 +388,96 @@ describe("related pets repository", () => {
     expect(catalogReads).toHaveLength(2);
     expect(catalogReads[0]?.transactional).toBe(false);
     expect(catalogReads[1]?.transactional).toBe(true);
+    expect(
+      harness.statements.some(({ statement }) =>
+        statement.includes("codex_pet_related_state"),
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects rankings captured before an embedding row changed", async () => {
+    let embeddingUpdatedAt = "2026-08-03T10:00:00.000Z";
+    const inputScope = {
+      embeddingModelRevisions: ["text-query-v1", "text-document-v1"],
+      captionRevision: null,
+    };
+    const harness = createHarness(async (statement) => {
+      if (statement.includes("FROM codex_pet_search_embeddings")) {
+        return embeddingRevisionResult(embeddingUpdatedAt);
+      }
+      return { resultSets: [] };
+    });
+    const expectedInputRevision =
+      await harness.repository.getRankingInputRevision(inputScope);
+    if (expectedInputRevision === null) {
+      throw new Error("Expected configured ranking input revision.");
+    }
+    embeddingUpdatedAt = "2026-08-03T10:01:00.000Z";
+
+    await expect(
+      harness.repository.requestBuild({
+        generationId: "generation-2",
+        rankingRevision: "ranking-v1",
+        updatedAt: "2026-08-03T10:02:00.000Z",
+        expectedState: null,
+        inputScope,
+        expectedInputRevision,
+      }),
+    ).resolves.toBe(false);
+
+    const embeddingReads = harness.statements.filter(({ statement }) =>
+      statement.includes("FROM codex_pet_search_embeddings"),
+    );
+    expect(embeddingReads).toHaveLength(4);
+    expect(embeddingReads.slice(0, 2).every((item) => !item.transactional)).toBe(
+      true,
+    );
+    expect(embeddingReads.slice(2).every((item) => item.transactional)).toBe(
+      true,
+    );
+    expect(
+      harness.statements.some(({ statement }) =>
+        statement.includes("codex_pet_related_state"),
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects rankings captured before a visual caption changed", async () => {
+    let captionUpdatedAt = "2026-08-03T10:00:00.000Z";
+    const inputScope = {
+      embeddingModelRevisions: [],
+      captionRevision: "visual-caption-v1",
+    };
+    const harness = createHarness(async (statement) => {
+      if (statement.includes("FROM codex_pet_search_captions")) {
+        return captionRevisionResult(captionUpdatedAt);
+      }
+      return { resultSets: [] };
+    });
+    const expectedInputRevision =
+      await harness.repository.getRankingInputRevision(inputScope);
+    if (expectedInputRevision === null) {
+      throw new Error("Expected configured ranking input revision.");
+    }
+    captionUpdatedAt = "2026-08-03T10:01:00.000Z";
+
+    await expect(
+      harness.repository.requestBuild({
+        generationId: "generation-2",
+        rankingRevision: "ranking-v1",
+        updatedAt: "2026-08-03T10:02:00.000Z",
+        expectedState: null,
+        inputScope,
+        expectedInputRevision,
+      }),
+    ).resolves.toBe(false);
+
+    const captionReads = harness.statements.filter(({ statement }) =>
+      statement.includes("FROM codex_pet_search_captions"),
+    );
+    expect(captionReads).toHaveLength(2);
+    expect(captionReads[0]?.transactional).toBe(false);
+    expect(captionReads[1]?.transactional).toBe(true);
     expect(
       harness.statements.some(({ statement }) =>
         statement.includes("codex_pet_related_state"),
