@@ -63,6 +63,39 @@ const RELATED_PETS_STATUSES = new Set<RelatedPetsGenerationStatus>([
   "failed",
 ]);
 
+function areRelatedPetsStatesEqual(
+  actual: RelatedPetsState | null,
+  expected: RelatedPetsState | null,
+): boolean {
+  if (!actual || !expected) return actual === expected;
+  return (
+    actual.requestedGenerationId === expected.requestedGenerationId &&
+    actual.activeGenerationId === expected.activeGenerationId &&
+    actual.previousGenerationId === expected.previousGenerationId &&
+    actual.status === expected.status &&
+    actual.rankingRevision === expected.rankingRevision &&
+    actual.failureReason === expected.failureReason &&
+    actual.updatedAt === expected.updatedAt
+  );
+}
+
+function isRequestedBuildState(
+  state: RelatedPetsState | null,
+  input: {
+    generationId: string;
+    rankingRevision: string;
+    updatedAt: string;
+  },
+): boolean {
+  return (
+    state?.requestedGenerationId === input.generationId &&
+    state.status === "building" &&
+    state.rankingRevision === input.rankingRevision &&
+    state.failureReason === null &&
+    state.updatedAt === input.updatedAt
+  );
+}
+
 export function createRelatedPetsRepository(
   dependencies: RelatedPetsRepositoryDependencies,
 ) {
@@ -172,10 +205,48 @@ LIMIT 1;
     generationId: string;
     rankingRevision: string;
     updatedAt: string;
-  }): Promise<void> {
-    if (!dependencies.isConfigured()) return;
-    await dependencies.execute(
-      `
+    expectedState: RelatedPetsState | null;
+  }): Promise<boolean> {
+    if (!dependencies.isConfigured()) return false;
+    return dependencies.transaction(async (execute) => {
+      const state = await getStateWithExecute(execute);
+      if (isRequestedBuildState(state, input)) return true;
+      if (!areRelatedPetsStatesEqual(state, input.expectedState)) return false;
+
+      const params = {
+        $state_id: dependencies.values.utf8(RELATED_PETS_STATE_ID),
+        $generation_id: dependencies.values.utf8(input.generationId),
+        $status: dependencies.values.utf8("building"),
+        $ranking_revision: dependencies.values.utf8(input.rankingRevision),
+        $updated_at: dependencies.values.utf8(input.updatedAt),
+      };
+      if (state) {
+        await execute(
+          `
+DECLARE $state_id AS Utf8;
+DECLARE $generation_id AS Utf8;
+DECLARE $status AS Utf8;
+DECLARE $ranking_revision AS Utf8;
+DECLARE $updated_at AS Utf8;
+DECLARE $expected_updated_at AS Utf8;
+
+UPDATE ${TABLES.relatedState}
+SET requested_generation_id = $generation_id,
+    status = $status,
+    ranking_revision = $ranking_revision,
+    failure_reason = NULL,
+    updated_at = $updated_at
+WHERE state_id = $state_id
+  AND updated_at = $expected_updated_at;
+          `,
+          {
+            ...params,
+            $expected_updated_at: dependencies.values.utf8(state.updatedAt),
+          },
+        );
+      } else {
+        await execute(
+          `
 DECLARE $state_id AS Utf8;
 DECLARE $generation_id AS Utf8;
 DECLARE $status AS Utf8;
@@ -186,15 +257,16 @@ UPSERT INTO ${TABLES.relatedState}
 (state_id, requested_generation_id, status, ranking_revision, failure_reason, updated_at)
 VALUES
 ($state_id, $generation_id, $status, $ranking_revision, NULL, $updated_at);
-      `,
-      {
-        $state_id: dependencies.values.utf8(RELATED_PETS_STATE_ID),
-        $generation_id: dependencies.values.utf8(input.generationId),
-        $status: dependencies.values.utf8("building"),
-        $ranking_revision: dependencies.values.utf8(input.rankingRevision),
-        $updated_at: dependencies.values.utf8(input.updatedAt),
-      },
-    );
+          `,
+          params,
+        );
+      }
+
+      return isRequestedBuildState(
+        await getStateWithExecute(execute),
+        input,
+      );
+    });
   }
 
   async function writeSnapshot(input: RelatedPetsSnapshot): Promise<void> {

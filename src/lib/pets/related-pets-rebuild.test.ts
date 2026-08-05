@@ -139,6 +139,7 @@ function createHarness(options: {
   visualRows?: StoredRawPetSearchEmbedding[];
   captions?: ReturnType<typeof captionFor>[];
   superseded?: boolean;
+  requestSuperseded?: boolean;
   storageAvailable?: boolean;
   writeError?: Error;
   writeErrorAt?: number;
@@ -200,8 +201,21 @@ function createHarness(options: {
       generationId: string;
       rankingRevision: string;
       updatedAt: string;
+      expectedState: RelatedPetsState | null;
     }) => {
       mutations.push("request");
+      if (options.requestSuperseded) {
+        state = {
+          requestedGenerationId: "generation-newer",
+          activeGenerationId: "generation-old",
+          previousGenerationId: "generation-older",
+          status: "building",
+          rankingRevision: profile.rankingRevision,
+          failureReason: null,
+          updatedAt: "2026-08-03T10:01:00.000Z",
+        };
+        return false;
+      }
       state = {
         requestedGenerationId: input.generationId,
         activeGenerationId: "generation-old",
@@ -211,6 +225,7 @@ function createHarness(options: {
         failureReason: null,
         updatedAt: input.updatedAt,
       };
+      return true;
     },
     writeSnapshot: async (snapshot: RelatedPetsSnapshot) => {
       mutations.push(`write:${snapshot.sourceSlug}`);
@@ -569,6 +584,28 @@ describe("related pets rebuild service", () => {
     ).toEqual(["generation-newer"]);
   });
 
+  it("stops before snapshot writes when a retried request is superseded", async () => {
+    const harness = createHarness({ requestSuperseded: true });
+
+    const result = await harness.service.rebuild({
+      mode: "apply",
+      includeVisual: true,
+    });
+
+    expect(result.status).toBe("superseded");
+    expect(harness.mutations).toEqual(["request"]);
+    expect(harness.snapshots).toEqual([]);
+    expect(harness.state).toMatchObject({
+      requestedGenerationId: "generation-newer",
+      status: "building",
+    });
+    expect(harness.logs.at(-1)).toMatchObject({
+      operation: "apply",
+      status: "superseded",
+      generationId: "generation-new",
+    });
+  });
+
   it("fails apply when storage is unavailable without reporting supersession", async () => {
     const harness = createHarness({ storageAvailable: false });
 
@@ -640,6 +677,22 @@ describe("related pets rebuild service", () => {
       operation: "invalidate",
       status: "superseded",
       generationId: "generation-new",
+    });
+  });
+
+  it("does not invalidate a newer request after request replay", async () => {
+    const harness = createHarness({ requestSuperseded: true });
+
+    const result = await harness.service.invalidate({
+      failureReason: "text_profile_incompatible",
+    });
+
+    expect(result.status).toBe("superseded");
+    expect(harness.mutations).toEqual(["request"]);
+    expect(harness.state).toMatchObject({
+      requestedGenerationId: "generation-newer",
+      status: "building",
+      failureReason: null,
     });
   });
 

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { createRelatedPetsRepository } from "@/lib/pets/related-pets-repository";
+import {
+  createRelatedPetsRepository,
+  type RelatedPetsState,
+} from "@/lib/pets/related-pets-repository";
 
 const values = {
   utf8: (value: string) => ({ textValue: value }),
@@ -155,13 +158,30 @@ describe("related pets repository", () => {
   });
 
   it("starts a build and writes a validated inactive snapshot", async () => {
-    const harness = createHarness();
-
-    await harness.repository.requestBuild({
-      generationId: "generation-2",
-      rankingRevision: "ranking-v1",
-      updatedAt: "2026-08-03T10:01:00.000Z",
+    let state: Parameters<typeof stateResult>[0] | null = null;
+    const harness = createHarness(async (statement) => {
+      if (statement.includes("SELECT state_id")) {
+        return state ? stateResult(state) : { resultSets: [] };
+      }
+      if (statement.includes("UPSERT INTO codex_pet_related_state")) {
+        state = {
+          requested: "generation-2",
+          status: "building",
+          rankingRevision: "ranking-v1",
+          updatedAt: "2026-08-03T10:01:00.000Z",
+        };
+      }
+      return { resultSets: [] };
     });
+
+    await expect(
+      harness.repository.requestBuild({
+        generationId: "generation-2",
+        rankingRevision: "ranking-v1",
+        updatedAt: "2026-08-03T10:01:00.000Z",
+        expectedState: null,
+      }),
+    ).resolves.toBe(true);
     await harness.repository.writeSnapshot({
       generationId: "generation-2",
       sourceSlug: "source-pet",
@@ -170,19 +190,19 @@ describe("related pets repository", () => {
       createdAt: "2026-08-03T10:02:00.000Z",
     });
 
-    expect(harness.statements[0]?.statement).toContain(
-      "UPSERT INTO codex_pet_related_state",
+    const request = harness.statements.find(({ statement }) =>
+      statement.includes("UPSERT INTO codex_pet_related_state"),
     );
-    expect(harness.statements[0]?.statement).toContain(
+    expect(request?.statement).toContain(
       "requested_generation_id",
     );
-    expect(harness.statements[0]?.params.$status).toEqual({
+    expect(request?.params.$status).toEqual({
       textValue: "building",
     });
-    expect(harness.statements[1]?.statement).toContain(
-      "UPSERT INTO codex_pet_related_snapshots",
+    const snapshotWrite = harness.statements.find(({ statement }) =>
+      statement.includes("UPSERT INTO codex_pet_related_snapshots"),
     );
-    expect(harness.statements[1]?.params.$related_slugs_json).toEqual({
+    expect(snapshotWrite?.params.$related_slugs_json).toEqual({
       textValue: '["peer-a","peer-b"]',
     });
     await expect(
@@ -194,6 +214,73 @@ describe("related pets repository", () => {
         createdAt: "2026-08-03T10:02:00.000Z",
       }),
     ).rejects.toThrow("Invalid related pets snapshot slugs.");
+  });
+
+  it("does not replay an older build request over a newer generation", async () => {
+    const capturedState = {
+      requestedGenerationId: "generation-1",
+      activeGenerationId: "generation-1",
+      previousGenerationId: "generation-0",
+      status: "ready" as const,
+      rankingRevision: "ranking-v1",
+      failureReason: null,
+      updatedAt: "2026-08-03T10:00:00.000Z",
+    };
+    let state: RelatedPetsState = { ...capturedState };
+    const harness = createHarness(async (statement, params) => {
+      if (statement.includes("SELECT state_id")) {
+        return stateResult({
+          requested: state.requestedGenerationId,
+          active: state.activeGenerationId,
+          previous: state.previousGenerationId,
+          status: state.status,
+          rankingRevision: state.rankingRevision,
+          failureReason: state.failureReason,
+          updatedAt: state.updatedAt,
+        });
+      }
+      if (statement.includes("UPDATE codex_pet_related_state")) {
+        state = {
+          ...state,
+          requestedGenerationId: String(
+            (params.$generation_id as { textValue: string }).textValue,
+          ),
+          status: "building",
+          rankingRevision: String(
+            (params.$ranking_revision as { textValue: string }).textValue,
+          ),
+          failureReason: null,
+          updatedAt: String(
+            (params.$updated_at as { textValue: string }).textValue,
+          ),
+        };
+      }
+      return { resultSets: [] };
+    });
+    const input = {
+      generationId: "generation-2",
+      rankingRevision: "ranking-v1",
+      updatedAt: "2026-08-03T10:01:00.000Z",
+      expectedState: capturedState,
+    };
+
+    await expect(harness.repository.requestBuild(input)).resolves.toBe(true);
+    await expect(harness.repository.requestBuild(input)).resolves.toBe(true);
+
+    state = {
+      ...state,
+      requestedGenerationId: "generation-3",
+      status: "building",
+      updatedAt: "2026-08-03T10:02:00.000Z",
+    };
+    await expect(harness.repository.requestBuild(input)).resolves.toBe(false);
+
+    expect(
+      harness.statements.filter(({ statement }) =>
+        statement.includes("UPDATE codex_pet_related_state"),
+      ),
+    ).toHaveLength(1);
+    expect(state.requestedGenerationId).toBe("generation-3");
   });
 
   it("conditionally activates only the requested generation", async () => {

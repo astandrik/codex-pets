@@ -69,7 +69,8 @@ type RelatedPetsRepository = {
     generationId: string;
     rankingRevision: string;
     updatedAt: string;
-  }) => Promise<void>;
+    expectedState: RelatedPetsState | null;
+  }) => Promise<boolean>;
   writeSnapshot: (input: RelatedPetsSnapshot) => Promise<void>;
   activateGeneration: (input: {
     generationId: string;
@@ -217,12 +218,24 @@ export function createRelatedPetsRebuildService(
         });
       }
 
+      const expectedState = await dependencies.repository.getState();
       generationId = dependencies.createGenerationId();
-      await dependencies.repository.requestBuild({
+      const requested = await dependencies.repository.requestBuild({
         generationId,
         rankingRevision: dependencies.profile.rankingRevision,
         updatedAt: dependencies.now().toISOString(),
+        expectedState,
       });
+      if (!requested) {
+        return resultAndLog({
+          operation: "apply",
+          status: "superseded",
+          generationId,
+          coverage,
+          rankings: built.rankings,
+          startedAt,
+        });
+      }
 
       for (const ranking of built.rankings) {
         await dependencies.repository.writeSnapshot({
@@ -430,18 +443,21 @@ export function createRelatedPetsRebuildService(
       if (!generationId) {
         throw new RelatedPetsRebuildError("storage_unavailable");
       }
-      await dependencies.repository.requestBuild({
+      const expectedState = await dependencies.repository.getState();
+      const requested = await dependencies.repository.requestBuild({
         generationId,
         rankingRevision: dependencies.profile.rankingRevision,
         updatedAt: dependencies.now().toISOString(),
+        expectedState,
       });
       const invalidated =
-        await dependencies.repository.markGenerationFailed({
+        requested &&
+        (await dependencies.repository.markGenerationFailed({
           generationId,
           rankingRevision: dependencies.profile.rankingRevision,
           failureReason: input.failureReason,
           updatedAt: dependencies.now().toISOString(),
-        });
+        }));
       const result: RelatedPetsInvalidationResult = {
         operation: "invalidate",
         status: invalidated ? "invalidated" : "superseded",
