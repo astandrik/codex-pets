@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { createRelatedPetsRebuildRequiredLog } from "./related-pets-maintenance.mjs";
+
 const SAFE_SLUG = /^[a-z0-9][a-z0-9-]{0,47}$/;
 
 export function parseBackfillArgs(argv) {
@@ -45,13 +47,7 @@ export function parseBackfillArgs(argv) {
 }
 
 export function buildPetSearchDocument(pet) {
-  const tags = Array.from(
-    new Set(
-      pet.tags
-        .map((tag) => tag.normalize("NFKC").trim().toLowerCase())
-        .filter(Boolean),
-    ),
-  ).sort();
+  const tags = normalizedPetTags(pet.tags).toSorted();
 
   return [
     `name: ${pet.displayName.normalize("NFKC").trim()}`,
@@ -61,11 +57,26 @@ export function buildPetSearchDocument(pet) {
   ].join("\n");
 }
 
+export function buildRelatedPetQuery(pet) {
+  const tags = normalizedPetTags(pet.tags);
+  if (tags.length > 0) return tags.join(" ");
+
+  return pet.description.normalize("NFKC").trim();
+}
+
 export function createPetSearchSourceHash(pet, modelRevision) {
   return createHash("sha256")
     .update(modelRevision)
     .update("\n")
     .update(buildPetSearchDocument(pet))
+    .digest("hex");
+}
+
+export function createRelatedPetQuerySourceHash(pet, modelRevision) {
+  return createHash("sha256")
+    .update(modelRevision)
+    .update("\n")
+    .update(buildRelatedPetQuery(pet))
     .digest("hex");
 }
 
@@ -109,6 +120,8 @@ export async function runPetSearchBackfill({
   getMetadata,
   embedDocument,
   upsert,
+  buildInput = buildPetSearchDocument,
+  createSourceHash = createPetSearchSourceHash,
   now = () => new Date(),
   log = console.log,
 }) {
@@ -129,47 +142,63 @@ export async function runPetSearchBackfill({
     updated: 0,
   };
 
-  for (const pet of selectedPets) {
-    const sourceHash = createPetSearchSourceHash(pet, revision);
-    const metadata = options.force
-      ? null
-      : await getMetadata(revision, pet.slug);
-    if (
-      metadata?.sourceHash === sourceHash &&
-      metadata.dimensions === dimensions
-    ) {
-      summary.unchanged += 1;
-      continue;
+  try {
+    for (const pet of selectedPets) {
+      const sourceHash = createSourceHash(pet, revision);
+      const metadata = options.force
+        ? null
+        : await getMetadata(revision, pet.slug);
+      if (
+        metadata?.sourceHash === sourceHash &&
+        metadata.dimensions === dimensions
+      ) {
+        summary.unchanged += 1;
+        continue;
+      }
+
+      summary.planned += 1;
+      if (options.mode === "dry-run") {
+        log({ action: "would-update", slug: pet.slug });
+        continue;
+      }
+
+      const embedding = await embedDocument(buildInput(pet));
+      if (
+        !Array.isArray(embedding) ||
+        embedding.length !== dimensions ||
+        embedding.some((value) => !Number.isFinite(value))
+      ) {
+        throw new Error(
+          `Embedding provider returned ${embedding?.length ?? 0} values; expected ${dimensions}.`,
+        );
+      }
+      await upsert({
+        modelRevision: revision,
+        slug: pet.slug,
+        sourceHash,
+        dimensions,
+        embedding,
+        updatedAt: now().toISOString(),
+      });
+      summary.updated += 1;
+      log({ action: "updated", slug: pet.slug });
     }
 
-    summary.planned += 1;
-    if (options.mode === "dry-run") {
-      log({ action: "would-update", slug: pet.slug });
-      continue;
+    log({ action: "summary", ...summary });
+    return summary;
+  } finally {
+    if (options.mode === "apply" && summary.updated > 0) {
+      log(createRelatedPetsRebuildRequiredLog());
     }
-
-    const embedding = await embedDocument(buildPetSearchDocument(pet));
-    if (
-      !Array.isArray(embedding) ||
-      embedding.length !== dimensions ||
-      embedding.some((value) => !Number.isFinite(value))
-    ) {
-      throw new Error(
-        `Embedding provider returned ${embedding?.length ?? 0} values; expected ${dimensions}.`,
-      );
-    }
-    await upsert({
-      modelRevision: revision,
-      slug: pet.slug,
-      sourceHash,
-      dimensions,
-      embedding,
-      updatedAt: now().toISOString(),
-    });
-    summary.updated += 1;
-    log({ action: "updated", slug: pet.slug });
   }
+}
 
-  log({ action: "summary", ...summary });
-  return summary;
+function normalizedPetTags(tags) {
+  return Array.from(
+    new Set(
+      tags
+        .map((tag) => tag.normalize("NFKC").trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
 }

@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   EmbeddingProviderError,
+  buildRelatedPetQuery,
   buildPetSearchDocument,
+  createRelatedPetQuerySourceHash,
   createPetSearchSourceHash,
   createYandexEmbeddingClient,
   embeddingToBuffer,
@@ -29,6 +31,27 @@ describe("pet search embeddings", () => {
     );
   });
 
+  it("builds a stable related query from tags with a description fallback", () => {
+    expect(
+      buildRelatedPetQuery({
+        ...pet,
+        tags: [" Night ", "gothic", "night", "ＰＩＸＥＬ"],
+      }),
+    ).toBe("night gothic pixel");
+    expect(buildRelatedPetQuery({ ...pet, tags: [] })).toBe(
+      pet.description,
+    );
+    expect(createRelatedPetQuerySourceHash(pet, "query-v1")).not.toBe(
+      createRelatedPetQuerySourceHash(
+        { ...pet, tags: ["gothic", "night"] },
+        "query-v1",
+      ),
+    );
+    expect(createRelatedPetQuerySourceHash(pet, "query-v2")).not.toBe(
+      createRelatedPetQuerySourceHash(pet, "query-v1"),
+    );
+  });
+
   it("encodes float vectors as little-endian YDB bytes", () => {
     const buffer = embeddingToBuffer([1.5, -2.25]);
 
@@ -52,9 +75,10 @@ describe("pet search embeddings", () => {
     });
 
     await client.embedQuery("  SEXY  ");
+    await client.embedPreparedQuery("Mixed CASE " + "tag ".repeat(20));
     await client.embedDocument("pet document");
 
-    expect(requests).toHaveLength(2);
+    expect(requests).toHaveLength(3);
     expect(requests[0]?.url).toBe(
       "https://ai.api.cloud.yandex.net/foundationModels/v1/textEmbedding",
     );
@@ -68,6 +92,10 @@ describe("pet search embeddings", () => {
       text: "sexy",
     });
     expect(JSON.parse(String(requests[1]?.init?.body))).toMatchObject({
+      modelUri: "emb://folder-1/text-search-query/latest",
+      text: "Mixed CASE " + "tag ".repeat(20).trim(),
+    });
+    expect(JSON.parse(String(requests[2]?.init?.body))).toMatchObject({
       modelUri: "emb://folder-1/text-search-doc/latest",
       text: "pet document",
     });

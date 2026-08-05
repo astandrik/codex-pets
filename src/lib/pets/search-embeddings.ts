@@ -43,6 +43,7 @@ export type YandexEmbeddingClient = {
   revision: string;
   dimensions: number;
   embedQuery: (text: string) => Promise<number[]>;
+  embedPreparedQuery: (text: string) => Promise<number[]>;
   embedDocument: (text: string) => Promise<number[]>;
 };
 
@@ -64,13 +65,7 @@ type YandexEmbeddingClientOptions = {
 };
 
 export function buildPetSearchDocument(pet: PetSearchDocumentInput): string {
-  const tags = Array.from(
-    new Set(
-      pet.tags
-        .map((tag) => tag.normalize("NFKC").trim().toLowerCase())
-        .filter(Boolean),
-    ),
-  ).sort();
+  const tags = normalizedPetTags(pet.tags).toSorted();
 
   return [
     `name: ${pet.displayName.normalize("NFKC").trim()}`,
@@ -78,6 +73,13 @@ export function buildPetSearchDocument(pet: PetSearchDocumentInput): string {
     `description: ${pet.description.normalize("NFKC").trim()}`,
     `tags: ${tags.join(", ")}`,
   ].join("\n");
+}
+
+export function buildRelatedPetQuery(pet: PetSearchDocumentInput): string {
+  const tags = normalizedPetTags(pet.tags);
+  if (tags.length > 0) return tags.join(" ");
+
+  return pet.description.normalize("NFKC").trim();
 }
 
 export function createPetSearchSourceHash(
@@ -88,6 +90,17 @@ export function createPetSearchSourceHash(
     .update(modelRevision)
     .update("\n")
     .update(buildPetSearchDocument(pet))
+    .digest("hex");
+}
+
+export function createRelatedPetQuerySourceHash(
+  pet: PetSearchDocumentInput,
+  modelRevision: string,
+): string {
+  return createHash("sha256")
+    .update(modelRevision)
+    .update("\n")
+    .update(buildRelatedPetQuery(pet))
     .digest("hex");
 }
 
@@ -127,6 +140,8 @@ export function createYandexEmbeddingClient(
     revision: options.revision,
     dimensions,
     embedQuery,
+    embedPreparedQuery: (text) =>
+      requestEmbedding("query", normalizeDocument(text)),
     embedDocument: (text) => requestEmbedding("doc", normalizeDocument(text)),
   };
 
@@ -262,6 +277,16 @@ function normalizeDocument(text: string): string {
     );
   }
   return normalized;
+}
+
+function normalizedPetTags(tags: readonly string[]): string[] {
+  return Array.from(
+    new Set(
+      tags
+        .map((tag) => tag.normalize("NFKC").trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
 }
 
 function readEmbedding(payload: unknown): number[] {

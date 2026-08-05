@@ -55,6 +55,7 @@ PET_SEARCH_VISUAL_MODE=off
 PET_SEARCH_VISUAL_MODEL_REVISION=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1
 YANDEX_AI_STUDIO_FOLDER_ID=
 YANDEX_AI_STUDIO_API_KEY_FILE=/run/secrets/yandex-ai-studio.key
+PET_RELATED_HYBRID_ENABLED=false
 
 AUTH_MODE=app-session
 SESSION_COOKIE_SECRET=replace-with-random-secret
@@ -86,6 +87,8 @@ The schema currently includes:
 - `codex_pet_assets`
 - `codex_pet_search_embeddings`
 - `codex_pet_search_captions`
+- `codex_pet_related_state`
+- `codex_pet_related_snapshots`
 - `codex_users`
 - `codex_sessions`
 - `codex_email_verification_tokens`
@@ -114,6 +117,12 @@ The v2 text and Qwen visual revisions both use managed Yandex Text Embeddings
 v2 at 768 dimensions. Keep the legacy 256-dimensional rows for rollback; the
 backfills add revision-scoped rows and do not overwrite them.
 
+Whenever an applied text or visual maintenance backfill reports changed
+vectors, it also prints the required related-pet snapshot follow-up. After all
+embedding updates finish, run the printed dry-run and apply commands and
+confirm the apply result is `ready`; otherwise hybrid related cards keep the
+previous snapshot ordering.
+
 The visual dry-run reads and hashes spritesheets but does not call providers or
 write YDB. After the full paced backfill, enable visual `shadow`, inspect only
 aggregate latency/fallback metrics, and run:
@@ -138,6 +147,103 @@ Caption and embedding tables can remain. The AI Studio API key must be mounted
 as a read-only file and referenced by `YANDEX_AI_STUDIO_API_KEY_FILE`; do not
 place it directly in the environment file. Captions, images, prompts, and
 embeddings must not be copied into deployment logs.
+
+For hybrid related pets, keep `PET_RELATED_HYBRID_ENABLED=false` while applying
+the additive migrations and calibrating the revision-bound ranking profile.
+Backfill the additive related query-vector revision before calibration; its
+dry-run reads YDB only, while apply calls the query embedding model and writes
+revision-scoped rows to the existing embeddings table:
+
+```bash
+npm run related:backfill-query -- --dry-run
+npm run related:backfill-query -- --apply
+```
+
+The query source is normalized pet tags, with description only as the fallback
+for pets without tags. Candidate vectors remain the existing search document
+revision, so related ranking uses query-to-document cosine rather than the
+unsupported document-to-document shortcut. Both evaluation commands below
+read only the approved catalog and existing text-query/text-document/visual/
+caption rows; they do not call an embedding provider:
+
+```bash
+npm run related:eval:calibrate
+npm run related:eval:holdout
+```
+
+The dedicated related fixtures live in
+`src/lib/pets/related-pets-eval-fixtures.json`; they do not change search eval.
+Calibration uses exactly 12 frozen source cases, including both directions of
+Sans and Fire Skull. A text profile is eligible only when text-plus-metadata
+nDCG@4 is no worse than metadata, at least one case strictly improves, and text
+changes at least one final top four. Sans must include Fire Skull in both the
+text-plus-metadata and final hybrid top four; metadata-only output does not
+satisfy this gate. If no eligible text profile exists, calibration exits
+nonzero and rollout stops.
+
+Visual-off is represented only as `visualMinSimilarity: null`. Calibration
+prefers an enabled visual profile with the smallest tied weight and disables
+visual only when every enabled profile degrades the text-plus-metadata
+baseline. The command exits nonzero unless the exact selected thresholds and
+weight match `CURRENT_RELATED_PETS_RANKING_PROFILE`. When it reports a
+different `selectedProfile`, update the pinned values and ranking revision,
+commit and deploy that profile with the feature still disabled, and rerun
+calibration. The holdout command uses four untouched source cases exactly once
+and must report `passed: true`; full hybrid nDCG@4 must be no worse than both
+metadata-only and text-plus-metadata. Missing approved fixture pets or missing
+current query, document, or visual vectors fail either command.
+
+Only after both evaluation commands pass, build the initial snapshots:
+
+```bash
+npm run related:rebuild -- --dry-run
+npm run related:rebuild -- --apply
+```
+
+Inspect the structured output before enabling the feature. The apply result must
+have `status: "ready"`, and `coverage.snapshotCount` must equal
+`coverage.approvedPetCount`; `coverage.textVectorCount` counts only pets with
+both current query and document vectors and must also equal the approved count.
+The rebuild validates all required vector coverage and computes every ranking
+before it requests a new generation. A `text_vectors_incomplete` or
+`visual_vectors_incomplete` preflight failure therefore leaves the last ready
+generation unchanged and does not create or clean up a failed generation.
+Then set `PET_RELATED_HYBRID_ENABLED=true` and restart the app. Unset and exact
+`true` enable snapshot reads; exact `false` is the rollout and rollback kill
+switch. Invalid values fail safely to the heuristic resolver.
+
+Approval refreshes the search document vector and the related query vector in
+parallel. `updated` and `unchanged` are the only ready outcomes. With an enabled
+visual profile, approval publishes no generation until the visual refresh also
+succeeds; its callback then rebuilds with complete document, query, and visual
+coverage. With a compatible text profile, a skipped or failed text refresh, or
+a failed visual refresh, keeps the previous generation ready while approval
+itself remains successful. A missing or incompatible text profile explicitly
+invalidates related-pet state, so hybrid reads fall back to heuristics until the
+configuration, embedding backfill, and rebuild are complete. Retry the ordinary
+embedding refresh/backfill and rebuild operationally; there is no separate
+approval retry queue. If a future pinned profile explicitly sets
+`visualMinSimilarity: null`, successful text refresh publishes a text-only
+generation immediately and does not wait for the visual callback.
+
+To roll back ordering without discarding derived rows, first disable the
+feature and read the exact `active_generation_id` and
+`previous_generation_id` pair from `codex_pet_related_state`. Pass both
+values explicitly:
+
+```bash
+npm run related:rebuild -- --recover-previous PREVIOUS_GENERATION_ID --expected-active ACTIVE_GENERATION_ID
+```
+
+The recovery command exits nonzero when no compatible previous generation is
+available, the requested generation is not the retained one, or the expected
+active generation does not match. Retrying with the same generation pair is
+idempotent. Keep the feature disabled until the
+recovered state is confirmed `ready`; re-enable it only after that check.
+Compatibility requires an exact ranking-profile revision match, so deploy the
+application version for the retained revision before recovery when rolling
+back across profile revisions.
+The additive related query-vector rows may remain after rollback.
 
 ## Build and run
 

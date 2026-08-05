@@ -10,6 +10,10 @@ import {
   parseUpdateArgs,
   readDescriptionUpdates,
 } from "./lib/pet-description-update.mjs";
+import {
+  RELATED_PETS_REBUILD_COMMANDS,
+  buildRelatedPetsQueryBackfillCommands,
+} from "./lib/related-pets-maintenance.mjs";
 
 const require = createRequire(import.meta.url);
 const {
@@ -81,6 +85,20 @@ export async function main(argv = process.argv.slice(2)) {
     for (const command of buildEmbeddingBackfillCommands(
       updates.map((update) => update.slug),
     )) {
+      console.log(command);
+    }
+    console.log(
+      "refresh the related-query embeddings for the rewritten description(s):",
+    );
+    for (const command of buildRelatedPetsQueryBackfillCommands(
+      updates.map((update) => update.slug),
+    )) {
+      console.log(command);
+    }
+    console.log(
+      "after all document and related-query backfills succeed, refresh related-pet snapshots:",
+    );
+    for (const command of RELATED_PETS_REBUILD_COMMANDS) {
       console.log(command);
     }
   } finally {

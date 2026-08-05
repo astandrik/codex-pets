@@ -65,7 +65,33 @@ type PetVisionSearchRuntimeDependencies = {
 export function createPetVisionSearchRuntime(
   dependencies: PetVisionSearchRuntimeDependencies,
 ) {
-  return { refresh };
+  return { refresh, refreshBestEffort };
+
+  async function refreshBestEffort(
+    pet: VisionSearchPet,
+    options: {
+      onSuccessfulRefresh?: (
+        result: Exclude<PetVisionRefreshResult, "skipped">,
+      ) => void | Promise<void>;
+    } = {},
+  ): Promise<boolean> {
+    let result: PetVisionRefreshResult;
+    try {
+      result = await refresh(pet);
+    } catch (error) {
+      console.warn("[codex-pets][pet-vision-search]", {
+        operation: "refresh",
+        status: "failed",
+        reason: indexingFailureReason(error),
+      });
+      return false;
+    }
+
+    if (result !== "skipped") {
+      await options.onSuccessfulRefresh?.(result);
+    }
+    return true;
+  }
 
   async function refresh(
     pet: VisionSearchPet,
@@ -261,18 +287,13 @@ export function refreshApprovedPetVisionSearch(
 
 export async function refreshApprovedPetVisionSearchBestEffort(
   pet: PublicPet,
+  options: {
+    onSuccessfulRefresh?: (
+      result: Exclude<PetVisionRefreshResult, "skipped">,
+    ) => void | Promise<void>;
+  } = {},
 ): Promise<boolean> {
-  try {
-    await refreshApprovedPetVisionSearch(pet);
-    return true;
-  } catch (error) {
-    console.warn("[codex-pets][pet-vision-search]", {
-      operation: "refresh",
-      status: "failed",
-      reason: indexingFailureReason(error),
-    });
-    return false;
-  }
+  return productionRuntime.refreshBestEffort(pet, options);
 }
 
 function indexingFailureReason(

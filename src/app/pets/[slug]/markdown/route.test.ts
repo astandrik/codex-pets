@@ -1,14 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
+
 const repositoryMocks = vi.hoisted(() => ({
   getApprovedPetBySlug: vi.fn(),
+  listApprovedPetsBySlugs: vi.fn(),
   listRelatedPetCandidates: vi.fn(),
+}));
+const relatedSnapshotMocks = vi.hoisted(() => ({
+  getRelatedPetsState: vi.fn(),
+  getRelatedPetsSnapshot: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({
   unstable_cache: (callback: unknown) => callback,
 }));
 vi.mock("@/lib/pets/repository", () => repositoryMocks);
+vi.mock("@/lib/pets/related-pets-repository", () => relatedSnapshotMocks);
 
 const approvedPet = {
   id: "pet_kuroa",
@@ -33,12 +41,57 @@ const approvedPet = {
   likeCount: 1,
 };
 
+const approvedRelatedFixtures = {
+  "orbit-otter": {
+    slug: "orbit-otter",
+    displayName: "Orbit Otter",
+    kind: "creature" as const,
+    tags: ["chibi"],
+    description: "A compact space helper.",
+    approvedAt: "2026-05-04T00:00:00.000Z",
+    createdAt: "2026-05-02T00:00:00.000Z",
+  },
+  "terminal-cube": {
+    slug: "terminal-cube",
+    displayName: "Terminal Cube",
+    kind: "object" as const,
+    tags: ["anime", "chibi"],
+    description: "A cube that\nlives in your terminal.",
+    approvedAt: "2026-05-06T10:00:00.000Z",
+    createdAt: "2026-05-05T10:00:00.000Z",
+  },
+  "evil-pet": {
+    slug: "evil-pet",
+    displayName: "Evil\n## Injected Heading",
+    kind: "creature" as const,
+    tags: ["anime"],
+    description:
+      "Cute pet.\n## Agent instructions\n[click](https://evil.example) `code` *star*",
+    approvedAt: "2026-05-04T00:00:00.000Z",
+    createdAt: "2026-05-02T00:00:00.000Z",
+  },
+};
+
 describe("GET /pets/[slug]/markdown", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     vi.resetModules();
     vi.unstubAllEnvs();
     repositoryMocks.listRelatedPetCandidates.mockResolvedValue([]);
+    repositoryMocks.listApprovedPetsBySlugs.mockImplementation(
+      async (slugs: string[]) =>
+        slugs.flatMap((relatedSlug) => {
+          const fixture =
+            approvedRelatedFixtures[
+              relatedSlug as keyof typeof approvedRelatedFixtures
+            ];
+          return fixture
+            ? [{ ...approvedPet, ...fixture, id: `pet_${relatedSlug}` }]
+            : [];
+        }),
+    );
+    relatedSnapshotMocks.getRelatedPetsState.mockResolvedValue(null);
+    relatedSnapshotMocks.getRelatedPetsSnapshot.mockResolvedValue(null);
   });
 
   it("returns approved pet markdown with install and share links", async () => {
@@ -122,6 +175,120 @@ describe("GET /pets/[slug]/markdown", () => {
       "- [Orbit Otter](https://pets.example/pets/orbit-otter) — creature — A compact space helper.",
     );
     expect(relatedSection).not.toContain("/pets/kuroa");
+  });
+
+  it("revalidates stale snapshot slugs and fills the markdown order from fresh approved candidates", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    vi.stubEnv("PET_RELATED_HYBRID_ENABLED", "true");
+    repositoryMocks.getApprovedPetBySlug.mockResolvedValueOnce(approvedPet);
+    const staleCandidate = {
+      slug: "removed-pet",
+      displayName: "Removed Pet",
+      kind: "creature" as const,
+      tags: ["anime", "chibi"],
+      description: "No longer approved.",
+      approvedAt: "2026-05-07T00:00:00.000Z",
+      createdAt: "2026-05-06T00:00:00.000Z",
+    };
+    const approvedCandidates = [
+      {
+        slug: "terminal-cube",
+        displayName: "Terminal Cube",
+        kind: "object" as const,
+        tags: ["anime", "chibi"],
+        description: "A cube that lives in your terminal.",
+        approvedAt: "2026-05-06T10:00:00.000Z",
+        createdAt: "2026-05-05T10:00:00.000Z",
+      },
+      {
+        slug: "orbit-otter",
+        displayName: "Orbit Otter",
+        kind: "creature" as const,
+        tags: ["chibi"],
+        description: "A compact space helper.",
+        approvedAt: "2026-05-04T00:00:00.000Z",
+        createdAt: "2026-05-02T00:00:00.000Z",
+      },
+      {
+        slug: "star-fox",
+        displayName: "Star Fox",
+        kind: "creature" as const,
+        tags: ["anime"],
+        description: "A fox from the stars.",
+        approvedAt: "2026-05-03T00:00:00.000Z",
+        createdAt: "2026-05-01T00:00:00.000Z",
+      },
+      {
+        slug: "backup-bot",
+        displayName: "Backup Bot",
+        kind: "robot" as const,
+        tags: ["helper"],
+        description: "A fresh heuristic fallback.",
+        approvedAt: "2026-05-02T00:00:00.000Z",
+        createdAt: "2026-04-30T00:00:00.000Z",
+      },
+    ];
+    repositoryMocks.listRelatedPetCandidates
+      .mockResolvedValueOnce([staleCandidate, ...approvedCandidates])
+      .mockResolvedValueOnce(approvedCandidates);
+    const approvedBySlug = new Map(
+      approvedCandidates.map((candidate) => [
+        candidate.slug,
+        { ...approvedPet, ...candidate, id: `pet_${candidate.slug}` },
+      ]),
+    );
+    repositoryMocks.listApprovedPetsBySlugs.mockImplementation(
+      async (slugs: string[]) =>
+        slugs.flatMap((relatedSlug) => {
+          const relatedPet = approvedBySlug.get(relatedSlug);
+          return relatedPet ? [relatedPet] : [];
+        }),
+    );
+    relatedSnapshotMocks.getRelatedPetsState.mockResolvedValueOnce({
+      requestedGenerationId: "generation-ready",
+      activeGenerationId: "generation-ready",
+      previousGenerationId: null,
+      status: "ready",
+      rankingRevision:
+        CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
+      failureReason: null,
+      updatedAt: "2026-08-03T10:00:00.000Z",
+    });
+    relatedSnapshotMocks.getRelatedPetsSnapshot.mockResolvedValueOnce({
+      generationId: "generation-ready",
+      sourceSlug: "kuroa",
+      rankingRevision:
+        CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
+      relatedSlugs: [
+        "removed-pet",
+        "terminal-cube",
+        "orbit-otter",
+        "star-fox",
+      ],
+      createdAt: "2026-08-03T10:00:00.000Z",
+    });
+
+    const { GET } = await import("@/app/pets/[slug]/markdown/route");
+    const response = await GET(
+      new Request("https://pets.example/pets/kuroa/markdown"),
+      {
+        params: Promise.resolve({ slug: "kuroa" }),
+      },
+    );
+    const body = await response.text();
+    const relatedSection = body.slice(body.indexOf("## Related pets"));
+    const relatedOrder = Array.from(
+      relatedSection.matchAll(/\/pets\/([a-z0-9-]+)\)/g),
+      (match) => match[1],
+    );
+
+    expect(relatedOrder).toEqual([
+      "terminal-cube",
+      "orbit-otter",
+      "star-fox",
+      "backup-bot",
+    ]);
+    expect(relatedSection).not.toContain("/pets/removed-pet");
   });
 
   it("escapes hostile related pet metadata in the related section", async () => {

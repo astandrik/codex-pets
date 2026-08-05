@@ -1,10 +1,6 @@
 import { markdownResponse } from "@/lib/agent-markdown";
 import { buildPetMarkdown } from "@/lib/pets/markdown";
-import {
-  selectRelatedPets,
-  type RelatedPetCandidate,
-} from "@/lib/pets/related-pets";
-import { getRelatedPetCandidates } from "@/lib/pets/related-pets-server";
+import { getApprovedResolvedRelatedPets } from "@/lib/pets/related-pets-server";
 import { getApprovedPetBySlug } from "@/lib/pets/repository";
 
 export const runtime = "nodejs";
@@ -26,10 +22,7 @@ export async function GET(
     });
   }
 
-  const relatedPets = selectRelatedPets(
-    await getRelatedPetCandidatesBestEffort(),
-    pet,
-  );
+  const relatedPets = await getApprovedResolvedRelatedPetsBestEffort(pet);
   const response = markdownResponse(buildPetMarkdown(pet, relatedPets), {
     canonicalPath: `/pets/${pet.slug}`,
   });
@@ -40,14 +33,14 @@ export async function GET(
   return response;
 }
 
-async function getRelatedPetCandidatesBestEffort(): Promise<
-  RelatedPetCandidate[]
-> {
+async function getApprovedResolvedRelatedPetsBestEffort(
+  pet: Parameters<typeof getApprovedResolvedRelatedPets>[0],
+): ReturnType<typeof getApprovedResolvedRelatedPets> {
   try {
-    return await getRelatedPetCandidates();
+    return await getApprovedResolvedRelatedPets(pet);
   } catch {
     console.warn("[codex-pets][related-pets]", {
-      operation: "list-candidates",
+      operation: "resolve",
       status: "failed",
     });
     return [];

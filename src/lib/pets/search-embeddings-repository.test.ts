@@ -9,6 +9,57 @@ const values = {
 };
 
 describe("search embeddings repository", () => {
+  it("lists raw rows for one revision without filtering malformed vectors", async () => {
+    const statements: Array<{
+      statement: string;
+      params: Record<string, unknown>;
+    }> = [];
+    const malformedEmbedding = Buffer.from([0xff, 0x00]);
+    const repository = createSearchEmbeddingsRepository({
+      isConfigured: () => true,
+      values,
+      execute: async (statement, params) => {
+        statements.push({ statement, params });
+        return {
+          resultSets: [
+            {
+              rows: [
+                {
+                  items: [
+                    { textValue: "model-v1" },
+                    { textValue: "velvet-byte" },
+                    { textValue: "source-hash" },
+                    { uint32Value: 0 },
+                    { bytesValue: malformedEmbedding },
+                    { textValue: "2026-08-03T10:00:00.000Z" },
+                  ],
+                },
+              ],
+            },
+          ],
+        };
+      },
+    });
+
+    await expect(repository.listRawByRevision("model-v1")).resolves.toEqual([
+      {
+        modelRevision: "model-v1",
+        slug: "velvet-byte",
+        sourceHash: "source-hash",
+        dimensions: 0,
+        embedding: malformedEmbedding,
+        updatedAt: "2026-08-03T10:00:00.000Z",
+      },
+    ]);
+    expect(statements[0]?.statement).toContain(
+      "WHERE model_revision = $model_revision",
+    );
+    expect(statements[0]?.statement).toContain("embedding");
+    expect(statements[0]?.params).toEqual({
+      $model_revision: { textValue: "model-v1" },
+    });
+  });
+
   it("runs exact cosine search and maps stored source hashes", async () => {
     const statements: Array<{ statement: string; params: Record<string, unknown> }> = [];
     const repository = createSearchEmbeddingsRepository({
@@ -116,5 +167,8 @@ describe("search embeddings repository", () => {
         embedding: [1, 0],
       }),
     ).toEqual([]);
+    await expect(repository.listRawByRevision("model-v1")).resolves.toEqual(
+      [],
+    );
   });
 });

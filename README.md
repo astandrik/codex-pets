@@ -301,9 +301,33 @@ base `lexical` and visual `off` → additive migrations → backfills → visual
 `shadow` → calibration → untouched holdout → human review of the combined
 `sexy` top five → both modes `hybrid`.
 
+An applied text or visual backfill that changes vectors prints the required
+related-pet snapshot follow-up. Run both commands after embedding maintenance
+completes so snapshot rankings do not remain stale:
+
+```bash
+npm run related:backfill-query -- --dry-run
+npm run related:backfill-query -- --apply
+npm run related:rebuild -- --dry-run
+npm run related:rebuild -- --apply
+```
+
+Related pets use the existing search document vectors as candidates and an
+additive query-vector revision built from normalized tags, with description as
+the fallback for pets without tags. Query vectors use the query side of the
+managed embedding model; document-to-document similarity is not used as a
+silent substitute. The dedicated related relevance groups live in
+`src/lib/pets/related-pets-eval-fixtures.json` and do not affect search eval.
+
 Text and visual backfills resolve their embedding provider independently from
 their active revision. Visual ranking is disabled safely when the text and
 visual revisions use incompatible embedding models.
+
+Admin approval refreshes both the search document vector and the related-query
+vector. For the current visual-enabled related profile, a new snapshot
+generation is published only after the visual refresh also succeeds. Missing
+required vectors leave the previous ready generation active; operators can use
+the existing backfill and rebuild commands to retry without a separate queue.
 
 The first rollback is `PET_SEARCH_VISUAL_MODE=off`; use
 `PET_SEARCH_MODE=lexical` to disable the text-semantic contour too. The additive

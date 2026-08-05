@@ -5,7 +5,9 @@ import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
 import {
+  buildRelatedPetQuery,
   createRequestStartLimiter,
+  createRelatedPetQuerySourceHash,
   embeddingToBuffer,
   parseBackfillArgs,
   runPetSearchBackfill,
@@ -70,6 +72,12 @@ export async function main(argv = process.argv.slice(2)) {
         getEmbeddingMetadata(driver, modelRevision, slug),
       embedDocument,
       upsert: (input) => upsertEmbedding(driver, input),
+      ...(revisionDefinition.inputKind === "related-query"
+        ? {
+            buildInput: buildRelatedPetQuery,
+            createSourceHash: createRelatedPetQuerySourceHash,
+          }
+        : {}),
       log: (entry) => console.log(JSON.stringify(entry)),
     });
   } finally {

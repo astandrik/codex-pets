@@ -1,0 +1,197 @@
+#!/usr/bin/env node
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const repositoryRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
+const sourceRoot = path.join(repositoryRoot, "src");
+
+export const RELATED_PETS_REBUILD_HELP = `Usage:
+  npm run related:rebuild -- --dry-run
+  npm run related:rebuild -- --apply
+  npm run related:rebuild -- --recover-previous PREVIOUS_GENERATION_ID --expected-active ACTIVE_GENERATION_ID
+  npm run related:rebuild -- --help
+
+Modes:
+  --dry-run           Validate stored vectors and compute rankings without writes.
+  --apply             Build and conditionally publish a new full generation.
+  --recover-previous  Atomically publish the retained generation from the expected active generation; retries with the same pair are idempotent.
+  --help              Show this help.`;
+
+const SAFE_REBUILD_FAILURE_REASONS = new Set([
+  "rebuild_failed",
+  "storage_unavailable",
+  "text_vectors_incomplete",
+  "visual_vectors_incomplete",
+]);
+
+export function sanitizeRelatedPetsRebuildFailureReason(error) {
+  return error instanceof Error &&
+    SAFE_REBUILD_FAILURE_REASONS.has(error.message)
+    ? error.message
+    : "rebuild_failed";
+}
+
+export function parseRelatedPetsRebuildArgs(argv) {
+  const supported = new Set([
+    "--dry-run",
+    "--apply",
+    "--recover-previous",
+    "--help",
+  ]);
+  if (argv[0] === "--recover-previous") {
+    const targetGenerationId = argv[1];
+    const expectedActiveGenerationId = argv[3];
+    const isCanonicalGenerationId = (value) =>
+      /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value ?? "");
+    if (!isCanonicalGenerationId(targetGenerationId)) {
+      throw new Error(
+        "--recover-previous requires one canonical previous generation ID.",
+      );
+    }
+    if (
+      argv.length !== 4 ||
+      argv[2] !== "--expected-active" ||
+      !isCanonicalGenerationId(expectedActiveGenerationId)
+    ) {
+      throw new Error(
+        "--recover-previous requires --expected-active with one canonical active generation ID.",
+      );
+    }
+    if (targetGenerationId === expectedActiveGenerationId) {
+      throw new Error(
+        "Previous and expected active generation IDs must be different.",
+      );
+    }
+    return {
+      mode: "recover-previous",
+      targetGenerationId,
+      expectedActiveGenerationId,
+    };
+  }
+  const unknown = argv.find((argument) => !supported.has(argument));
+  if (unknown) {
+    throw new Error(`Unknown argument: ${unknown}`);
+  }
+  if (argv.length !== 1 || new Set(argv).size !== 1) {
+    throw new Error(
+      "Select exactly one of --dry-run, --apply, --recover-previous, or --help.",
+    );
+  }
+
+  const [argument] = argv;
+  if (argument === "--dry-run") return { mode: "dry-run" };
+  if (argument === "--apply") return { mode: "apply" };
+  if (argument === "--help") return { mode: "help" };
+  throw new Error(
+    "Select exactly one of --dry-run, --apply, --recover-previous, or --help.",
+  );
+}
+
+export async function runRelatedPetsRebuildCli({
+  argv = process.argv.slice(2),
+  loadService = loadProductionService,
+  write = (line) => console.log(line),
+  writeDiagnostic = (line) => console.error(line),
+} = {}) {
+  const options = parseRelatedPetsRebuildArgs(argv);
+  if (options.mode === "help") {
+    write(RELATED_PETS_REBUILD_HELP);
+    return 0;
+  }
+
+  const service = await loadService();
+  try {
+    if (options.mode === "recover-previous") {
+      const result = await service.recoverPrevious({
+        targetGenerationId: options.targetGenerationId,
+        expectedActiveGenerationId: options.expectedActiveGenerationId,
+      });
+      write(
+        JSON.stringify({
+          operation: "recover-previous",
+          status: result.status,
+          generationId: result.generationId,
+          rankingRevision: result.rankingRevision,
+          durationMs: result.durationMs,
+        }),
+      );
+      return result.status === "recovered" ? 0 : 1;
+    }
+
+    const result = await service.rebuild({
+      mode: options.mode,
+      includeVisual: true,
+    });
+    write(
+      JSON.stringify({
+        operation: result.operation,
+        status: result.status,
+        generationId: result.generationId,
+        rankingRevision: result.rankingRevision,
+        coverage: result.coverage,
+        durationMs: result.durationMs,
+      }),
+    );
+    return result.status === "superseded" ? 1 : 0;
+  } finally {
+    try {
+      await service.dispose?.();
+    } catch {
+      writeDiagnostic(
+        JSON.stringify({
+          operation: "related-pets-rebuild-dispose",
+          status: "failed",
+          failureReason: "dispose_failed",
+        }),
+      );
+    }
+  }
+}
+
+async function loadProductionService() {
+  const { register } = await import("node:module");
+  register(new URL("./lib/related-pets-typescript-loader.mjs", import.meta.url), {
+    parentURL: import.meta.url,
+    data: { sourceRootUrl: pathToFileURL(sourceRoot).href },
+  });
+
+  const runtime = await import(
+    pathToFileURL(
+      path.join(sourceRoot, "lib/pets/related-pets-rebuild.ts"),
+    ).href
+  );
+  const { destroyYdbDriver } = await import(
+    pathToFileURL(path.join(sourceRoot, "lib/ydb/client.ts")).href
+  );
+  return {
+    rebuild: runtime.rebuildRelatedPets,
+    recoverPrevious: runtime.recoverPreviousRelatedPets,
+    dispose: destroyYdbDriver,
+  };
+}
+
+function isEntrypoint() {
+  const entry = process.argv[1];
+  return Boolean(entry) && pathToFileURL(path.resolve(entry)).href === import.meta.url;
+}
+
+if (isEntrypoint()) {
+  runRelatedPetsRebuildCli()
+    .then((exitCode) => {
+      process.exitCode = exitCode;
+    })
+    .catch((error) => {
+      const failureReason = sanitizeRelatedPetsRebuildFailureReason(error);
+      console.error(
+        JSON.stringify({
+          operation: "related-pets-rebuild",
+          status: "failed",
+          failureReason,
+        }),
+      );
+      process.exitCode = 1;
+    });
+}

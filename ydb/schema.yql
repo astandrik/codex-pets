@@ -52,6 +52,27 @@ CREATE TABLE codex_pet_search_captions (
   PRIMARY KEY (caption_revision, pet_slug)
 );
 
+CREATE TABLE codex_pet_related_state (
+  state_id Utf8 NOT NULL,
+  requested_generation_id Utf8,
+  active_generation_id Utf8,
+  previous_generation_id Utf8,
+  status Utf8 NOT NULL,
+  ranking_revision Utf8 NOT NULL,
+  failure_reason Utf8,
+  updated_at Utf8 NOT NULL,
+  PRIMARY KEY (state_id)
+);
+
+CREATE TABLE codex_pet_related_snapshots (
+  generation_id Utf8 NOT NULL,
+  source_slug Utf8 NOT NULL,
+  ranking_revision Utf8 NOT NULL,
+  related_slugs_json Json NOT NULL,
+  created_at Utf8 NOT NULL,
+  PRIMARY KEY (generation_id, source_slug)
+);
+
 CREATE TABLE codex_users (
   user_id Utf8 NOT NULL,
   email Utf8 NOT NULL,

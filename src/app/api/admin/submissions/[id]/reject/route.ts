@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
-import { moderatePet } from "@/lib/pets/repository";
+import { rebuildRelatedPetsBestEffort } from "@/lib/pets/related-pets-rebuild-trigger";
+import { moderatePetWithPreviousStatus } from "@/lib/pets/repository";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
@@ -25,18 +26,25 @@ export async function POST(
   }
 
   const { id } = await params;
-  const pet = await moderatePet({
+  const moderation = await moderatePetWithPreviousStatus({
     petId: id,
     reviewerId: principal.userId,
     decision: "rejected",
     reason: typeof body.reason === "string" ? body.reason : "",
   });
-  if (!pet) {
+  if (!moderation) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
+  const { pet, previousStatus } = moderation;
 
   revalidateSitemapCache();
   revalidateRelatedPetCandidatesCache();
+  if (previousStatus === "approved") {
+    await rebuildRelatedPetsBestEffort({
+      trigger: "reject",
+      includeVisual: true,
+    });
+  }
 
   return NextResponse.json({ ok: true, pet });
 }

@@ -11,6 +11,12 @@ const {
   parseUpdateArgs,
   readDescriptionUpdates,
 } = await import("./lib/pet-description-update.mjs");
+const {
+  RELATED_PETS_REBUILD_COMMANDS,
+  buildRelatedPetsQueryBackfillCommands,
+} = await import(
+  "./lib/related-pets-maintenance.mjs"
+);
 
 let workDir: string;
 
@@ -220,6 +226,20 @@ describe("buildEmbeddingBackfillCommands", () => {
     expect(buildEmbeddingBackfillCommands(["kesha", "wild-boar"])).toEqual([
       "node scripts/backfill-pet-search-embeddings.mjs --apply --slug kesha",
       "node scripts/backfill-pet-search-embeddings.mjs --apply --slug wild-boar",
+    ]);
+  });
+
+  it("refreshes related queries before rebuilding snapshots", () => {
+    const commands = [
+      ...buildRelatedPetsQueryBackfillCommands(["kesha", "wild-boar"]),
+      ...RELATED_PETS_REBUILD_COMMANDS,
+    ];
+
+    expect(commands).toEqual([
+      "npm run related:backfill-query -- --apply --slug kesha",
+      "npm run related:backfill-query -- --apply --slug wild-boar",
+      "npm run related:rebuild -- --dry-run",
+      "npm run related:rebuild -- --apply",
     ]);
   });
 });

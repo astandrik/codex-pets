@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildRelatedPetQuery as buildRuntimeRelatedQuery,
   buildPetSearchDocument as buildRuntimeDocument,
+  createRelatedPetQuerySourceHash as createRuntimeRelatedQueryHash,
   createPetSearchSourceHash as createRuntimeHash,
   embeddingToBuffer as runtimeEmbeddingToBuffer,
 } from "../src/lib/pets/search-embeddings";
@@ -9,9 +11,12 @@ import {
   PET_SEARCH_EMBEDDING_MODELS,
   PET_SEARCH_MODEL_REVISIONS,
 } from "../src/lib/pets/search-config";
+import { RELATED_PETS_TEXT_QUERY_REVISION } from "../src/lib/pets/related-pets-profile";
 
 const {
+  buildRelatedPetQuery,
   buildPetSearchDocument,
+  createRelatedPetQuerySourceHash,
   createPetSearchSourceHash,
   createRequestStartLimiter,
   embeddingToBuffer,
@@ -22,6 +27,9 @@ const {
   PET_SEARCH_BACKFILL_REVISIONS,
   createEmbeddingRequest,
 } = await import("./lib/pet-search-provider-config.mjs");
+const { RELATED_PETS_REBUILD_COMMANDS } = await import(
+  "./lib/related-pets-maintenance.mjs"
+);
 
 const pet = {
   slug: "velvet-byte",
@@ -56,6 +64,28 @@ describe("pet search embeddings backfill", () => {
     ).toEqual({
       modelUri: "emb://folder-1/text-embeddings-v2-doc",
       text: "document",
+      dim: "768",
+    });
+    expect(
+      PET_SEARCH_BACKFILL_REVISIONS[RELATED_PETS_TEXT_QUERY_REVISION],
+    ).toEqual({
+      dimensions: 768,
+      modelPath: "text-embeddings-v2-query",
+      requestDimensions: 768,
+      inputKind: "related-query",
+    });
+    expect(
+      createEmbeddingRequest({
+        folderId: "folder-1",
+        definition:
+          PET_SEARCH_BACKFILL_REVISIONS[
+            RELATED_PETS_TEXT_QUERY_REVISION
+          ],
+        text: "skeleton pixel art",
+      }),
+    ).toEqual({
+      modelUri: "emb://folder-1/text-embeddings-v2-query",
+      text: "skeleton pixel art",
       dim: "768",
     });
   });
@@ -96,6 +126,13 @@ describe("pet search embeddings backfill", () => {
     const commandBuffer = embeddingToBuffer([1.5, -2.25]);
     expect(commandBuffer).toEqual(runtimeEmbeddingToBuffer([1.5, -2.25]));
     expect(commandBuffer.at(-1)).toBe(0x01);
+  });
+
+  it("keeps the related query and source hash in runtime parity", () => {
+    expect(buildRelatedPetQuery(pet)).toBe(buildRuntimeRelatedQuery(pet));
+    expect(createRelatedPetQuerySourceHash(pet, "query-v1")).toBe(
+      createRuntimeRelatedQueryHash(pet, "query-v1"),
+    );
   });
 
   it("spaces provider starts across the configured per-minute limit", async () => {
@@ -148,6 +185,35 @@ describe("pet search embeddings backfill", () => {
     expect(JSON.stringify(logs)).not.toContain(pet.description);
   });
 
+  it("uses the related query builder and hash for its additive revision", async () => {
+    const embedDocument = vi.fn(async () => Array(768).fill(0.25));
+    const upsert = vi.fn(async () => undefined);
+
+    await runPetSearchBackfill({
+      options: { mode: "apply", slug: null, force: false },
+      revision: RELATED_PETS_TEXT_QUERY_REVISION,
+      dimensions: 768,
+      pets: [pet],
+      getMetadata: async () => null,
+      embedDocument,
+      upsert,
+      buildInput: buildRelatedPetQuery,
+      createSourceHash: createRelatedPetQuerySourceHash,
+      log: () => undefined,
+    });
+
+    expect(embedDocument).toHaveBeenCalledWith("night gothic");
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelRevision: RELATED_PETS_TEXT_QUERY_REVISION,
+        sourceHash: createRelatedPetQuerySourceHash(
+          pet,
+          RELATED_PETS_TEXT_QUERY_REVISION,
+        ),
+      }),
+    );
+  });
+
   it("skips fresh vectors and applies stale or forced vectors", async () => {
     const sourceHash = createPetSearchSourceHash(pet, "model-v1");
     const upsert = vi.fn(async () => undefined);
@@ -185,6 +251,61 @@ describe("pet search embeddings backfill", () => {
       dimensions: 256,
       embedding: Array(256).fill(0.25),
       updatedAt: "2026-07-22T00:00:00.000Z",
+    });
+  });
+
+  it("emits executable related snapshot follow-up after applied changes", async () => {
+    const logs: unknown[] = [];
+
+    await runPetSearchBackfill({
+      options: { mode: "apply", slug: null, force: false },
+      revision: "model-v1",
+      dimensions: 256,
+      pets: [pet],
+      getMetadata: async () => null,
+      embedDocument: async () => Array(256).fill(0.25),
+      upsert: async () => undefined,
+      log: (entry: unknown) => logs.push(entry),
+    });
+
+    expect(logs.at(-1)).toEqual({
+      action: "related-pets-rebuild-required",
+      commands: RELATED_PETS_REBUILD_COMMANDS,
+    });
+  });
+
+  it("emits the related snapshot follow-up after a later applied update fails", async () => {
+    const logs: unknown[] = [];
+    const providerFailure = new Error("provider unavailable");
+    let embeddingAttempt = 0;
+
+    await expect(
+      runPetSearchBackfill({
+        options: { mode: "apply", slug: null, force: false },
+        revision: "model-v1",
+        dimensions: 256,
+        pets: [
+          pet,
+          {
+            ...pet,
+            slug: "nightshade",
+            displayName: "Nightshade",
+          },
+        ],
+        getMetadata: async () => null,
+        embedDocument: async () => {
+          embeddingAttempt += 1;
+          if (embeddingAttempt === 2) throw providerFailure;
+          return Array(256).fill(0.25);
+        },
+        upsert: async () => undefined,
+        log: (entry: unknown) => logs.push(entry),
+      }),
+    ).rejects.toBe(providerFailure);
+
+    expect(logs.at(-1)).toEqual({
+      action: "related-pets-rebuild-required",
+      commands: RELATED_PETS_REBUILD_COMMANDS,
     });
   });
 

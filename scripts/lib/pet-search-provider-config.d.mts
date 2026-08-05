@@ -1,7 +1,9 @@
 export type BackfillEmbeddingDefinition = {
   dimensions: number;
-  documentModelPath: string;
+  documentModelPath?: string;
+  modelPath?: string;
   requestDimensions: number | null;
+  inputKind?: "related-query";
 };
 
 export type VisionBackfillCaptionDefinition = {

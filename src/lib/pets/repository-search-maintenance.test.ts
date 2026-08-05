@@ -42,4 +42,18 @@ describe("pet repository search maintenance", () => {
       maintenanceMocks.deletePetSearchIndexBestEffort,
     ).toHaveBeenCalledWith("orbit-otter");
   });
+
+  it("returns the status observed before soft delete", async () => {
+    const { softDeletePetByIdWithPreviousStatus } = await import(
+      "@/lib/pets/repository"
+    );
+
+    await expect(
+      softDeletePetByIdWithPreviousStatus({
+        petId: "dev_pet_pending_pixel",
+        actorUserId: "local-admin",
+        actorRole: "admin",
+      }),
+    ).resolves.toEqual({ previousStatus: "pending" });
+  });
 });

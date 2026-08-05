@@ -4,11 +4,18 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
+
 const repositoryMocks = vi.hoisted(() => ({
+  getApprovedPetBySlug: vi.fn(),
   getPetBySlug: vi.fn(),
   getPetMetrics: vi.fn(),
   listRelatedPetCandidates: vi.fn(),
   listApprovedPetsBySlugs: vi.fn(),
+}));
+const relatedSnapshotMocks = vi.hoisted(() => ({
+  getRelatedPetsState: vi.fn(),
+  getRelatedPetsSnapshot: vi.fn(),
 }));
 const authMocks = vi.hoisted(() => ({
   listPublicUserProfilesByIds: vi.fn(async () => new Map()),
@@ -23,6 +30,7 @@ vi.mock("next/cache", () => ({
   unstable_cache: (callback: unknown) => callback,
 }));
 vi.mock("@/lib/pets/repository", () => repositoryMocks);
+vi.mock("@/lib/pets/related-pets-repository", () => relatedSnapshotMocks);
 vi.mock("@/lib/auth/repository", () => authMocks);
 vi.mock("next/navigation", () => navigationMocks);
 vi.mock("@/components/AskAI/AskAIPanel", () => ({ AskAIPanel: () => null }));
@@ -137,7 +145,9 @@ describe("/pets/[slug] related pets section", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
+    vi.unstubAllEnvs();
     repositoryMocks.getPetBySlug.mockResolvedValue(approvedPetRow);
+    repositoryMocks.getApprovedPetBySlug.mockResolvedValue(approvedPetRow);
     repositoryMocks.getPetMetrics.mockResolvedValue({
       downloadCount: 1,
       installCount: 2,
@@ -153,6 +163,8 @@ describe("/pets/[slug] related pets section", () => {
           return summary ? [summary] : [];
         }),
     );
+    relatedSnapshotMocks.getRelatedPetsState.mockResolvedValue(null);
+    relatedSnapshotMocks.getRelatedPetsSnapshot.mockResolvedValue(null);
   });
 
   async function renderPetPage(slug = approvedPetRow.slug) {
@@ -189,6 +201,55 @@ describe("/pets/[slug] related pets section", () => {
       "star-fox",
       "terminal-cube",
     ]);
+  }, 20_000);
+
+  it("uses the same ready snapshot order for HTML and private markdown", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    vi.stubEnv("PET_RELATED_HYBRID_ENABLED", "true");
+    relatedSnapshotMocks.getRelatedPetsState.mockResolvedValue({
+      requestedGenerationId: "generation-ready",
+      activeGenerationId: "generation-ready",
+      previousGenerationId: null,
+      status: "ready",
+      rankingRevision:
+        CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
+      failureReason: null,
+      updatedAt: "2026-08-03T10:00:00.000Z",
+    });
+    relatedSnapshotMocks.getRelatedPetsSnapshot.mockResolvedValue({
+      generationId: "generation-ready",
+      sourceSlug: approvedPetRow.slug,
+      rankingRevision:
+        CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
+      relatedSlugs: ["terminal-cube", "star-fox"],
+      createdAt: "2026-08-03T10:00:00.000Z",
+    });
+
+    const container = await renderPetPage();
+    const htmlOrder = Array.from(
+      container.querySelectorAll(".related-pets .pet-card"),
+    ).map((card) => card.getAttribute("data-slug"));
+
+    const { GET } = await import("@/app/pets/[slug]/markdown/route");
+    const response = await GET(
+      new Request(
+        `https://pets.example/pets/${approvedPetRow.slug}/markdown`,
+      ),
+      { params: Promise.resolve({ slug: approvedPetRow.slug }) },
+    );
+    const body = await response.text();
+    const relatedSection = body.slice(body.indexOf("## Related pets"));
+    const markdownOrder = Array.from(
+      relatedSection.matchAll(/\/pets\/([a-z0-9-]+)\)/g),
+      (match) => match[1],
+    );
+
+    expect(htmlOrder).toEqual(["terminal-cube", "star-fox"]);
+    expect(markdownOrder).toEqual(htmlOrder);
+    expect(relatedSection.indexOf("/pets/terminal-cube")).toBeLessThan(
+      relatedSection.indexOf("/pets/star-fox"),
+    );
+    expect(response.headers.get("Cache-Control")).toBe("private, max-age=60");
   }, 20_000);
 
   it("renders the full description inside the card", async () => {
