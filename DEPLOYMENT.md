@@ -216,10 +216,13 @@ Approval refreshes the search document vector and the related query vector in
 parallel. `updated` and `unchanged` are the only ready outcomes. With an enabled
 visual profile, approval publishes no generation until the visual refresh also
 succeeds; its callback then rebuilds with complete document, query, and visual
-coverage. A skipped or failed text refresh, or a failed visual refresh, keeps
-the previous generation ready while approval itself remains successful. Retry
-the ordinary embedding refresh/backfill and rebuild operationally; there is no
-separate approval retry queue. If a future pinned profile explicitly sets
+coverage. With a compatible text profile, a skipped or failed text refresh, or
+a failed visual refresh, keeps the previous generation ready while approval
+itself remains successful. A missing or incompatible text profile explicitly
+invalidates related-pet state, so hybrid reads fall back to heuristics until the
+configuration, embedding backfill, and rebuild are complete. Retry the ordinary
+embedding refresh/backfill and rebuild operationally; there is no separate
+approval retry queue. If a future pinned profile explicitly sets
 `visualMinSimilarity: null`, successful text refresh publishes a text-only
 generation immediately and does not wait for the visual callback.
 

@@ -140,6 +140,7 @@ function createHarness(options: {
   captions?: ReturnType<typeof captionFor>[];
   superseded?: boolean;
   requestSuperseded?: boolean;
+  supersedeDuringRanking?: boolean;
   storageAvailable?: boolean;
   writeError?: Error;
   writeErrorAt?: number;
@@ -193,6 +194,7 @@ function createHarness(options: {
   let state: RelatedPetsState | null = options.initialState ?? null;
   let clock = Date.parse("2026-08-03T10:00:00.000Z");
   let snapshotWriteCount = 0;
+  let rankingSuperseded = false;
 
   const repository = {
     getState: async () => state,
@@ -214,6 +216,9 @@ function createHarness(options: {
           failureReason: null,
           updatedAt: "2026-08-03T10:01:00.000Z",
         };
+        return false;
+      }
+      if (JSON.stringify(state) !== JSON.stringify(input.expectedState)) {
         return false;
       }
       state = {
@@ -437,7 +442,21 @@ function createHarness(options: {
     profile,
     repository,
     isStorageAvailable: () => options.storageAvailable ?? true,
-    listApprovedPets: async () => pets,
+    listApprovedPets: async () => {
+      if (options.supersedeDuringRanking && !rankingSuperseded) {
+        rankingSuperseded = true;
+        state = {
+          requestedGenerationId: "generation-newer",
+          activeGenerationId: "generation-newer",
+          previousGenerationId: "generation-old",
+          status: "ready",
+          rankingRevision: profile.rankingRevision,
+          failureReason: null,
+          updatedAt: "2026-08-03T10:01:00.000Z",
+        };
+      }
+      return pets;
+    },
     listRawVectors: async (revision) => {
       vectorRevisionReads.push(revision);
       if (revision === profile.textQueryRevision) return textQueryRows;
@@ -603,6 +622,24 @@ describe("related pets rebuild service", () => {
       operation: "apply",
       status: "superseded",
       generationId: "generation-new",
+    });
+  });
+
+  it("rejects rankings computed before a newer generation is published", async () => {
+    const harness = createHarness({ supersedeDuringRanking: true });
+
+    const result = await harness.service.rebuild({
+      mode: "apply",
+      includeVisual: true,
+    });
+
+    expect(result.status).toBe("superseded");
+    expect(harness.mutations).toEqual(["request"]);
+    expect(harness.snapshots).toEqual([]);
+    expect(harness.state).toMatchObject({
+      requestedGenerationId: "generation-newer",
+      activeGenerationId: "generation-newer",
+      status: "ready",
     });
   });
 

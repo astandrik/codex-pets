@@ -204,6 +204,10 @@ export function createRelatedPetsRebuildService(
         throw new RelatedPetsRebuildError("storage_unavailable");
       }
 
+      const expectedState =
+        input.mode === "apply"
+          ? await dependencies.repository.getState()
+          : null;
       const built = await buildRankings(includeVisual);
       coverage = built.coverage;
 
@@ -218,7 +222,6 @@ export function createRelatedPetsRebuildService(
         });
       }
 
-      const expectedState = await dependencies.repository.getState();
       generationId = dependencies.createGenerationId();
       const requested = await dependencies.repository.requestBuild({
         generationId,
