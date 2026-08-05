@@ -46,7 +46,7 @@ const EMPTY_METRICS: PetMetrics = {
   installCount: 0,
   likeCount: 0,
 };
-const SOFT_DELETE_MAX_ATTEMPTS = 3;
+const PET_STATUS_WRITE_MAX_ATTEMPTS = 3;
 
 type PetRow = {
   slug: string;
@@ -657,24 +657,34 @@ export async function moderatePetWithPreviousStatus(input: {
       : null;
   }
 
-  const pet = await getPetById(input.petId);
-  if (!pet) return null;
+  let pet = await getPetById(input.petId);
+  for (
+    let attempt = 0;
+    attempt < PET_STATUS_WRITE_MAX_ATTEMPTS;
+    attempt += 1
+  ) {
+    if (!pet) return null;
 
-  const now = new Date().toISOString();
-  const nextStatus = statusAfterModeration(pet.status, input.decision);
-  const approvedAt = nextStatus === "approved" ? now : pet.approvedAt ?? "";
-  const rejectedAt = nextStatus === "rejected" ? now : "";
-  const reason = nextStatus === "rejected" ? input.reason?.trim() ?? "" : "";
+    const candidate = pet;
+    const now = new Date().toISOString();
+    const nextStatus = statusAfterModeration(candidate.status, input.decision);
+    const approvedAt =
+      nextStatus === "approved" ? now : candidate.approvedAt ?? "";
+    const rejectedAt = nextStatus === "rejected" ? now : "";
+    const reason =
+      nextStatus === "rejected" ? input.reason?.trim() ?? "" : "";
 
-  await withSession((session) =>
-    session.executeQuery(
-      `
+    await withSession((session) =>
+      session.executeQuery(
+        `
 DECLARE $slug AS Utf8;
 DECLARE $status AS Utf8;
 DECLARE $updated_at AS Utf8;
 DECLARE $approved_at AS Utf8;
 DECLARE $rejected_at AS Utf8;
 DECLARE $rejection_reason AS Utf8;
+DECLARE $expected_status AS Utf8;
+DECLARE $expected_updated_at AS Utf8;
 
 UPDATE ${TABLES.pets}
 SET status = $status,
@@ -682,46 +692,49 @@ SET status = $status,
     approved_at = $approved_at,
     rejected_at = $rejected_at,
     rejection_reason = $rejection_reason
-WHERE slug = $slug;
-      `,
-      {
-        $slug: TypedValues.utf8(pet.slug),
-        $status: TypedValues.utf8(nextStatus),
-        $updated_at: TypedValues.utf8(now),
-        $approved_at: TypedValues.utf8(approvedAt),
-        $rejected_at: TypedValues.utf8(rejectedAt),
-        $rejection_reason: TypedValues.utf8(reason),
-      },
-    ),
-  );
+WHERE slug = $slug
+  AND status = $expected_status
+  AND updated_at = $expected_updated_at;
+        `,
+        {
+          $slug: TypedValues.utf8(candidate.slug),
+          $status: TypedValues.utf8(nextStatus),
+          $updated_at: TypedValues.utf8(now),
+          $approved_at: TypedValues.utf8(approvedAt),
+          $rejected_at: TypedValues.utf8(rejectedAt),
+          $rejection_reason: TypedValues.utf8(reason),
+          $expected_status: TypedValues.utf8(candidate.status),
+          $expected_updated_at: TypedValues.utf8(candidate.updatedAt),
+        },
+      ),
+    );
 
-  await insertReview({
-    petId: input.petId,
-    reviewerId: input.reviewerId,
-    decision: input.decision,
-    reason,
-  });
+    const confirmed = await getPetById(input.petId);
+    if (confirmed?.status === nextStatus && confirmed.updatedAt === now) {
+      await insertReview({
+        petId: input.petId,
+        reviewerId: input.reviewerId,
+        decision: input.decision,
+        reason,
+      });
 
-  if (nextStatus === "rejected") {
-    await deletePetSearchIndexBestEffort(pet.slug);
+      if (nextStatus === "rejected") {
+        await deletePetSearchIndexBestEffort(candidate.slug);
+      }
+
+      return {
+        pet: toPublicPet(
+          confirmed,
+          EMPTY_METRICS,
+          await getOwnerProfileByRow(confirmed),
+        ),
+        previousStatus: candidate.status,
+      };
+    }
+    pet = confirmed;
   }
 
-  const updatedPet = {
-    ...pet,
-    status: nextStatus,
-    updatedAt: now,
-    approvedAt: approvedAt || null,
-    rejectedAt: rejectedAt || null,
-    rejectionReason: reason || null,
-  };
-  return {
-    pet: toPublicPet(
-      updatedPet,
-      EMPTY_METRICS,
-      await getOwnerProfileByRow(updatedPet),
-    ),
-    previousStatus: pet.status,
-  };
+  return null;
 }
 
 export async function softDeletePetByIdForOwner(input: {
@@ -761,7 +774,7 @@ export async function softDeletePetByIdWithPreviousStatus(input: {
   let pet = await getPetById(input.petId);
   for (
     let attempt = 0;
-    attempt < SOFT_DELETE_MAX_ATTEMPTS;
+    attempt < PET_STATUS_WRITE_MAX_ATTEMPTS;
     attempt += 1
   ) {
     if (!pet || pet.status === "deleted") {
