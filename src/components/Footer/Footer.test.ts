@@ -7,6 +7,10 @@ import { Footer } from "@/components/Footer/Footer";
 
 const EXPECTED_GUIDES = [
   {
+    href: "/guides/how-codex-pets-works",
+    label: "How Codex Pets works",
+  },
+  {
     href: "/guides/best-codex-pets-for-ai-coding-agents",
     label: "Best Codex pets for AI coding agents",
   },

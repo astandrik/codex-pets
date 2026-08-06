@@ -72,6 +72,11 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.7,
     },
     {
+      url: toPublicUrl("/guides/how-codex-pets-works"),
+      changeFrequency: "monthly",
+      priority: 0.6,
+    },
+    {
       url: toPublicUrl("/guides/best-codex-pets-for-ai-coding-agents"),
       changeFrequency: "monthly",
       priority: 0.6,

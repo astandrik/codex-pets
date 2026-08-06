@@ -79,6 +79,7 @@ export async function GET(): Promise<Response> {
       "",
       "## Guides",
       "",
+      `- [How Codex Pets works](${toPublicUrl("/guides/how-codex-pets-works")}): Illustrated guide to pet pack validation, YDB storage, hybrid search, and published related-pet generations. Markdown: ${toPublicUrl("/guides/how-codex-pets-works.md")}.`,
       `- [Codex Pets vs VS Code Pets](${toPublicUrl("/guides/codex-pets-vs-vscode-pets")}): First-hand comparison with reproducible registry queries. Markdown: ${toPublicUrl("/guides/codex-pets-vs-vscode-pets.md")}.`,
       `- [Codex Pets vs OpenPets](${toPublicUrl("/guides/codex-pets-vs-openpets")}): First-hand comparison with reproducible queries against both public surfaces. Markdown: ${toPublicUrl("/guides/codex-pets-vs-openpets.md")}.`,
       `- [Best Codex pets for AI coding agents](${toPublicUrl("/guides/best-codex-pets-for-ai-coding-agents")}): Practical guide to choosing approved pet packs. Markdown: ${toPublicUrl("/guides/best-codex-pets-for-ai-coding-agents.md")}.`,

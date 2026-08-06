@@ -1,0 +1,10 @@
+flowchart TB
+    Q["Search query"] --> H["Hard filters<br/>kind, tags, author"]
+    H --> L["Lexical ranking"]
+    H --> E["Query embedding"]
+    E --> S["Semantic ranked lists<br/>text similarity<br/>visual similarity"]
+    L --> R["Weighted reciprocal<br/>rank fusion"]
+    S --> R
+    R --> O["Ranked results"]
+    E -.->|timeout or error| F["Lexical results only"]
+    L --> F

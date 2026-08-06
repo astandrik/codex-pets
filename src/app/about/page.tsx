@@ -10,6 +10,7 @@ import {
 } from "@/components/GravityUI/GravityUI";
 
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
+import { HOW_CODEX_PETS_WORKS_PATH } from "@/lib/guides/how-codex-pets-works";
 import { serializeJsonLd } from "@/lib/json-ld";
 import {
   getOpenGraphImages,
@@ -226,7 +227,9 @@ export default function AboutPage() {
               local-ydb-toolkit on GitHub
             </a>{" "}
             captures the reusable local YDB workflow used around these
-            projects.
+            projects. <Link href={HOW_CODEX_PETS_WORKS_PATH}>See how the system works</Link>{" "}
+            from pet pack validation to semantic search and published
+            related-pet snapshots.
           </Text>
         </article>
 

@@ -50,6 +50,13 @@ describe("agent link headers", () => {
       '<https://pets.example/guides/best-codex-pets-for-ai-coding-agents.md>; rel="alternate"; type="text/markdown"',
     );
 
+    const howItWorksHeader = getAgentLinkHeaderForPath(
+      "/guides/how-codex-pets-works",
+    );
+    expect(howItWorksHeader).toContain(
+      '<https://pets.example/guides/how-codex-pets-works.md>; rel="alternate"; type="text/markdown"',
+    );
+
     vi.unstubAllEnvs();
   });
 
