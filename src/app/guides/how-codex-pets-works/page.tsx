@@ -286,7 +286,7 @@ function GuideFigure({ figure, kind, width, height }: GuideFigureProps) {
         width={width}
         height={height}
         className="guide-figure__image"
-        unoptimized
+        unoptimized={kind === "diagram"}
       />
       <figcaption>{figure.caption}</figcaption>
     </figure>

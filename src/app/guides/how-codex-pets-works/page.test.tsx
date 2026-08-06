@@ -5,12 +5,29 @@ import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import AboutPage from "@/app/about/page";
 import HowCodexPetsWorksPage from "@/app/guides/how-codex-pets-works/page";
 import {
   HOW_CODEX_PETS_WORKS_DIAGRAMS,
+  HOW_CODEX_PETS_WORKS_PATH,
   HOW_CODEX_PETS_WORKS_SCREENSHOTS,
   HOW_CODEX_PETS_WORKS_TITLE,
 } from "@/lib/guides/how-codex-pets-works";
+
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const SCREENSHOT_DIMENSIONS = {
+  "winnie-search": { width: 1160, height: 489 },
+  "winnie-related": { width: 1160, height: 408 },
+} as const;
+
+function readPngDimensions(bytes: Buffer): { width: number; height: number } {
+  expect(bytes.subarray(0, PNG_SIGNATURE.length)).toEqual(PNG_SIGNATURE);
+  expect(bytes.toString("ascii", 12, 16)).toBe("IHDR");
+  return {
+    width: bytes.readUInt32BE(16),
+    height: bytes.readUInt32BE(20),
+  };
+}
 
 describe("How Codex Pets works page", () => {
   it("renders the illustrated static guide and internal CTAs", () => {
@@ -31,6 +48,16 @@ describe("How Codex Pets works page", () => {
       Array.from(container.querySelectorAll("img")).every(
         (image) => (image.getAttribute("alt")?.trim().length ?? 0) > 0,
       ),
+    ).toBe(true);
+    expect(
+      Array.from(
+        container.querySelectorAll('[data-guide-figure="diagram"] img'),
+      ).every((image) => !image.getAttribute("src")?.includes("/_next/image")),
+    ).toBe(true);
+    expect(
+      Array.from(
+        container.querySelectorAll('[data-guide-figure="screenshot"] img'),
+      ).every((image) => image.getAttribute("src")?.includes("/_next/image")),
     ).toBe(true);
 
     const links = Array.from(container.querySelectorAll("a")).map((link) =>
@@ -74,17 +101,19 @@ describe("How Codex Pets works page", () => {
       const bytes = readFileSync(
         join(process.cwd(), "public", screenshot.src.replace(/^\//, "")),
       );
-      expect(bytes.byteLength).toBeGreaterThan(10_000);
+      expect(readPngDimensions(bytes)).toEqual(
+        SCREENSHOT_DIMENSIONS[screenshot.id],
+      );
     }
   });
 
   it("links the About page to the illustrated guide", () => {
-    const source = readFileSync(
-      join(process.cwd(), "src/app/about/page.tsx"),
-      "utf8",
+    const container = document.createElement("div");
+    container.innerHTML = renderToStaticMarkup(AboutPage());
+    const guideLink = Array.from(container.querySelectorAll("a")).find(
+      (link) => link.textContent?.trim() === "See how the system works",
     );
 
-    expect(source).toContain("See how the system works");
-    expect(source).toContain("HOW_CODEX_PETS_WORKS_PATH");
+    expect(guideLink?.getAttribute("href")).toBe(HOW_CODEX_PETS_WORKS_PATH);
   });
 });
