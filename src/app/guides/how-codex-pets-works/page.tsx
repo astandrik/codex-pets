@@ -139,13 +139,13 @@ export default function HowCodexPetsWorksPage() {
         <GuideFigure
           figure={petPackLifecycle}
           kind="diagram"
-          width={517}
-          height={728}
+          width={559}
+          height={745}
         />
         <Text variant="body-2" color="secondary" className="guide-section-copy">
-          YDB stores the approved metadata and binary assets. The gallery,
-          public APIs, and read-only MCP tools expose that same approved pack;
-          ZIP and CLI installation then copy it into Codex.
+          YDB stores submitted metadata and binary assets while the card is
+          pending. Moderation changes its status; only an approved pack reaches
+          the gallery, public APIs, read-only MCP tools, and install paths.
         </Text>
       </section>
 
@@ -215,7 +215,7 @@ export default function HowCodexPetsWorksPage() {
         <GuideFigure
           figure={relatedGeneration}
           kind="diagram"
-          width={483}
+          width={503}
           height={842}
         />
         <GuideFigure
@@ -226,8 +226,10 @@ export default function HowCodexPetsWorksPage() {
         />
         <Text variant="body-2" color="secondary" className="guide-section-copy">
           One transaction activates the generation only after every expected
-          row is current and valid. If the build fails or newer inputs supersede
-          it, the previous compatible generation stays active.
+          row is current and valid. While the related-pets state is building or
+          failed, the detail page uses the heuristic order. The previous snapshot
+          remains stored and recoverable, but it is not served until the state
+          becomes ready again.
         </Text>
       </section>
 

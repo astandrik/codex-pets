@@ -19,7 +19,7 @@ export const HOW_CODEX_PETS_WORKS_DIAGRAMS = [
   {
     id: "pet-pack-lifecycle",
     src: `${ASSET_BASE_PATH}/pet-pack-lifecycle.svg`,
-    alt: "Flowchart showing pet.json and a spritesheet passing through validation, moderation, YDB, public discovery, installation, and Codex",
+    alt: "Flowchart showing pet.json and a spritesheet passing through validation, pending storage in YDB, moderation, public discovery, installation, and Codex",
     caption:
       "Only an approved two-file pack reaches the public gallery, APIs, MCP tools, and install paths.",
   },
@@ -40,7 +40,7 @@ export const HOW_CODEX_PETS_WORKS_DIAGRAMS = [
   {
     id: "related-pets-generation",
     src: `${ASSET_BASE_PATH}/related-pets-generation.svg`,
-    alt: "Flowchart showing pairwise related-pet ranking, complete generation validation, atomic activation, and fallback to the previous generation",
+    alt: "Flowchart showing pairwise related-pet ranking, complete generation validation, atomic activation, heuristic fallback while building or failed, and retained previous snapshot data",
     caption:
       "A related-pet generation becomes visible only after every row is written and validated.",
   },
@@ -100,7 +100,7 @@ export function buildHowCodexPetsWorksMarkdown(): string {
     "",
     markdownFigure(lifecycle),
     "",
-    "Approved metadata and binary assets are stored in YDB. The gallery, public APIs, and read-only MCP tools expose the same approved pack, while ZIP and CLI installation copy it into Codex.",
+    "Submitted metadata and binary assets are stored in YDB while the card is pending. Moderation changes its status; only an approved pack reaches the gallery, public APIs, read-only MCP tools, and install paths.",
     "",
     "## How a pet becomes searchable",
     "",
@@ -130,7 +130,7 @@ export function buildHowCodexPetsWorksMarkdown(): string {
     "",
     markdownFigure(relatedScreenshot),
     "",
-    "A generation is activated in one transaction only after every expected row is current and valid. If the build fails or newer inputs supersede it, the previous compatible generation remains active.",
+    "A generation is activated in one transaction only after every expected row is current and valid. While the related-pets state is building or failed, the detail page uses the heuristic order. The previous snapshot remains stored and recoverable, but it is not served until the state becomes ready again.",
     "",
     "## The short version",
     "",

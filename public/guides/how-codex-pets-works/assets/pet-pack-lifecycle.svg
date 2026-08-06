@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 517.199 728.3999999999999" width="517.199" height="728.3999999999999" style="--bg:#0d1117;--fg:#e6edf3;--line:#3d444d;--accent:#ffbd4a;--muted:#9198a1">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 558.991 745.3" width="558.991" height="745.3" style="--bg:#0d1117;--fg:#e6edf3;--line:#3d444d;--accent:#ffbd4a;--muted:#9198a1">
 <style>
   text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   svg {
@@ -25,66 +25,70 @@
     <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
   </marker>
 </defs>
-<polyline class="edge" data-from="M" data-to="V" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="151.74749999999997,93.80000000000001 151.74749999999997,117.80000000000001 268.04724999999996,117.80000000000001 268.04724999999996,141.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
-<polyline class="edge" data-from="S" data-to="V" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="384.3469999999999,93.80000000000001 384.3469999999999,117.80000000000001 268.04724999999996,117.80000000000001 268.04724999999996,141.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
-<polyline class="edge" data-from="V" data-to="R" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="268.04724999999996,178.70000000000002 268.04724999999996,226.70000000000002" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
-<polyline class="edge" data-from="R" data-to="Y" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="approved" points="249.8170833333333,263.6 249.8170833333333,282.7 173.42174999999997,282.7 173.42174999999997,371.45000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
-<polyline class="edge" data-from="R" data-to="N" data-style="dotted" data-arrow-start="false" data-arrow-end="true" data-label="not approved" points="286.2774166666666,263.6 286.2774166666666,299.6 362.67274999999995,299.6 362.67274999999995,371.45000000000005" fill="none" stroke="var(--_line)" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)" />
-<polyline class="edge" data-from="Y" data-to="G" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="173.42174999999997,425.25000000000006 173.42174999999997,445.02500000000003 83.98325,445.02500000000003 83.98325,464.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
-<polyline class="edge" data-from="Y" data-to="A" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="173.42174999999997,425.25000000000006 173.42174999999997,445.02500000000003 262.86024999999995,445.02500000000003 262.86024999999995,464.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
-<polyline class="edge" data-from="G" data-to="I" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="83.98325,501.70000000000005 83.98325,525.7 173.42174999999997,525.7 173.42174999999997,549.6999999999999" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
-<polyline class="edge" data-from="A" data-to="I" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="262.86024999999995,501.70000000000005 262.86024999999995,525.7 173.42174999999997,525.7 173.42174999999997,549.6999999999999" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
-<polyline class="edge" data-from="I" data-to="C" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="173.42174999999997,586.5999999999999 173.42174999999997,634.5999999999999" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
-<g class="edge-label" data-from="R" data-to="Y" data-label="approved">
-  <rect x="141.42174999999997" y="289.7" width="63.982" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
-  <text x="173.41274999999996" y="304.84999999999997" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">approved</text>
-</g>
+<polyline class="edge" data-from="M" data-to="V" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="164.01045833333333,93.80000000000001 164.01045833333333,117.80000000000001 231.70100000000002,117.80000000000001 231.70100000000002,141.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="S" data-to="V" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="396.6099583333333,93.80000000000001 396.6099583333333,117.80000000000001 231.70100000000002,117.80000000000001 231.70100000000002,141.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="V" data-to="Y" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="231.70100000000002,178.70000000000002 231.70100000000002,226.70000000000002" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Y" data-to="R" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="231.70100000000002,280.5 231.70100000000002,328.5" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="R" data-to="N" data-style="dotted" data-arrow-start="false" data-arrow-end="true" data-label="not approved" points="204.35575000000003,365.4 204.35575000000003,377.40000000000003 100.61850000000001,377.40000000000003 100.61850000000001,469.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="R" data-to="G" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="approved" points="231.70100000000002,365.4 231.70100000000002,469.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="R" data-to="A" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="approved" points="259.04625000000004,365.4 259.04625000000004,401.40000000000003 410.578,401.40000000000003 410.578,469.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="G" data-to="I" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="231.70100000000002,506.6 231.70100000000002,536.6 345.8514583333333,536.6 345.8514583333333,566.6" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="A" data-to="I" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="410.578,506.6 410.578,536.6 345.8514583333333,536.6 345.8514583333333,566.6" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="I" data-to="C" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="345.8514583333333,603.5 345.8514583333333,651.5" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
 <g class="edge-label" data-from="R" data-to="N" data-label="not approved">
-  <rect x="322.17274999999995" y="306.6" width="80.02000000000001" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
-  <text x="362.18274999999994" y="321.75" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">not approved</text>
+  <rect x="60.11850000000001" y="384.40000000000003" width="80.02000000000001" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="100.12850000000002" y="399.55" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">not approved</text>
+</g>
+<g class="edge-label" data-from="R" data-to="G" data-label="approved">
+  <rect x="199.70100000000002" y="408.40000000000003" width="63.982" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="231.692" y="423.55" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">approved</text>
+</g>
+<g class="edge-label" data-from="R" data-to="A" data-label="approved">
+  <rect x="378.578" y="408.40000000000003" width="63.982" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="410.56899999999996" y="423.55" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">approved</text>
 </g>
 <g class="node" data-id="M" data-label="pet.json
 metadata and animation settings" data-shape="rectangle">
-  <rect x="40" y="40" width="223.49499999999995" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
-  <text x="151.74749999999997" y="66.9" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="151.74749999999997" dy="-3.9000000000000012">pet.json</tspan><tspan x="151.74749999999997" dy="16.900000000000002">metadata and animation settings</tspan></text>
+  <rect x="52.26295833333336" y="40" width="223.49499999999995" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="164.01045833333333" y="66.9" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="164.01045833333333" dy="-3.9000000000000012">pet.json</tspan><tspan x="164.01045833333333" dy="16.900000000000002">metadata and animation settings</tspan></text>
 </g>
 <g class="node" data-id="V" data-label="Package validation" data-shape="rectangle">
-  <rect x="191.12674999999996" y="141.8" width="153.841" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
-  <text x="268.04724999999996" y="160.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Package validation</text>
+  <rect x="154.78050000000002" y="141.8" width="153.841" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="231.70100000000002" y="160.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Package validation</text>
 </g>
 <g class="node" data-id="S" data-label="spritesheet.webp or .png
 animation atlas" data-shape="rectangle">
-  <rect x="291.49499999999995" y="40" width="185.70399999999998" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
-  <text x="384.3469999999999" y="66.9" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="384.3469999999999" dy="-3.9000000000000012">spritesheet.webp or .png</tspan><tspan x="384.3469999999999" dy="16.900000000000002">animation atlas</tspan></text>
-</g>
-<g class="node" data-id="R" data-label="Moderation" data-shape="rectangle">
-  <rect x="213.35674999999998" y="226.70000000000002" width="109.381" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
-  <text x="268.04724999999996" y="245.15000000000003" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Moderation</text>
+  <rect x="303.7579583333333" y="40" width="185.70399999999998" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="396.6099583333333" y="66.9" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="396.6099583333333" dy="-3.9000000000000012">spritesheet.webp or .png</tspan><tspan x="396.6099583333333" dy="16.900000000000002">animation atlas</tspan></text>
 </g>
 <g class="node" data-id="Y" data-label="YDB
-metadata and binary assets" data-shape="rectangle">
-  <rect x="72.78924999999998" y="371.45000000000005" width="201.265" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
-  <text x="173.42174999999997" y="398.35" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="173.42174999999997" dy="-3.9000000000000012">YDB</tspan><tspan x="173.42174999999997" dy="16.900000000000002">metadata and binary assets</tspan></text>
+pending metadata and binary assets" data-shape="rectangle">
+  <rect x="106.24500000000006" y="226.70000000000002" width="250.91199999999995" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="231.70100000000002" y="253.60000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="231.70100000000002" dy="-3.9000000000000012">YDB</tspan><tspan x="231.70100000000002" dy="16.900000000000002">pending metadata and binary assets</tspan></text>
+</g>
+<g class="node" data-id="R" data-label="Moderation" data-shape="rectangle">
+  <rect x="177.01050000000004" y="328.5" width="109.381" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="231.70100000000002" y="346.95" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Moderation</text>
 </g>
 <g class="node" data-id="N" data-label="Not published" data-shape="rectangle">
-  <rect x="302.05424999999997" y="371.45000000000005" width="121.23700000000001" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
-  <text x="362.67274999999995" y="389.90000000000003" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Not published</text>
+  <rect x="40" y="469.70000000000005" width="121.23700000000001" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="100.61850000000001" y="488.15000000000003" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Not published</text>
 </g>
 <g class="node" data-id="G" data-label="Gallery" data-shape="rectangle">
-  <rect x="41.51925" y="464.8" width="84.928" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
-  <text x="83.98325" y="483.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Gallery</text>
+  <rect x="189.23700000000002" y="469.70000000000005" width="84.928" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="231.70100000000002" y="488.15000000000003" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Gallery</text>
 </g>
 <g class="node" data-id="A" data-label="Public API and read-only MCP" data-shape="rectangle">
-  <rect x="154.44725" y="464.8" width="216.82599999999994" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
-  <text x="262.86024999999995" y="483.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Public API and read-only MCP</text>
+  <rect x="302.165" y="469.70000000000005" width="216.82599999999994" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="410.578" y="488.15000000000003" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Public API and read-only MCP</text>
 </g>
 <g class="node" data-id="I" data-label="ZIP or CLI install" data-shape="rectangle">
-  <rect x="104.65225" y="549.6999999999999" width="137.539" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
-  <text x="173.42174999999997" y="568.15" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">ZIP or CLI install</text>
+  <rect x="277.0819583333333" y="566.6" width="137.539" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="345.8514583333333" y="585.0500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">ZIP or CLI install</text>
 </g>
 <g class="node" data-id="C" data-label="Codex
 animated companion" data-shape="rectangle">
-  <rect x="93.53724999999999" y="634.5999999999999" width="159.769" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
-  <text x="173.42174999999997" y="661.4999999999999" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="173.42174999999997" dy="-3.9000000000000012">Codex</tspan><tspan x="173.42174999999997" dy="16.900000000000002">animated companion</tspan></text>
+  <rect x="265.9669583333333" y="651.5" width="159.769" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="345.8514583333333" y="678.4" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="345.8514583333333" dy="-3.9000000000000012">Codex</tspan><tspan x="345.8514583333333" dy="16.900000000000002">animated companion</tspan></text>
 </g>
 </svg>

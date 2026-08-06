@@ -39,6 +39,11 @@ describe("How Codex Pets works page", () => {
     expect(links).toEqual(
       expect.arrayContaining(["/", "/submit", "/developers"]),
     );
+    expect(container.textContent).toContain("while the card is pending");
+    expect(container.textContent).toContain("uses the heuristic order");
+    expect(container.textContent).not.toContain(
+      "previous compatible generation stays active",
+    );
     expect(container.innerHTML).not.toContain("habr.com");
   });
 
@@ -53,6 +58,13 @@ describe("How Codex Pets works page", () => {
       expect(source).not.toContain("<script");
       expect(source).not.toContain("@import");
       expect(source).not.toContain("fonts.googleapis.com");
+
+      if (diagram.id === "pet-pack-lifecycle") {
+        expect(source).toContain("pending metadata");
+      }
+      if (diagram.id === "related-pets-generation") {
+        expect(source).toContain("Heuristic fallback");
+      }
     }
   });
 

@@ -31,6 +31,11 @@ describe("How Codex Pets works guide content", () => {
     expect(markdown).toContain("## Related pets without half-published results");
     expect(markdown.match(/!\[/g)).toHaveLength(6);
     expect(markdown).toContain("lexical results");
+    expect(markdown).toContain("while the card is pending");
+    expect(markdown).toContain("uses the heuristic order");
+    expect(markdown).not.toContain(
+      "previous compatible generation remains active",
+    );
     expect(markdown).not.toContain("habr.com");
     expect(markdown).not.toMatch(/\b153 approved\b|p95|NDCG|Recall@/i);
   });

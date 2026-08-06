@@ -1,11 +1,11 @@
 flowchart TB
     M["pet.json<br/>metadata and animation settings"] --> V["Package validation"]
     S["spritesheet.webp or .png<br/>animation atlas"] --> V
-    V --> R["Moderation"]
-    R -->|approved| Y["YDB<br/>metadata and binary assets"]
+    V --> Y["YDB<br/>pending metadata and binary assets"]
+    Y --> R["Moderation"]
     R -.->|not approved| N["Not published"]
-    Y --> G["Gallery"]
-    Y --> A["Public API and read-only MCP"]
+    R -->|approved| G["Gallery"]
+    R -->|approved| A["Public API and read-only MCP"]
     G --> I["ZIP or CLI install"]
     A --> I
     I --> C["Codex<br/>animated companion"]

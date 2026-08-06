@@ -4,4 +4,5 @@ flowchart TB
     W --> V{"Every expected row<br/>current and valid?"}
     V -->|yes| A["Atomically activate<br/>the generation in YDB"]
     A --> D["Pet detail reads up to<br/>four related pets"]
-    V -->|no or superseded| K["Keep the previous<br/>compatible generation active"]
+    V -->|building or failed| H["Heuristic fallback<br/>for pet detail"]
+    H -.-> K["Previous snapshot data<br/>remains stored and recoverable"]
