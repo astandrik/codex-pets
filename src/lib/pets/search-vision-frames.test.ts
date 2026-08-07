@@ -5,7 +5,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   PET_VISION_FRAME_POLICY,
+  PET_VISION_FRAME_POLICY_V2,
   extractPetVisionFrames,
+  type PetVisionFramePolicy,
 } from "@/lib/pets/search-vision-frames";
 import { PET_SHEETS, type SpriteVersionNumber } from "@/lib/pets/types";
 
@@ -14,6 +16,11 @@ const COLORS = [
   { r: 0, g: 255, b: 0, alpha: 255 },
   { r: 0, g: 0, b: 255, alpha: 255 },
   { r: 255, g: 255, b: 0, alpha: 255 },
+  { r: 255, g: 0, b: 255, alpha: 255 },
+  { r: 0, g: 255, b: 255, alpha: 255 },
+  { r: 128, g: 64, b: 32, alpha: 255 },
+  { r: 64, g: 128, b: 255, alpha: 255 },
+  { r: 240, g: 240, b: 240, alpha: 255 },
 ] as const;
 
 describe("pet vision frame extraction", () => {
@@ -55,6 +62,34 @@ describe("pet vision frame extraction", () => {
           `data:image/png;base64,${frame.png.toString("base64")}`,
         );
       }
+    },
+  );
+
+  it.each([1, 2] as const)(
+    "extracts the same nine semantic rows from sprite version %s",
+    async (version) => {
+      const atlas = await createAtlas(version, PET_VISION_FRAME_POLICY_V2);
+      const extracted = await extractPetVisionFrames(
+        atlas,
+        PET_VISION_FRAME_POLICY_V2,
+      );
+
+      expect(extracted.frames.map(({ state, row, frame }) => ({
+        state,
+        row,
+        frame,
+      }))).toEqual([
+        { state: "idle", row: 0, frame: 3 },
+        { state: "running-right", row: 1, frame: 4 },
+        { state: "running-left", row: 2, frame: 4 },
+        { state: "waving", row: 3, frame: 2 },
+        { state: "jumping", row: 4, frame: 2 },
+        { state: "failed", row: 5, frame: 4 },
+        { state: "waiting", row: 6, frame: 3 },
+        { state: "running", row: 7, frame: 3 },
+        { state: "review", row: 8, frame: 3 },
+      ]);
+      expect(extracted.frames).toHaveLength(9);
     },
   );
 
@@ -103,13 +138,19 @@ describe("pet vision frame extraction", () => {
         { state: "review", row: 8, frameCount: 6, frame: 3 },
       ],
     });
+    expect(PET_VISION_FRAME_POLICY_V2.id).toBe(
+      "pet-vision-nine-central-frames-v2",
+    );
   });
 });
 
-async function createAtlas(version: SpriteVersionNumber): Promise<Buffer> {
+async function createAtlas(
+  version: SpriteVersionNumber,
+  framePolicy: PetVisionFramePolicy = PET_VISION_FRAME_POLICY,
+): Promise<Buffer> {
   const sheet = PET_SHEETS[version];
   const cells = await Promise.all(
-    PET_VISION_FRAME_POLICY.frames.map((frame, index) =>
+    framePolicy.frames.map((frame, index) =>
       sharp({
         create: {
           width: sheet.cellWidth,

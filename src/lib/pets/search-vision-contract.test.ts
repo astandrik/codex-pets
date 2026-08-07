@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   PET_VISION_CAPTION_REVISION,
+  PET_VISION_CAPTION_REVISION_V2,
   PET_VISUAL_MODEL_REVISION,
   buildPetVisionCaptionText,
   createPetVisionCaptionEnvelope,
   createPetVisionCaptionSourceHash,
   createPetVisualEmbeddingSourceHash,
   parsePetVisionCaption,
+  parsePetVisionCaptionForRevision,
   parsePetVisionCaptionEnvelope,
 } from "@/lib/pets/search-vision-contract";
 
@@ -26,6 +28,13 @@ const rawCaption = {
   },
   search_terms_en: ["anime woman", " ANIME WOMAN ", "gothic", "elegant"],
   search_terms_ru: ["аниме девушка", " АНИМЕ ДЕВУШКА ", "готика", "элегантная"],
+};
+
+const rawCaptionV2 = {
+  ...rawCaption,
+  accessories: { en: " Red scarf ", ru: " Красный шарф " },
+  distinctive_features: { en: " Round ears ", ru: " Круглые уши " },
+  pose_motion: { en: " Waving and jumping ", ru: " Машет и прыгает " },
 };
 
 describe("pet vision caption contract", () => {
@@ -109,6 +118,49 @@ describe("pet vision caption contract", () => {
     ).toThrow(/unknown field/i);
   });
 
+  it("parses and round-trips the revision 2 caption with safe provenance", () => {
+    const caption = parsePetVisionCaptionForRevision(
+      rawCaptionV2,
+      PET_VISION_CAPTION_REVISION_V2,
+    );
+    expect(caption).toMatchObject({
+      accessories: { en: "Red scarf", ru: "Красный шарф" },
+      distinctive_features: { en: "Round ears", ru: "Круглые уши" },
+      pose_motion: { en: "Waving and jumping", ru: "Машет и прыгает" },
+    });
+    const envelope = createPetVisionCaptionEnvelope({
+      assetId: "asset-v2",
+      spritesheetSha256: "b".repeat(64),
+      caption,
+      captionRevision: PET_VISION_CAPTION_REVISION_V2,
+    });
+
+    expect(envelope).toMatchObject({
+      schemaVersion: 2,
+      provenance: {
+        origin: "provider",
+        api: "responses",
+        model: "qwen3.6-35b-a3b",
+        framePolicy: "pet-vision-nine-central-frames-v2",
+      },
+    });
+    expect(
+      parsePetVisionCaptionEnvelope(
+        JSON.stringify(envelope),
+        PET_VISION_CAPTION_REVISION_V2,
+      ),
+    ).toEqual(envelope);
+    expect(() =>
+      parsePetVisionCaptionEnvelope(
+        JSON.stringify(envelope),
+        PET_VISION_CAPTION_REVISION,
+      ),
+    ).toThrow(/revision/i);
+    expect(buildPetVisionCaptionText(caption)).toContain(
+      "distinctive_features_ru: Круглые уши",
+    );
+  });
+
   it("uses revision-bound unambiguous caption and visual hashes", () => {
     const caption = parsePetVisionCaption(rawCaption);
     const captionText = buildPetVisionCaptionText(caption);
@@ -136,6 +188,14 @@ describe("pet vision caption contract", () => {
         captionRevision: PET_VISION_CAPTION_REVISION,
         modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
         assetId: "asset-124",
+        spritesheetSha256: "a".repeat(64),
+      }),
+    ).not.toBe(captionHash);
+    expect(
+      createPetVisionCaptionSourceHash({
+        captionRevision: PET_VISION_CAPTION_REVISION_V2,
+        modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+        assetId: "asset-123",
         spritesheetSha256: "a".repeat(64),
       }),
     ).not.toBe(captionHash);

@@ -24,7 +24,7 @@ const PINNED_CALIBRATED_PROFILE = {
   visualWeight: 0.5,
 } as const;
 
-export const CURRENT_RELATED_PETS_RANKING_PROFILE = {
+export const RELATED_PETS_V1_RANKING_PROFILE = {
   rankingRevision: `related-pets-rrf60-v5:cal=${CALIBRATION_REVISION}:text=${TEXT_REVISION}:text-query=${RELATED_PETS_TEXT_QUERY_REVISION}:visual=${VISUAL_REVISION}`,
   textRevision: TEXT_REVISION,
   textQueryRevision: RELATED_PETS_TEXT_QUERY_REVISION,
@@ -51,6 +51,9 @@ export const CURRENT_RELATED_PETS_RANKING_PROFILE = {
   visualDimensions: number;
   rrfK: number;
 };
+
+export const CURRENT_RELATED_PETS_RANKING_PROFILE =
+  RELATED_PETS_V1_RANKING_PROFILE;
 
 export function isCurrentRelatedPetsRankingRevision(
   value: string,

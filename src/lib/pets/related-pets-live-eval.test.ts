@@ -2,15 +2,22 @@ import { describe, expect, it } from "vitest";
 
 import fixtures from "@/lib/pets/related-pets-eval-fixtures.json";
 import { listPetSearchCaptions } from "@/lib/pets/search-captions-repository";
-import { PET_VISUAL_MODEL_REVISIONS } from "@/lib/pets/search-config";
+import {
+  PET_VISION_CAPTION_REVISIONS,
+  PET_VISUAL_MODEL_REVISIONS,
+} from "@/lib/pets/search-config";
 import { listRawPetSearchEmbeddings } from "@/lib/pets/search-embeddings-repository";
 import {
   createRelatedPetsCalibrationCases,
   createRelatedPetsCalibrationObservations,
   evaluateRelatedPetsCalibration,
   evaluateRelatedPetsHoldout,
+  evaluateRelatedPetsRevisionComparison,
 } from "@/lib/pets/related-pets-calibration";
-import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
+import {
+  CURRENT_RELATED_PETS_RANKING_PROFILE,
+  RELATED_PETS_V1_RANKING_PROFILE,
+} from "@/lib/pets/related-pets-profile";
 import {
   getCurrentRelatedPetsVisualSourceContext,
   prepareRelatedPetsRankingInputs,
@@ -149,6 +156,11 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
       }
 
       const report = evaluateRelatedPetsHoldout(observations, profile);
+      const revisionComparison =
+        profile.visualRevision ===
+        RELATED_PETS_V1_RANKING_PROFILE.visualRevision
+          ? null
+          : await compareWithV1Baseline();
       console.info("[codex-pets][related-pets-holdout]", {
         ...profileIdentity,
         caseCount: observations.length,
@@ -158,8 +170,85 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
           visualWeight: profile.visualWeight,
         },
         report,
+        revisionComparison,
       });
       expect(report.passed).toBe(true);
+      expect(revisionComparison?.passed ?? true).toBe(true);
+
+      async function compareWithV1Baseline() {
+        const baselineDefinition =
+          PET_VISUAL_MODEL_REVISIONS[
+            RELATED_PETS_V1_RANKING_PROFILE.visualRevision
+          ];
+        const baselineCaptionRevision =
+          baselineDefinition.captionRevision;
+        const captionDefinition =
+          PET_VISION_CAPTION_REVISIONS[baselineCaptionRevision];
+        const folderId = process.env.YANDEX_AI_STUDIO_FOLDER_ID?.trim();
+        if (!folderId) {
+          throw new Error("V1 comparison requires the AI Studio folder id.");
+        }
+        const baselineProfile: RelatedPetsRebuildProfile = {
+          ...RELATED_PETS_V1_RANKING_PROFILE,
+          visualCaptionRevision: baselineCaptionRevision,
+        };
+        const [baselineVisualRows, baselineCaptions] = await Promise.all([
+          listRawPetSearchEmbeddings(baselineProfile.visualRevision),
+          listPetSearchCaptions(baselineCaptionRevision),
+        ]);
+        const baselinePrepared = prepareRelatedPetsRankingInputs({
+          pets,
+          textQueryRows,
+          textRows,
+          visualRows: baselineVisualRows,
+          captions: baselineCaptions,
+          profile: baselineProfile,
+          visualContext: {
+            captionRevision: baselineCaptionRevision,
+            modelUri: `gpt://${folderId}/${captionDefinition.modelName}`,
+          },
+        });
+        const baselineCoverage = {
+          missingApprovedSlugs: missingSlugs(
+            requiredSlugs,
+            new Set(baselinePrepared.approvedPets.map(({ slug }) => slug)),
+          ),
+          missingTextSlugs: missingSlugs(
+            requiredSlugs,
+            baselinePrepared.textDocumentVectors,
+          ),
+          missingTextQuerySlugs: missingSlugs(
+            requiredSlugs,
+            baselinePrepared.textQueryVectors,
+          ),
+          missingVisualSlugs: missingSlugs(
+            requiredSlugs,
+            baselinePrepared.visualVectors,
+          ),
+        };
+        expect(baselineCoverage).toEqual({
+          missingApprovedSlugs: [],
+          missingTextSlugs: [],
+          missingTextQuerySlugs: [],
+          missingVisualSlugs: [],
+        });
+        const baselineObservations =
+          createRelatedPetsCalibrationObservations({
+            cases: selectedCases,
+            candidates: baselinePrepared.approvedPets,
+            textQueryVectors: baselinePrepared.textQueryVectors,
+            textDocumentVectors: baselinePrepared.textDocumentVectors,
+            visualVectors: baselinePrepared.visualVectors,
+          });
+        const baselineReport = evaluateRelatedPetsHoldout(
+          baselineObservations,
+          baselineProfile,
+        );
+        return evaluateRelatedPetsRevisionComparison(
+          report,
+          baselineReport,
+        );
+      }
     },
     180_000,
   );

@@ -7,19 +7,22 @@ import {
   inferSpriteVersionNumber,
   type SpriteVersionNumber,
 } from "@/lib/pets/types";
+import {
+  PET_VISION_FRAME_POLICY_V1,
+  PET_VISION_FRAME_POLICY_V2 as PIPELINE_FRAME_POLICY_V2,
+  type PetVisionFrameSelection,
+} from "@/lib/pets/search-vision-pipelines.mjs";
 
-export const PET_VISION_FRAME_POLICY = {
-  id: "pet-vision-central-frames-v1",
-  frames: [
-    { state: "idle", row: 0, frameCount: 6, frame: 3 },
-    { state: "running-right", row: 1, frameCount: 8, frame: 4 },
-    { state: "waving", row: 3, frameCount: 4, frame: 2 },
-    { state: "review", row: 8, frameCount: 6, frame: 3 },
-  ],
-} as const;
+export const PET_VISION_FRAME_POLICY = PET_VISION_FRAME_POLICY_V1;
+export const PET_VISION_FRAME_POLICY_V2 = PIPELINE_FRAME_POLICY_V2;
+
+export type PetVisionFramePolicy = {
+  id: string;
+  frames: readonly PetVisionFrameSelection[];
+};
 
 export type PetVisionFrame = {
-  state: (typeof PET_VISION_FRAME_POLICY.frames)[number]["state"];
+  state: string;
   row: number;
   frame: number;
   png: Buffer;
@@ -34,6 +37,7 @@ export type ExtractedPetVisionFrames = {
 
 export async function extractPetVisionFrames(
   spritesheet: Buffer,
+  framePolicy: PetVisionFramePolicy = PET_VISION_FRAME_POLICY,
 ): Promise<ExtractedPetVisionFrames> {
   if (!hasSupportedSpriteSignature(spritesheet)) {
     throw new Error("Unsupported sprite image format; expected PNG or WebP.");
@@ -51,7 +55,7 @@ export async function extractPetVisionFrames(
 
   const sheet = PET_SHEETS[spriteVersion];
   const frames = await Promise.all(
-    PET_VISION_FRAME_POLICY.frames.map(async (selected) => {
+    framePolicy.frames.map(async (selected) => {
       const png = await sharp(spritesheet)
         .extract({
           left: selected.frame * sheet.cellWidth,

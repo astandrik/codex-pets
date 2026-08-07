@@ -322,6 +322,30 @@ export function evaluateVisualSearchQualityGate(
   };
 }
 
+export function evaluateVisualSearchRevisionComparison(
+  candidate: VisualSearchProfileReport,
+  baseline: VisualSearchProfileReport,
+  evidence: { sexyHasRelevantTop5?: boolean } = {},
+) {
+  const checks = {
+    combinedNdcgAt5NonRegression:
+      candidate.combinedNdcgAt5 >= baseline.combinedNdcgAt5,
+    visualSubsetNdcgAt5NonRegression:
+      candidate.visualSubsetCombinedNdcgAt5 >=
+      baseline.visualSubsetCombinedNdcgAt5,
+    visualSubsetLiftPreserved: candidate.visualSubsetLift >= 0.15,
+    exactNameMrrAt5: candidate.exactNameMrrAt5 === 1,
+    sexyHasRelevantTop5:
+      evidence.sexyHasRelevantTop5 ?? candidate.sexyHasRelevantTop5,
+    negativeVisualOnlySafe: candidate.negativeVisualOnlySafe,
+    p95Duration: candidate.p95DurationMs < 1_000,
+  };
+  return {
+    passed: Object.values(checks).every(Boolean),
+    checks,
+  };
+}
+
 export function selectSemanticThreshold(
   fixtures: readonly SemanticThresholdFixture[],
 ): number {

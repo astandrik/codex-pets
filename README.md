@@ -123,8 +123,11 @@ Optional semantic search uses Yandex AI Studio text embeddings and exact cosine
 ranking in YDB. Query mode defaults to `PET_SEARCH_MODE=lexical`; `shadow`
 computes semantic ranking without changing public order, and `hybrid` combines
 lexical and text-semantic ranks. An independent
-`PET_SEARCH_VISUAL_MODE=off|shadow|hybrid` adds an offline visual-caption rank
-from four fixed sprite frames. Captions and their provenance remain internal;
+`PET_SEARCH_VISUAL_MODE=off|shadow|hybrid` adds an offline visual-caption rank.
+The active V1 revision uses four fixed sprite frames. The additive V2 candidate
+uses one central frame from each of the nine common animation rows, sends them
+to Qwen through the Responses API, and stores a strict bilingual caption before
+embedding it at 768 dimensions. Captions and their provenance remain internal;
 public JSON, TOON, homepage, MCP, and WebMCP shapes do not change. Configure
 `YANDEX_AI_STUDIO_FOLDER_ID`,
 `YANDEX_AI_STUDIO_API_KEY_FILE`, and
@@ -136,6 +139,13 @@ for the compatible Qwen visual rank. Legacy 256-dimensional revisions remain
 registered for rollback. The API key is accepted only through the secret-file
 setting. Provider failures and timeouts fall back to lexical results;
 visual-only failures preserve the text-hybrid order.
+
+The V2 caption and vector revisions are
+`yandex-qwen3.6-35b-a3b-pet-caption-2026-08-v2` and
+`yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v2`. They are registered but
+have no ranking profile until production calibration succeeds. This permits V2
+backfill and shadow evaluation while V1 continues to serve search and related
+pets; selecting V2 in `hybrid` before pinning its profile fails closed.
 
 To run without YDB on generated sample data:
 
@@ -294,12 +304,16 @@ npm run search:eval:holdout
 ```
 
 Both backfills require an explicit `--dry-run` or `--apply`; visual `--force`
-is valid only with `--apply`. They never print document text, captions, images,
+is valid only with `--apply`. A full visual apply can add
+`--continue-on-error`; successful rows are kept, every failed slug is printed,
+and the command still exits nonzero if any pet failed. They never print
+document text, captions, images,
 embeddings, prompts, or secrets. Dry-run still reads and hashes spritesheets
 but never calls either AI provider and never writes YDB. A safe rollout is
 base `lexical` and visual `off` → additive migrations → backfills → visual
-`shadow` → calibration → untouched holdout → human review of the combined
-`sexy` top five → both modes `hybrid`.
+`shadow` → calibration → immutable candidate build → untouched holdout and
+automatic V1/V2 comparison → both modes `hybrid`. The frozen `sexy` fixture is
+an automatic gate; there is no separate manual veto.
 
 An applied text or visual backfill that changes vectors prints the required
 related-pet snapshot follow-up. Run both commands after embedding maintenance
@@ -337,8 +351,10 @@ The checked-in eval queries live in
 `holdout` splits. Calibration evaluates all observed visual scores against
 weights `0.25`, `0.50`, `0.75`, and `1.00`; the holdout command requires a
 committed revision-bound profile and must not be used for tuning. Live eval
-requires configured YDB and AI Studio access and prints aggregate results plus
-the public slugs in the final `sexy` review list.
+requires configured YDB and AI Studio access. When the candidate differs from
+V1, holdout compares both revisions on the same frozen fixtures and rejects
+overall, visual-subset, latency, exact-name, negative-query, or related-pet
+regressions.
 
 Seed local development data after the schema exists:
 

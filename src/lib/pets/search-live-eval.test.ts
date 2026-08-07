@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { listPetSearchCaptions } from "@/lib/pets/search-captions-repository";
-import { loadPetSearchConfig } from "@/lib/pets/search-config";
+import {
+  loadPetSearchConfig,
+  PET_SEARCH_EMBEDDING_MODELS,
+  PET_VISION_CAPTION_REVISIONS,
+  PET_VISUAL_MODEL_REVISIONS,
+  type PetSearchVisualConfig,
+} from "@/lib/pets/search-config";
 import {
   createPetSearchSourceHash,
   createYandexEmbeddingClient,
@@ -16,6 +22,7 @@ import {
   evaluateSearchQuality,
   evaluateVisualSearchProfile,
   evaluateVisualSearchQualityGate,
+  evaluateVisualSearchRevisionComparison,
   resolveVisualSearchEvalSplit,
   type RankedSearchObservation,
   type VisualSearchObservation,
@@ -34,6 +41,8 @@ import type { PublicPet } from "@/lib/pets/types";
 const LIVE_EVAL_MODE = process.env.PET_SEARCH_LIVE_EVAL;
 const LIVE_EVAL_SPLIT = resolveVisualSearchEvalSplit(LIVE_EVAL_MODE);
 const LIVE_EVAL_ENABLED = LIVE_EVAL_SPLIT !== null;
+const V1_VISUAL_BASELINE_REVISION =
+  "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1";
 
 describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
   it(
@@ -130,6 +139,10 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
           sexyHasRelevantTop5: sexyRelevant,
         },
       );
+      const revisionComparison =
+        visualConfig.visualRevision === V1_VISUAL_BASELINE_REVISION
+          ? null
+          : await compareWithV1Baseline();
       console.info("[codex-pets][pet-visual-holdout]", {
         captionRevision: visualConfig.captionRevision,
         visualRevision: visualConfig.visualRevision,
@@ -137,12 +150,16 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
         textReport,
         report: aggregateVisualReport(holdoutReport),
         gate,
+        revisionComparison,
         sexyTop5,
-        requiresHumanReview: true,
       });
       expect(gate.passed).toBe(true);
+      expect(revisionComparison?.passed ?? true).toBe(true);
 
-      async function collectObservation(fixture: (typeof fixtures)[number]) {
+      async function collectObservation(
+        fixture: (typeof fixtures)[number],
+        selectedVisualConfig: PetSearchVisualConfig = visualConfig,
+      ) {
         const startedAt = performance.now();
         const catalog = await listApprovedPetsForSearch();
         const queryEmbedding = await embeddingClient.embedQuery(
@@ -156,11 +173,11 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
               embedding: queryEmbedding,
             }),
             findSimilarPetEmbeddings({
-              modelRevision: visualConfig.visualRevision,
-              dimensions: visualConfig.dimensions,
+              modelRevision: selectedVisualConfig.visualRevision,
+              dimensions: selectedVisualConfig.dimensions,
               embedding: queryEmbedding,
             }),
-            listPetSearchCaptions(visualConfig.captionRevision),
+            listPetSearchCaptions(selectedVisualConfig.captionRevision),
           ]);
         const petsBySlug = new Map(
           catalog.map((pet) => [pet.slug, pet]),
@@ -174,7 +191,7 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
           candidates: petsBySlug,
           storedMatches: storedVisualMatches,
           storedCaptions,
-          visualConfig,
+          visualConfig: selectedVisualConfig,
         });
 
         return {
@@ -188,6 +205,44 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
           visualMatches,
           durationMs: performance.now() - startedAt,
         };
+      }
+
+      async function compareWithV1Baseline() {
+        const definition =
+          PET_VISUAL_MODEL_REVISIONS[V1_VISUAL_BASELINE_REVISION];
+        if (!definition.profile) {
+          throw new Error("The V1 visual baseline profile is missing.");
+        }
+        const embeddingModel =
+          PET_SEARCH_EMBEDDING_MODELS[definition.embeddingModelId];
+        const baselineConfig: PetSearchVisualConfig = {
+          ...visualConfig,
+          captionRevision: definition.captionRevision,
+          visualRevision: V1_VISUAL_BASELINE_REVISION,
+          embeddingModelId: definition.embeddingModelId,
+          dimensions: embeddingModel.dimensions,
+          profile: definition.profile,
+          modelUri: `gpt://${visualConfig.folderId}/${
+            PET_VISION_CAPTION_REVISIONS[definition.captionRevision]
+              .modelName
+          }`,
+        };
+        const baselineObservations: VisualSearchObservation<PublicPet>[] = [];
+        for (const fixture of selectedFixtures) {
+          baselineObservations.push(
+            await collectObservation(fixture, baselineConfig),
+          );
+        }
+        const baselineReport = evaluateVisualSearchProfile(
+          baselineObservations,
+          semanticConfig.minSemanticScore,
+          definition.profile,
+        );
+        return evaluateVisualSearchRevisionComparison(
+          holdoutReport,
+          baselineReport,
+          { sexyHasRelevantTop5: sexyRelevant },
+        );
       }
     },
     180_000,

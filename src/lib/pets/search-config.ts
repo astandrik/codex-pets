@@ -3,15 +3,17 @@ import { readFileSync } from "node:fs";
 import type { PetSearchMode } from "@/lib/pets/search-service";
 import {
   PET_VISION_CAPTION_REVISION,
+  PET_VISION_CAPTION_REVISION_V2,
   PET_VISUAL_MODEL_REVISION,
+  PET_VISUAL_MODEL_REVISION_V2,
 } from "@/lib/pets/search-vision-contract";
 
 const DEFAULT_EMBEDDING_TIMEOUT_MS = 800;
-const DEFAULT_VISION_TIMEOUT_MS = 30_000;
+const DEFAULT_VISION_TIMEOUT_MS = 180_000;
 const MIN_EMBEDDING_TIMEOUT_MS = 50;
 const MAX_EMBEDDING_TIMEOUT_MS = 5_000;
 const MIN_VISION_TIMEOUT_MS = 1_000;
-const MAX_VISION_TIMEOUT_MS = 60_000;
+const MAX_VISION_TIMEOUT_MS = 300_000;
 
 export const PET_SEARCH_MODEL_REVISIONS = {
   "yandex-text-search-2026-07": {
@@ -57,6 +59,9 @@ export const PET_VISION_CAPTION_REVISIONS = {
   [PET_VISION_CAPTION_REVISION]: {
     modelName: "qwen3.6-35b-a3b",
   },
+  [PET_VISION_CAPTION_REVISION_V2]: {
+    modelName: "qwen3.6-35b-a3b",
+  },
 } as const;
 
 export const PET_VISUAL_MODEL_REVISIONS = {
@@ -75,6 +80,11 @@ export const PET_VISUAL_MODEL_REVISIONS = {
       minSemanticScore: 0.3574455678462982,
       weight: 0.25,
     },
+  },
+  [PET_VISUAL_MODEL_REVISION_V2]: {
+    embeddingModelId: "yandex-text-embeddings-v2-768",
+    captionRevision: PET_VISION_CAPTION_REVISION_V2,
+    profile: null,
   },
 } as const satisfies Record<string, PetVisualModelRevisionDefinition>;
 

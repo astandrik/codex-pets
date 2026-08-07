@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 
 import sharp from "sharp";
 
+import {
+  PET_VISION_CAPTION_REVISION_V1,
+  PET_VISION_CAPTION_REVISION_V2,
+  PET_VISION_PIPELINES,
+  requirePetVisionPipeline,
+} from "../../src/lib/pets/search-vision-pipelines.mjs";
 import { createRelatedPetsRebuildRequiredLog } from "./related-pets-maintenance.mjs";
 
 const SAFE_SLUG = /^[a-z0-9][a-z0-9-]{0,47}$/;
@@ -101,17 +107,34 @@ const CAPTION_FIELDS = [
   "search_terms_en",
   "search_terms_ru",
 ];
+const CAPTION_FIELDS_V2 = [
+  "subject",
+  "appearance",
+  "clothing",
+  "style",
+  "mood",
+  "colors",
+  "accessories",
+  "distinctive_features",
+  "pose_motion",
+  "search_terms_en",
+  "search_terms_ru",
+];
 const SAFE_FAILURE_REASONS = new Set([
   "asset_error",
   "authentication_error",
+  "content_filtered",
   "configuration_missing",
   "embedding_error",
   "invalid_request",
   "invalid_response",
+  "malformed_json",
+  "output_limit",
   "persistence_error",
   "provider_error",
   "rate_limited",
   "refused",
+  "schema_invalid",
   "timeout",
 ]);
 
@@ -127,6 +150,7 @@ export function parseVisionBackfillArgs(argv) {
   let mode = null;
   let slug = null;
   let force = false;
+  let continueOnError = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -140,6 +164,10 @@ export function parseVisionBackfillArgs(argv) {
     }
     if (argument === "--force") {
       force = true;
+      continue;
+    }
+    if (argument === "--continue-on-error") {
+      continueOnError = true;
       continue;
     }
     if (argument === "--slug" || argument?.startsWith("--slug=")) {
@@ -161,10 +189,18 @@ export function parseVisionBackfillArgs(argv) {
   if (force && mode !== "apply") {
     throw new Error("--force is valid only with --apply.");
   }
-  return { mode, slug, force };
+  if (continueOnError && (mode !== "apply" || slug)) {
+    throw new Error(
+      "--continue-on-error is valid only for a full --apply run.",
+    );
+  }
+  return { mode, slug, force, continueOnError };
 }
 
-export async function extractPetVisionFrames(spritesheet) {
+export async function extractPetVisionFrames(
+  spritesheet,
+  framePolicy = PET_VISION_FRAME_POLICY,
+) {
   if (!hasSupportedSpriteSignature(spritesheet)) {
     throw new Error("Unsupported sprite image format; expected PNG or WebP.");
   }
@@ -181,7 +217,7 @@ export async function extractPetVisionFrames(spritesheet) {
   }
   const [spriteVersion, sheet] = sheetEntry;
   const frames = await Promise.all(
-    PET_VISION_FRAME_POLICY.frames.map(async (selected) => {
+    framePolicy.frames.map(async (selected) => {
       const png = await sharp(spritesheet)
         .extract({
           left: selected.frame * sheet.cellWidth,
@@ -225,8 +261,21 @@ function hasSupportedSpriteSignature(buffer) {
 }
 
 export function parsePetVisionCaption(input) {
-  const value = strictObject(input, "caption", CAPTION_FIELDS);
-  return {
+  return parseCaptionValue(input, false);
+}
+
+export function parsePetVisionCaptionForRevision(input, captionRevision) {
+  const pipeline = requirePetVisionPipeline(captionRevision);
+  return parseCaptionValue(input, pipeline.schemaVersion === 2);
+}
+
+function parseCaptionValue(input, includeV2Fields) {
+  const value = strictObject(
+    input,
+    "caption",
+    includeV2Fields ? CAPTION_FIELDS_V2 : CAPTION_FIELDS,
+  );
+  const shared = {
     subject: bilingualText(value.subject, "subject", 320, true),
     appearance: bilingualText(
       value.appearance,
@@ -268,9 +317,50 @@ export function parsePetVisionCaption(input) {
       60,
     ),
   };
+  if (!includeV2Fields) return shared;
+  return {
+    ...shared,
+    accessories: bilingualText(
+      value.accessories,
+      "accessories",
+      240,
+      false,
+    ),
+    distinctive_features: bilingualText(
+      value.distinctive_features,
+      "distinctive_features",
+      240,
+      false,
+    ),
+    pose_motion: bilingualText(
+      value.pose_motion,
+      "pose_motion",
+      240,
+      false,
+    ),
+  };
 }
 
 export function createPetVisionCaptionEnvelope(input) {
+  const captionRevision =
+    input.captionRevision ?? PET_VISION_CAPTION_REVISION_V1;
+  const pipeline = requirePetVisionPipeline(captionRevision);
+  if (pipeline.schemaVersion === 2) {
+    return parseEnvelopeValue({
+      schemaVersion: 2,
+      source: {
+        assetId: input.assetId,
+        spritesheetSha256: input.spritesheetSha256,
+      },
+      provenance: {
+        origin: "provider",
+        api: "responses",
+        model: pipeline.modelName,
+        framePolicy: pipeline.framePolicy.id,
+      },
+      caption: input.caption,
+    });
+  }
   return parseEnvelopeValue({
     schemaVersion: 1,
     source: {
@@ -281,18 +371,28 @@ export function createPetVisionCaptionEnvelope(input) {
   });
 }
 
-export function parsePetVisionCaptionEnvelope(value) {
+export function parsePetVisionCaptionEnvelope(value, expectedCaptionRevision) {
   let parsed;
   try {
     parsed = JSON.parse(value);
   } catch {
     throw new Error("Caption envelope must contain one JSON object.");
   }
-  return parseEnvelopeValue(parsed);
+  const envelope = parseEnvelopeValue(parsed);
+  const expectedPipeline = expectedCaptionRevision
+    ? PET_VISION_PIPELINES[expectedCaptionRevision]
+    : null;
+  if (
+    expectedPipeline &&
+    envelope.schemaVersion !== expectedPipeline.schemaVersion
+  ) {
+    throw new Error("Caption envelope revision does not match its schema.");
+  }
+  return envelope;
 }
 
 export function buildPetVisionCaptionText(caption) {
-  return [
+  const lines = [
     `subject_en: ${caption.subject.en}`,
     `subject_ru: ${caption.subject.ru}`,
     `appearance_en: ${caption.appearance.en}`,
@@ -305,20 +405,46 @@ export function buildPetVisionCaptionText(caption) {
     `mood_ru: ${caption.mood.ru}`,
     `colors_en: ${caption.colors.en.join(", ")}`,
     `colors_ru: ${caption.colors.ru.join(", ")}`,
+  ];
+  if ("accessories" in caption) {
+    lines.push(
+      `accessories_en: ${caption.accessories.en}`,
+      `accessories_ru: ${caption.accessories.ru}`,
+      `distinctive_features_en: ${caption.distinctive_features.en}`,
+      `distinctive_features_ru: ${caption.distinctive_features.ru}`,
+      `pose_motion_en: ${caption.pose_motion.en}`,
+      `pose_motion_ru: ${caption.pose_motion.ru}`,
+    );
+  }
+  lines.push(
     `search_terms_en: ${caption.search_terms_en.join(", ")}`,
     `search_terms_ru: ${caption.search_terms_ru.join(", ")}`,
-  ].join("\n");
+  );
+  return lines.join("\n");
 }
 
 export function createPetVisionCaptionSourceHash(input) {
-  return lengthPrefixedSha256([
+  const pipeline =
+    PET_VISION_PIPELINES[input.captionRevision] ??
+    PET_VISION_PIPELINES[PET_VISION_CAPTION_REVISION_V1];
+  const sharedParts = [
     input.captionRevision,
     input.modelUri,
-    PET_VISION_SYSTEM_PROMPT,
-    PET_VISION_USER_PROMPT,
-    JSON.stringify(PET_VISION_RESPONSE_JSON_SCHEMA),
-    PET_VISION_FRAME_POLICY.id,
-    JSON.stringify(PET_VISION_FRAME_POLICY.frames),
+    pipeline.systemPrompt,
+    pipeline.userPrompt,
+    JSON.stringify(pipeline.responseJsonSchema),
+    pipeline.framePolicy.id,
+    JSON.stringify(pipeline.framePolicy.frames),
+  ];
+  if (pipeline.schemaVersion === 2) {
+    sharedParts.push(
+      pipeline.api,
+      pipeline.modelName,
+      JSON.stringify(pipeline.tokenPolicy),
+    );
+  }
+  return lengthPrefixedSha256([
+    ...sharedParts,
     input.assetId,
     input.spritesheetSha256,
   ]);
@@ -362,6 +488,8 @@ export async function runPetVisionSearchBackfill(input) {
     unchanged: 0,
     vectorOnly: 0,
     captionAndVector: 0,
+    failed: 0,
+    failedSlugs: [],
   };
   let hasCommittedSnapshotInput = false;
 
@@ -384,11 +512,16 @@ export async function runPetVisionSearchBackfill(input) {
           action: "failed",
           reason: failure.reason,
         });
-        throw failure;
+        if (!input.options.continueOnError) throw failure;
+        summary.failed += 1;
+        summary.failedSlugs.push(pet.slug);
       }
     }
 
     input.log({ action: "summary", ...summary });
+    if (summary.failed > 0) {
+      throw new PetVisionBackfillError("partial_failure");
+    }
     return summary;
   } finally {
     if (
@@ -407,7 +540,10 @@ async function processPet(input, pet, onSnapshotInputCommitted) {
   let extracted;
   try {
     const spritesheet = await input.readSpritesheet(assetId);
-    extracted = await input.extractFrames(spritesheet);
+    extracted = await input.extractFrames(
+      spritesheet,
+      requirePetVisionPipeline(input.config.captionRevision).framePolicy,
+    );
   } catch {
     throw new PetVisionBackfillError("asset_error");
   }
@@ -434,6 +570,7 @@ async function processPet(input, pet, onSnapshotInputCommitted) {
     expectedSourceHash: captionSourceHash,
     assetId,
     spritesheetSha256: extracted.spritesheetSha256,
+    captionRevision: input.config.captionRevision,
   });
 
   if (freshCaption) {
@@ -491,6 +628,7 @@ async function processPet(input, pet, onSnapshotInputCommitted) {
       assetId,
       spritesheetSha256: extracted.spritesheetSha256,
       caption,
+      captionRevision: input.config.captionRevision,
     }),
   );
   try {
@@ -560,6 +698,7 @@ function readFreshCaption(input) {
   try {
     const envelope = parsePetVisionCaptionEnvelope(
       input.storedCaption.captionJson,
+      input.captionRevision,
     );
     const captionText = buildPetVisionCaptionText(envelope.caption);
     if (
@@ -606,21 +745,32 @@ function petAssetId(value) {
 }
 
 function parseEnvelopeValue(input) {
-  const envelope = strictObject(input, "caption envelope", [
-    "schemaVersion",
-    "source",
-    "caption",
-  ]);
-  if (envelope.schemaVersion !== 1) {
-    throw new Error("Caption envelope schemaVersion must be 1.");
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("caption envelope must be an object.");
   }
-  const source = strictObject(envelope.source, "source", [
+  const schemaVersion = input.schemaVersion;
+  const envelope = strictObject(
+    input,
+    "caption envelope",
+    schemaVersion === 2
+      ? ["schemaVersion", "source", "provenance", "caption"]
+      : ["schemaVersion", "source", "caption"],
+  );
+  if (schemaVersion !== 1 && schemaVersion !== 2) {
+    throw new Error("Caption envelope schemaVersion must be 1 or 2.");
+  }
+  const sourceValue = strictObject(envelope.source, "source", [
     "assetId",
     "spritesheetSha256",
   ]);
-  const assetId = normalizedString(source.assetId, "source.assetId", 1, 256);
+  const assetId = normalizedString(
+    sourceValue.assetId,
+    "source.assetId",
+    1,
+    256,
+  );
   const spritesheetSha256 = normalizedString(
-    source.spritesheetSha256,
+    sourceValue.spritesheetSha256,
     "source.spritesheetSha256",
     64,
     64,
@@ -628,10 +778,44 @@ function parseEnvelopeValue(input) {
   if (!/^[a-f0-9]{64}$/.test(spritesheetSha256)) {
     throw new Error("source.spritesheetSha256 must be lowercase SHA-256.");
   }
+  const source = { assetId, spritesheetSha256 };
+  if (schemaVersion === 1) {
+    return {
+      schemaVersion: 1,
+      source,
+      caption: parsePetVisionCaption(envelope.caption),
+    };
+  }
+  const pipeline = requirePetVisionPipeline(
+    PET_VISION_CAPTION_REVISION_V2,
+  );
+  const provenance = strictObject(envelope.provenance, "provenance", [
+    "origin",
+    "api",
+    "model",
+    "framePolicy",
+  ]);
+  if (
+    provenance.origin !== "provider" ||
+    provenance.api !== "responses" ||
+    provenance.model !== pipeline.modelName ||
+    provenance.framePolicy !== pipeline.framePolicy.id
+  ) {
+    throw new Error("Caption envelope contains invalid V2 provenance.");
+  }
   return {
-    schemaVersion: 1,
-    source: { assetId, spritesheetSha256 },
-    caption: parsePetVisionCaption(envelope.caption),
+    schemaVersion: 2,
+    source,
+    provenance: {
+      origin: "provider",
+      api: "responses",
+      model: pipeline.modelName,
+      framePolicy: pipeline.framePolicy.id,
+    },
+    caption: parsePetVisionCaptionForRevision(
+      envelope.caption,
+      PET_VISION_CAPTION_REVISION_V2,
+    ),
   };
 }
 

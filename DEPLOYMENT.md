@@ -52,7 +52,9 @@ PET_SEARCH_MODE=lexical
 PET_SEARCH_MODEL_REVISION=yandex-text-embeddings-v2-768-2026-07
 PET_SEARCH_EMBEDDING_TIMEOUT_MS=800
 PET_SEARCH_VISUAL_MODE=off
+PET_SEARCH_VISION_CAPTION_REVISION=yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1
 PET_SEARCH_VISUAL_MODEL_REVISION=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1
+PET_SEARCH_VISION_TIMEOUT_MS=180000
 YANDEX_AI_STUDIO_FOLDER_ID=
 YANDEX_AI_STUDIO_API_KEY_FILE=/run/secrets/yandex-ai-studio.key
 PET_RELATED_HYBRID_ENABLED=false
@@ -117,6 +119,42 @@ The v2 text and Qwen visual revisions both use managed Yandex Text Embeddings
 v2 at 768 dimensions. Keep the legacy 256-dimensional rows for rollback; the
 backfills add revision-scoped rows and do not overwrite them.
 
+### Visual Search V2 candidate
+
+Deploy V2 support without changing the application revisions above. V1 must
+continue serving search and related snapshots while maintenance commands build
+the additive V2 rows. V2 uses these immutable identifiers:
+
+```text
+caption: yandex-qwen3.6-35b-a3b-pet-caption-2026-08-v2
+visual:  yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v2
+frames:  pet-vision-nine-central-frames-v2
+```
+
+The caption request sends nine central animation frames through the Responses
+API with Qwen's default reasoning behavior. The first output budget is 8000
+tokens; only an explicit `max_output_tokens` incomplete result raises it to
+16000. The request is bounded to three attempts. Diagnostics contain stages,
+statuses, token counts, and provider request identifiers, never prompts,
+images, captions, embeddings, or credentials.
+
+Run V2 maintenance in a separate production shell or container so the live
+application environment remains on V1:
+
+```bash
+export PET_SEARCH_VISION_CAPTION_REVISION=yandex-qwen3.6-35b-a3b-pet-caption-2026-08-v2
+export PET_SEARCH_VISUAL_MODEL_REVISION=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v2
+npm run search:backfill-vision -- --dry-run
+npm run search:backfill-vision -- --apply --continue-on-error
+```
+
+Any failed slug blocks V2 activation. Rerun the ordinary slug-scoped command
+for each failure and then repeat the full dry-run. Do not use `--force`, write a
+manual caption, mix revisions, or permit a text-only exception. Before
+calibration, require one current schemaVersion 2 caption and one
+768-dimensional V2 vector for every approved pet. Recount approved pets at the
+same time; if the catalog changed, repeat the coverage audit.
+
 Whenever an applied text or visual maintenance backfill reports changed
 vectors, it also prints the required related-pet snapshot follow-up. After all
 embedding updates finish, run the printed dry-run and apply commands and
@@ -132,16 +170,20 @@ npm run search:eval:calibrate
 ```
 
 Pin the selected threshold and weight to the exact visual revision in code,
-repeat the full verification chain and candidate build, then run the untouched
-holdout exactly once:
+repeat the full verification chain and build a second immutable image. Run the
+untouched holdout exactly once from that image:
 
 ```bash
 npm run search:eval:holdout
 ```
 
-Do not tune on holdout results. Stop if any gate fails, and require explicit
-human review of the printed combined `sexy` top five before enabling both base
-and visual `hybrid`. The first rollback is `PET_SEARCH_VISUAL_MODE=off`; switch
+Do not tune on holdout results. The holdout automatically compares a V2
+candidate with V1 on the same frozen fixtures: combined and visual-subset
+nDCG@5 may not regress, exact-name MRR@5 must remain 1, visual-subset lift must
+remain at least 0.15, negative queries may not gain visual-only results, the
+frozen `sexy` fixture must pass, and p95 must remain below one second. There is
+no additional manual veto. Stop if any gate fails. The first rollback is
+`PET_SEARCH_VISUAL_MODE=off`; switch
 `PET_SEARCH_MODE=lexical` only if the text contour must also be disabled.
 Caption and embedding tables can remain. The AI Studio API key must be mounted
 as a read-only file and referenced by `YANDEX_AI_STUDIO_API_KEY_FILE`; do not
@@ -191,7 +233,21 @@ commit and deploy that profile with the feature still disabled, and rerun
 calibration. The holdout command uses four untouched source cases exactly once
 and must report `passed: true`; full hybrid nDCG@4 must be no worse than both
 metadata-only and text-plus-metadata. Missing approved fixture pets or missing
-current query, document, or visual vectors fail either command.
+current query, document, or visual vectors fail either command. When the
+candidate related profile uses a visual revision other than V1, holdout also
+loads the retained V1 rows and requires candidate hybrid nDCG@4 to be no lower
+than V1.
+
+For V2 activation, keep `PET_RELATED_HYBRID_ENABLED=false`, record the exact
+active and previous generation IDs, and deploy the second immutable image with
+the pinned V2 search and related profiles. Set the application caption and
+visual revision variables to the V2 identifiers but keep visual search `off`
+until the new related dry-run and apply below report full catalog coverage.
+Then switch visual search to `shadow`, verify current V2 captions/vectors,
+latency, sanitized provider diagnostics, HTTP search, and the new generation.
+Only after those checks pass may visual search move to `hybrid` and related
+snapshot reads be enabled. Restart once more and repeat YDB, HTTP search, and
+related-generation readback, including Tallulah and the frozen fixture pets.
 
 Only after both evaluation commands pass, build the initial snapshots:
 
@@ -234,6 +290,12 @@ values explicitly:
 ```bash
 npm run related:rebuild -- --recover-previous PREVIOUS_GENERATION_ID --expected-active ACTIVE_GENERATION_ID
 ```
+
+For a V2 rollback, keep related and visual reads disabled while restoring the
+V1-profile image plus the V1 caption and visual revision variables. Recover the
+captured V1 generation pair, confirm `ready` state and V1 HTTP search, and only
+then re-enable the V1 flags. Do not delete V2 captions or vectors; they are
+revision-scoped derived data and are not part of the generation rollback.
 
 The recovery command exits nonzero when no compatible previous generation is
 available, the requested generation is not the retained one, or the expected

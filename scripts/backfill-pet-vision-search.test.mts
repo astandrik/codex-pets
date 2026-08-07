@@ -10,13 +10,16 @@ import {
 } from "../src/lib/pets/search-config";
 import {
   PET_VISION_CAPTION_REVISION,
+  PET_VISION_CAPTION_REVISION_V2,
   PET_VISUAL_MODEL_REVISION,
   buildPetVisionCaptionText as buildRuntimeCaptionText,
   createPetVisionCaptionSourceHash as createRuntimeCaptionHash,
   createPetVisualEmbeddingSourceHash as createRuntimeVisualHash,
+  parsePetVisionCaptionForRevision as parseRuntimeCaptionForRevision,
 } from "../src/lib/pets/search-vision-contract";
 import {
   PET_VISION_FRAME_POLICY as RUNTIME_FRAME_POLICY,
+  PET_VISION_FRAME_POLICY_V2 as RUNTIME_FRAME_POLICY_V2,
   extractPetVisionFrames as extractRuntimeFrames,
 } from "../src/lib/pets/search-vision-frames";
 
@@ -28,6 +31,7 @@ const {
   createPetVisualEmbeddingSourceHash,
   embeddingToBuffer,
   extractPetVisionFrames,
+  parsePetVisionCaptionForRevision,
   parseVisionBackfillArgs,
   runPetVisionSearchBackfill,
 } = await import("./lib/pet-vision-search-backfill.mjs");
@@ -59,6 +63,12 @@ const caption = {
   colors: { en: ["black"], ru: ["чёрный"] },
   search_terms_en: ["anime woman", "gothic", "elegant"],
   search_terms_ru: ["аниме девушка", "готика", "элегантная"],
+};
+const captionV2 = {
+  ...caption,
+  accessories: { en: "red scarf", ru: "красный шарф" },
+  distinctive_features: { en: "round ears", ru: "круглые уши" },
+  pose_motion: { en: "waves and jumps", ru: "машет и прыгает" },
 };
 const spritesheetSha256 = "a".repeat(64);
 const frames = PET_VISION_FRAME_POLICY.frames.map(
@@ -145,6 +155,7 @@ describe("pet vision search backfill", () => {
       mode: "dry-run",
       slug: null,
       force: false,
+      continueOnError: false,
     });
     expect(
       parseVisionBackfillArgs([
@@ -156,6 +167,7 @@ describe("pet vision search backfill", () => {
       mode: "apply",
       slug: "velvet-byte",
       force: true,
+      continueOnError: false,
     });
     expect(() => parseVisionBackfillArgs([])).toThrow(
       /--dry-run.*--apply/,
@@ -166,6 +178,21 @@ describe("pet vision search backfill", () => {
     expect(() =>
       parseVisionBackfillArgs(["--apply", "--unknown"]),
     ).toThrow(/unknown argument/i);
+    expect(
+      parseVisionBackfillArgs(["--apply", "--continue-on-error"]),
+    ).toEqual({
+      mode: "apply",
+      slug: null,
+      force: false,
+      continueOnError: true,
+    });
+    expect(() =>
+      parseVisionBackfillArgs([
+        "--apply",
+        "--slug=velvet-byte",
+        "--continue-on-error",
+      ]),
+    ).toThrow(/full.*apply/i);
   });
 
   it("keeps frame constants, canonical text, hashes, and vector encoding in runtime parity", () => {
@@ -199,6 +226,37 @@ describe("pet vision search backfill", () => {
     );
   });
 
+  it("keeps the V2 frame, caption, text, and hash contracts in runtime parity", () => {
+    const scriptCaption = parsePetVisionCaptionForRevision(
+      captionV2,
+      PET_VISION_CAPTION_REVISION_V2,
+    );
+    const runtimeCaption = parseRuntimeCaptionForRevision(
+      captionV2,
+      PET_VISION_CAPTION_REVISION_V2,
+    );
+    expect(scriptCaption).toEqual(runtimeCaption);
+    expect(RUNTIME_FRAME_POLICY_V2).toMatchObject({
+      id: "pet-vision-nine-central-frames-v2",
+      frames: expect.arrayContaining([
+        expect.objectContaining({ state: "running-left", row: 2 }),
+        expect.objectContaining({ state: "review", row: 8 }),
+      ]),
+    });
+    expect(buildPetVisionCaptionText(scriptCaption)).toBe(
+      buildRuntimeCaptionText(runtimeCaption),
+    );
+    const hashInput = {
+      captionRevision: PET_VISION_CAPTION_REVISION_V2,
+      modelUri: visualConfig.modelUri,
+      assetId: "asset-v2",
+      spritesheetSha256,
+    };
+    expect(createPetVisionCaptionSourceHash(hashInput)).toBe(
+      createRuntimeCaptionHash(hashInput),
+    );
+  });
+
   it("keeps non-PNG/WebP rejection in runtime parity", async () => {
     const gif = Buffer.from("GIF89a", "ascii");
 
@@ -222,6 +280,8 @@ describe("pet vision search backfill", () => {
       unchanged: 0,
       vectorOnly: 0,
       captionAndVector: 1,
+      failed: 0,
+      failedSlugs: [],
     });
     expect(input.readSpritesheet).toHaveBeenCalledWith("asset-velvet");
     expect(input.extractFrames).toHaveBeenCalledOnce();
@@ -343,5 +403,52 @@ describe("pet vision search backfill", () => {
       action: "related-pets-rebuild-required",
       commands: RELATED_PETS_REBUILD_COMMANDS,
     });
+  });
+
+  it("continues a full apply run, reports every failed slug, and exits nonzero", async () => {
+    const logs: unknown[] = [];
+    const input = dependencies({
+      options: {
+        mode: "apply",
+        slug: null,
+        force: false,
+        continueOnError: true,
+      },
+      pets: [
+        pet,
+        {
+          ...pet,
+          slug: "nightshade",
+          spritesheetUrl: "/api/assets/asset-nightshade/spritesheet.webp",
+        },
+        {
+          ...pet,
+          slug: "sunny-byte",
+          spritesheetUrl: "/api/assets/asset-sunny/spritesheet.webp",
+        },
+      ],
+      readSpritesheet: vi.fn(async (assetId: string) => {
+        if (assetId === "asset-nightshade") {
+          throw new Error("private asset failure");
+        }
+        return Buffer.from("atlas");
+      }),
+      log: (entry: unknown) => logs.push(entry),
+    });
+
+    await expect(runPetVisionSearchBackfill(input)).rejects.toMatchObject({
+      reason: "partial_failure",
+    });
+    expect(input.readSpritesheet).toHaveBeenCalledTimes(3);
+    expect(logs).toContainEqual({
+      action: "summary",
+      scanned: 3,
+      unchanged: 0,
+      vectorOnly: 0,
+      captionAndVector: 2,
+      failed: 1,
+      failedSlugs: ["nightshade"],
+    });
+    expect(JSON.stringify(logs)).not.toContain("private asset failure");
   });
 });

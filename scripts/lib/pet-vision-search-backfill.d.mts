@@ -2,6 +2,7 @@ export type VisionBackfillOptions = {
   mode: "dry-run" | "apply";
   slug: string | null;
   force: boolean;
+  continueOnError?: boolean;
 };
 
 export type VisionBackfillCaption = {
@@ -13,6 +14,12 @@ export type VisionBackfillCaption = {
   colors: { en: string[]; ru: string[] };
   search_terms_en: string[];
   search_terms_ru: string[];
+};
+
+export type VisionBackfillCaptionV2 = VisionBackfillCaption & {
+  accessories: { en: string; ru: string };
+  distinctive_features: { en: string; ru: string };
+  pose_motion: { en: string; ru: string };
 };
 
 export type VisionBackfillFrame = {
@@ -55,6 +62,7 @@ export function parseVisionBackfillArgs(
 ): VisionBackfillOptions;
 export function extractPetVisionFrames(
   spritesheet: Buffer,
+  framePolicy?: typeof PET_VISION_FRAME_POLICY,
 ): Promise<{
   spriteVersion: number;
   spritesheetSha256: string;
@@ -63,18 +71,26 @@ export function extractPetVisionFrames(
 export function parsePetVisionCaption(
   input: unknown,
 ): VisionBackfillCaption;
+export function parsePetVisionCaptionForRevision(
+  input: unknown,
+  captionRevision: string,
+): VisionBackfillCaption | VisionBackfillCaptionV2;
 export function createPetVisionCaptionEnvelope(input: {
   assetId: string;
   spritesheetSha256: string;
-  caption: VisionBackfillCaption;
+  caption: VisionBackfillCaption | VisionBackfillCaptionV2;
+  captionRevision?: string;
 }): unknown;
-export function parsePetVisionCaptionEnvelope(value: string): {
-  schemaVersion: 1;
+export function parsePetVisionCaptionEnvelope(
+  value: string,
+  expectedCaptionRevision?: string,
+): {
+  schemaVersion: 1 | 2;
   source: { assetId: string; spritesheetSha256: string };
-  caption: VisionBackfillCaption;
+  caption: VisionBackfillCaption | VisionBackfillCaptionV2;
 };
 export function buildPetVisionCaptionText(
-  caption: VisionBackfillCaption,
+  caption: VisionBackfillCaption | VisionBackfillCaptionV2,
 ): string;
 export function createPetVisionCaptionSourceHash(input: {
   captionRevision: string;
@@ -114,7 +130,7 @@ export function runPetVisionSearchBackfill(input: {
   ) => Promise<{ sourceHash: string; dimensions: number } | null>;
   createCaption: (
     frames: readonly VisionBackfillFrame[],
-  ) => Promise<VisionBackfillCaption>;
+  ) => Promise<VisionBackfillCaption | VisionBackfillCaptionV2>;
   embedDocument: (text: string) => Promise<number[]>;
   upsertCaption: (input: {
     captionRevision: string;
@@ -139,4 +155,6 @@ export function runPetVisionSearchBackfill(input: {
   unchanged: number;
   vectorOnly: number;
   captionAndVector: number;
+  failed: number;
+  failedSlugs: string[];
 }>;

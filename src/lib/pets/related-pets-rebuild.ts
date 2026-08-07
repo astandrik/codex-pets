@@ -796,7 +796,10 @@ function validatedVisualVectors(input: {
     try {
       const assetId = getPetAssetIdFromSpritesheetUrl(item.spritesheetUrl);
       if (!assetId) continue;
-      const envelope = parsePetVisionCaptionEnvelope(caption.captionJson);
+      const envelope = parsePetVisionCaptionEnvelope(
+        caption.captionJson,
+        input.context.captionRevision,
+      );
       const captionText = buildPetVisionCaptionText(envelope.caption);
       if (
         captionText !== caption.captionText ||

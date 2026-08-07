@@ -17,7 +17,10 @@ export async function resolve(specifier, context, nextResolve) {
     return nextResolve(specifier, context);
   }
 
-  const candidate = containedSourcePath(`${specifier.slice(2)}.ts`);
+  const relativePath = specifier.slice(2);
+  const candidate = containedSourcePath(
+    path.extname(relativePath) ? relativePath : `${relativePath}.ts`,
+  );
   if (!existsSync(candidate)) {
     throw new Error("Related pets runtime module is unavailable.");
   }

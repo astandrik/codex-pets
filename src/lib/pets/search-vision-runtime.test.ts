@@ -7,11 +7,13 @@ import {
   createPetVisionCaptionSourceHash,
   createPetVisualEmbeddingSourceHash,
   type PetVisionCaption,
+  type PetVisionCaptionV2,
 } from "@/lib/pets/search-vision-contract";
 import {
   createPetVisionSearchRuntime,
   type PetVisionRefreshResult,
 } from "@/lib/pets/search-vision-runtime";
+import type { PetVisionFramePolicy } from "@/lib/pets/search-vision-frames";
 
 const config: PetSearchConfig = {
   mode: "hybrid",
@@ -47,6 +49,13 @@ const caption: PetVisionCaption = {
   colors: { en: ["black"], ru: ["чёрный"] },
   search_terms_en: ["anime woman", "gothic", "elegant"],
   search_terms_ru: ["аниме девушка", "готика", "элегантная"],
+};
+
+const captionV2: PetVisionCaptionV2 = {
+  ...caption,
+  accessories: { en: "red scarf", ru: "красный шарф" },
+  distinctive_features: { en: "round ears", ru: "круглые уши" },
+  pose_motion: { en: "waves and jumps", ru: "машет и прыгает" },
 };
 
 const captionSourceHash = createPetVisionCaptionSourceHash({
@@ -90,7 +99,9 @@ function dependencies(overrides: Record<string, unknown> = {}) {
       frames: [],
     })),
     getCaption: vi.fn(async () => null),
-    upsertCaption: vi.fn(async () => undefined),
+    upsertCaption: vi.fn<
+      (input: { captionJson: string }) => Promise<void>
+    >(async () => undefined),
     getEmbeddingMetadata: vi.fn(async () => null),
     upsertEmbedding: vi.fn(async () => undefined),
     now: () => new Date("2026-07-22T12:00:00.000Z"),
@@ -320,4 +331,67 @@ describe("pet vision search indexing runtime", () => {
       expect(deps.upsertEmbedding).toHaveBeenCalledTimes(1);
     },
   );
+
+  it("uses the nine-frame policy and schemaVersion 2 for the V2 revision", async () => {
+    const v2Config: PetSearchConfig = {
+      ...config,
+      visual: {
+        ...config.visual!,
+        captionRevision:
+          "yandex-qwen3.6-35b-a3b-pet-caption-2026-08-v2",
+        visualRevision:
+          "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v2",
+        embeddingModelId: "yandex-text-embeddings-v2-768",
+        dimensions: 768,
+      },
+    };
+    const extractFrames = vi.fn(async (
+      _buffer: Buffer,
+      policy: PetVisionFramePolicy,
+    ) => ({
+      spriteVersion: 2 as const,
+      spritesheetSha256: "b".repeat(64),
+      frames: policy.frames.map((frame) => ({
+        ...frame,
+        png: Buffer.from(frame.state),
+        dataUrl: `data:image/png;base64,${frame.state}`,
+      })),
+    }));
+    const deps = dependencies({
+      config: v2Config,
+      extractFrames,
+      visionClient: { createCaption: vi.fn(async () => captionV2) },
+      embeddingClient: {
+        embedDocument: vi.fn(async () => Array(768).fill(0.25)),
+      },
+    });
+    const runtime = createPetVisionSearchRuntime(deps);
+
+    await expect(runtime.refresh(pet)).resolves.toBe("caption-and-vector");
+    expect(extractFrames.mock.calls[0]?.[1]).toMatchObject({
+      id: "pet-vision-nine-central-frames-v2",
+      frames: expect.arrayContaining([
+        expect.objectContaining({ state: "running-left", row: 2 }),
+        expect.objectContaining({ state: "failed", row: 5 }),
+      ]),
+    });
+    const captionWrite = deps.upsertCaption.mock.calls[0]?.[0];
+    if (!captionWrite) throw new Error("Expected a V2 caption write.");
+    expect(JSON.parse(captionWrite.captionJson)).toMatchObject({
+      schemaVersion: 2,
+      provenance: {
+        origin: "provider",
+        api: "responses",
+        model: "qwen3.6-35b-a3b",
+        framePolicy: "pet-vision-nine-central-frames-v2",
+      },
+    });
+    expect(deps.upsertEmbedding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelRevision:
+          "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v2",
+        dimensions: 768,
+      }),
+    );
+  });
 });

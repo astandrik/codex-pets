@@ -334,6 +334,24 @@ export function evaluateRelatedPetsHoldout(
   };
 }
 
+export function evaluateRelatedPetsRevisionComparison(
+  candidate: ReturnType<typeof evaluateRelatedPetsProfile>,
+  baseline: ReturnType<typeof evaluateRelatedPetsProfile>,
+) {
+  const checks = {
+    hybridNdcgAt4NonRegression:
+      candidate.hybridNdcgAt4 >= baseline.hybridNdcgAt4,
+    noWorseThanMetadata:
+      candidate.hybridNdcgAt4 >= candidate.metadataNdcgAt4,
+    noWorseThanTextMetadata:
+      candidate.hybridNdcgAt4 >= candidate.textMetadataNdcgAt4,
+  };
+  return {
+    passed: Object.values(checks).every(Boolean),
+    checks,
+  };
+}
+
 export function evaluateRelatedPetsProfile(
   observations: readonly RelatedPetCalibrationObservation[],
   profile: RelatedPetsRankingProfile,

@@ -9,6 +9,7 @@ import {
   evaluateRelatedPetsCalibration,
   evaluateRelatedPetsHoldout,
   evaluateRelatedPetsProfile,
+  evaluateRelatedPetsRevisionComparison,
   ndcgAt4,
   selectRelatedTextThreshold,
   selectRelatedVisualProfile,
@@ -447,5 +448,35 @@ describe("related pet holdout reporting", () => {
         visualWeight: 0.25,
       }),
     ).toThrow(/holdout observations/i);
+  });
+
+  it("requires candidate related quality to match V1 and both baselines", () => {
+    const baseline = evaluateRelatedPetsProfile(
+      [
+        observation({
+          split: "holdout",
+          metadataSlugs: ["other", "peer"],
+          textMatches: [{ slug: "peer", score: 0.9 }],
+          visualMatches: [{ slug: "peer", score: 0.95 }],
+        }),
+      ],
+      {
+        textMinSimilarity: 0.8,
+        visualMinSimilarity: 0.9,
+        visualWeight: 0.25,
+      },
+    );
+    expect(
+      evaluateRelatedPetsRevisionComparison(baseline, baseline).passed,
+    ).toBe(true);
+    expect(
+      evaluateRelatedPetsRevisionComparison(
+        { ...baseline, hybridNdcgAt4: baseline.hybridNdcgAt4 - 0.01 },
+        baseline,
+      ),
+    ).toMatchObject({
+      passed: false,
+      checks: { hybridNdcgAt4NonRegression: false },
+    });
   });
 });

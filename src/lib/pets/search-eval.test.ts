@@ -6,6 +6,7 @@ import {
   evaluateSearchRolloutGate,
   evaluateSearchQuality,
   evaluateVisualSearchQualityGate,
+  evaluateVisualSearchRevisionComparison,
   evaluateVisualSearchRolloutGate,
   resolveVisualSearchEvalSplit,
   selectSemanticThreshold,
@@ -290,6 +291,40 @@ describe("pet search evaluation", () => {
         { sexyHasRelevantTop5: true },
       ).checks.textHybridNdcgLift,
     ).toBe(false);
+  });
+
+  it("blocks a V2 rollout when either overall or visual-subset quality regresses", () => {
+    const baseline = {
+      exactNameMrrAt5: 1,
+      textHybridNdcgAt5: 0.7,
+      combinedNdcgAt5: 0.8,
+      visualSubsetTextHybridNdcgAt5: 0.6,
+      visualSubsetCombinedNdcgAt5: 0.72,
+      visualSubsetLift: 0.2,
+      sexyHasRelevantTop5: true,
+      negativeVisualOnlySafe: true,
+      p95DurationMs: 900,
+      rankings: [],
+    };
+    expect(
+      evaluateVisualSearchRevisionComparison(
+        {
+          ...baseline,
+          combinedNdcgAt5: 0.81,
+          visualSubsetCombinedNdcgAt5: 0.73,
+        },
+        baseline,
+      ).passed,
+    ).toBe(true);
+    expect(
+      evaluateVisualSearchRevisionComparison(
+        { ...baseline, visualSubsetCombinedNdcgAt5: 0.71 },
+        baseline,
+      ),
+    ).toMatchObject({
+      passed: false,
+      checks: { visualSubsetNdcgAt5NonRegression: false },
+    });
   });
 });
 

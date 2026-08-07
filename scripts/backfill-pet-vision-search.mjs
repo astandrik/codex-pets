@@ -16,9 +16,16 @@ import {
   embeddingToBuffer,
   extractPetVisionFrames,
   parsePetVisionCaption,
+  parsePetVisionCaptionForRevision,
   parseVisionBackfillArgs,
   runPetVisionSearchBackfill,
 } from "./lib/pet-vision-search-backfill.mjs";
+import {
+  requirePetVisionPipeline,
+} from "../src/lib/pets/search-vision-pipelines.mjs";
+import {
+  createResponsesVisionCaptionRequester,
+} from "../src/lib/pets/search-vision-provider.mjs";
 
 const require = createRequire(import.meta.url);
 const {
@@ -37,7 +44,7 @@ const CAPTION_REVISION =
   "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1";
 const VISUAL_REVISION = "yandex-text-search-2026-07-pet-vision-v1";
 const DEFAULT_EMBEDDING_TIMEOUT_MS = 800;
-const DEFAULT_VISION_TIMEOUT_MS = 30_000;
+const DEFAULT_VISION_TIMEOUT_MS = 180_000;
 const VISION_ENDPOINT =
   "https://ai.api.cloud.yandex.net/v1/chat/completions";
 const EMBEDDING_ENDPOINT =
@@ -164,7 +171,7 @@ function readProviderConfig(mode) {
       process.env.PET_SEARCH_VISION_TIMEOUT_MS,
       DEFAULT_VISION_TIMEOUT_MS,
       1_000,
-      60_000,
+      300_000,
     ),
   };
 }
@@ -174,6 +181,27 @@ function createVisionProvider(config) {
     requestsPerMinute: 10,
     sleep: delay,
   });
+  const pipeline = requirePetVisionPipeline(config.captionRevision);
+  if (pipeline.api === "responses") {
+    return createResponsesVisionCaptionRequester({
+      folderId: config.folderId,
+      apiKey: config.apiKey,
+      modelUri: config.modelUri,
+      timeoutMs: config.visionTimeoutMs,
+      pipeline,
+      parseCaption: (value) =>
+        parsePetVisionCaptionForRevision(value, config.captionRevision),
+      reserveStart,
+      sleep: delay,
+      onDiagnostic: (diagnostic) =>
+        console.log(
+          JSON.stringify({
+            action: "vision-provider-diagnostic",
+            ...diagnostic,
+          }),
+        ),
+    });
+  }
 
   return async function createCaption(frames) {
     let response = await request();

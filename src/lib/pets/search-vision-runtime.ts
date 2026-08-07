@@ -28,7 +28,9 @@ import type { YandexVisionCaptionClient } from "@/lib/pets/search-vision-client"
 import {
   extractPetVisionFrames,
   type ExtractedPetVisionFrames,
+  type PetVisionFramePolicy,
 } from "@/lib/pets/search-vision-frames";
+import { requirePetVisionPipeline } from "@/lib/pets/search-vision-pipelines.mjs";
 import type { ApprovalStatus, PublicPet } from "@/lib/pets/types";
 
 export type PetVisionRefreshResult =
@@ -48,7 +50,10 @@ type PetVisionSearchRuntimeDependencies = {
   embeddingClient: Pick<YandexEmbeddingClient, "embedDocument"> | null;
   visionClient: YandexVisionCaptionClient | null;
   readSpritesheet: typeof readPetSpritesheetAsset;
-  extractFrames: (spritesheet: Buffer) => Promise<ExtractedPetVisionFrames>;
+  extractFrames: (
+    spritesheet: Buffer,
+    framePolicy?: PetVisionFramePolicy,
+  ) => Promise<ExtractedPetVisionFrames>;
   getCaption: (
     captionRevision: string,
     slug: string,
@@ -102,6 +107,7 @@ export function createPetVisionSearchRuntime(
     const visual = dependencies.config.visual;
     const embeddingClient = dependencies.embeddingClient;
     if (!visual || !embeddingClient) return "skipped";
+    const pipeline = requirePetVisionPipeline(visual.captionRevision);
 
     const assetId = getPetAssetIdFromSpritesheetUrl(pet.spritesheetUrl);
     if (!assetId) {
@@ -111,7 +117,10 @@ export function createPetVisionSearchRuntime(
     let extracted: ExtractedPetVisionFrames;
     try {
       const asset = await dependencies.readSpritesheet({ assetId });
-      extracted = await dependencies.extractFrames(asset.buffer);
+      extracted = await dependencies.extractFrames(
+        asset.buffer,
+        pipeline.framePolicy,
+      );
     } catch (error) {
       throw new PetVisionIndexingError("asset_error", { cause: error });
     }
@@ -130,6 +139,7 @@ export function createPetVisionSearchRuntime(
       expectedSourceHash: captionSourceHash,
       assetId,
       spritesheetSha256: extracted.spritesheetSha256,
+      captionRevision: visual.captionRevision,
     });
 
     if (freshCaption) {
@@ -177,6 +187,7 @@ export function createPetVisionSearchRuntime(
         assetId,
         spritesheetSha256: extracted.spritesheetSha256,
         caption,
+        captionRevision: visual.captionRevision,
       }),
     );
     await dependencies.upsertCaption({
@@ -233,12 +244,14 @@ function readFreshCaption(input: {
   expectedSourceHash: string;
   assetId: string;
   spritesheetSha256: string;
+  captionRevision: string;
 }): { captionText: string } | null {
   if (input.storedCaption?.sourceHash !== input.expectedSourceHash) return null;
 
   try {
     const envelope = parsePetVisionCaptionEnvelope(
       input.storedCaption.captionJson,
+      input.captionRevision,
     );
     const canonicalText = buildPetVisionCaptionText(envelope.caption);
     if (

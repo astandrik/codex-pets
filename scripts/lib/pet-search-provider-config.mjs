@@ -22,6 +22,11 @@ export const PET_VISION_BACKFILL_CAPTION_REVISIONS = {
   "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1": {
     modelName: "qwen3.6-35b-a3b",
   },
+  [PET_VISION_CAPTION_REVISION_V2]: {
+    modelName: requirePetVisionPipeline(
+      PET_VISION_CAPTION_REVISION_V2,
+    ).modelName,
+  },
 };
 
 export const PET_VISUAL_BACKFILL_REVISIONS = {
@@ -35,6 +40,12 @@ export const PET_VISUAL_BACKFILL_REVISIONS = {
   "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1": {
     captionRevision:
       "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1",
+    dimensions: 768,
+    documentModelPath: "text-embeddings-v2-doc",
+    requestDimensions: 768,
+  },
+  [PET_VISUAL_MODEL_REVISION_V2]: {
+    captionRevision: PET_VISION_CAPTION_REVISION_V2,
     dimensions: 768,
     documentModelPath: "text-embeddings-v2-doc",
     requestDimensions: 768,
@@ -80,3 +91,8 @@ export function requirePetVisualBackfillRevision({
   }
   return { captionDefinition, visualDefinition };
 }
+import {
+  PET_VISION_CAPTION_REVISION_V2,
+  PET_VISUAL_MODEL_REVISION_V2,
+  requirePetVisionPipeline,
+} from "../../src/lib/pets/search-vision-pipelines.mjs";

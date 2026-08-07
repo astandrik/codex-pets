@@ -40,5 +40,6 @@ export const petVisionCaptionClient = visualEmbeddingConfig
       apiKey: visualEmbeddingConfig.apiKey,
       modelUri: visualEmbeddingConfig.modelUri,
       timeoutMs: visualEmbeddingConfig.visionTimeoutMs,
+      captionRevision: visualEmbeddingConfig.captionRevision,
     })
   : null;
