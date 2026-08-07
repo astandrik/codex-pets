@@ -11,6 +11,7 @@ import {
 } from "./lib/pet-search-provider-config.mjs";
 import {
   PET_VISION_RESPONSE_JSON_SCHEMA,
+  PET_VISION_FRAME_POLICY,
   PET_VISION_SYSTEM_PROMPT,
   PET_VISION_USER_PROMPT,
   embeddingToBuffer,
@@ -19,6 +20,7 @@ import {
   parseVisionBackfillArgs,
   runPetVisionSearchBackfill,
 } from "./lib/pet-vision-search-backfill.mjs";
+import { createResponsesVisionCaptionRequester } from "../src/lib/pets/search-vision-provider.mjs";
 
 const require = createRequire(import.meta.url);
 const {
@@ -37,9 +39,7 @@ const CAPTION_REVISION =
   "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1";
 const VISUAL_REVISION = "yandex-text-search-2026-07-pet-vision-v1";
 const DEFAULT_EMBEDDING_TIMEOUT_MS = 800;
-const DEFAULT_VISION_TIMEOUT_MS = 30_000;
-const VISION_ENDPOINT =
-  "https://ai.api.cloud.yandex.net/v1/chat/completions";
+const DEFAULT_VISION_TIMEOUT_MS = 180_000;
 const EMBEDDING_ENDPOINT =
   "https://ai.api.cloud.yandex.net/foundationModels/v1/textEmbedding";
 
@@ -164,114 +164,39 @@ function readProviderConfig(mode) {
       process.env.PET_SEARCH_VISION_TIMEOUT_MS,
       DEFAULT_VISION_TIMEOUT_MS,
       1_000,
-      60_000,
+      300_000,
     ),
   };
 }
 
-function createVisionProvider(config) {
+export function createVisionProvider(config, overrides = {}) {
   const reserveStart = createRequestStartLimiter({
     requestsPerMinute: 10,
-    sleep: delay,
+    now: overrides.now,
+    sleep: overrides.sleep ?? delay,
   });
 
-  return async function createCaption(frames) {
-    let response = await request();
-    if (response.status === 429 || response.status >= 500) {
-      const retryDelay = retryAfterMs(
-        response.headers.get("Retry-After"),
-      );
-      if (retryDelay > 0) await delay(retryDelay);
-      response = await request();
-    }
-    if (!response.ok) {
-      throw providerError(httpFailureReason(response.status));
-    }
-
-    let payload;
-    try {
-      payload = await response.json();
-    } catch {
-      throw providerError("invalid_response");
-    }
-    const choices = payload?.choices;
-    const message =
-      Array.isArray(choices) && choices.length === 1
-        ? choices[0]?.message
-        : null;
-    if (
-      message &&
-      typeof message === "object" &&
-      typeof message.refusal === "string"
-    ) {
-      throw providerError("refused");
-    }
-    if (
-      !message ||
-      typeof message !== "object" ||
-      typeof message.content !== "string"
-    ) {
-      throw providerError("invalid_response");
-    }
-    try {
-      return parsePetVisionCaption(JSON.parse(message.content));
-    } catch {
-      throw providerError("invalid_response");
-    }
-
-    async function request() {
-      await reserveStart();
-      const controller = new AbortController();
-      const timeout = setTimeout(
-        () => controller.abort(),
-        config.visionTimeoutMs,
-      );
-      try {
-        return await fetch(VISION_ENDPOINT, {
-          method: "POST",
-          headers: {
-            Authorization: `Api-Key ${config.apiKey}`,
-            "Content-Type": "application/json",
-            "OpenAI-Project": config.folderId,
-          },
-          body: JSON.stringify({
-            model: config.modelUri,
-            messages: [
-              { role: "system", content: PET_VISION_SYSTEM_PROMPT },
-              {
-                role: "user",
-                content: [
-                  { type: "text", text: PET_VISION_USER_PROMPT },
-                  ...frames.map((frame) => ({
-                    type: "image_url",
-                    image_url: { url: frame.dataUrl },
-                  })),
-                ],
-              },
-            ],
-            temperature: 0,
-            stream: false,
-            max_tokens: 900,
-            response_format: {
-              type: "json_schema",
-              json_schema: {
-                name: "pet_visual_caption_v1",
-                strict: true,
-                schema: PET_VISION_RESPONSE_JSON_SCHEMA,
-              },
-            },
-          }),
-          signal: controller.signal,
-        });
-      } catch {
-        throw providerError(
-          controller.signal.aborted ? "timeout" : "provider_error",
-        );
-      } finally {
-        clearTimeout(timeout);
-      }
-    }
-  };
+  return createResponsesVisionCaptionRequester({
+    folderId: config.folderId,
+    apiKey: config.apiKey,
+    modelUri: config.modelUri,
+    timeoutMs: config.visionTimeoutMs,
+    systemPrompt: PET_VISION_SYSTEM_PROMPT,
+    userPrompt: PET_VISION_USER_PROMPT,
+    responseSchemaName: "pet_visual_caption_v1",
+    responseJsonSchema: PET_VISION_RESPONSE_JSON_SCHEMA,
+    expectedFrames: PET_VISION_FRAME_POLICY.frames,
+    parseCaption: parsePetVisionCaption,
+    reserveStart,
+    fetchImpl: overrides.fetchImpl,
+    now: overrides.now,
+    sleep: overrides.sleep,
+    randomUUID: overrides.randomUUID,
+    onDiagnostic:
+      overrides.onDiagnostic ??
+      ((diagnostic) =>
+        console.info("[codex-pets][pet-vision-provider]", diagnostic)),
+  });
 }
 
 function createEmbeddingProvider(config, visualDefinition) {
@@ -334,18 +259,6 @@ function httpFailureReason(status) {
   if (status === 429) return "rate_limited";
   if (status >= 400 && status < 500) return "invalid_request";
   return "provider_error";
-}
-
-function retryAfterMs(value) {
-  if (!value) return 0;
-  const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds >= 0) {
-    return Math.min(10_000, Math.ceil(seconds * 1_000));
-  }
-  const date = Date.parse(value);
-  return Number.isFinite(date)
-    ? Math.min(10_000, Math.max(0, date - Date.now()))
-    : 0;
 }
 
 function createDriver(endpoint, database) {

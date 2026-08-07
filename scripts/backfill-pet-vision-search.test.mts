@@ -22,6 +22,9 @@ import {
 
 const {
   PET_VISION_FRAME_POLICY,
+  PET_VISION_RESPONSE_JSON_SCHEMA,
+  PET_VISION_SYSTEM_PROMPT,
+  PET_VISION_USER_PROMPT,
   buildPetVisionCaptionText,
   createPetVisionCaptionEnvelope,
   createPetVisionCaptionSourceHash,
@@ -37,6 +40,9 @@ const {
 } = await import("./lib/pet-search-provider-config.mjs");
 const { RELATED_PETS_REBUILD_COMMANDS } = await import(
   "./lib/related-pets-maintenance.mjs"
+);
+const { createVisionProvider } = await import(
+  "./backfill-pet-vision-search.mjs"
 );
 
 const visualConfig = {
@@ -122,6 +128,59 @@ function freshCaption() {
 }
 
 describe("pet vision search backfill", () => {
+  it("uses the same four-frame Responses contract in the maintenance CLI", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const diagnostics: unknown[] = [];
+    const provider = createVisionProvider(
+      {
+        folderId: "folder-1",
+        apiKey: "SECRET_API_KEY",
+        modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+        visionTimeoutMs: 180_000,
+      },
+      {
+        fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
+          requests.push({ url: String(url), init });
+          return completedVisionResponse(caption);
+        },
+        randomUUID: () => "00000000-0000-4000-8000-000000000001",
+        sleep: async () => undefined,
+        onDiagnostic: (entry: unknown) => diagnostics.push(entry),
+      },
+    );
+
+    await expect(provider(frames)).resolves.toEqual(caption);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.url).toBe(
+      "https://ai.api.cloud.yandex.net/v1/responses",
+    );
+    const body = JSON.parse(String(requests[0]?.init?.body));
+    expect(body).toMatchObject({
+      model: "gpt://folder-1/qwen3.6-35b-a3b",
+      instructions: PET_VISION_SYSTEM_PROMPT,
+      max_output_tokens: 8_000,
+      store: false,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "pet_visual_caption_v1",
+          strict: true,
+          schema: PET_VISION_RESPONSE_JSON_SCHEMA,
+        },
+      },
+    });
+    expect(body.input[0].content).toEqual([
+      { type: "input_text", text: PET_VISION_USER_PROMPT },
+      ...frames.map((frame) => ({
+        type: "input_image",
+        image_url: frame.dataUrl,
+      })),
+    ]);
+    expect(JSON.stringify(diagnostics)).not.toContain("SECRET_API_KEY");
+    expect(JSON.stringify(diagnostics)).not.toContain(frames[0]?.dataUrl);
+    expect(JSON.stringify(diagnostics)).not.toContain("silver hair");
+  });
+
   it("keeps Qwen visual provider definitions in runtime parity", () => {
     expect(PET_VISION_BACKFILL_CAPTION_REVISIONS).toEqual(
       PET_VISION_CAPTION_REVISIONS,
@@ -345,3 +404,20 @@ describe("pet vision search backfill", () => {
     });
   });
 });
+
+function completedVisionResponse(value: typeof caption): Response {
+  return Response.json({
+    status: "completed",
+    output: [
+      {
+        type: "message",
+        content: [
+          {
+            type: "output_text",
+            text: JSON.stringify(value),
+          },
+        ],
+      },
+    ],
+  });
+}

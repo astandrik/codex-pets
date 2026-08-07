@@ -7,11 +7,11 @@ import {
 } from "@/lib/pets/search-vision-contract";
 
 const DEFAULT_EMBEDDING_TIMEOUT_MS = 800;
-const DEFAULT_VISION_TIMEOUT_MS = 30_000;
+const DEFAULT_VISION_TIMEOUT_MS = 180_000;
 const MIN_EMBEDDING_TIMEOUT_MS = 50;
 const MAX_EMBEDDING_TIMEOUT_MS = 5_000;
 const MIN_VISION_TIMEOUT_MS = 1_000;
-const MAX_VISION_TIMEOUT_MS = 60_000;
+const MAX_VISION_TIMEOUT_MS = 300_000;
 
 export const PET_SEARCH_MODEL_REVISIONS = {
   "yandex-text-search-2026-07": {

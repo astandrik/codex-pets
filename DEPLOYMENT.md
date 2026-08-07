@@ -53,6 +53,7 @@ PET_SEARCH_MODEL_REVISION=yandex-text-embeddings-v2-768-2026-07
 PET_SEARCH_EMBEDDING_TIMEOUT_MS=800
 PET_SEARCH_VISUAL_MODE=off
 PET_SEARCH_VISUAL_MODEL_REVISION=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1
+PET_SEARCH_VISION_TIMEOUT_MS=180000
 YANDEX_AI_STUDIO_FOLDER_ID=
 YANDEX_AI_STUDIO_API_KEY_FILE=/run/secrets/yandex-ai-studio.key
 PET_RELATED_HYBRID_ENABLED=false
@@ -112,6 +113,20 @@ npm run search:backfill-vision -- --dry-run
 npm run search:backfill-vision -- --apply --slug PET_SLUG
 npm run search:backfill-vision -- --apply
 ```
+
+The approval refresh and maintenance CLI use the same AI Studio Responses API
+request: the four V1 frames, strict JSON Schema output, Qwen auto-reasoning,
+and `store: false`. The first request allows 8,000 output tokens; an explicit
+`max_output_tokens` incomplete response is retried once with 16,000. Network,
+timeout, 429, 5xx, and malformed structured-output failures use at most three
+attempts. Safe diagnostics contain only request/trace identifiers, status,
+stage, attempt, and token counts; prompts, images, responses, embeddings, and
+credentials are never logged.
+
+Visual requests default to a 180-second timeout and accept an explicit value
+up to 300 seconds. This transport and token-policy change does not alter the V1
+prompt, schema, frame policy, revision identifiers, or source hashes, so
+already-current V1 captions and vectors do not require a full backfill.
 
 The v2 text and Qwen visual revisions both use managed Yandex Text Embeddings
 v2 at 768 dimensions. Keep the legacy 256-dimensional rows for rollback; the
