@@ -8,10 +8,7 @@ import {
   PET_VISION_USER_PROMPT,
   type PetVisionCaption,
 } from "@/lib/pets/search-vision-contract";
-import {
-  VisionCaptionProviderError,
-  createYandexVisionCaptionClient,
-} from "@/lib/pets/search-vision-client";
+import { createYandexVisionCaptionClient } from "@/lib/pets/search-vision-client";
 import {
   PET_VISION_FRAME_POLICY,
   type PetVisionFrame,
@@ -46,6 +43,7 @@ describe("Yandex vision caption client", () => {
       apiKey: "secret-key",
       modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
       timeoutMs: 30_000,
+      randomUUID: () => "00000000-0000-4000-8000-000000000001",
       fetchImpl: async (url, init) => {
         requests.push({ url: String(url), init });
         return providerResponse(providerCaption);
@@ -55,36 +53,37 @@ describe("Yandex vision caption client", () => {
     await expect(client.createCaption(frames)).resolves.toEqual(providerCaption);
     expect(requests).toHaveLength(1);
     expect(requests[0]?.url).toBe(
-      "https://ai.api.cloud.yandex.net/v1/chat/completions",
+      "https://ai.api.cloud.yandex.net/v1/responses",
     );
-    expect(requests[0]?.init?.headers).toEqual({
+    expect(requests[0]?.init?.headers).toMatchObject({
       Authorization: "Api-Key secret-key",
       "Content-Type": "application/json",
       "OpenAI-Project": "folder-1",
+      "x-client-request-id": "00000000-0000-4000-8000-000000000001",
     });
     const body = JSON.parse(String(requests[0]?.init?.body));
     expect(body).toMatchObject({
       model: "gpt://folder-1/qwen3.6-35b-a3b",
+      instructions: PET_VISION_SYSTEM_PROMPT,
       temperature: 0,
-      stream: false,
-      max_tokens: 900,
-      response_format: {
-        type: "json_schema",
-        json_schema: {
+      max_output_tokens: 8_000,
+      store: false,
+      text: {
+        format: {
+          type: "json_schema",
           name: "pet_visual_caption_v1",
           strict: true,
           schema: PET_VISION_RESPONSE_JSON_SCHEMA,
         },
       },
-      messages: [
-        { role: "system", content: PET_VISION_SYSTEM_PROMPT },
+      input: [
         {
           role: "user",
           content: [
-            { type: "text", text: PET_VISION_USER_PROMPT },
+            { type: "input_text", text: PET_VISION_USER_PROMPT },
             ...frames.map((frame) => ({
-              type: "image_url",
-              image_url: { url: frame.dataUrl },
+              type: "input_image",
+              image_url: frame.dataUrl,
             })),
           ],
         },
@@ -165,117 +164,30 @@ describe("Yandex vision caption client", () => {
     expect(cancelFirstBody).toHaveBeenCalledOnce();
   });
 
-  it("classifies timeout, refusal, and malformed responses without leaking bodies", async () => {
-    vi.useFakeTimers();
-    const timeoutClient = createYandexVisionCaptionClient({
+  it("propagates a sanitized Responses refusal", async () => {
+    const diagnostics: unknown[] = [];
+    const client = createYandexVisionCaptionClient({
       folderId: "folder-1",
       apiKey: "secret-key",
       modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
-      timeoutMs: 50,
-      fetchImpl: async (_url, init) =>
-        new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () =>
-            reject(new DOMException("Aborted", "AbortError")),
-          );
-        }),
-    });
-    const timeout = timeoutClient.createCaption(frames);
-    const timeoutExpectation = expect(timeout).rejects.toMatchObject({
-      reason: "timeout",
-    });
-    await vi.advanceTimersByTimeAsync(50);
-    await timeoutExpectation;
-    vi.useRealTimers();
-
-    for (const [response, reason, secret] of [
-      [
+      timeoutMs: 30_000,
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+      fetchImpl: async () =>
         Response.json({
-          choices: [{ message: { refusal: "SECRET_REFUSAL" } }],
-        }),
-        "refused",
-        "SECRET_REFUSAL",
-      ],
-      [
-        new Response("SECRET_RESPONSE_FRAGMENT", {
-          headers: { "Content-Type": "application/json" },
-        }),
-        "invalid_response",
-        "SECRET_RESPONSE_FRAGMENT",
-      ],
-      [
-        Response.json({
-          choices: [
-            { message: { content: "SECRET_CAPTION_FRAGMENT not json" } },
+          status: "completed",
+          output: [
+            {
+              type: "message",
+              content: [{ type: "refusal", refusal: "SECRET_REFUSAL" }],
+            },
           ],
         }),
-        "invalid_response",
-        "SECRET_CAPTION_FRAGMENT",
-      ],
-    ] as const) {
-      const client = createYandexVisionCaptionClient({
-        folderId: "folder-1",
-        apiKey: "secret-key",
-        modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
-        timeoutMs: 30_000,
-        fetchImpl: async () => response,
-      });
-      const error = await client.createCaption(frames).catch((value) => value);
-      expect(error).toEqual(
-        expect.objectContaining<Partial<VisionCaptionProviderError>>({ reason }),
-      );
-      expect((error as Error & { cause?: unknown }).cause).toBeUndefined();
-      expect(inspect(error)).not.toContain(secret);
-    }
-  });
+    });
 
-  it("keeps the request timeout active while reading the response body", async () => {
-    vi.useFakeTimers();
-    try {
-      let requestSignal: AbortSignal | undefined;
-      let bodyController:
-        | ReadableStreamDefaultController<Uint8Array>
-        | undefined;
-      const client = createYandexVisionCaptionClient({
-        folderId: "folder-1",
-        apiKey: "secret-key",
-        modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
-        timeoutMs: 50,
-        fetchImpl: async (_url, init) => {
-          requestSignal = init?.signal ?? undefined;
-          const signal = requestSignal;
-          return new Response(
-            new ReadableStream<Uint8Array>({
-              start(controller) {
-                bodyController = controller;
-                signal?.addEventListener("abort", () => {
-                  controller.error(new DOMException("Aborted", "AbortError"));
-                });
-              },
-            }),
-            { headers: { "Content-Type": "application/json" } },
-          );
-        },
-      });
-
-      const resultPromise = client.createCaption(frames).catch((error) => error);
-      await Promise.resolve();
-      await Promise.resolve();
-      await vi.advanceTimersByTimeAsync(50);
-      const aborted = requestSignal?.aborted ?? false;
-      if (!aborted) {
-        bodyController?.error(new Error("test cleanup"));
-      }
-      const result = await resultPromise;
-
-      expect(aborted).toBe(true);
-      expect(result).toEqual(
-        expect.objectContaining<Partial<VisionCaptionProviderError>>({
-          reason: "timeout",
-        }),
-      );
-    } finally {
-      vi.useRealTimers();
-    }
+    const error = await client.createCaption(frames).catch((value) => value);
+    expect(error).toMatchObject({ reason: "refused" });
+    expect(inspect(error)).not.toContain("SECRET_REFUSAL");
+    expect(JSON.stringify(diagnostics)).not.toContain("SECRET_REFUSAL");
   });
 
   it("rejects invalid frame order before making a provider request", async () => {
@@ -297,12 +209,18 @@ describe("Yandex vision caption client", () => {
 
 function providerResponse(caption: PetVisionCaption): Response {
   return Response.json({
-    choices: [
+    status: "completed",
+    output: [
       {
-        message: {
-          content: JSON.stringify(caption),
-        },
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: JSON.stringify(caption) }],
       },
     ],
+    usage: {
+      input_tokens: 1_200,
+      output_tokens: 500,
+      output_tokens_details: { reasoning_tokens: 350 },
+    },
   });
 }

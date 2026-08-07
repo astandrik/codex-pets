@@ -164,7 +164,7 @@ const V3_USER_PROMPT =
 
 export const PET_VISION_PIPELINES = {
   [PET_VISION_CAPTION_REVISION_V1]: {
-    api: "chat_completions",
+    api: "responses",
     modelName: "qwen3.6-35b-a3b",
     schemaVersion: 1,
     responseSchemaName: "pet_visual_caption_v1",
@@ -172,7 +172,7 @@ export const PET_VISION_PIPELINES = {
     userPrompt: V1_USER_PROMPT,
     responseJsonSchema: PET_VISION_RESPONSE_JSON_SCHEMA_V1,
     framePolicy: PET_VISION_FRAME_POLICY_V1,
-    tokenPolicy: { initial: 900, retry: null, maxAttempts: 2 },
+    tokenPolicy: { initial: 8_000, retry: 16_000, maxAttempts: 3 },
   },
   [PET_VISION_CAPTION_REVISION_V2]: {
     api: "responses",

@@ -119,6 +119,12 @@ The v2 text and Qwen visual revisions both use managed Yandex Text Embeddings
 v2 at 768 dimensions. Keep the legacy 256-dimensional rows for rollback; the
 backfills add revision-scoped rows and do not overwrite them.
 
+The existing V1 caption revision uses the shared Responses transport with the
+8000/16000 output-token policy. Its prompt, JSON schema, four-frame policy,
+revision identifiers, and source-hash contract remain unchanged, so the
+transport upgrade can repair a missing V1 row without invalidating stored V1
+captions or vectors.
+
 ### Visual Search V2 candidate
 
 Deploy V2 support without changing the application revisions above. V1 must
