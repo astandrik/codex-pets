@@ -4,8 +4,10 @@ import type { PetSearchMode } from "@/lib/pets/search-service";
 import {
   PET_VISION_CAPTION_REVISION,
   PET_VISION_CAPTION_REVISION_V2,
+  PET_VISION_CAPTION_REVISION_V3,
   PET_VISUAL_MODEL_REVISION,
   PET_VISUAL_MODEL_REVISION_V2,
+  PET_VISUAL_MODEL_REVISION_V3,
 } from "@/lib/pets/search-vision-contract";
 
 const DEFAULT_EMBEDDING_TIMEOUT_MS = 800;
@@ -62,6 +64,9 @@ export const PET_VISION_CAPTION_REVISIONS = {
   [PET_VISION_CAPTION_REVISION_V2]: {
     modelName: "qwen3.6-35b-a3b",
   },
+  [PET_VISION_CAPTION_REVISION_V3]: {
+    modelName: "qwen3.6-35b-a3b",
+  },
 } as const;
 
 export const PET_VISUAL_MODEL_REVISIONS = {
@@ -88,6 +93,11 @@ export const PET_VISUAL_MODEL_REVISIONS = {
       minSemanticScore: 0.42264288663864136,
       weight: 1,
     },
+  },
+  [PET_VISUAL_MODEL_REVISION_V3]: {
+    embeddingModelId: "yandex-text-embeddings-v2-768",
+    captionRevision: PET_VISION_CAPTION_REVISION_V3,
+    profile: null,
   },
 } as const satisfies Record<string, PetVisualModelRevisionDefinition>;
 

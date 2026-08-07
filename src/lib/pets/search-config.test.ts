@@ -8,7 +8,9 @@ import {
 import {
   PET_VISION_CAPTION_REVISION,
   PET_VISION_CAPTION_REVISION_V2,
+  PET_VISION_CAPTION_REVISION_V3,
   PET_VISUAL_MODEL_REVISION_V2,
+  PET_VISUAL_MODEL_REVISION_V3,
 } from "@/lib/pets/search-vision-contract";
 
 const supportedRevision = Object.keys(PET_SEARCH_MODEL_REVISIONS)[0] ?? "";
@@ -169,6 +171,37 @@ describe("pet search runtime configuration", () => {
       () => "secret",
     );
     expect(hybrid.visualFallbackReason).toBeNull();
+  });
+
+  it("keeps the four-frame V3 pipeline uncalibrated and out of hybrid", () => {
+    const environment = {
+      PET_SEARCH_MODE: "hybrid",
+      PET_SEARCH_MODEL_REVISION: v2TextRevision,
+      PET_SEARCH_VISUAL_MODE: "shadow",
+      PET_SEARCH_VISION_CAPTION_REVISION:
+        PET_VISION_CAPTION_REVISION_V3,
+      PET_SEARCH_VISUAL_MODEL_REVISION: PET_VISUAL_MODEL_REVISION_V3,
+      YANDEX_AI_STUDIO_FOLDER_ID: "folder-1",
+      YANDEX_AI_STUDIO_API_KEY_FILE: "/run/secrets/key",
+    };
+    const shadow = loadPetSearchConfig(environment, () => "secret");
+
+    expect(shadow.visual).toMatchObject({
+      captionRevision: PET_VISION_CAPTION_REVISION_V3,
+      visualRevision: PET_VISUAL_MODEL_REVISION_V3,
+      embeddingModelId: "yandex-text-embeddings-v2-768",
+      dimensions: 768,
+      profile: null,
+    });
+    expect(shadow.visualFallbackReason).toBeNull();
+
+    const hybrid = loadPetSearchConfig(
+      { ...environment, PET_SEARCH_VISUAL_MODE: "hybrid" },
+      () => "secret",
+    );
+    expect(hybrid.visualFallbackReason).toBe(
+      "visual_calibration_missing",
+    );
   });
 
   it("disables visual ranking for incompatible embedding providers", () => {

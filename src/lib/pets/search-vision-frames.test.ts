@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   PET_VISION_FRAME_POLICY,
   PET_VISION_FRAME_POLICY_V2,
+  PET_VISION_FRAME_POLICY_V3,
   extractPetVisionFrames,
   type PetVisionFramePolicy,
 } from "@/lib/pets/search-vision-frames";
@@ -93,6 +94,28 @@ describe("pet vision frame extraction", () => {
     },
   );
 
+  it.each([1, 2] as const)(
+    "extracts the V3 four-frame experiment from sprite version %s",
+    async (version) => {
+      const atlas = await createAtlas(version, PET_VISION_FRAME_POLICY_V3);
+      const extracted = await extractPetVisionFrames(
+        atlas,
+        PET_VISION_FRAME_POLICY_V3,
+      );
+
+      expect(extracted.frames.map(({ state, row, frame }) => ({
+        state,
+        row,
+        frame,
+      }))).toEqual([
+        { state: "idle", row: 0, frame: 3 },
+        { state: "running-right", row: 1, frame: 4 },
+        { state: "waving", row: 3, frame: 2 },
+        { state: "review", row: 8, frame: 3 },
+      ]);
+    },
+  );
+
   it("rejects invalid atlas dimensions before extracting frames", async () => {
     const invalid = await sharp({
       create: {
@@ -141,6 +164,10 @@ describe("pet vision frame extraction", () => {
     expect(PET_VISION_FRAME_POLICY_V2.id).toBe(
       "pet-vision-nine-central-frames-v2",
     );
+    expect(PET_VISION_FRAME_POLICY_V3).toEqual({
+      id: "pet-vision-four-central-frames-v3",
+      frames: PET_VISION_FRAME_POLICY.frames,
+    });
   });
 });
 

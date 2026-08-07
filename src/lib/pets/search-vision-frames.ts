@@ -10,11 +10,13 @@ import {
 import {
   PET_VISION_FRAME_POLICY_V1,
   PET_VISION_FRAME_POLICY_V2 as PIPELINE_FRAME_POLICY_V2,
+  PET_VISION_FRAME_POLICY_V3 as PIPELINE_FRAME_POLICY_V3,
   type PetVisionFrameSelection,
 } from "@/lib/pets/search-vision-pipelines.mjs";
 
 export const PET_VISION_FRAME_POLICY = PET_VISION_FRAME_POLICY_V1;
 export const PET_VISION_FRAME_POLICY_V2 = PIPELINE_FRAME_POLICY_V2;
+export const PET_VISION_FRAME_POLICY_V3 = PIPELINE_FRAME_POLICY_V3;
 
 export type PetVisionFramePolicy = {
   id: string;

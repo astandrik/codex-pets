@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   PET_VISION_CAPTION_REVISION_V2,
+  PET_VISION_CAPTION_REVISION_V3,
   parsePetVisionCaptionForRevision,
   type PetVisionCaptionV2,
 } from "@/lib/pets/search-vision-contract";
@@ -12,6 +13,9 @@ import {
 } from "@/lib/pets/search-vision-provider.mjs";
 
 const pipeline = requirePetVisionPipeline(PET_VISION_CAPTION_REVISION_V2);
+const fourFramePipeline = requirePetVisionPipeline(
+  PET_VISION_CAPTION_REVISION_V3,
+);
 const caption: PetVisionCaptionV2 = {
   subject: { en: "bear", ru: "медведь" },
   appearance: { en: "round brown bear", ru: "круглый коричневый медведь" },
@@ -28,6 +32,10 @@ const caption: PetVisionCaptionV2 = {
 const frames = pipeline.framePolicy.frames.map((frame, index) => ({
   ...frame,
   dataUrl: `data:image/png;base64,FRAME_${index}_SECRET`,
+}));
+const fourFrames = fourFramePipeline.framePolicy.frames.map((frame, index) => ({
+  ...frame,
+  dataUrl: `data:image/png;base64,V3_FRAME_${index}_SECRET`,
 }));
 
 describe("Responses vision provider", () => {
@@ -79,6 +87,35 @@ describe("Responses vision provider", () => {
     expect(JSON.stringify(diagnostics)).not.toContain("SECRET_API_KEY");
     expect(JSON.stringify(diagnostics)).not.toContain("FRAME_0_SECRET");
     expect(JSON.stringify(diagnostics)).not.toContain("round brown bear");
+  });
+
+  it("sends only the original four states for the V3 experiment", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const requester = createRequester({
+      pipeline: fourFramePipeline,
+      parseCaption: parseV3,
+      fetchImpl: async (url, init) => {
+        requests.push({ url: String(url), init });
+        return completedResponse(caption);
+      },
+    });
+
+    await expect(requester(fourFrames)).resolves.toEqual(caption);
+    const body = JSON.parse(String(requests[0]?.init?.body));
+    expect(body.text.format.name).toBe("pet_visual_caption_v3");
+    expect(body.input[0].content).toEqual([
+      { type: "input_text", text: fourFramePipeline.userPrompt },
+      ...fourFrames.map((frame) => ({
+        type: "input_image",
+        image_url: frame.dataUrl,
+      })),
+    ]);
+    expect(fourFramePipeline.framePolicy.frames.map(({ state }) => state)).toEqual([
+      "idle",
+      "running-right",
+      "waving",
+      "review",
+    ]);
   });
 
   it("retries an output-token incomplete response at 16000 tokens", async () => {
@@ -221,6 +258,13 @@ function parseV2(value: unknown): PetVisionCaptionV2 {
   return parsePetVisionCaptionForRevision(
     value,
     PET_VISION_CAPTION_REVISION_V2,
+  ) as PetVisionCaptionV2;
+}
+
+function parseV3(value: unknown): PetVisionCaptionV2 {
+  return parsePetVisionCaptionForRevision(
+    value,
+    PET_VISION_CAPTION_REVISION_V3,
   ) as PetVisionCaptionV2;
 }
 

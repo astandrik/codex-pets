@@ -11,7 +11,9 @@ import {
 import {
   PET_VISION_CAPTION_REVISION,
   PET_VISION_CAPTION_REVISION_V2,
+  PET_VISION_CAPTION_REVISION_V3,
   PET_VISUAL_MODEL_REVISION,
+  PET_VISUAL_MODEL_REVISION_V3,
   buildPetVisionCaptionText as buildRuntimeCaptionText,
   createPetVisionCaptionSourceHash as createRuntimeCaptionHash,
   createPetVisualEmbeddingSourceHash as createRuntimeVisualHash,
@@ -20,6 +22,7 @@ import {
 import {
   PET_VISION_FRAME_POLICY as RUNTIME_FRAME_POLICY,
   PET_VISION_FRAME_POLICY_V2 as RUNTIME_FRAME_POLICY_V2,
+  PET_VISION_FRAME_POLICY_V3 as RUNTIME_FRAME_POLICY_V3,
   extractPetVisionFrames as extractRuntimeFrames,
 } from "../src/lib/pets/search-vision-frames";
 
@@ -32,6 +35,7 @@ const {
   embeddingToBuffer,
   extractPetVisionFrames,
   parsePetVisionCaptionForRevision,
+  parsePetVisionCaptionEnvelope,
   parseVisionBackfillArgs,
   runPetVisionSearchBackfill,
 } = await import("./lib/pet-vision-search-backfill.mjs");
@@ -250,6 +254,53 @@ describe("pet vision search backfill", () => {
       captionRevision: PET_VISION_CAPTION_REVISION_V2,
       modelUri: visualConfig.modelUri,
       assetId: "asset-v2",
+      spritesheetSha256,
+    };
+    expect(createPetVisionCaptionSourceHash(hashInput)).toBe(
+      createRuntimeCaptionHash(hashInput),
+    );
+  });
+
+  it("keeps the four-frame V3 pipeline in application and CLI parity", () => {
+    const scriptCaption = parsePetVisionCaptionForRevision(
+      captionV2,
+      PET_VISION_CAPTION_REVISION_V3,
+    );
+    const runtimeCaption = parseRuntimeCaptionForRevision(
+      captionV2,
+      PET_VISION_CAPTION_REVISION_V3,
+    );
+    expect(scriptCaption).toEqual(runtimeCaption);
+    expect(RUNTIME_FRAME_POLICY_V3).toEqual({
+      id: "pet-vision-four-central-frames-v3",
+      frames: RUNTIME_FRAME_POLICY.frames,
+    });
+    expect(PET_VISION_BACKFILL_CAPTION_REVISIONS).toHaveProperty(
+      PET_VISION_CAPTION_REVISION_V3,
+    );
+    expect(PET_VISUAL_BACKFILL_REVISIONS[PET_VISUAL_MODEL_REVISION_V3]).toMatchObject({
+      captionRevision: PET_VISION_CAPTION_REVISION_V3,
+      dimensions: 768,
+      requestDimensions: 768,
+    });
+
+    const envelope = createPetVisionCaptionEnvelope({
+      assetId: "asset-v3",
+      spritesheetSha256,
+      caption: scriptCaption,
+      captionRevision: PET_VISION_CAPTION_REVISION_V3,
+    });
+    expect(
+      parsePetVisionCaptionEnvelope(
+        JSON.stringify(envelope),
+        PET_VISION_CAPTION_REVISION_V3,
+      ),
+    ).toEqual(envelope);
+
+    const hashInput = {
+      captionRevision: PET_VISION_CAPTION_REVISION_V3,
+      modelUri: visualConfig.modelUri,
+      assetId: "asset-v3",
       spritesheetSha256,
     };
     expect(createPetVisionCaptionSourceHash(hashInput)).toBe(

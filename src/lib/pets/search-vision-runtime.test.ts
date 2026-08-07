@@ -332,15 +332,44 @@ describe("pet vision search indexing runtime", () => {
     },
   );
 
-  it("uses the nine-frame policy and schemaVersion 2 for the V2 revision", async () => {
-    const v2Config: PetSearchConfig = {
+  it.each([
+    {
+      label: "nine-frame V2",
+      captionRevision:
+        "yandex-qwen3.6-35b-a3b-pet-caption-2026-08-v2",
+      visualRevision:
+        "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v2",
+      framePolicy: "pet-vision-nine-central-frames-v2",
+      states: [
+        "idle",
+        "running-right",
+        "running-left",
+        "waving",
+        "jumping",
+        "failed",
+        "waiting",
+        "running",
+        "review",
+      ],
+    },
+    {
+      label: "four-frame V3",
+      captionRevision:
+        "yandex-qwen3.6-35b-a3b-pet-caption-2026-08-v3",
+      visualRevision:
+        "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v3",
+      framePolicy: "pet-vision-four-central-frames-v3",
+      states: ["idle", "running-right", "waving", "review"],
+    },
+  ] as const)(
+    "uses the $label policy with schemaVersion 2",
+    async ({ captionRevision, visualRevision, framePolicy, states }) => {
+    const revisionConfig: PetSearchConfig = {
       ...config,
       visual: {
         ...config.visual!,
-        captionRevision:
-          "yandex-qwen3.6-35b-a3b-pet-caption-2026-08-v2",
-        visualRevision:
-          "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v2",
+        captionRevision,
+        visualRevision,
         embeddingModelId: "yandex-text-embeddings-v2-768",
         dimensions: 768,
       },
@@ -358,7 +387,7 @@ describe("pet vision search indexing runtime", () => {
       })),
     }));
     const deps = dependencies({
-      config: v2Config,
+      config: revisionConfig,
       extractFrames,
       visionClient: { createCaption: vi.fn(async () => captionV2) },
       embeddingClient: {
@@ -368,28 +397,23 @@ describe("pet vision search indexing runtime", () => {
     const runtime = createPetVisionSearchRuntime(deps);
 
     await expect(runtime.refresh(pet)).resolves.toBe("caption-and-vector");
-    expect(extractFrames.mock.calls[0]?.[1]).toMatchObject({
-      id: "pet-vision-nine-central-frames-v2",
-      frames: expect.arrayContaining([
-        expect.objectContaining({ state: "running-left", row: 2 }),
-        expect.objectContaining({ state: "failed", row: 5 }),
-      ]),
-    });
+    const selectedPolicy = extractFrames.mock.calls[0]?.[1];
+    expect(selectedPolicy?.id).toBe(framePolicy);
+    expect(selectedPolicy?.frames.map(({ state }) => state)).toEqual(states);
     const captionWrite = deps.upsertCaption.mock.calls[0]?.[0];
-    if (!captionWrite) throw new Error("Expected a V2 caption write.");
+    if (!captionWrite) throw new Error("Expected a caption write.");
     expect(JSON.parse(captionWrite.captionJson)).toMatchObject({
       schemaVersion: 2,
       provenance: {
         origin: "provider",
         api: "responses",
         model: "qwen3.6-35b-a3b",
-        framePolicy: "pet-vision-nine-central-frames-v2",
+        framePolicy,
       },
     });
     expect(deps.upsertEmbedding).toHaveBeenCalledWith(
       expect.objectContaining({
-        modelRevision:
-          "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v2",
+        modelRevision: visualRevision,
         dimensions: 768,
       }),
     );

@@ -4,8 +4,8 @@ import sharp from "sharp";
 
 import {
   PET_VISION_CAPTION_REVISION_V1,
-  PET_VISION_CAPTION_REVISION_V2,
   PET_VISION_PIPELINES,
+  findPetVisionSchemaVersionTwoPipeline,
   requirePetVisionPipeline,
 } from "../../src/lib/pets/search-vision-pipelines.mjs";
 import { createRelatedPetsRebuildRequiredLog } from "./related-pets-maintenance.mjs";
@@ -346,20 +346,23 @@ export function createPetVisionCaptionEnvelope(input) {
     input.captionRevision ?? PET_VISION_CAPTION_REVISION_V1;
   const pipeline = requirePetVisionPipeline(captionRevision);
   if (pipeline.schemaVersion === 2) {
-    return parseEnvelopeValue({
-      schemaVersion: 2,
-      source: {
-        assetId: input.assetId,
-        spritesheetSha256: input.spritesheetSha256,
+    return parseEnvelopeValue(
+      {
+        schemaVersion: 2,
+        source: {
+          assetId: input.assetId,
+          spritesheetSha256: input.spritesheetSha256,
+        },
+        provenance: {
+          origin: "provider",
+          api: "responses",
+          model: pipeline.modelName,
+          framePolicy: pipeline.framePolicy.id,
+        },
+        caption: input.caption,
       },
-      provenance: {
-        origin: "provider",
-        api: "responses",
-        model: pipeline.modelName,
-        framePolicy: pipeline.framePolicy.id,
-      },
-      caption: input.caption,
-    });
+      captionRevision,
+    );
   }
   return parseEnvelopeValue({
     schemaVersion: 1,
@@ -378,7 +381,7 @@ export function parsePetVisionCaptionEnvelope(value, expectedCaptionRevision) {
   } catch {
     throw new Error("Caption envelope must contain one JSON object.");
   }
-  const envelope = parseEnvelopeValue(parsed);
+  const envelope = parseEnvelopeValue(parsed, expectedCaptionRevision);
   const expectedPipeline = expectedCaptionRevision
     ? PET_VISION_PIPELINES[expectedCaptionRevision]
     : null;
@@ -744,7 +747,7 @@ function petAssetId(value) {
   }
 }
 
-function parseEnvelopeValue(input) {
+function parseEnvelopeValue(input, expectedCaptionRevision) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new Error("caption envelope must be an object.");
   }
@@ -758,6 +761,12 @@ function parseEnvelopeValue(input) {
   );
   if (schemaVersion !== 1 && schemaVersion !== 2) {
     throw new Error("Caption envelope schemaVersion must be 1 or 2.");
+  }
+  const expectedPipeline = expectedCaptionRevision
+    ? PET_VISION_PIPELINES[expectedCaptionRevision]
+    : null;
+  if (expectedPipeline && expectedPipeline.schemaVersion !== schemaVersion) {
+    throw new Error("Caption envelope revision does not match its schema.");
   }
   const sourceValue = strictObject(envelope.source, "source", [
     "assetId",
@@ -786,23 +795,22 @@ function parseEnvelopeValue(input) {
       caption: parsePetVisionCaption(envelope.caption),
     };
   }
-  const pipeline = requirePetVisionPipeline(
-    PET_VISION_CAPTION_REVISION_V2,
-  );
   const provenance = strictObject(envelope.provenance, "provenance", [
     "origin",
     "api",
     "model",
     "framePolicy",
   ]);
-  if (
-    provenance.origin !== "provider" ||
-    provenance.api !== "responses" ||
-    provenance.model !== pipeline.modelName ||
-    provenance.framePolicy !== pipeline.framePolicy.id
-  ) {
-    throw new Error("Caption envelope contains invalid V2 provenance.");
+  const pipelineEntry = findPetVisionSchemaVersionTwoPipeline(
+    provenance,
+    expectedCaptionRevision,
+  );
+  if (!pipelineEntry) {
+    throw new Error(
+      "Caption envelope contains invalid schemaVersion 2 provenance.",
+    );
   }
+  const [captionRevision, pipeline] = pipelineEntry;
   return {
     schemaVersion: 2,
     source,
@@ -814,7 +822,7 @@ function parseEnvelopeValue(input) {
     },
     caption: parsePetVisionCaptionForRevision(
       envelope.caption,
-      PET_VISION_CAPTION_REVISION_V2,
+      captionRevision,
     ),
   };
 }

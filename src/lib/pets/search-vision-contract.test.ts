@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   PET_VISION_CAPTION_REVISION,
   PET_VISION_CAPTION_REVISION_V2,
+  PET_VISION_CAPTION_REVISION_V3,
   PET_VISUAL_MODEL_REVISION,
+  PET_VISUAL_MODEL_REVISION_V3,
   buildPetVisionCaptionText,
   createPetVisionCaptionEnvelope,
   createPetVisionCaptionSourceHash,
@@ -159,6 +161,62 @@ describe("pet vision caption contract", () => {
     expect(buildPetVisionCaptionText(caption)).toContain(
       "distinctive_features_ru: Круглые уши",
     );
+  });
+
+  it("round-trips the four-frame schemaVersion 2 revision independently", () => {
+    const caption = parsePetVisionCaptionForRevision(
+      rawCaptionV2,
+      PET_VISION_CAPTION_REVISION_V3,
+    );
+    const envelope = createPetVisionCaptionEnvelope({
+      assetId: "asset-v3",
+      spritesheetSha256: "c".repeat(64),
+      caption,
+      captionRevision: PET_VISION_CAPTION_REVISION_V3,
+    });
+
+    expect(envelope).toMatchObject({
+      schemaVersion: 2,
+      provenance: {
+        origin: "provider",
+        api: "responses",
+        model: "qwen3.6-35b-a3b",
+        framePolicy: "pet-vision-four-central-frames-v3",
+      },
+    });
+    expect(
+      parsePetVisionCaptionEnvelope(
+        JSON.stringify(envelope),
+        PET_VISION_CAPTION_REVISION_V3,
+      ),
+    ).toEqual(envelope);
+    expect(() =>
+      parsePetVisionCaptionEnvelope(
+        JSON.stringify(envelope),
+        PET_VISION_CAPTION_REVISION_V2,
+      ),
+    ).toThrow(/provenance/i);
+    expect(
+      createPetVisualEmbeddingSourceHash({
+        visualRevision: PET_VISUAL_MODEL_REVISION_V3,
+        captionRevision: PET_VISION_CAPTION_REVISION_V3,
+        captionSourceHash: "d".repeat(64),
+        captionText: buildPetVisionCaptionText(caption),
+      }),
+    ).toHaveLength(64);
+    const v3Hash = createPetVisionCaptionSourceHash({
+      captionRevision: PET_VISION_CAPTION_REVISION_V3,
+      modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+      assetId: "asset-v3",
+      spritesheetSha256: "c".repeat(64),
+    });
+    const v2Hash = createPetVisionCaptionSourceHash({
+      captionRevision: PET_VISION_CAPTION_REVISION_V2,
+      modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+      assetId: "asset-v3",
+      spritesheetSha256: "c".repeat(64),
+    });
+    expect(v3Hash).not.toBe(v2Hash);
   });
 
   it("uses revision-bound unambiguous caption and visual hashes", () => {

@@ -27,6 +27,11 @@ export const PET_VISION_BACKFILL_CAPTION_REVISIONS = {
       PET_VISION_CAPTION_REVISION_V2,
     ).modelName,
   },
+  [PET_VISION_CAPTION_REVISION_V3]: {
+    modelName: requirePetVisionPipeline(
+      PET_VISION_CAPTION_REVISION_V3,
+    ).modelName,
+  },
 };
 
 export const PET_VISUAL_BACKFILL_REVISIONS = {
@@ -46,6 +51,12 @@ export const PET_VISUAL_BACKFILL_REVISIONS = {
   },
   [PET_VISUAL_MODEL_REVISION_V2]: {
     captionRevision: PET_VISION_CAPTION_REVISION_V2,
+    dimensions: 768,
+    documentModelPath: "text-embeddings-v2-doc",
+    requestDimensions: 768,
+  },
+  [PET_VISUAL_MODEL_REVISION_V3]: {
+    captionRevision: PET_VISION_CAPTION_REVISION_V3,
     dimensions: 768,
     documentModelPath: "text-embeddings-v2-doc",
     requestDimensions: 768,
@@ -93,6 +104,8 @@ export function requirePetVisualBackfillRevision({
 }
 import {
   PET_VISION_CAPTION_REVISION_V2,
+  PET_VISION_CAPTION_REVISION_V3,
   PET_VISUAL_MODEL_REVISION_V2,
+  PET_VISUAL_MODEL_REVISION_V3,
   requirePetVisionPipeline,
 } from "../../src/lib/pets/search-vision-pipelines.mjs";

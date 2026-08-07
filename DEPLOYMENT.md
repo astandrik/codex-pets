@@ -138,6 +138,24 @@ tokens; only an explicit `max_output_tokens` incomplete result raises it to
 statuses, token counts, and provider request identifiers, never prompts,
 images, captions, embeddings, or credentials.
 
+### Four-frame V3 experiment
+
+The four-frame follow-up is a separate uncalibrated revision. It keeps the V2
+Responses API, schemaVersion 2 caption, reasoning behavior, token policy, and
+768-dimensional embedder, but restores the original four central states:
+idle, running-right, waving, and review.
+
+```text
+caption: yandex-qwen3.6-35b-a3b-pet-caption-2026-08-v3
+visual:  yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v3
+frames:  pet-vision-four-central-frames-v3
+```
+
+Do not replace V2 identifiers or rows with V3. The separate revision preserves
+the nine-frame result as a comparison point and keeps V3 out of hybrid search
+until it has complete coverage, its own calibration profile, and an untouched
+holdout pass.
+
 Run V2 maintenance in a separate production shell or container so the live
 application environment remains on V1:
 
