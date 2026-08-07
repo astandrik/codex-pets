@@ -238,6 +238,60 @@ export function fuseRelatedPetRankingsWithDiagnostics(input: {
   };
 }
 
+export function fuseRelatedPetTextMetadataBaseline(input: {
+  sourceSlug: string;
+  metadataSlugs: readonly string[];
+  textMatches?: readonly RelatedPetSimilarity[];
+  textMinSimilarity: number;
+  limit?: number;
+}): string[] {
+  assertCosineThreshold("text", input.textMinSimilarity);
+  const metadataSlugs = uniqueKnownSlugs(
+    input.metadataSlugs,
+    input.sourceSlug,
+  );
+  const metadataPosition = new Map(
+    metadataSlugs.map((slug, index) => [slug, index + 1]),
+  );
+  const textMatches = knownMatches(
+    input.textMatches ?? [],
+    input.sourceSlug,
+    metadataPosition,
+  );
+  const textPositions = rankingPositions(textMatches);
+  const scores = new Map(
+    metadataSlugs.map((slug) => [
+      slug,
+      rrfContribution(
+        metadataPosition.get(slug) ?? Number.MAX_SAFE_INTEGER,
+        RELATED_PETS_METADATA_WEIGHT,
+      ),
+    ]),
+  );
+  for (const { slug, score } of textMatches) {
+    if (score < input.textMinSimilarity) continue;
+    scores.set(
+      slug,
+      (scores.get(slug) ?? 0) +
+        rrfContribution(
+          textPositions.get(slug) ?? null,
+          RELATED_PETS_TEXT_WEIGHT,
+        ),
+    );
+  }
+
+  return Array.from(scores, ([slug, score]) => ({ slug, score }))
+    .toSorted(
+      (left, right) =>
+        right.score - left.score ||
+        (metadataPosition.get(left.slug) ?? Number.MAX_SAFE_INTEGER) -
+          (metadataPosition.get(right.slug) ?? Number.MAX_SAFE_INTEGER) ||
+        left.slug.localeCompare(right.slug),
+    )
+    .slice(0, normalizedLimit(input.limit))
+    .map(({ slug }) => slug);
+}
+
 export function rankRelatedPets(input: {
   source: Pick<RelatedPetCandidate, "slug" | "kind" | "tags">;
   candidates: readonly RelatedPetCandidate[];

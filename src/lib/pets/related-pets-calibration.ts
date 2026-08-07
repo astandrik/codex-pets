@@ -1,5 +1,6 @@
 import {
   fuseRelatedPetRankingsWithDiagnostics,
+  fuseRelatedPetTextMetadataBaseline,
   rankRelatedPetVectorMatches,
   type RelatedPetSimilarity,
   type RelatedPetsRankingProfile,
@@ -381,14 +382,11 @@ export function evaluateRelatedPetsProfile(
       observation.metadataSlugs,
       observation.sourceSlug,
     ).slice(0, RELATED_PETS_SNAPSHOT_DEPTH);
-    const textMetadataRanking = fuseRelatedPetRankingsWithDiagnostics({
+    const textMetadataSlugs = fuseRelatedPetTextMetadataBaseline({
       sourceSlug: observation.sourceSlug,
       metadataSlugs: observation.metadataSlugs,
-      sharedTagCounts: observation.sharedTagCounts,
       textMatches: observation.textMatches,
       textMinSimilarity: profile.textMinSimilarity,
-      visualMinSimilarity: null,
-      visualWeight: 0,
     });
     const hybridRanking = fuseRelatedPetRankingsWithDiagnostics({
       sourceSlug: observation.sourceSlug,
@@ -398,7 +396,6 @@ export function evaluateRelatedPetsProfile(
       visualMatches: observation.visualMatches,
       ...profile,
     });
-    const textMetadataSlugs = textMetadataRanking.slugs;
     const hybridSlugs = hybridRanking.slugs;
     return {
       groupId: observation.groupId,

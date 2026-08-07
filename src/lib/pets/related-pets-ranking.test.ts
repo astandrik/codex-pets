@@ -6,6 +6,7 @@ import {
   decodeRelatedPetVector,
   fuseRelatedPetRankings,
   fuseRelatedPetRankingsWithDiagnostics,
+  fuseRelatedPetTextMetadataBaseline,
   rankRelatedPetVectorMatches,
   rankRelatedPets,
   rankRelatedPetsWithDiagnostics,
@@ -306,6 +307,27 @@ describe("related pet ranking", () => {
       { slug: "semantic-peer", score: 1 },
       { slug: "other", score: 0 },
     ]);
+  });
+
+  it("keeps the text-plus-metadata evaluation baseline thresholded", () => {
+    const input = {
+      sourceSlug: "source",
+      metadataSlugs: ["other", "peer"],
+      textMatches: [{ slug: "peer", score: 0.8 }],
+    } as const;
+
+    expect(
+      fuseRelatedPetTextMetadataBaseline({
+        ...input,
+        textMinSimilarity: 0.9,
+      }),
+    ).toEqual(["other", "peer"]);
+    expect(
+      fuseRelatedPetTextMetadataBaseline({
+        ...input,
+        textMinSimilarity: 0.8,
+      }),
+    ).toEqual(["peer", "other"]);
   });
 
   it("places semantic and shared-tag candidates before pure fallback", () => {

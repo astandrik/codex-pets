@@ -181,10 +181,11 @@ unsupported document-to-document shortcut. The depth-eight ranking first orders
 candidates that pass either semantic threshold or share a normalized tag using
 weighted RRF. Remaining slots use only full text and visual ranks, with no kind,
 date, freshness, or metadata-rank contribution. When both semantic modalities
-are absent, the existing metadata-only order is preserved. Both evaluation
-commands below
-read only the approved catalog and existing text-query/text-document/visual/
-caption rows; they do not call an embedding provider:
+are absent, the existing metadata-only order is preserved. The text-plus-
+metadata evaluation control stays on its thresholded weighted RRF policy;
+semantic backfill applies only to the evaluated full hybrid ranking. Both
+evaluation commands below read only the approved catalog and existing text-
+query/text-document/visual/caption rows; they do not call an embedding provider:
 
 ```bash
 npm run related:eval:calibrate
