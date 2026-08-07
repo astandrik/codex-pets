@@ -63,7 +63,10 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
       }
       const semanticConfig = config.semantic;
       const visualConfig = config.visual;
-      const embeddingClient = createYandexEmbeddingClient(semanticConfig);
+      const embeddingClient = createYandexEmbeddingClient({
+        ...semanticConfig,
+        ...PET_SEARCH_EMBEDDING_MODELS[semanticConfig.embeddingModelId],
+      });
       const split = LIVE_EVAL_SPLIT;
       const selectedFixtures = fixtures.filter(
         (fixture) => fixture.split === split,
