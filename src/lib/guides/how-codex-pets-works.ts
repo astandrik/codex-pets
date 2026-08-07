@@ -52,7 +52,7 @@ export const HOW_CODEX_PETS_WORKS_SCREENSHOTS = [
     src: `${ASSET_BASE_PATH}/winnie-search.png`,
     alt: "Codex Pets search results showing Winnie first and Foggy Hedgehog second for a descriptive query",
     caption:
-      "The query describes the character without using Winnie’s name or the words from the English pet card.",
+      "The query avoids Winnie’s name while mixing literal traits with mood and story cues; the final ranking can combine lexical, text, and visual signals.",
   },
   {
     id: "winnie-related",

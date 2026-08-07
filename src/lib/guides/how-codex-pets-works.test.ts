@@ -21,6 +21,15 @@ describe("How Codex Pets works guide content", () => {
     expect(content).not.toMatch(/\b153 approved\b|p95|NDCG|Recall@/i);
   });
 
+  it("describes the example query as hybrid instead of non-lexical", () => {
+    expect(HOW_CODEX_PETS_WORKS_SCREENSHOTS[0].caption).toContain(
+      "lexical, text, and visual signals",
+    );
+    expect(HOW_CODEX_PETS_WORKS_SCREENSHOTS[0].caption).not.toContain(
+      "without using Winnie’s name or the words from the English pet card",
+    );
+  });
+
   it("builds an illustrated markdown twin with the same public guide contract", () => {
     const markdown = buildHowCodexPetsWorksMarkdown();
 
