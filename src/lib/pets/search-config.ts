@@ -84,7 +84,10 @@ export const PET_VISUAL_MODEL_REVISIONS = {
   [PET_VISUAL_MODEL_REVISION_V2]: {
     embeddingModelId: "yandex-text-embeddings-v2-768",
     captionRevision: PET_VISION_CAPTION_REVISION_V2,
-    profile: null,
+    profile: {
+      minSemanticScore: 0.42264288663864136,
+      weight: 1,
+    },
   },
 } as const satisfies Record<string, PetVisualModelRevisionDefinition>;
 

@@ -318,19 +318,19 @@ describe("related pet ranking", () => {
 });
 
 describe("related pet ranking profile", () => {
-  it("binds compatibility to the calibrated v5 query, text, and visual revisions", () => {
+  it("binds compatibility to the calibrated v6 query, text, and visual revisions", () => {
     expect(CURRENT_RELATED_PETS_RANKING_PROFILE).toMatchObject({
       rankingRevision:
-        "related-pets-rrf60-v5:cal=related-pets-eval-groups-v2:text=yandex-text-embeddings-v2-768-2026-07:text-query=yandex-text-embeddings-v2-768-related-tags-query-2026-08:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
+        "related-pets-rrf60-v6:cal=related-pets-eval-groups-v2:text=yandex-text-embeddings-v2-768-2026-07:text-query=yandex-text-embeddings-v2-768-related-tags-query-2026-08:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v2",
       textRevision: "yandex-text-embeddings-v2-768-2026-07",
       textQueryRevision:
         "yandex-text-embeddings-v2-768-related-tags-query-2026-08",
       textDimensions: 768,
       textMinSimilarity: 0.4523258982119597,
       visualRevision:
-        "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
+        "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v2",
       visualDimensions: 768,
-      visualMinSimilarity: 0.7573239783550058,
+      visualMinSimilarity: 0.6766062714106664,
       visualWeight: 0.5,
     });
     expect(

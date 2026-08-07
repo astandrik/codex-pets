@@ -35,9 +35,9 @@ const TEXT_REVISION = "yandex-text-embeddings-v2-768-2026-07";
 const TEXT_QUERY_REVISION =
   "yandex-text-embeddings-v2-768-related-tags-query-2026-08";
 const VISUAL_REVISION =
-  "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1";
+  "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v2";
 const CAPTION_REVISION =
-  "yandex-qwen3.6-35b-a3b-pet-caption-2026-07-v1";
+  "yandex-qwen3.6-35b-a3b-pet-caption-2026-08-v2";
 
 describe("related pets production visual source compatibility", () => {
   beforeEach(() => {
