@@ -8,6 +8,7 @@ import {
   selectRelatedPets,
   type RelatedPetCandidate,
 } from "@/lib/pets/related-pets";
+import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
 
 export const RELATED_PETS_VISUAL_WEIGHT_CANDIDATES = [
   0.25,
@@ -364,7 +365,7 @@ export function evaluateRelatedPetsProfile(
     const metadataSlugs = uniqueSlugs(
       observation.metadataSlugs,
       observation.sourceSlug,
-    ).slice(0, 8);
+    ).slice(0, RELATED_PETS_SNAPSHOT_DEPTH);
     const textMetadataSlugs = fuseRelatedPetRankings({
       sourceSlug: observation.sourceSlug,
       metadataSlugs: observation.metadataSlugs,
