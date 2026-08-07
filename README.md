@@ -318,6 +318,11 @@ the fallback for pets without tags. Query vectors use the query side of the
 managed embedding model; document-to-document similarity is not used as a
 silent substitute. The dedicated related relevance groups live in
 `src/lib/pets/related-pets-eval-fixtures.json` and do not affect search eval.
+The current ranking revision stores eight ordered slugs per approved pet. Pet
+detail pages render all eight immediately (four columns on desktop, three on
+tablet, and two on mobile); the private Markdown twin intentionally keeps the
+first four. Calibration and holdout reports include both nDCG@4 and nDCG@8,
+while profile selection remains pinned to nDCG@4.
 
 Text and visual backfills resolve their embedding provider independently from
 their active revision. Visual ranking is disabled safely when the text and
@@ -441,6 +446,10 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
   - pet submit success and error
   - pet generation request success and error
   - moderation approve/reject/delete
+  - related-pet impressions at 50% visibility and detail-navigation clicks,
+    including source slug, target slug, and one-based position
+  - related install-command copies and downloads, both directly on the card
+    and for matching detail-page actions within a 30-minute browser session
 - Server-side MCP aggregate metrics are optional. They are enabled only when
   `YANDEX_METRIKA_MP_TOKEN` and `YANDEX_METRIKA_MP_CLIENT_ID` are configured.
   MCP metrics use a dedicated technical Metrika ClientID and send a synthetic

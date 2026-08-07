@@ -135,14 +135,18 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
           ({ slug }) => slug === "fire-skull",
         );
         expect(sansCase, "Sans calibration case is required").toBeDefined();
-        expect(sansCase?.metadataSlugs).not.toContain("fire-skull");
+        expect(sansCase?.metadataSlugs.slice(0, 4)).not.toContain(
+          "fire-skull",
+        );
         expect(fireSkullTextMatch?.score).toBeGreaterThanOrEqual(
           profile.textMinSimilarity,
         );
-        expect(sansCase?.textMetadataSlugs).toContain("fire-skull");
-        expect(sansCase?.hybridSlugs).toContain("fire-skull");
-        expect(sansCase?.textMetadataSlugs).not.toEqual(
-          sansCase?.metadataSlugs,
+        expect(sansCase?.textMetadataSlugs.slice(0, 4)).toContain(
+          "fire-skull",
+        );
+        expect(sansCase?.hybridSlugs.slice(0, 4)).toContain("fire-skull");
+        expect(sansCase?.textMetadataSlugs.slice(0, 4)).not.toEqual(
+          sansCase?.metadataSlugs.slice(0, 4),
         );
         expect(report.passed).toBe(true);
         return;

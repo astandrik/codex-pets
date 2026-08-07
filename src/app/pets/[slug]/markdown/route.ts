@@ -1,4 +1,5 @@
 import { markdownResponse } from "@/lib/agent-markdown";
+import { RELATED_PETS_MARKDOWN_LIMIT } from "@/lib/pets/related-pets-limits";
 import { buildPetMarkdown } from "@/lib/pets/markdown";
 import { getApprovedResolvedRelatedPets } from "@/lib/pets/related-pets-server";
 import { getApprovedPetBySlug } from "@/lib/pets/repository";
@@ -37,7 +38,10 @@ async function getApprovedResolvedRelatedPetsBestEffort(
   pet: Parameters<typeof getApprovedResolvedRelatedPets>[0],
 ): ReturnType<typeof getApprovedResolvedRelatedPets> {
   try {
-    return await getApprovedResolvedRelatedPets(pet);
+    return await getApprovedResolvedRelatedPets(
+      pet,
+      RELATED_PETS_MARKDOWN_LIMIT,
+    );
   } catch {
     console.warn("[codex-pets][related-pets]", {
       operation: "resolve",

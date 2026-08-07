@@ -4,6 +4,11 @@ import { useState } from "react";
 import { Button } from "@/components/GravityUI/GravityUI";
 import { Check, Copy, TerminalLine } from "@gravity-ui/icons";
 
+import {
+  getRelatedPetGoalParams,
+  readRelatedPetAttribution,
+  type RelatedPetContext,
+} from "@/lib/metrics/related-pet-attribution";
 import { trackGoal } from "@/lib/metrics/yandex";
 import { buildPetInstallCommand } from "@/lib/pets/install-command";
 import "./InstallCommandButton.scss";
@@ -11,11 +16,13 @@ import "./InstallCommandButton.scss";
 type InstallCommandButtonProps = {
   slug: string;
   surface: "card" | "detail";
+  relatedContext?: RelatedPetContext;
 };
 
 export function InstallCommandButton({
   slug,
   surface,
+  relatedContext,
 }: InstallCommandButtonProps) {
   const [status, setStatus] = useState<"idle" | "copied" | "error">("idle");
   const command = buildPetInstallCommand(slug);
@@ -25,9 +32,13 @@ export function InstallCommandButton({
     try {
       await copyText(command);
       setStatus("copied");
+      const attribution =
+        relatedContext ??
+        (surface === "detail" ? readRelatedPetAttribution(slug) : null);
       trackGoal("pet_install_command_copy", {
         slug,
         surface,
+        ...(attribution ? getRelatedPetGoalParams(attribution) : {}),
       });
       window.setTimeout(() => setStatus("idle"), 1800);
     } catch {

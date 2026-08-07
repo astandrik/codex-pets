@@ -194,7 +194,8 @@ nDCG@4 is no worse than metadata, at least one case strictly improves, and text
 changes at least one final top four. Sans must include Fire Skull in both the
 text-plus-metadata and final hybrid top four; metadata-only output does not
 satisfy this gate. If no eligible text profile exists, calibration exits
-nonzero and rollout stops.
+nonzero and rollout stops. Reports also include nDCG@8 for the stored depth;
+the profile selection rules remain based on nDCG@4.
 
 Visual-off is represented only as `visualMinSimilarity: null`. Calibration
 prefers an enabled visual profile with the smallest tied weight and disables
@@ -204,9 +205,9 @@ weight match `CURRENT_RELATED_PETS_RANKING_PROFILE`. When it reports a
 different `selectedProfile`, update the pinned values and ranking revision,
 commit and deploy that profile with the feature still disabled, and rerun
 calibration. The holdout command uses four untouched source cases exactly once
-and must report `passed: true`; full hybrid nDCG@4 must be no worse than both
-metadata-only and text-plus-metadata. Missing approved fixture pets or missing
-current query, document, or visual vectors fail either command.
+and must report `passed: true`; full hybrid nDCG@4 and nDCG@8 must each be no
+worse than both metadata-only and text-plus-metadata. Missing approved fixture
+pets or missing current query, document, or visual vectors fail either command.
 
 Only after both evaluation commands pass, build the initial snapshots:
 
@@ -226,6 +227,24 @@ generation unchanged and does not create or clean up a failed generation.
 Then set `PET_RELATED_HYBRID_ENABLED=true` and restart the app. Unset and exact
 `true` enable snapshot reads; exact `false` is the rollout and rollback kill
 switch. Invalid values fail safely to the heuristic resolver.
+
+For the depth-8 v6 rollout, record the current active and previous generation
+IDs plus a control top-four sample before deployment. The deployed v6 app does
+not require a new flag: the incompatible v5 generation is ignored and the
+resolver temporarily returns heuristic top eight. Immediately run the dry-run
+and apply commands above, then verify `status: "ready"`, the v6 `depth=8`
+ranking revision, snapshot coverage equal to the approved catalog, eight
+unique non-self slugs where the catalog permits, and the saved control top
+four. Manually review positions 5-8 for all 12 calibration source cases before
+considering the rollout complete. Pet pages render eight recommendations;
+their private Markdown representation remains capped at four.
+
+Create exact-match JavaScript goals named `related_pet_impression` and
+`related_pet_click` in Yandex Metrika counter `104844437` only as a separately
+approved external step. Existing `pet_install_command_copy` and
+`pet_download_click` goals receive the related attribution fields and do not
+need replacement goals. Compare positions 1-4 with 5-8 after 7 and 14 days,
+separating direct card conversions from conversions after detail navigation.
 
 Approval refreshes the search document vector and the related query vector in
 parallel. `updated` and `unchanged` are the only ready outcomes. With an enabled

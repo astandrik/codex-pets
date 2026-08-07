@@ -6,6 +6,7 @@ import { ArrowRight } from "@gravity-ui/icons";
 
 import { InstallCommandButton } from "@/components/InstallCommand/InstallCommandButton";
 import { PetCardMetrics } from "@/components/PetCard/PetCardMetrics";
+import type { RelatedPetContext } from "@/lib/metrics/related-pet-attribution";
 import { getPetIdleStripUrl } from "@/lib/pets/asset-urls";
 import { kindLabelTheme, statusLabelText, statusLabelTheme } from "@/lib/ui/labels";
 import { PET_SHEET, PET_STATES } from "@/lib/pets/types";
@@ -15,6 +16,7 @@ import "./PetCard.scss";
 type PetCardProps = {
   pet: PublicPetSummary;
   showStatus?: boolean;
+  relatedContext?: RelatedPetContext;
 };
 
 type StripStyle = CSSProperties & {
@@ -30,7 +32,11 @@ const PREVIEW_FRAME_WIDTH = PET_SHEET.cellWidth;
 const PREVIEW_FRAME_DURATION = `${PREVIEW_STATE.frames * PREVIEW_FRAME_MS}ms`;
 const PREVIEW_STRIP_WIDTH = PREVIEW_FRAME_WIDTH * PREVIEW_STATE.frames;
 
-export function PetCard({ pet, showStatus = false }: PetCardProps) {
+export function PetCard({
+  pet,
+  showStatus = false,
+  relatedContext,
+}: PetCardProps) {
   const authorName = pet.ownerName ?? "Anonymous";
   const authorInitial = authorName.trim().charAt(0).toUpperCase() || "U";
   const idleStripUrl = getPetIdleStripUrl(pet.spritesheetUrl);
@@ -131,10 +137,15 @@ export function PetCard({ pet, showStatus = false }: PetCardProps) {
           likeCount={pet.likeCount}
           downloadCount={pet.downloadCount}
           installCount={pet.installCount}
+          relatedContext={relatedContext}
         />
       </Flex>
       {pet.status === "approved" ? (
-        <InstallCommandButton slug={pet.slug} surface="card" />
+        <InstallCommandButton
+          slug={pet.slug}
+          surface="card"
+          relatedContext={relatedContext}
+        />
       ) : null}
       <span className="pet-card__details">
         View details

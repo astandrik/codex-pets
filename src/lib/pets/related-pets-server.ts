@@ -4,6 +4,11 @@ import {
   selectRelatedPets,
   type RelatedPetCandidate,
 } from "@/lib/pets/related-pets";
+import {
+  normalizeRelatedPetsLimit,
+  RELATED_PETS_PAGE_LIMIT,
+  RELATED_PETS_SNAPSHOT_DEPTH,
+} from "@/lib/pets/related-pets-limits";
 import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
 import {
   getRelatedPetsSnapshot,
@@ -92,7 +97,11 @@ export function createRelatedPetsResolver(
       await dependencies.getCandidates(),
       current.slug,
     );
-    const heuristic = selectRelatedPets(candidates, current, 4);
+    const heuristic = selectRelatedPets(
+      candidates,
+      current,
+      RELATED_PETS_SNAPSHOT_DEPTH,
+    );
     const enabledValue = dependencies.getHybridEnabledValue();
     if (enabledValue === "false") return heuristic;
     if (enabledValue !== undefined && enabledValue !== "true") {
@@ -260,15 +269,22 @@ export function getResolvedRelatedPets(
 
 export async function getApprovedResolvedRelatedPets(
   current: RelatedPetSource,
+  limit = RELATED_PETS_PAGE_LIMIT,
 ): Promise<PublicPet[]> {
+  const normalizedLimit = normalizeRelatedPetsLimit(limit);
+  if (normalizedLimit === 0) return [];
   const resolvedCandidates = await getResolvedRelatedPets(current);
   if (resolvedCandidates.length === 0) return [];
 
   const approvedPets = await listApprovedPetsBySlugs(
     resolvedCandidates.map((candidate) => candidate.slug),
   );
-  if (approvedPets.length === resolvedCandidates.length) {
-    return approvedPets.slice(0, 4);
+  const result = approvedPets.slice(0, normalizedLimit);
+  if (
+    approvedPets.length === resolvedCandidates.length ||
+    result.length === normalizedLimit
+  ) {
+    return result;
   }
 
   const seen = new Set(approvedPets.map((pet) => pet.slug));
@@ -283,18 +299,19 @@ export async function getApprovedResolvedRelatedPets(
   )
     .map((candidate) => candidate.slug)
     .filter((slug) => !seen.has(slug))
-    .slice(0, 4 - approvedPets.length);
-  if (fallbackSlugs.length === 0) return approvedPets.slice(0, 4);
+    .slice(0, normalizedLimit - result.length);
+  if (fallbackSlugs.length === 0) {
+    return result;
+  }
 
   const fallbackPets = await listApprovedPetsBySlugs(fallbackSlugs);
-  const result = [...approvedPets];
   for (const pet of fallbackPets) {
     if (seen.has(pet.slug)) continue;
     seen.add(pet.slug);
     result.push(pet);
-    if (result.length === 4) break;
+    if (result.length === normalizedLimit) break;
   }
-  return result;
+  return result.slice(0, normalizedLimit);
 }
 
 export function revalidateRelatedPetCandidatesCache(): void {
@@ -332,14 +349,14 @@ function hydrateSnapshotOrder(
     if (!candidate) continue;
     seen.add(slug);
     result.push(candidate);
-    if (result.length === 4) return result;
+    if (result.length === RELATED_PETS_SNAPSHOT_DEPTH) return result;
   }
 
   for (const candidate of heuristic) {
     if (seen.has(candidate.slug)) continue;
     seen.add(candidate.slug);
     result.push(candidate);
-    if (result.length === 4) break;
+    if (result.length === RELATED_PETS_SNAPSHOT_DEPTH) break;
   }
   return result;
 }

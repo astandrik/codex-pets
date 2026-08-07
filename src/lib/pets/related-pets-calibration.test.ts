@@ -10,6 +10,8 @@ import {
   evaluateRelatedPetsHoldout,
   evaluateRelatedPetsProfile,
   ndcgAt4,
+  ndcgAt8,
+  ndcgAtK,
   selectRelatedTextThreshold,
   selectRelatedVisualProfile,
   type RelatedPetCalibrationObservation,
@@ -140,8 +142,8 @@ describe("related pet calibration observations", () => {
   });
 });
 
-describe("related pet nDCG@4", () => {
-  it("scores binary relevance at four without counting duplicate hits twice", () => {
+describe("related pet nDCG@K", () => {
+  it("scores binary relevance without counting duplicate hits twice", () => {
     const idealDcg = 1 + 1 / Math.log2(3);
     const expectedDcg = 1 + 1 / Math.log2(4);
 
@@ -151,6 +153,14 @@ describe("related pet nDCG@4", () => {
     expect(ndcgAt4(["a", "a", "x", "b"], ["a", "b"])).toBeCloseTo(
       (1 + 1 / Math.log2(5)) / idealDcg,
     );
+    expect(
+      ndcgAt8(["x1", "x2", "x3", "x4", "x5", "x6", "x7", "a"], ["a"]),
+    ).toBeCloseTo(1 / Math.log2(9));
+  });
+
+  it("rejects invalid cutoffs", () => {
+    expect(() => ndcgAtK(["a"], ["a"], 0)).toThrow(/positive integer/i);
+    expect(() => ndcgAtK(["a"], ["a"], 1.5)).toThrow(/positive integer/i);
   });
 });
 
@@ -398,8 +408,12 @@ describe("related pet semantic regressions", () => {
       },
     );
 
-    expect(report.cases[0]?.metadataSlugs).not.toContain("fire-skull");
-    expect(report.cases[0]?.textMetadataSlugs).toContain("fire-skull");
+    expect(report.cases[0]?.metadataSlugs.slice(0, 4)).not.toContain(
+      "fire-skull",
+    );
+    expect(report.cases[0]?.textMetadataSlugs.slice(0, 4)).toContain(
+      "fire-skull",
+    );
     expect(report.textContribution).toEqual({
       aggregateNoWorseThanMetadata: true,
       improvedCaseCount: 1,
@@ -432,9 +446,17 @@ describe("related pet holdout reporting", () => {
     expect(report.hybridNdcgAt4).toBeGreaterThanOrEqual(
       report.textMetadataNdcgAt4,
     );
+    expect(report.hybridNdcgAt8).toBeGreaterThanOrEqual(
+      report.metadataNdcgAt8,
+    );
+    expect(report.hybridNdcgAt8).toBeGreaterThanOrEqual(
+      report.textMetadataNdcgAt8,
+    );
     expect(report.comparisons).toEqual({
-      hybridNoWorseThanMetadata: true,
-      hybridNoWorseThanTextMetadata: true,
+      hybridNoWorseThanMetadataAt4: true,
+      hybridNoWorseThanTextMetadataAt4: true,
+      hybridNoWorseThanMetadataAt8: true,
+      hybridNoWorseThanTextMetadataAt8: true,
     });
     expect(report.passed).toBe(true);
   });

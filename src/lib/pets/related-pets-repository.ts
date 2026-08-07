@@ -1,5 +1,6 @@
 import type { Session } from "ydb-sdk";
 
+import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
 import { isYdbConfigured, TypedValues, withSession } from "@/lib/ydb/client";
 import { rowsFromResult, textAt, uintAt } from "@/lib/ydb/result";
 import { TABLES } from "@/lib/ydb/schema";
@@ -918,7 +919,7 @@ function validateRelatedSlugs(
 ): string[] {
   if (
     !Array.isArray(value) ||
-    value.length > 4 ||
+    value.length > RELATED_PETS_SNAPSHOT_DEPTH ||
     value.some(
       (slug) =>
         typeof slug !== "string" ||

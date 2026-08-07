@@ -41,6 +41,7 @@ import {
   type RelatedPetsSnapshot,
   type RelatedPetsState,
 } from "@/lib/pets/related-pets-repository";
+import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
 import {
   decodeRelatedPetVector,
   rankRelatedPets,
@@ -443,6 +444,7 @@ export function createRelatedPetsRebuildService(
         textDocumentVectors: prepared.textDocumentVectors,
         visualVectors: prepared.visualVectors,
         profile: dependencies.profile,
+        limit: RELATED_PETS_SNAPSHOT_DEPTH,
       }),
     }));
     return {

@@ -203,9 +203,35 @@ describe("/pets/[slug] related pets section", () => {
     ]);
   }, 20_000);
 
-  it("uses the same ready snapshot order for HTML and private markdown", async () => {
+  it("renders eight snapshot pets on the page and keeps private markdown at four", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
     vi.stubEnv("PET_RELATED_HYBRID_ENABLED", "true");
+    const snapshotOrder = Array.from(
+      { length: 8 },
+      (_, index) => `related-${index + 1}`,
+    );
+    const snapshotCandidates = snapshotOrder.map((relatedSlug, index) => ({
+      slug: relatedSlug,
+      displayName: `Related ${index + 1}`,
+      kind: "creature" as const,
+      tags: ["related"],
+      description: `Related pet ${index + 1}.`,
+      approvedAt: `2026-08-0${Math.min(index + 1, 9)}T10:00:00.000Z`,
+      createdAt: `2026-07-0${Math.min(index + 1, 9)}T10:00:00.000Z`,
+    }));
+    repositoryMocks.listRelatedPetCandidates.mockResolvedValue([
+      relatedCandidates[0]!,
+      ...snapshotCandidates,
+    ]);
+    repositoryMocks.listApprovedPetsBySlugs.mockImplementation(
+      async (slugs: string[]) =>
+        slugs.flatMap((relatedSlug) => {
+          const candidate = snapshotCandidates.find(
+            ({ slug }) => slug === relatedSlug,
+          );
+          return candidate ? [candidate] : [];
+        }),
+    );
     relatedSnapshotMocks.getRelatedPetsState.mockResolvedValue({
       requestedGenerationId: "generation-ready",
       activeGenerationId: "generation-ready",
@@ -221,7 +247,7 @@ describe("/pets/[slug] related pets section", () => {
       sourceSlug: approvedPetRow.slug,
       rankingRevision:
         CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
-      relatedSlugs: ["terminal-cube", "star-fox"],
+      relatedSlugs: snapshotOrder,
       createdAt: "2026-08-03T10:00:00.000Z",
     });
 
@@ -244,11 +270,9 @@ describe("/pets/[slug] related pets section", () => {
       (match) => match[1],
     );
 
-    expect(htmlOrder).toEqual(["terminal-cube", "star-fox"]);
-    expect(markdownOrder).toEqual(htmlOrder);
-    expect(relatedSection.indexOf("/pets/terminal-cube")).toBeLessThan(
-      relatedSection.indexOf("/pets/star-fox"),
-    );
+    expect(htmlOrder).toEqual(snapshotOrder);
+    expect(markdownOrder).toEqual(snapshotOrder.slice(0, 4));
+    expect(relatedSection).not.toContain("/pets/related-5");
     expect(response.headers.get("Cache-Control")).toBe("private, max-age=60");
   }, 20_000);
 
