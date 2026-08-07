@@ -25,6 +25,7 @@ import {
   buildPetDetailAskAIPrompt,
 } from "@/components/AskAI/ask-ai-content";
 import { PetDeleteGate } from "@/components/PetDeleteAction/PetDeleteGate";
+import { PetDownloadButton } from "@/components/PetDownloadButton/PetDownloadButton";
 import { PetBreadcrumbs } from "@/components/PetDetails/PetBreadcrumbs";
 import { InstallCommandButton } from "@/components/InstallCommand/InstallCommandButton";
 import { PetMetaList } from "@/components/PetDetails/PetMetaList";
@@ -38,6 +39,7 @@ import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import { serializeJsonLd } from "@/lib/json-ld";
 import { createAgentPet } from "@/lib/pets/agent-dto";
 import { getApprovedResolvedRelatedPets } from "@/lib/pets/related-pets-server";
+import { RELATED_PETS_PAGE_LIMIT } from "@/lib/pets/related-pets-limits";
 import { getPetBySlug, getPetMetrics } from "@/lib/pets/repository";
 import type { ApprovalStatus } from "@/lib/pets/types";
 import {
@@ -269,14 +271,7 @@ export default async function PetPage({ params }: PetPageProps) {
             {pet.status === "approved" ? (
               <InstallCommandButton slug={pet.slug} surface="detail" />
             ) : null}
-            <Button
-              view="action"
-              size="l"
-              href={withBasePath(`/api/pets/${pet.slug}/download`)}
-            >
-              <ArrowDownToLine width={18} height={18} />
-              Download ZIP
-            </Button>
+            <PetDownloadButton slug={pet.slug} />
             <Button view="outlined" size="l" href={petJsonUrl} target="_blank">
               <FileText width={18} height={18} />
               pet.json
@@ -342,7 +337,9 @@ export default async function PetPage({ params }: PetPageProps) {
         </div>
       </section>
 
-      {relatedPets.length > 0 ? <RelatedPets pets={relatedPets} /> : null}
+      {relatedPets.length > 0 ? (
+        <RelatedPets pets={relatedPets} sourceSlug={pet.slug} />
+      ) : null}
 
       {pet.status !== "approved" ? (
         <Text variant="caption-2" color="secondary">
@@ -361,7 +358,7 @@ async function getApprovedResolvedRelatedPetsBestEffort(
   pet: Parameters<typeof getApprovedResolvedRelatedPets>[0],
 ): ReturnType<typeof getApprovedResolvedRelatedPets> {
   try {
-    return await getApprovedResolvedRelatedPets(pet);
+    return await getApprovedResolvedRelatedPets(pet, RELATED_PETS_PAGE_LIMIT);
   } catch {
     console.warn("[codex-pets][related-pets]", {
       operation: "resolve",

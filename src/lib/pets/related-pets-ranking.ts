@@ -2,11 +2,12 @@ import {
   selectRelatedPets,
   type RelatedPetCandidate,
 } from "@/lib/pets/related-pets";
+import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
 
 export const RELATED_PETS_RRF_K = 60;
 export const RELATED_PETS_TEXT_WEIGHT = 1;
 export const RELATED_PETS_METADATA_WEIGHT = 0.15;
-export const RELATED_PETS_DEFAULT_LIMIT = 4;
+export const RELATED_PETS_DEFAULT_LIMIT = RELATED_PETS_SNAPSHOT_DEPTH;
 
 export type StoredRelatedPetVector = {
   slug: string;

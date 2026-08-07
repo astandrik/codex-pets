@@ -10,6 +10,10 @@ import {
 } from "@gravity-ui/icons";
 
 import { withBasePath } from "@/lib/base-path";
+import {
+  getRelatedPetGoalParams,
+  type RelatedPetContext,
+} from "@/lib/metrics/related-pet-attribution";
 import { trackGoal } from "@/lib/metrics/yandex";
 import type { ApprovalStatus } from "@/lib/pets/types";
 import { formatMetricCount, metricLabel } from "@/lib/ui/metrics";
@@ -21,6 +25,7 @@ type PetCardMetricsProps = {
   likeCount: number;
   downloadCount: number;
   installCount: number;
+  relatedContext?: RelatedPetContext;
 };
 
 type LikeResponse = {
@@ -34,6 +39,7 @@ export function PetCardMetrics({
   likeCount,
   downloadCount,
   installCount,
+  relatedContext,
 }: PetCardMetricsProps) {
   const { add } = useToaster();
   const [count, setCount] = useState(likeCount);
@@ -90,6 +96,7 @@ export function PetCardMetrics({
     trackGoal("pet_download_click", {
       slug,
       surface: "card",
+      ...(relatedContext ? getRelatedPetGoalParams(relatedContext) : {}),
     });
   }
 

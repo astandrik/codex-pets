@@ -214,20 +214,32 @@ describe("selectRelatedPets", () => {
     expect(selectRelatedPets([], CURRENT)).toEqual([]);
   });
 
-  it("takes at most four related pets by default", () => {
+  it("takes at most eight related pets by default", () => {
     const related = selectRelatedPets(
       [
+        candidate({ slug: "ninth", tags: [] }),
         candidate({ slug: "fifth", tags: [] }),
         candidate({ slug: "first", tags: ["space", "friendly"] }),
         candidate({ slug: "fourth", tags: ["space"] }),
         candidate({ slug: "second", kind: "object", tags: ["friendly"] }),
         candidate({ slug: "third", tags: ["space"] }),
         candidate({ slug: "sixth", tags: [] }),
+        candidate({ slug: "seventh", tags: [] }),
+        candidate({ slug: "eighth", tags: [] }),
       ],
       CURRENT,
     );
 
-    expect(slugsOf(related)).toEqual(["first", "fourth", "third", "second"]);
+    expect(slugsOf(related)).toEqual([
+      "first",
+      "fourth",
+      "third",
+      "second",
+      "eighth",
+      "fifth",
+      "ninth",
+      "seventh",
+    ]);
   });
 
   it("respects an explicit limit", () => {

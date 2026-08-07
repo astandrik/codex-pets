@@ -119,24 +119,42 @@ export function createRelatedPetsCalibrationObservations(input: {
   });
 }
 
-export function ndcgAt4(
+export function ndcgAtK(
   ranked: readonly string[],
   relevant: readonly string[],
+  k: number,
 ): number {
+  if (!Number.isSafeInteger(k) || k < 1) {
+    throw new Error("Related-pet nDCG cutoff must be a positive integer.");
+  }
   if (relevant.length === 0) return 1;
   const relevantSet = new Set(relevant);
   const seenRelevant = new Set<string>();
-  const dcg = ranked.slice(0, 4).reduce((sum, slug, index) => {
+  const dcg = ranked.slice(0, k).reduce((sum, slug, index) => {
     if (!relevantSet.has(slug) || seenRelevant.has(slug)) return sum;
     seenRelevant.add(slug);
     return sum + 1 / Math.log2(index + 2);
   }, 0);
-  const idealCount = Math.min(4, relevantSet.size);
+  const idealCount = Math.min(k, relevantSet.size);
   const idealDcg = Array.from(
     { length: idealCount },
     (_, index) => 1 / Math.log2(index + 2),
   ).reduce((sum, value) => sum + value, 0);
   return dcg / idealDcg;
+}
+
+export function ndcgAt4(
+  ranked: readonly string[],
+  relevant: readonly string[],
+): number {
+  return ndcgAtK(ranked, relevant, 4);
+}
+
+export function ndcgAt8(
+  ranked: readonly string[],
+  relevant: readonly string[],
+): number {
+  return ndcgAtK(ranked, relevant, 8);
 }
 
 export function selectRelatedTextThreshold(
@@ -322,10 +340,14 @@ export function evaluateRelatedPetsHoldout(
   assertObservationSplit(observations, "holdout");
   const report = evaluateRelatedPetsProfile(observations, profile);
   const comparisons = {
-    hybridNoWorseThanMetadata:
+    hybridNoWorseThanMetadataAt4:
       report.hybridNdcgAt4 >= report.metadataNdcgAt4,
-    hybridNoWorseThanTextMetadata:
+    hybridNoWorseThanTextMetadataAt4:
       report.hybridNdcgAt4 >= report.textMetadataNdcgAt4,
+    hybridNoWorseThanMetadataAt8:
+      report.hybridNdcgAt8 >= report.metadataNdcgAt8,
+    hybridNoWorseThanTextMetadataAt8:
+      report.hybridNdcgAt8 >= report.textMetadataNdcgAt8,
   };
   return {
     ...report,
@@ -342,7 +364,7 @@ export function evaluateRelatedPetsProfile(
     const metadataSlugs = uniqueSlugs(
       observation.metadataSlugs,
       observation.sourceSlug,
-    ).slice(0, 4);
+    ).slice(0, 8);
     const textMetadataSlugs = fuseRelatedPetRankings({
       sourceSlug: observation.sourceSlug,
       metadataSlugs: observation.metadataSlugs,
@@ -376,6 +398,18 @@ export function evaluateRelatedPetsProfile(
         hybridSlugs,
         observation.relevantSlugs,
       ),
+      metadataNdcgAt8: ndcgAt8(
+        metadataSlugs,
+        observation.relevantSlugs,
+      ),
+      textMetadataNdcgAt8: ndcgAt8(
+        textMetadataSlugs,
+        observation.relevantSlugs,
+      ),
+      hybridNdcgAt8: ndcgAt8(
+        hybridSlugs,
+        observation.relevantSlugs,
+      ),
     };
   });
 
@@ -385,10 +419,19 @@ export function evaluateRelatedPetsProfile(
   const textMetadataNdcgAt4 = mean(
     cases.map((item) => item.textMetadataNdcgAt4),
   );
+  const metadataNdcgAt8 = mean(
+    cases.map((item) => item.metadataNdcgAt8),
+  );
+  const textMetadataNdcgAt8 = mean(
+    cases.map((item) => item.textMetadataNdcgAt8),
+  );
   return {
     metadataNdcgAt4,
     textMetadataNdcgAt4,
     hybridNdcgAt4: mean(cases.map((item) => item.hybridNdcgAt4)),
+    metadataNdcgAt8,
+    textMetadataNdcgAt8,
+    hybridNdcgAt8: mean(cases.map((item) => item.hybridNdcgAt8)),
     textContribution: {
       aggregateNoWorseThanMetadata:
         textMetadataNdcgAt4 >= metadataNdcgAt4,
@@ -397,7 +440,7 @@ export function evaluateRelatedPetsProfile(
       ).length,
       changedTop4CaseCount: cases.filter(
         (item) =>
-          !sameRanking(item.textMetadataSlugs, item.metadataSlugs),
+          !sameTopK(item.textMetadataSlugs, item.metadataSlugs, 4),
       ).length,
     },
     cases,
@@ -444,14 +487,15 @@ function uniqueSlugs(
   return Array.from(new Set(slugs.filter((slug) => slug !== sourceSlug)));
 }
 
-function sameRanking(
+function sameTopK(
   left: readonly string[],
   right: readonly string[],
+  k: number,
 ): boolean {
-  return (
-    left.length === right.length &&
-    left.every((slug, index) => slug === right[index])
-  );
+  const leftTopK = left.slice(0, k);
+  const rightTopK = right.slice(0, k);
+  return leftTopK.length === rightTopK.length &&
+    leftTopK.every((slug, index) => slug === rightTopK[index]);
 }
 
 function mean(values: readonly number[]): number {

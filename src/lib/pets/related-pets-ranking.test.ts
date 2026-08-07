@@ -233,19 +233,38 @@ describe("related pet weighted RRF", () => {
     ).toEqual(["peer", "fill"]);
   });
 
-  it("never returns more than four candidates when a larger limit is requested", () => {
+  it("never returns more than eight candidates when a larger limit is requested", () => {
     expect(
       fuseRelatedPetRankings({
         sourceSlug: "source",
-        metadataSlugs: ["one", "two", "three", "four", "five"],
+        metadataSlugs: [
+          "one",
+          "two",
+          "three",
+          "four",
+          "five",
+          "six",
+          "seven",
+          "eight",
+          "nine",
+        ],
         textMatches: [],
         visualMatches: [],
         textMinSimilarity: 0.5,
         visualMinSimilarity: 0.5,
         visualWeight: 0.25,
-        limit: 5,
+        limit: 9,
       }),
-    ).toEqual(["one", "two", "three", "four"]);
+    ).toEqual([
+      "one",
+      "two",
+      "three",
+      "four",
+      "five",
+      "six",
+      "seven",
+      "eight",
+    ]);
   });
 });
 
@@ -281,9 +300,9 @@ describe("related pet ranking", () => {
     ]);
   });
 
-  it("reuses metadata ordering, removes duplicate candidates, and fills to four", () => {
+  it("keeps the current top four unchanged when ranking eight", () => {
     const source = candidate("source", { tags: ["shared"] });
-    const ranked = rankRelatedPets({
+    const input = {
       source,
       candidates: [
         source,
@@ -294,6 +313,10 @@ describe("related pet ranking", () => {
           approvedAt: "2026-05-01T00:00:00.000Z",
         }),
         candidate("tag-peer", { tags: ["shared"] }),
+        candidate("sixth", { approvedAt: "2026-04-04T00:00:00.000Z" }),
+        candidate("seventh", { approvedAt: "2026-04-03T00:00:00.000Z" }),
+        candidate("eighth", { approvedAt: "2026-04-02T00:00:00.000Z" }),
+        candidate("ninth", { approvedAt: "2026-04-01T00:00:00.000Z" }),
       ],
       textQueryVectors: new Map([["source", [1, 0]]]),
       textDocumentVectors: new Map([
@@ -305,23 +328,27 @@ describe("related pet ranking", () => {
         visualMinSimilarity: 0.5,
         visualWeight: 0.25,
       },
-    });
+    };
+    const top4 = rankRelatedPets({ ...input, limit: 4 });
+    const top8 = rankRelatedPets({ ...input, limit: 8 });
 
-    expect(ranked).toEqual([
+    expect(top4).toEqual([
       "vector-peer",
       "tag-peer",
       "newer",
       "older",
     ]);
-    expect(new Set(ranked).size).toBe(4);
+    expect(top8.slice(0, 4)).toEqual(top4);
+    expect(top8).toHaveLength(8);
+    expect(new Set(top8).size).toBe(8);
   });
 });
 
 describe("related pet ranking profile", () => {
-  it("binds compatibility to the calibrated v5 query, text, and visual revisions", () => {
+  it("binds compatibility to the depth-8 v6 query, text, and visual revisions", () => {
     expect(CURRENT_RELATED_PETS_RANKING_PROFILE).toMatchObject({
       rankingRevision:
-        "related-pets-rrf60-v5:cal=related-pets-eval-groups-v2:text=yandex-text-embeddings-v2-768-2026-07:text-query=yandex-text-embeddings-v2-768-related-tags-query-2026-08:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
+        "related-pets-rrf60-v6:depth=8:cal=related-pets-eval-groups-v2:text=yandex-text-embeddings-v2-768-2026-07:text-query=yandex-text-embeddings-v2-768-related-tags-query-2026-08:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
       textRevision: "yandex-text-embeddings-v2-768-2026-07",
       textQueryRevision:
         "yandex-text-embeddings-v2-768-related-tags-query-2026-08",

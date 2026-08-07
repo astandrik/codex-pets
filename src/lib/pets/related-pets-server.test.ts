@@ -81,7 +81,7 @@ describe("createRelatedPetsResolver", () => {
     vi.clearAllMocks();
   });
 
-  it("rehydrates a ready snapshot from approved candidates and fills four unique cards", async () => {
+  it("rehydrates a ready snapshot and fills every available unique card", async () => {
     const nowMs = vi
       .fn<() => number>()
       .mockReturnValueOnce(100)
@@ -91,7 +91,13 @@ describe("createRelatedPetsResolver", () => {
 
     const result = await resolveRelatedPets(current);
 
-    expect(result.map((pet) => pet.slug)).toEqual(["b", "d", "e", "a"]);
+    expect(result.map((pet) => pet.slug)).toEqual([
+      "b",
+      "d",
+      "e",
+      "a",
+      "c",
+    ]);
     expect(deps.getSnapshot).toHaveBeenCalledWith(
       "9f87654d-1234-4abc-8def-1234567890ab",
       "source",
@@ -106,6 +112,44 @@ describe("createRelatedPetsResolver", () => {
       generationStatus: "ready",
       durationMs: 7,
     });
+  });
+
+  it("caps heuristic fallback and snapshot hydration at eight", async () => {
+    const deepCandidates = [
+      candidate("source", "creature", ["alpha"], "2026-01-01"),
+      ...Array.from({ length: 9 }, (_, index) =>
+        candidate(
+          `peer-${index + 1}`,
+          "creature",
+          ["alpha"],
+          `2026-01-${String(index + 2).padStart(2, "0")}`,
+        ),
+      ),
+    ];
+    const fallbackDeps = dependencies({
+      getCandidates: vi.fn(async () => deepCandidates),
+      getHybridEnabledValue: () => "false",
+    });
+    const hydratedDeps = dependencies({
+      getCandidates: vi.fn(async () => deepCandidates),
+      getSnapshot: vi.fn(async () => ({
+        ...readySnapshot,
+        relatedSlugs: ["peer-1", "missing", "peer-1", "peer-9"],
+      })),
+    });
+
+    const fallback = await createRelatedPetsResolver(fallbackDeps)(current);
+    const hydrated = await createRelatedPetsResolver(hydratedDeps)(current);
+
+    expect(fallback).toHaveLength(8);
+    expect(new Set(fallback.map(({ slug }) => slug)).size).toBe(8);
+    expect(fallback.map(({ slug }) => slug)).not.toContain("source");
+    expect(hydrated).toHaveLength(8);
+    expect(hydrated.slice(0, 2).map(({ slug }) => slug)).toEqual([
+      "peer-1",
+      "peer-9",
+    ]);
+    expect(new Set(hydrated.map(({ slug }) => slug)).size).toBe(8);
   });
 
   it.each([
@@ -156,7 +200,7 @@ describe("createRelatedPetsResolver", () => {
 
     const result = await createRelatedPetsResolver(deps)(current);
 
-    expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c"]);
+    expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c", "d"]);
     expect(deps.getSnapshot).not.toHaveBeenCalled();
     expect(deps.log).toHaveBeenCalledWith("warn", {
       operation: "state-fallback",
@@ -173,7 +217,7 @@ describe("createRelatedPetsResolver", () => {
 
     const result = await createRelatedPetsResolver(deps)(current);
 
-    expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c"]);
+    expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c", "d"]);
     expect(deps.getSnapshot).not.toHaveBeenCalled();
     expect(deps.log).toHaveBeenCalledWith("warn", {
       operation: "state-fallback",
@@ -204,7 +248,7 @@ describe("createRelatedPetsResolver", () => {
 
     const result = await createRelatedPetsResolver(deps)(current);
 
-    expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c"]);
+    expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c", "d"]);
     expect(deps.log).toHaveBeenCalledTimes(1);
     expect(deps.log).toHaveBeenCalledWith("warn", {
       operation: "snapshot-read",
@@ -222,7 +266,7 @@ describe("createRelatedPetsResolver", () => {
 
     const result = await createRelatedPetsResolver(deps)(current);
 
-    expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c"]);
+    expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c", "d"]);
     expect(deps.log).toHaveBeenCalledTimes(1);
     expect(deps.log).toHaveBeenCalledWith("warn", {
       operation: "snapshot-read",
@@ -259,7 +303,13 @@ describe("createRelatedPetsResolver", () => {
 
       const result = await createRelatedPetsResolver(deps)(current);
 
-      expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c"]);
+      expect(result.map((pet) => pet.slug)).toEqual([
+        "e",
+        "a",
+        "b",
+        "c",
+        "d",
+      ]);
       expect(deps.log).toHaveBeenCalledTimes(1);
       expect(deps.log).toHaveBeenCalledWith(
         "warn",
@@ -290,7 +340,7 @@ describe("createRelatedPetsResolver", () => {
 
     const result = await createRelatedPetsResolver(deps)(current);
 
-    expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c"]);
+    expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c", "d"]);
     expect(deps.getState).not.toHaveBeenCalled();
     expect(deps.getSnapshot).not.toHaveBeenCalled();
   });
@@ -301,7 +351,13 @@ describe("createRelatedPetsResolver", () => {
 
       const result = await createRelatedPetsResolver(deps)(current);
 
-      expect(result.map((pet) => pet.slug)).toEqual(["b", "d", "e", "a"]);
+      expect(result.map((pet) => pet.slug)).toEqual([
+        "b",
+        "d",
+        "e",
+        "a",
+        "c",
+      ]);
     }
   });
 
@@ -312,7 +368,7 @@ describe("createRelatedPetsResolver", () => {
 
     const result = await createRelatedPetsResolver(deps)(current);
 
-    expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c"]);
+    expect(result.map((pet) => pet.slug)).toEqual(["e", "a", "b", "c", "d"]);
     expect(deps.getState).not.toHaveBeenCalled();
     expect(deps.log).toHaveBeenCalledWith("warn", {
       operation: "resolve",

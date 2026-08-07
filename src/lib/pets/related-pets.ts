@@ -1,3 +1,4 @@
+import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
 import type { PetKind } from "@/lib/pets/types";
 
 export type RelatedPetCandidate = {
@@ -25,7 +26,7 @@ export function formatRelatedPetDescription(description: string): string {
 export function selectRelatedPets(
   candidates: RelatedPetCandidate[],
   current: Pick<RelatedPetCandidate, "slug" | "kind" | "tags">,
-  limit = 4,
+  limit = RELATED_PETS_SNAPSHOT_DEPTH,
 ): RelatedPetCandidate[] {
   const currentTags = normalizeTagSet(current.tags);
 

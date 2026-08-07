@@ -590,6 +590,22 @@ describe("related pets rebuild service", () => {
     });
   });
 
+  it("writes eight unique related slugs for a nine-pet catalog", async () => {
+    const pets = Array.from({ length: 9 }, (_, index) =>
+      pet(index === 0 ? "source" : `peer-${index}`),
+    );
+    const harness = createHarness({ pets });
+
+    await harness.service.rebuild({ mode: "apply", includeVisual: true });
+
+    expect(harness.snapshots).toHaveLength(9);
+    for (const snapshot of harness.snapshots) {
+      expect(snapshot.relatedSlugs).toHaveLength(8);
+      expect(new Set(snapshot.relatedSlugs).size).toBe(8);
+      expect(snapshot.relatedSlugs).not.toContain(snapshot.sourceSlug);
+    }
+  });
+
   it("supports text-first rebuilds without reading visual rows or captions", async () => {
     const harness = createHarness();
 

@@ -240,6 +240,29 @@ describe("related pets repository", () => {
     ).rejects.toThrow("Invalid related pets snapshot slugs.");
   });
 
+  it("accepts eight snapshot slugs and rejects nine", async () => {
+    const harness = createHarness();
+    const baseSnapshot = {
+      generationId: "generation-2",
+      sourceSlug: "source-pet",
+      rankingRevision: "ranking-v1",
+      createdAt: "2026-08-03T10:02:00.000Z",
+    };
+
+    await expect(
+      harness.repository.writeSnapshot({
+        ...baseSnapshot,
+        relatedSlugs: Array.from({ length: 8 }, (_, index) => `peer-${index}`),
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      harness.repository.writeSnapshot({
+        ...baseSnapshot,
+        relatedSlugs: Array.from({ length: 9 }, (_, index) => `peer-${index}`),
+      }),
+    ).rejects.toThrow("Invalid related pets snapshot slugs.");
+  });
+
   it("starts a build and writes a validated inactive snapshot", async () => {
     let state: Parameters<typeof stateResult>[0] | null = null;
     const harness = createHarness(async (statement) => {
