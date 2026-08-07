@@ -11,6 +11,11 @@ export type RelatedPetCandidate = {
   createdAt: string;
 };
 
+export type RelatedPetMetadataRanking = {
+  candidate: RelatedPetCandidate;
+  sharedTagCount: number;
+};
+
 export const RELATED_PET_DESCRIPTION_MAX_LENGTH = 120;
 
 export function formatRelatedPetDescription(description: string): string {
@@ -24,24 +29,33 @@ export function formatRelatedPetDescription(description: string): string {
 }
 
 export function selectRelatedPets(
-  candidates: RelatedPetCandidate[],
+  candidates: readonly RelatedPetCandidate[],
   current: Pick<RelatedPetCandidate, "slug" | "kind" | "tags">,
   limit = RELATED_PETS_SNAPSHOT_DEPTH,
 ): RelatedPetCandidate[] {
+  return rankRelatedPetsByMetadata(candidates, current)
+    .slice(0, limit)
+    .map(({ candidate }) => candidate);
+}
+
+export function rankRelatedPetsByMetadata(
+  candidates: readonly RelatedPetCandidate[],
+  current: Pick<RelatedPetCandidate, "slug" | "kind" | "tags">,
+): RelatedPetMetadataRanking[] {
   const currentTags = normalizeTagSet(current.tags);
 
   return candidates
     .filter((candidate) => candidate.slug !== current.slug)
     .map((candidate) => ({
       candidate,
-      sharedTags: intersectionSize(
+      sharedTagCount: intersectionSize(
         normalizeTagSet(candidate.tags),
         currentTags,
       ),
     }))
     .sort((left, right) => {
-      if (left.sharedTags !== right.sharedTags) {
-        return right.sharedTags - left.sharedTags;
+      if (left.sharedTagCount !== right.sharedTagCount) {
+        return right.sharedTagCount - left.sharedTagCount;
       }
       const leftSameKind = left.candidate.kind === current.kind ? 1 : 0;
       const rightSameKind = right.candidate.kind === current.kind ? 1 : 0;
@@ -55,9 +69,7 @@ export function selectRelatedPets(
         return dateOrder;
       }
       return left.candidate.slug.localeCompare(right.candidate.slug);
-    })
-    .slice(0, limit)
-    .map(({ candidate }) => candidate);
+    });
 }
 
 function normalizeTagSet(tags: string[]): Set<string> {

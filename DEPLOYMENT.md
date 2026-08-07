@@ -177,7 +177,12 @@ npm run related:backfill-query -- --apply
 The query source is normalized pet tags, with description only as the fallback
 for pets without tags. Candidate vectors remain the existing search document
 revision, so related ranking uses query-to-document cosine rather than the
-unsupported document-to-document shortcut. Both evaluation commands below
+unsupported document-to-document shortcut. The depth-eight ranking first orders
+candidates that pass either semantic threshold or share a normalized tag using
+weighted RRF. Remaining slots use only full text and visual ranks, with no kind,
+date, freshness, or metadata-rank contribution. When both semantic modalities
+are absent, the existing metadata-only order is preserved. Both evaluation
+commands below
 read only the approved catalog and existing text-query/text-document/visual/
 caption rows; they do not call an embedding provider:
 
@@ -202,9 +207,9 @@ prefers an enabled visual profile with the smallest tied weight and disables
 visual only when every enabled profile degrades the text-plus-metadata
 baseline. The command exits nonzero unless the exact selected thresholds and
 weight match `CURRENT_RELATED_PETS_RANKING_PROFILE`. When it reports a
-different `selectedProfile`, update the pinned values and ranking revision,
-commit and deploy that profile with the feature still disabled, and rerun
-calibration. The holdout command uses four untouched source cases exactly once
+different `selectedProfile`, stop the rollout; thresholds must not be changed
+automatically. A new pinned profile requires a separate calibrated code change.
+The holdout command uses four untouched source cases exactly once
 and must report `passed: true`; full hybrid nDCG@4 and nDCG@8 must each be no
 worse than both metadata-only and text-plus-metadata. Missing approved fixture
 pets or missing current query, document, or visual vectors fail either command.
@@ -228,16 +233,16 @@ Then set `PET_RELATED_HYBRID_ENABLED=true` and restart the app. Unset and exact
 `true` enable snapshot reads; exact `false` is the rollout and rollback kill
 switch. Invalid values fail safely to the heuristic resolver.
 
-For the depth-8 v6 rollout, record the current active and previous generation
-IDs plus a control top-four sample before deployment. The deployed v6 app does
-not require a new flag: the incompatible v5 generation is ignored and the
-resolver temporarily returns heuristic top eight. Immediately run the dry-run
-and apply commands above, then verify `status: "ready"`, the v6 `depth=8`
-ranking revision, snapshot coverage equal to the approved catalog, eight
-unique non-self slugs where the catalog permits, and the saved control top
-four. Manually review positions 5-8 for all 12 calibration source cases before
-considering the rollout complete. Pet pages render eight recommendations;
-their private Markdown representation remains capped at four.
+For the depth-8 v7 rollout, preserve the exact v6 image, runtime environment,
+and active generation before deployment. Deploy v7 with
+`PET_RELATED_HYBRID_ENABLED=false`, rerun calibration and holdout, and stop if
+the pinned profile or any nDCG@4/nDCG@8 gate changes. After a successful dry-run
+and one apply, verify `status: "ready"`, the v7 `depth=8:tail=semantic` ranking
+revision, snapshot coverage equal to the approved catalog, and eight unique
+approved non-self slugs where the catalog permits. Review top eight plus tier
+provenance for all 16 evaluation sources and Tallulah; Tallulah must not include
+T-Rex, and its eighth result must be a semantic backfill. Pet pages render eight
+recommendations; their private Markdown representation remains capped at four.
 
 Create exact-match JavaScript goals named `related_pet_impression` and
 `related_pet_click` in Yandex Metrika counter `104844437` only as a separately

@@ -11,6 +11,7 @@ import {
   evaluateRelatedPetsHoldout,
 } from "@/lib/pets/related-pets-calibration";
 import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
+import { rankRelatedPetsWithDiagnostics } from "@/lib/pets/related-pets-ranking";
 import {
   getCurrentRelatedPetsVisualSourceContext,
   prepareRelatedPetsRankingInputs,
@@ -114,6 +115,26 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
         visualRevision: profile.visualRevision,
         visualCaptionRevision: profile.visualCaptionRevision,
       };
+      const tallulah = prepared.approvedPets.find(
+        ({ slug }) => slug === "tallulah",
+      );
+      if (!tallulah) {
+        throw new Error("Tallulah live regression source is required.");
+      }
+      const tallulahRanking = rankRelatedPetsWithDiagnostics({
+        source: tallulah,
+        candidates: prepared.approvedPets,
+        textQueryVectors: prepared.textQueryVectors,
+        textDocumentVectors: prepared.textDocumentVectors,
+        visualVectors: prepared.visualVectors,
+        profile,
+      });
+      expect(tallulahRanking.slugs).toHaveLength(8);
+      expect(new Set(tallulahRanking.slugs).size).toBe(8);
+      expect(tallulahRanking.slugs).not.toContain("t-rex");
+      expect(tallulahRanking.diagnostics[7]?.tier).toBe(
+        "semantic_backfill",
+      );
 
       if (LIVE_EVAL_SPLIT === "calibration") {
         const report = evaluateRelatedPetsCalibration(
@@ -124,6 +145,7 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
           ...profileIdentity,
           caseCount: observations.length,
           report,
+          tallulahRanking,
         });
         const sansCase = report.report.cases.find(
           ({ sourceSlug }) => sourceSlug === "sans",
@@ -148,6 +170,8 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
         expect(sansCase?.textMetadataSlugs.slice(0, 4)).not.toEqual(
           sansCase?.metadataSlugs.slice(0, 4),
         );
+        expect(report.report.hybridNdcgAt4).toBeCloseTo(0.208333, 6);
+        expect(report.report.hybridNdcgAt8).toBeCloseTo(0.224452, 6);
         expect(report.passed).toBe(true);
         return;
       }
@@ -162,7 +186,10 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
           visualWeight: profile.visualWeight,
         },
         report,
+        tallulahRanking,
       });
+      expect(report.hybridNdcgAt4).toBeCloseTo(0.07402, 6);
+      expect(report.hybridNdcgAt8).toBeCloseTo(0.111031, 6);
       expect(report.passed).toBe(true);
     },
     180_000,

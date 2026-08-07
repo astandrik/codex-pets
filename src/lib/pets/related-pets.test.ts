@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatRelatedPetDescription,
+  rankRelatedPetsByMetadata,
   RELATED_PET_DESCRIPTION_MAX_LENGTH,
   selectRelatedPets,
   type RelatedPetCandidate,
@@ -167,6 +168,27 @@ describe("selectRelatedPets", () => {
     );
 
     expect(slugsOf(related)).toEqual(["two-distinct", "duplicate-space"]);
+    expect(
+      rankRelatedPetsByMetadata(
+        [
+          candidate({
+            slug: "duplicate-space",
+            tags: ["space", "SPACE", " space "],
+          }),
+          candidate({
+            slug: "two-distinct",
+            tags: ["space", "FRIENDLY"],
+          }),
+        ],
+        CURRENT,
+      ).map(({ candidate: item, sharedTagCount }) => ({
+        slug: item.slug,
+        sharedTagCount,
+      })),
+    ).toEqual([
+      { slug: "two-distinct", sharedTagCount: 2 },
+      { slug: "duplicate-space", sharedTagCount: 1 },
+    ]);
   });
 
   it("normalizes the current pet tags before matching", () => {

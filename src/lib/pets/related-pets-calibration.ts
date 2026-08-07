@@ -1,11 +1,11 @@
 import {
-  fuseRelatedPetRankings,
+  fuseRelatedPetRankingsWithDiagnostics,
   rankRelatedPetVectorMatches,
   type RelatedPetSimilarity,
   type RelatedPetsRankingProfile,
 } from "@/lib/pets/related-pets-ranking";
 import {
-  selectRelatedPets,
+  rankRelatedPetsByMetadata,
   type RelatedPetCandidate,
 } from "@/lib/pets/related-pets";
 import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
@@ -22,6 +22,7 @@ export type RelatedPetCalibrationObservation = {
   sourceSlug: string;
   relevantSlugs: readonly string[];
   metadataSlugs: readonly string[];
+  sharedTagCounts: Readonly<Record<string, number>>;
   textMatches: readonly RelatedPetSimilarity[];
   visualMatches: readonly RelatedPetSimilarity[];
 };
@@ -100,13 +101,19 @@ export function createRelatedPetsCalibrationObservations(input: {
         `Related-pet calibration source ${calibrationCase.sourceSlug} is missing from the approved catalog.`,
       );
     }
+    const metadataRanking = rankRelatedPetsByMetadata(
+      Array.from(candidatesBySlug.values()),
+      source,
+    );
     return {
       ...calibrationCase,
-      metadataSlugs: selectRelatedPets(
-        Array.from(candidatesBySlug.values()),
-        source,
-        candidatesBySlug.size,
-      ).map(({ slug }) => slug),
+      metadataSlugs: metadataRanking.map(({ candidate }) => candidate.slug),
+      sharedTagCounts: Object.fromEntries(
+        metadataRanking.map(({ candidate, sharedTagCount }) => [
+          candidate.slug,
+          sharedTagCount,
+        ]),
+      ),
       textMatches: rankRelatedPetVectorMatches(
         source.slug,
         input.textQueryVectors,
@@ -314,6 +321,14 @@ export function evaluateRelatedPetsCalibration(
       report.textContribution.improvedCaseCount > 0,
     textChangesAtLeastOneTop4:
       report.textContribution.changedTop4CaseCount > 0,
+    hybridNoWorseThanMetadataAt4:
+      report.hybridNdcgAt4 >= report.metadataNdcgAt4,
+    hybridNoWorseThanTextMetadataAt4:
+      report.hybridNdcgAt4 >= report.textMetadataNdcgAt4,
+    hybridNoWorseThanMetadataAt8:
+      report.hybridNdcgAt8 >= report.metadataNdcgAt8,
+    hybridNoWorseThanTextMetadataAt8:
+      report.hybridNdcgAt8 >= report.textMetadataNdcgAt8,
   };
 
   return {
@@ -366,27 +381,34 @@ export function evaluateRelatedPetsProfile(
       observation.metadataSlugs,
       observation.sourceSlug,
     ).slice(0, RELATED_PETS_SNAPSHOT_DEPTH);
-    const textMetadataSlugs = fuseRelatedPetRankings({
+    const textMetadataRanking = fuseRelatedPetRankingsWithDiagnostics({
       sourceSlug: observation.sourceSlug,
       metadataSlugs: observation.metadataSlugs,
+      sharedTagCounts: observation.sharedTagCounts,
       textMatches: observation.textMatches,
       textMinSimilarity: profile.textMinSimilarity,
       visualMinSimilarity: null,
       visualWeight: 0,
     });
-    const hybridSlugs = fuseRelatedPetRankings({
+    const hybridRanking = fuseRelatedPetRankingsWithDiagnostics({
       sourceSlug: observation.sourceSlug,
       metadataSlugs: observation.metadataSlugs,
+      sharedTagCounts: observation.sharedTagCounts,
       textMatches: observation.textMatches,
       visualMatches: observation.visualMatches,
       ...profile,
     });
+    const textMetadataSlugs = textMetadataRanking.slugs;
+    const hybridSlugs = hybridRanking.slugs;
     return {
       groupId: observation.groupId,
       sourceSlug: observation.sourceSlug,
       metadataSlugs,
       textMetadataSlugs,
       hybridSlugs,
+      hybridDiagnostics: hybridRanking.diagnostics,
+      qualifiedCount: hybridRanking.qualifiedCount,
+      semanticBackfillCount: hybridRanking.semanticBackfillCount,
       metadataNdcgAt4: ndcgAt4(
         metadataSlugs,
         observation.relevantSlugs,
@@ -433,6 +455,10 @@ export function evaluateRelatedPetsProfile(
     metadataNdcgAt8,
     textMetadataNdcgAt8,
     hybridNdcgAt8: mean(cases.map((item) => item.hybridNdcgAt8)),
+    qualifiedCount: sum(cases.map((item) => item.qualifiedCount)),
+    semanticBackfillCount: sum(
+      cases.map((item) => item.semanticBackfillCount),
+    ),
     textContribution: {
       aggregateNoWorseThanMetadata:
         textMetadataNdcgAt4 >= metadataNdcgAt4,
@@ -502,4 +528,8 @@ function sameTopK(
 function mean(values: readonly number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function sum(values: readonly number[]): number {
+  return values.reduce((total, value) => total + value, 0);
 }
