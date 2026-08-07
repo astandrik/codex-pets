@@ -12,12 +12,18 @@ describe("markdown twins", () => {
     expect(getMarkdownTwinPath("/agents")).toBe("/agents.md");
     expect(getMarkdownTwinPath("/developers")).toBe("/developers.md");
     expect(getMarkdownTwinPath("/docs/api")).toBe("/docs/api.md");
+    expect(getMarkdownTwinPath("/guides/how-codex-pets-works")).toBe(
+      "/guides/how-codex-pets-works.md",
+    );
     expect(getMarkdownTwinPath("/guides/example")).toBeNull();
   });
 
   it("identifies pages that support markdown negotiation", () => {
     expect(isMarkdownTwinSourcePath("/about")).toBe(true);
     expect(isMarkdownTwinSourcePath("/about/")).toBe(true);
+    expect(isMarkdownTwinSourcePath("/guides/how-codex-pets-works/")).toBe(
+      true,
+    );
     expect(isMarkdownTwinSourcePath("/guides/example")).toBe(false);
   });
 });

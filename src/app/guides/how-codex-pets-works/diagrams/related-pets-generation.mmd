@@ -1,0 +1,8 @@
+flowchart TB
+    I["Current metadata,<br/>text vectors, and visual vectors"] --> P["Pairwise ranking<br/>for every approved pet"]
+    P --> W["Write a complete<br/>snapshot generation"]
+    W --> V{"Every expected row<br/>current and valid?"}
+    V -->|yes| A["Atomically activate<br/>the generation in YDB"]
+    A --> D["Pet detail reads up to<br/>four related pets"]
+    V -->|building or failed| H["Heuristic fallback<br/>for pet detail"]
+    H -.-> K["Previous snapshot data<br/>remains stored and recoverable"]

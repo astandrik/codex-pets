@@ -83,6 +83,9 @@ describe("sitemap", () => {
         "https://pets.example/codex-pets?page=9",
       ]);
       expect(urls[9]).toBe("https://pets.example/codex-pets/about");
+      expect(urls).toContain(
+        "https://pets.example/codex-pets/guides/how-codex-pets-works",
+      );
       expect(urls).not.toContain("https://pets.example/codex-pets/pets");
       expect(
         petsRepositoryMocks.listApprovedPetSitemapEntries,

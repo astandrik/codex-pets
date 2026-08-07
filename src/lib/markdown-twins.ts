@@ -7,6 +7,10 @@ const MARKDOWN_TWIN_PATHS = new Map<string, string>([
   ["/developers", "/developers.md"],
   ["/docs/api", "/docs/api.md"],
   [
+    "/guides/how-codex-pets-works",
+    "/guides/how-codex-pets-works.md",
+  ],
+  [
     "/guides/best-codex-pets-for-ai-coding-agents",
     "/guides/best-codex-pets-for-ai-coding-agents.md",
   ],

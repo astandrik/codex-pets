@@ -1,0 +1,8 @@
+flowchart TB
+    M["Name, description,<br/>kind, and tags"] --> D["Canonical text document"]
+    D --> E["Document embedding"]
+    S["Spritesheet atlas"] --> F["Four fixed frames"]
+    F --> C["Visual caption"]
+    C --> V["Visual embedding"]
+    E --> Y["YDB derived data<br/>model revision<br/>dimensions<br/>source hash"]
+    V --> Y

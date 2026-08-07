@@ -136,6 +136,16 @@ describe("markdown route indexing headers", () => {
 describe("guide markdown routes", () => {
   it.each([
     {
+      modulePath: "@/app/guides/how-codex-pets-works.md/route",
+      heading: "# How Codex Pets works",
+      expected: [
+        "A pet pack's path",
+        "Online hybrid search",
+        "Related pets without half-published results",
+        "https://pets.example/guides/how-codex-pets-works/assets/pet-pack-lifecycle.svg",
+      ],
+    },
+    {
       modulePath: "@/app/guides/best-codex-pets-for-ai-coding-agents.md/route",
       heading: "# Best Codex pets for AI coding agents",
       expected: [

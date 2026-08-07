@@ -79,6 +79,10 @@ describe("GET /llm.txt", () => {
       expect(body).toContain("OpenAPI JSON");
       expect(body).toContain("Developer portal");
       expect(body).toContain("API docs");
+      expect(body).toContain("How Codex Pets works");
+      expect(body).toContain(
+        "https://pets.example/guides/how-codex-pets-works.md",
+      );
       expect(body).toContain("MCP Registry metadata");
       expect(body).toContain("Pet request page");
       expect(body).toContain("Submit a pet");

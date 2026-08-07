@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 503.4905 841.8099999999998" width="503.4905" height="841.8099999999998" style="--bg:#0d1117;--fg:#e6edf3;--line:#3d444d;--accent:#ffbd4a;--muted:#9198a1">
+<style>
+  text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<polyline class="edge" data-from="I" data-to="P" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="235.81375000000003,93.80000000000001 235.81375000000003,141.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="P" data-to="W" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="235.81375000000003,195.60000000000002 235.81375000000003,243.60000000000002" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="W" data-to="V" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="235.81375000000003,297.40000000000003 235.81375000000003,345.40000000000003" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="V" data-to="A" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="yes" points="205.06208333333333,499.15833333333336 205.06208333333333,565.91 123.5895,565.91 123.5895,646.2099999999999" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="A" data-to="D" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="123.5895,700.0099999999999 123.58950000000002,748.0099999999999" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="V" data-to="H" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="building or failed" points="266.5654166666667,499.1583333333334 266.5654166666667,565.91 348.038,565.91 348.038,646.2099999999999" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="H" data-to="K" data-style="dotted" data-arrow-start="false" data-arrow-end="true" points="348.038,700.0099999999999 348.038,748.0099999999999" fill="none" stroke="var(--_line)" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)" />
+<g class="edge-label" data-from="V" data-to="A" data-label="yes">
+  <rect x="105.5895" y="572.91" width="35.47" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="123.3245" y="588.06" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">yes</text>
+</g>
+<g class="edge-label" data-from="V" data-to="H" data-label="building or failed">
+  <rect x="301.038" y="572.91" width="93.68200000000003" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="347.879" y="588.06" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">building or failed</text>
+</g>
+<g class="node" data-id="I" data-label="Current metadata,
+text vectors, and visual vectors" data-shape="rectangle">
+  <rect x="123.69575000000002" y="40" width="224.236" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="235.81375000000003" y="66.9" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="235.81375000000003" dy="-3.9000000000000012">Current metadata,</tspan><tspan x="235.81375000000003" dy="16.900000000000002">text vectors, and visual vectors</tspan></text>
+</g>
+<g class="node" data-id="P" data-label="Pairwise ranking
+for every approved pet" data-shape="rectangle">
+  <rect x="147.77825" y="141.8" width="176.07099999999997" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="235.81375" y="168.70000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="235.81375" dy="-3.9000000000000012">Pairwise ranking</tspan><tspan x="235.81375" dy="16.900000000000002">for every approved pet</tspan></text>
+</g>
+<g class="node" data-id="W" data-label="Write a complete
+snapshot generation" data-shape="rectangle">
+  <rect x="154.44725" y="243.60000000000002" width="162.733" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="235.81375" y="270.5" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="235.81375" dy="-3.9000000000000012">Write a complete</tspan><tspan x="235.81375" dy="16.900000000000002">snapshot generation</tspan></text>
+</g>
+<g class="node" data-id="V" data-label="Every expected row
+current and valid?" data-shape="diamond">
+  <polygon points="235.81375000000003,345.40000000000003 328.06875,437.65500000000003 235.81375000000003,529.9100000000001 143.55875000000003,437.65500000000003" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="235.81375000000003" y="437.65500000000003" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="235.81375000000003" dy="-3.9000000000000012">Every expected row</tspan><tspan x="235.81375000000003" dy="16.900000000000002">current and valid?</tspan></text>
+</g>
+<g class="node" data-id="A" data-label="Atomically activate
+the generation in YDB" data-shape="rectangle">
+  <rect x="40" y="646.2099999999999" width="167.179" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="123.5895" y="673.1099999999999" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="123.5895" dy="-3.9000000000000012">Atomically activate</tspan><tspan x="123.5895" dy="16.900000000000002">the generation in YDB</tspan></text>
+</g>
+<g class="node" data-id="D" data-label="Pet detail reads up to
+four related pets" data-shape="rectangle">
+  <rect x="42.5935" y="748.0099999999999" width="161.99200000000002" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="123.58950000000002" y="774.9099999999999" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="123.58950000000002" dy="-3.9000000000000012">Pet detail reads up to</tspan><tspan x="123.58950000000002" dy="16.900000000000002">four related pets</tspan></text>
+</g>
+<g class="node" data-id="H" data-label="Heuristic fallback
+for pet detail" data-shape="rectangle">
+  <rect x="276.3045" y="646.2099999999999" width="143.467" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="348.038" y="673.1099999999999" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="348.038" dy="-3.9000000000000012">Heuristic fallback</tspan><tspan x="348.038" dy="16.900000000000002">for pet detail</tspan></text>
+</g>
+<g class="node" data-id="K" data-label="Previous snapshot data
+remains stored and recoverable" data-shape="rectangle">
+  <rect x="232.58550000000002" y="748.0099999999999" width="230.90499999999997" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="348.038" y="774.9099999999999" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="348.038" dy="-3.9000000000000012">Previous snapshot data</tspan><tspan x="348.038" dy="16.900000000000002">remains stored and recoverable</tspan></text>
+</g>
+</svg>
