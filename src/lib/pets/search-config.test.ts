@@ -173,7 +173,7 @@ describe("pet search runtime configuration", () => {
     expect(hybrid.visualFallbackReason).toBeNull();
   });
 
-  it("keeps the four-frame V3 pipeline uncalibrated and out of hybrid", () => {
+  it("loads the calibrated four-frame V3 pipeline", () => {
     const environment = {
       PET_SEARCH_MODE: "hybrid",
       PET_SEARCH_MODEL_REVISION: v2TextRevision,
@@ -191,7 +191,10 @@ describe("pet search runtime configuration", () => {
       visualRevision: PET_VISUAL_MODEL_REVISION_V3,
       embeddingModelId: "yandex-text-embeddings-v2-768",
       dimensions: 768,
-      profile: null,
+      profile: {
+        minSemanticScore: 0.5043169260025024,
+        weight: 1,
+      },
     });
     expect(shadow.visualFallbackReason).toBeNull();
 
@@ -199,9 +202,7 @@ describe("pet search runtime configuration", () => {
       { ...environment, PET_SEARCH_VISUAL_MODE: "hybrid" },
       () => "secret",
     );
-    expect(hybrid.visualFallbackReason).toBe(
-      "visual_calibration_missing",
-    );
+    expect(hybrid.visualFallbackReason).toBeNull();
   });
 
   it("disables visual ranking for incompatible embedding providers", () => {
