@@ -104,14 +104,18 @@ const CAPTION_FIELDS = [
 const SAFE_FAILURE_REASONS = new Set([
   "asset_error",
   "authentication_error",
+  "content_filtered",
   "configuration_missing",
   "embedding_error",
   "invalid_request",
   "invalid_response",
+  "malformed_json",
+  "output_limit",
   "persistence_error",
   "provider_error",
   "rate_limited",
   "refused",
+  "schema_invalid",
   "timeout",
 ]);
 

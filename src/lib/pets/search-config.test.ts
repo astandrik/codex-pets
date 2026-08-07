@@ -53,7 +53,7 @@ describe("pet search runtime configuration", () => {
       embeddingModelId: "yandex-text-search-v1-256",
       dimensions: 256,
       profile: calibratedVisualProfile,
-      visionTimeoutMs: 30_000,
+      visionTimeoutMs: 180_000,
       modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
     });
     expect(config.fallbackReason).toBeNull();
@@ -96,7 +96,7 @@ describe("pet search runtime configuration", () => {
         embeddingModelId: "yandex-text-search-v1-256",
         dimensions: 256,
         profile: calibratedVisualProfile,
-        visionTimeoutMs: 30_000,
+        visionTimeoutMs: 180_000,
         modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
       },
       visualFallbackReason: null,
