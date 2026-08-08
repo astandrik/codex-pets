@@ -110,6 +110,7 @@ describe("related pet calibration observations", () => {
         sourceSlug: "source",
         relevantSlugs: ["peer"],
         metadataSlugs: ["peer", "other"],
+        sharedTagCounts: { peer: 1, other: 0 },
         textMatches: [
           { slug: "peer", score: 1 },
           { slug: "other", score: 0 },
@@ -185,6 +186,7 @@ function observation(
     sourceSlug: "source",
     relevantSlugs: ["peer"],
     metadataSlugs: ["peer", "other"],
+    sharedTagCounts: {},
     textMatches: [{ slug: "peer", score: 0.9 }],
     visualMatches: [{ slug: "peer", score: 0.9 }],
     ...overrides,
@@ -198,6 +200,7 @@ describe("related pet profile selection", () => {
         [
           observation({
             metadataSlugs: ["other", "peer"],
+            sharedTagCounts: { other: 1 },
             textMatches: [{ slug: "peer", score: 0.8 }],
             visualMatches: [],
           }),
@@ -281,13 +284,24 @@ describe("related pet profile selection", () => {
       visualWeight: 0.25,
     } as const;
 
-    expect(
-      evaluateRelatedPetsCalibration(observations, pinnedProfile),
-    ).toMatchObject({
+    const matchingReport = evaluateRelatedPetsCalibration(
+      observations,
+      pinnedProfile,
+    );
+    expect(matchingReport).toMatchObject({
       selectedProfile: pinnedProfile,
       pinnedProfile,
       profileMatches: true,
       passed: true,
+    });
+    expect(matchingReport.comparisons).toEqual({
+      textMetadataNoWorseThanMetadata: true,
+      textImprovesAtLeastOneCase: true,
+      textChangesAtLeastOneTop4: true,
+      hybridNoWorseThanMetadataAt4: true,
+      hybridNoWorseThanTextMetadataAt4: true,
+      hybridNoWorseThanMetadataAt8: true,
+      hybridNoWorseThanTextMetadataAt8: true,
     });
     expect(
       evaluateRelatedPetsCalibration(observations, {
@@ -307,6 +321,7 @@ describe("related pet profile selection", () => {
         [
           observation({
             metadataSlugs: ["other", "peer"],
+            sharedTagCounts: { other: 1 },
             textMatches: [],
             visualMatches: [{ slug: "peer", score: 0.8 }],
           }),
@@ -419,6 +434,22 @@ describe("related pet semantic regressions", () => {
       improvedCaseCount: 1,
       changedTop4CaseCount: 1,
     });
+    expect(report.cases[0]).toMatchObject({
+      qualifiedCount: 1,
+      semanticBackfillCount: 4,
+    });
+    expect(report.cases[0]?.hybridDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slug: "fire-skull",
+          tier: "qualified",
+        }),
+      ]),
+    );
+    expect(report).toMatchObject({
+      qualifiedCount: 1,
+      semanticBackfillCount: 4,
+    });
   });
 });
 
@@ -469,5 +500,44 @@ describe("related pet holdout reporting", () => {
         visualWeight: 0.25,
       }),
     ).toThrow(/holdout observations/i);
+  });
+
+  it("blocks rollout when hybrid degrades only at nDCG@8", () => {
+    const metadataSlugs = [
+      "irrelevant-1",
+      "irrelevant-2",
+      "irrelevant-3",
+      "irrelevant-4",
+      "irrelevant-5",
+      "irrelevant-6",
+      "irrelevant-7",
+      "peer",
+      "irrelevant-8",
+    ];
+    const report = evaluateRelatedPetsHoldout(
+      [
+        observation({
+          split: "holdout",
+          metadataSlugs,
+          sharedTagCounts: Object.fromEntries(
+            metadataSlugs.slice(0, 7).map((slug) => [slug, 1]),
+          ),
+          textMatches: [{ slug: "peer", score: 0.4 }],
+          visualMatches: metadataSlugs
+            .filter((slug) => slug !== "peer")
+            .map((slug) => ({ slug, score: 0.9 })),
+        }),
+      ],
+      {
+        textMinSimilarity: 0.5,
+        visualMinSimilarity: 0.5,
+        visualWeight: 0.5,
+      },
+    );
+
+    expect(report.hybridNdcgAt4).toBe(report.metadataNdcgAt4);
+    expect(report.hybridNdcgAt8).toBeLessThan(report.metadataNdcgAt8);
+    expect(report.comparisons.hybridNoWorseThanMetadataAt8).toBe(false);
+    expect(report.passed).toBe(false);
   });
 });
