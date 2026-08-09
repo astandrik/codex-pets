@@ -319,6 +319,22 @@ export async function fulfillGenerationRequest(input: {
     : { ok: false, error: "request_not_found" };
 }
 
+export async function reopenGenerationRequest(
+  requestId: string,
+): Promise<PetGenerationRequest | null> {
+  const request = await getGenerationRequestById(requestId);
+  if (!request || request.status === "deleted") return null;
+  return updateGenerationRequest({
+    ...request,
+    status: "pending",
+    linkedPetId: null,
+    linkedPetSlug: null,
+    fulfilledAt: null,
+    rejectedAt: null,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 export async function readGenerationRequestImage(
   requestId: string,
 ): Promise<GenerationRequestImageResult | null> {
@@ -369,7 +385,7 @@ LIMIT 1;
   };
 }
 
-async function getGenerationRequestById(
+export async function getGenerationRequestById(
   id: string,
 ): Promise<PetGenerationRequest | null> {
   if (isMockPetsDataSource()) {

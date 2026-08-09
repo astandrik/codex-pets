@@ -98,6 +98,10 @@ The schema currently includes:
 - `codex_pet_metrics`
 - `codex_pet_generation_requests`
 - `codex_pet_generation_request_images`
+- `codex_pet_generation_runs`
+- `codex_pet_generation_stage_attempts`
+- `codex_pet_generation_artifacts`
+- `codex_pet_generation_artifact_chunks`
 - `codex_schema_migrations`
 
 `codex_pet_upload_sessions` is legacy and may remain present if it already
@@ -312,6 +316,44 @@ docker run -d --name codex-pets \
 If `YDB_PETS_ENDPOINT` or `YDB_STATIC_CREDENTIALS_AUTH_ENDPOINT` points to a
 Docker hostname such as `ydb-local`, the app container must join the same Docker
 network as the YDB containers so that name resolution works.
+
+### Admin pet-generation pilot
+
+The generator is a second container from the same image. It has no public port,
+runs with concurrency `1`, and joins the same `ydb-net`. The web container gets
+the `PET_GENERATION_*` settings, but never an OpenAI credential. Only the worker
+mounts the selected key from private host configuration:
+
+```bash
+docker run -d --name codex-pets-generator \
+  --restart unless-stopped \
+  --network ydb-net \
+  --env-file /path/to/.env.generation-worker \
+  -v /path/to/app.password:/run/secrets/app.password:ro \
+  -v /private/path/openai.key:/run/secrets/openai.key:ro \
+  codex-pets:latest npm run generation:worker
+```
+
+Base the private worker environment on
+[`deploy/generation-worker.env.runtime.example`](./deploy/generation-worker.env.runtime.example).
+Do not inspect or copy credentials from another running container, and do not
+place the OpenAI key in git, YDB, or deployment logs.
+
+Roll out additively:
+
+1. Apply `npm run db:migrate` and confirm all four generation tables exist.
+2. Deploy the web and worker image with `PET_GENERATION_ENABLED=false`.
+3. Run the mocked provider fixtures and the disabled-worker smoke check.
+4. Mount the shared key only into `codex-pets-generator`.
+5. Set `PET_GENERATION_ENABLED=true` in both web and worker environments, then
+   start one worker and process five diverse requests.
+
+Go only when all five packages pass the existing package validator, at least
+four are accepted with no more than one targeted retry, every provider call is
+present in the stage-attempt ledger, and there are no duplicate pets or private
+artifact leaks. Roll back by setting `PET_GENERATION_ENABLED=false` and stopping
+`codex-pets-generator`; the manual request and moderation flows continue, while
+the additive tables remain for audit and later cleanup.
 
 When `INDEXNOW_KEY` is configured, the app serves the verification file at
 `/<INDEXNOW_KEY>.txt`, notifies IndexNow after admin approval publishes a pet,

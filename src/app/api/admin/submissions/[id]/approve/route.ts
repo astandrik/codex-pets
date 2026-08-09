@@ -10,6 +10,7 @@ import {
 import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
 import { refreshApprovedPetRelatedQueryEmbedding } from "@/lib/pets/related-pets-query-runtime";
 import { moderatePet } from "@/lib/pets/repository";
+import { completeGeneratedPetModeration } from "@/lib/pets/generation/repository";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { petSearchRuntimeConfig } from "@/lib/pets/search-provider-runtime";
 import { refreshApprovedPetSearchEmbedding } from "@/lib/pets/search-runtime";
@@ -37,6 +38,7 @@ export async function POST(
   if (!pet) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
+  await completeGeneratedPetModeration({ petId: pet.id, petSlug: pet.slug });
 
   revalidateSitemapCache();
   revalidateRelatedPetCandidatesCache();

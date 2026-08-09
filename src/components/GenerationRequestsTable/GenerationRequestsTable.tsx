@@ -11,6 +11,8 @@ import {
 } from "@gravity-ui/uikit";
 
 import { AdminGenerationRequestActions } from "@/components/AdminGenerationRequestActions/AdminGenerationRequestActions";
+import { AdminGenerationRunCard } from "@/components/AdminGenerationRunCard/AdminGenerationRunCard";
+import type { PetGenerationRun } from "@/lib/pets/generation/types";
 import type {
   GenerationRequestStatus,
   PetGenerationRequestReferenceImage,
@@ -37,13 +39,15 @@ export type GenerationRequestRow = {
   referenceImage: PetGenerationRequestReferenceImage | null;
   adminNote: string | null;
   createdAt: string;
+  generationRun: PetGenerationRun | null;
 };
 
 type GenerationRequestsTableProps = {
   rows: GenerationRequestRow[];
+  generationEnabled: boolean;
 };
 
-export function GenerationRequestsTable({ rows }: GenerationRequestsTableProps) {
+export function GenerationRequestsTable({ rows, generationEnabled }: GenerationRequestsTableProps) {
   const columns: TableColumnConfig<GenerationRequestRow>[] = useMemo(
     () => [
       {
@@ -79,6 +83,15 @@ export function GenerationRequestsTable({ rows }: GenerationRequestsTableProps) 
                 Note: {row.adminNote}
               </Text>
             ) : null}
+            <AdminGenerationRunCard
+              requestId={row.id}
+              requestStatus={row.status}
+              displayNameHint={row.displayNameHint}
+              prompt={row.prompt}
+              kind={row.kind}
+              run={row.generationRun}
+              generationEnabled={generationEnabled}
+            />
           </Flex>
         ),
       },
@@ -159,12 +172,18 @@ export function GenerationRequestsTable({ rows }: GenerationRequestsTableProps) 
           <AdminGenerationRequestActions
             requestId={row.id}
             status={row.status}
+            automationActive={Boolean(
+              row.generationRun &&
+              !["cancelled", "submission_rejected"].includes(
+                row.generationRun.status,
+              ),
+            )}
           />
         ),
         width: 230,
       },
     ],
-    [],
+    [generationEnabled],
   );
 
   return (

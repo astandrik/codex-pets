@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { rebuildRelatedPetsBestEffort } from "@/lib/pets/related-pets-rebuild-trigger";
 import { softDeletePetByIdWithPreviousStatus } from "@/lib/pets/repository";
+import { reopenGeneratedPetRequest } from "@/lib/pets/generation/repository";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
@@ -28,6 +29,7 @@ export async function POST(
   if (!deletion) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
+  await reopenGeneratedPetRequest(id);
 
   if (deletion.previousStatus === "approved") {
     revalidateSitemapCache();

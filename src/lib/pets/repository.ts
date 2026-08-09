@@ -72,6 +72,7 @@ type PetRow = {
 };
 
 export type CreatePendingPetInput = {
+  deterministicPetId?: string;
   petJson: PetJson;
   ownerId: string;
   ownerEmail: string | null;
@@ -514,12 +515,19 @@ export async function createPendingPet(
   input: CreatePendingPetInput,
 ): Promise<PublicPet> {
   if (isMockPetsDataSource()) {
+    if (input.deterministicPetId) {
+      const existing = getMockPetById(input.deterministicPetId);
+      if (existing) {
+        return toPublicPet(existing, existing.metrics, mockOwnerReference(existing));
+      }
+    }
     const slug = slugify(input.petJson.id || input.petJson.displayName);
     if (!slug) {
       throw new Error("Pet id cannot be converted into a public slug.");
     }
 
     const pet = createMockPetRecord({
+      ...(input.deterministicPetId ? { id: input.deterministicPetId } : {}),
       requestedSlug: slug,
       displayName: input.petJson.displayName,
       description: input.petJson.description,
@@ -543,9 +551,14 @@ export async function createPendingPet(
     throw new Error("Pet id cannot be converted into a public slug.");
   }
 
+  if (input.deterministicPetId) {
+    const existing = await getPetById(input.deterministicPetId);
+    if (existing) return toPublicPet(existing, EMPTY_METRICS, await getOwnerProfileByRow(existing));
+  }
+
   const slug = await resolveUniqueSlug(requestedSlug);
   const now = new Date().toISOString();
-  const id = `pet_${crypto.randomUUID().replace(/-/g, "").slice(0, 22)}`;
+  const id = input.deterministicPetId ?? `pet_${crypto.randomUUID().replace(/-/g, "").slice(0, 22)}`;
 
   await withSession((session) =>
     session.executeQuery(
