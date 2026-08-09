@@ -23,7 +23,9 @@ export async function submitGenerationRun(input: {
 }): Promise<SubmitGenerationRunResult> {
   let run = await getGenerationRunById(input.runId);
   if (!run) return { ok: false, error: "not_found", message: "Generation run was not found." };
-  if (run.status === "awaiting_moderation") return { ok: true, run };
+  if (run.status === "awaiting_moderation") return sameFinalMetadata(run.finalMetadata, input.metadata)
+    ? { ok: true, run }
+    : { ok: false, error: "conflict", message: "Final metadata differs from the submitted values." };
   if (run.status !== "awaiting_final_review" && run.status !== "submitting") {
     return { ok: false, error: "conflict", message: "Run is not awaiting final review." };
   }
@@ -38,21 +40,29 @@ export async function submitGenerationRun(input: {
     if (!changed.ok) return changed;
     run = changed.run;
   }
+  const metadata = run.finalMetadata;
+  if (!metadata || !sameFinalMetadata(metadata, input.metadata)) {
+    return { ok: false, error: "conflict", message: "Final metadata differs from the submitted values." };
+  }
 
   const [request, spritesheet] = await Promise.all([
     getGenerationRequestById(run.requestId),
     readGenerationArtifact({ runId: run.id, key: "spritesheet" }),
   ]);
-  if (!request || !spritesheet) {
+  if (!request) return { ok: false, error: "not_found", message: "Generation request was not found." };
+  if (!["pending", "in_progress"].includes(request.status)) {
+    return { ok: false, error: "conflict", message: "Generation request is already closed." };
+  }
+  if (!spritesheet) {
     return { ok: false, error: "invalid_package", message: "Required final artifacts are missing." };
   }
   if (spritesheet.metadata.contentType !== "image/webp") {
     return { ok: false, error: "invalid_package", message: "Final spritesheet must be WebP." };
   }
   const petJson: PetJson = {
-    id: input.metadata.id,
-    displayName: input.metadata.displayName,
-    description: input.metadata.description,
+    id: metadata.id,
+    displayName: metadata.displayName,
+    description: metadata.description,
     spriteVersionNumber: 2,
     spritesheetPath: "spritesheet.webp",
   };
@@ -87,8 +97,8 @@ export async function submitGenerationRun(input: {
     ownerEmail: request.contactEmail,
     ownerName: request.requesterName,
     contactEmail: request.contactEmail,
-    kind: input.metadata.kind,
-    tags: input.metadata.tags,
+    kind: metadata.kind,
+    tags: metadata.tags,
     zipUrl: urls.zipUrl,
     petJsonUrl: urls.petJsonUrl,
     spritesheetUrl: urls.spritesheetUrl,
@@ -97,7 +107,7 @@ export async function submitGenerationRun(input: {
   const transitioned = await transitionGenerationRun({
     runId: run.id,
     status: "awaiting_moderation",
-    finalMetadata: input.metadata,
+    finalMetadata: metadata,
     finalPetId: pet.id,
     finalPetSlug: pet.slug,
     approvedBy: input.approvedBy,
@@ -114,4 +124,13 @@ export function deterministicPetId(runId: string): string {
 }
 export function deterministicAssetId(runId: string): string {
   return `asset_gen_${runId.replace(/^run_/, "").slice(0, 22)}`;
+}
+
+function sameFinalMetadata(
+  stored: PetGenerationFinalMetadata | null,
+  received: PetGenerationFinalMetadata,
+): boolean {
+  return stored !== null && stored.id === received.id && stored.displayName === received.displayName &&
+    stored.description === received.description && stored.kind === received.kind &&
+    JSON.stringify(stored.tags) === JSON.stringify(received.tags);
 }

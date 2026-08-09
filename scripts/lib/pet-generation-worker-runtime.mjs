@@ -111,7 +111,7 @@ export function createGenerationWorkerRuntime({ repository, provider, config, wo
           onImageValidated,
         });
         await requireRunUpdate(repository, claimed.run.id, {
-          status: "validating", lastStage: "assembly", expectedStatuses: ["generating"],
+          status: "validating", lastStage: "assembly", expectedStatuses: ["generating", "validating"],
         });
         for (const artifact of result.artifacts) {
           await repository.putArtifact({
@@ -240,7 +240,9 @@ export function resolveImageArtifactKeys(stage, run) {
     alias: "base",
   };
   const alias = `source-${stage}`;
-  if (run.targetedRetryCount > 0) return run.lastStage === stage
+  const dependsOnRetriedStage = run.lastStage === stage ||
+    (run.lastStage === "cardinal" && ["look-row-9", "look-row-10"].includes(stage));
+  if (run.targetedRetryCount > 0) return dependsOnRetriedStage
     ? { key: `work-${alias}-t${run.targetedRetryCount}`, alias }
     : { key: alias, alias };
   return { key: `work-${alias}-t0`, alias };

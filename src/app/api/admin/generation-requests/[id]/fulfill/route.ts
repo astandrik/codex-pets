@@ -6,6 +6,10 @@ import {
   validatePetLookup,
 } from "@/lib/pets/generation-requests";
 import { fulfillGenerationRequest } from "@/lib/pets/generation-requests-repository";
+import {
+  cancelGenerationRun,
+  guardGenerationRequestManualMutation,
+} from "@/lib/pets/generation/repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,6 +39,8 @@ export async function POST(
   }
 
   const { id } = await params;
+  const guard = await guardGenerationRequestManualMutation(id);
+  if (!guard.ok) return NextResponse.json({ error: guard.error, message: guard.message }, { status: 409 });
   const result = await fulfillGenerationRequest({
     requestId: id,
     petLookup: petLookup.value,
@@ -45,6 +51,7 @@ export async function POST(
     const status = result.error === "pet_deleted" ? 409 : 404;
     return NextResponse.json({ error: result.error }, { status });
   }
+  if (guard.runId) await cancelGenerationRun(guard.runId);
 
   return NextResponse.json({ ok: true, request: result.request });
 }

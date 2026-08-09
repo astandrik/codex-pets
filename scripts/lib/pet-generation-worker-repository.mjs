@@ -295,16 +295,23 @@ export function createGenerationWorkerRepository({ withSession, TypedValues, lea
 
   async function cleanupExpired(now = new Date()) {
     const result = await withSession((session) => session.executeQuery(
-      `DECLARE $expires_at AS Utf8; DECLARE $retained AS Bool;
-       SELECT run_id,artifact_key FROM ${TABLES.artifacts}
-       WHERE retained=$retained AND expires_at<$expires_at LIMIT 100;`,
-      { $expires_at: TypedValues.utf8(now.toISOString()), $retained: TypedValues.bool(false) },
+      `DECLARE $expires_at AS Utf8; DECLARE $retained AS Bool; DECLARE $completed AS Utf8;
+       DECLARE $cancelled AS Utf8; DECLARE $submission_rejected AS Utf8;
+       SELECT a.run_id,a.artifact_key FROM ${TABLES.artifacts} AS a
+       INNER JOIN ${TABLES.runs} AS r ON a.run_id=r.id
+       WHERE a.retained=$retained AND a.expires_at<$expires_at AND
+       (r.status=$completed OR r.status=$cancelled OR r.status=$submission_rejected) LIMIT 100;`,
+      {
+        $expires_at: TypedValues.utf8(now.toISOString()),
+        $retained: TypedValues.bool(false),
+        $completed: TypedValues.utf8("completed"),
+        $cancelled: TypedValues.utf8("cancelled"),
+        $submission_rejected: TypedValues.utf8("submission_rejected"),
+      },
     ));
     let deleted = 0;
     for (const row of rows(result)) {
       const runId = text(row, 0);
-      const current = await withSession((session) => readRun((query, params) => session.executeQuery(query, params), runId));
-      if (!current || !TERMINAL.has(current.status)) continue;
       const p = { $run_id: TypedValues.utf8(runId), $artifact_key: TypedValues.utf8(text(row, 1)) };
       await transaction(async (execute) => {
         await execute(`DECLARE $run_id AS Utf8; DECLARE $artifact_key AS Utf8;

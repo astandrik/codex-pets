@@ -12,6 +12,7 @@ import {
 
 import { AdminGenerationRequestActions } from "@/components/AdminGenerationRequestActions/AdminGenerationRequestActions";
 import { AdminGenerationRunCard } from "@/components/AdminGenerationRunCard/AdminGenerationRunCard";
+import { TERMINAL_GENERATION_RUN_STATUSES } from "@/lib/pets/generation/state-machine";
 import type { PetGenerationRun } from "@/lib/pets/generation/types";
 import type {
   GenerationRequestStatus,
@@ -173,10 +174,9 @@ export function GenerationRequestsTable({ rows, generationEnabled }: GenerationR
             requestId={row.id}
             status={row.status}
             automationActive={Boolean(
+              generationEnabled &&
               row.generationRun &&
-              !["cancelled", "submission_rejected"].includes(
-                row.generationRun.status,
-              ),
+              !TERMINAL_GENERATION_RUN_STATUSES.has(row.generationRun.status),
             )}
           />
         ),

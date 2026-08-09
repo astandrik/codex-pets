@@ -1,4 +1,4 @@
-import type { Session } from "ydb-sdk";
+import { Types, type Session } from "ydb-sdk";
 
 import {
   fulfillGenerationRequest,
@@ -105,7 +105,12 @@ export async function listLatestGenerationRunsByRequestIds(ids: readonly string[
   if (isMockPetsDataSource()) runs = Array.from(mockRuns.values());
   else if (!isYdbConfigured()) runs = [];
   else runs = rowsFromResult(await withSession((session) =>
-    session.executeQuery(`SELECT ${RUN_COLUMNS} FROM ${TABLES.generationRuns} ORDER BY created_at DESC LIMIT 500;`),
+    session.executeQuery(
+      `DECLARE $request_ids AS List<Utf8>;
+       SELECT ${RUN_COLUMNS} FROM ${TABLES.generationRuns}
+       WHERE request_id IN $request_ids ORDER BY created_at DESC;`,
+      { $request_ids: TypedValues.list(Types.UTF8, Array.from(wanted)) },
+    ),
   )).map(parseRun);
   const result = new Map<string, PetGenerationRun>();
   for (const run of runs.filter((item) => wanted.has(item.requestId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
@@ -125,14 +130,19 @@ export async function getGenerationRunById(id: string): Promise<PetGenerationRun
 }
 
 export async function getGenerationRunByPetId(petId: string): Promise<PetGenerationRun | null> {
-  if (isMockPetsDataSource()) return Array.from(mockRuns.values()).find((run) => run.finalPetId === petId) ?? null;
-  if (!isYdbConfigured()) return null;
-  const result = await withSession((session) => session.executeQuery(
-    `DECLARE $pet_id AS Utf8; SELECT ${RUN_COLUMNS} FROM ${TABLES.generationRuns}
-     WHERE final_pet_id=$pet_id ORDER BY created_at DESC LIMIT 1;`,
-    { $pet_id: TypedValues.utf8(petId) },
-  ));
-  return rowsFromResult(result).map(parseRun)[0] ?? null;
+  let run: PetGenerationRun | null = null;
+  if (isMockPetsDataSource()) run = Array.from(mockRuns.values()).find((item) => item.finalPetId === petId) ?? null;
+  else if (isYdbConfigured()) {
+    const result = await withSession((session) => session.executeQuery(
+      `DECLARE $pet_id AS Utf8; SELECT ${RUN_COLUMNS} FROM ${TABLES.generationRuns}
+       WHERE final_pet_id=$pet_id ORDER BY created_at DESC LIMIT 1;`,
+      { $pet_id: TypedValues.utf8(petId) },
+    ));
+    run = rowsFromResult(result).map(parseRun)[0] ?? null;
+  }
+  if (run) return run;
+  const deterministic = /^pet_gen_([a-f0-9]{22})$/.exec(petId);
+  return deterministic ? getGenerationRunById(`run_${deterministic[1]}`) : null;
 }
 
 export const approveGenerationBase = (id: string) =>
@@ -167,6 +177,18 @@ export async function retryGenerationRun(id: string) {
 export const cancelGenerationRun = (id: string) =>
   transition(id, "cancelled", (run) => ({ ...run, cancelledAt: new Date().toISOString() }));
 
+export async function guardGenerationRequestManualMutation(requestId: string): Promise<
+  | { ok: true; runId: string | null }
+  | { ok: false; error: "conflict"; message: string }
+> {
+  const run = (await listLatestGenerationRunsByRequestIds([requestId])).get(requestId);
+  if (!run || TERMINAL_GENERATION_RUN_STATUSES.has(run.status)) return { ok: true, runId: null };
+  if (["submitting", "awaiting_moderation"].includes(run.status)) {
+    return { ok: false, error: "conflict", message: "Resolve final submission or moderation before closing the request." };
+  }
+  return { ok: true, runId: run.id };
+}
+
 export async function transitionGenerationRun(input: {
   runId: string;
   status: PetGenerationRunStatus;
@@ -196,8 +218,13 @@ export async function transitionGenerationRun(input: {
 }
 
 export async function completeGeneratedPetModeration(input: { petId: string; petSlug: string }) {
-  const run = await getGenerationRunByPetId(input.petId);
+  const run = await recoverGenerationRunLinkage(input.petId, input.petSlug);
   if (!run || run.status !== "awaiting_moderation") return;
+  const request = await getGenerationRequestById(run.requestId);
+  if (!request || !["pending", "in_progress"].includes(request.status)) {
+    await transitionGenerationRun({ runId: run.id, status: "submission_rejected" });
+    return;
+  }
   const fulfilled = await fulfillGenerationRequest({ requestId: run.requestId, petLookup: input.petId });
   if (fulfilled.ok) await transitionGenerationRun({
     runId: run.id,
@@ -208,10 +235,22 @@ export async function completeGeneratedPetModeration(input: { petId: string; pet
 }
 
 export async function reopenGeneratedPetRequest(petId: string) {
-  const run = await getGenerationRunByPetId(petId);
+  const run = await recoverGenerationRunLinkage(petId);
   if (!run || !["awaiting_moderation", "completed"].includes(run.status)) return;
   const changed = await transitionGenerationRun({ runId: run.id, status: "submission_rejected" });
   if (changed.ok) await reopenGenerationRequest(run.requestId);
+}
+
+async function recoverGenerationRunLinkage(petId: string, petSlug?: string) {
+  const run = await getGenerationRunByPetId(petId);
+  if (run?.status !== "submitting") return run;
+  const recovered = await transitionGenerationRun({
+    runId: run.id,
+    status: "awaiting_moderation",
+    finalPetId: petId,
+    finalPetSlug: petSlug,
+  });
+  return recovered.ok ? recovered.run : getGenerationRunById(run.id);
 }
 
 export async function storeGenerationArtifact(input: {
@@ -303,7 +342,9 @@ async function transition(
   const next = { ...mutate(current), status, updatedAt: new Date().toISOString() };
   if (isMockPetsDataSource()) {
     const latest = mockRuns.get(id);
-    if (!latest || latest.updatedAt !== current.updatedAt) return conflict("Run changed concurrently.");
+    if (!latest || latest.status !== current.status || latest.updatedAt !== current.updatedAt) {
+      return conflict("Run changed concurrently.");
+    }
     mockRuns.set(id, next);
     return { ok: true, run: next };
   }
@@ -313,7 +354,9 @@ async function transition(
     $expected_updated_at: TypedValues.utf8(current.updatedAt),
   }));
   const confirmed = await getGenerationRunById(id);
-  return confirmed?.updatedAt === next.updatedAt ? { ok: true, run: confirmed } : conflict("Run changed concurrently.");
+  return confirmed?.updatedAt === next.updatedAt && confirmed.status === next.status
+    ? { ok: true, run: confirmed }
+    : conflict("Run changed concurrently.");
 }
 
 async function activeRun(requestId: string) {

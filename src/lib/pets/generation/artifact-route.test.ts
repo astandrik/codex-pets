@@ -48,4 +48,19 @@ describe("private generation artifact route", () => {
     expect(response.headers.get("content-disposition")).toBe("inline; filename=\"unsafe_name.png\"");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
   });
+
+  it("downloads untrusted artifact types as generic binary data", async () => {
+    vi.mocked(getGenerationRunById).mockResolvedValue({ id: "run_1" } as never);
+    vi.mocked(readGenerationArtifact).mockResolvedValue({
+      metadata: {
+        runId: "run_1", key: "qa", stage: "assembly", fileName: "qa.html",
+        contentType: "text/html", byteSize: 3, sha256: "0".repeat(64),
+        createdAt: "now", expiresAt: "later", retained: false,
+      },
+      buffer: Buffer.from("xss"),
+    });
+    const response = await GET(new Request("http://local"), { params: Promise.resolve({ id: "run_1", key: "qa" }) });
+    expect(response.headers.get("content-type")).toBe("application/octet-stream");
+    expect(response.headers.get("content-disposition")).toBe("attachment; filename=\"qa.html\"");
+  });
 });

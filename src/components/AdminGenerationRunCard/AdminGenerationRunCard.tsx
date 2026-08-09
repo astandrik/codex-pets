@@ -136,7 +136,14 @@ export function AdminGenerationRunCard({
           </Flex>
           <Text variant="caption-1" color="secondary">{run.imageCallCount}/15 image calls</Text>
         </Flex>
-        <div className="admin-generation-run-card__progress" aria-label={`${progress}% complete`}>
+        <div
+          className="admin-generation-run-card__progress"
+          role="progressbar"
+          aria-label={`${progress}% complete`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={progress}
+        >
           <span style={{ width: `${progress}%` }} />
         </div>
         <Text variant="caption-1" color="secondary">
@@ -203,7 +210,7 @@ export function AdminGenerationRunCard({
           )}>Generate new base</Button> : null}
         </Flex>
 
-        {run.status === "awaiting_final_review" ? (
+        {["awaiting_final_review", "submitting"].includes(run.status) ? (
           <form className="admin-generation-run-card__form" onSubmit={(event) => {
             event.preventDefault();
             void call("Pending pet created", `/api/admin/generation-runs/${run.id}/approve-final`, {

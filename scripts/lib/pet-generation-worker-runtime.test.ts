@@ -1,6 +1,12 @@
 import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("./pet-generation-pipeline.mjs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./pet-generation-pipeline.mjs")>();
+  return { ...actual, hatchV2Pet: vi.fn(actual.hatchV2Pet) };
+});
+
+import { hatchV2Pet, V2_ATLAS } from "./pet-generation-pipeline.mjs";
 import { OpenAIProviderError } from "./pet-generation-provider.mjs";
 import { createGenerationWorkerRuntime, resolveImageArtifactKeys } from "./pet-generation-worker-runtime.mjs";
 
@@ -10,7 +16,7 @@ async function basePng(): Promise<Buffer> {
   }).png().toBuffer();
 }
 
-function memoryRepository(input: { base?: Buffer; imageBudget?: boolean; cancelImage?: boolean } = {}) {
+function memoryRepository(input: { base?: Buffer; imageBudget?: boolean; cancelImage?: boolean; status?: "validating" } = {}) {
   const artifacts = new Map<string, { buffer: Buffer }>();
   if (input.base) {
     artifacts.set("base", { buffer: input.base });
@@ -25,14 +31,14 @@ function memoryRepository(input: { base?: Buffer; imageBudget?: boolean; cancelI
     artifacts,
     attempts,
     findRunnableRun: vi.fn(async () => ({
-      id: "run_test", requestId: "req_test", status: "queued_base",
+      id: "run_test", requestId: "req_test", status: input.status ?? "queued_base",
       baseRevision: 0, targetedRetryCount: 0, imageCallCount: 0,
     })),
     claimRun: vi.fn(async (run) => {
       if (claimed) return null;
       claimed = true;
-      return { run: { ...run, status: "generating_base" }, lease: {
-        runId: run.id, stage: "base", attempt: 1, leaseToken: "lock",
+      return { run: { ...run, status: input.status ?? "generating_base" }, lease: {
+        runId: run.id, stage: input.status ? "assembly" : "base", attempt: 1, leaseToken: "lock",
       } };
     }),
     loadRequest: vi.fn(async () => ({ prompt: "test pet", referenceImage: null, referenceContentType: "" })),
@@ -76,6 +82,11 @@ describe("generation worker runtime", () => {
     expect(resolveImageArtifactKeys("idle", {
       baseRevision: 1, targetedRetryCount: 1, lastStage: "running-left",
     })).toEqual({ key: "source-idle", alias: "source-idle" });
+    for (const stage of ["cardinal", "look-row-9", "look-row-10"]) {
+      expect(resolveImageArtifactKeys(stage, {
+        baseRevision: 1, targetedRetryCount: 1, lastStage: "cardinal",
+      }).key).toBe(`work-source-${stage}-t1`);
+    }
   });
 
   it("lets only one competing worker dispatch the base image", async () => {
@@ -107,6 +118,19 @@ describe("generation worker runtime", () => {
     expect(provider.generateImage).not.toHaveBeenCalled();
     expect(provider.moderate).toHaveBeenCalledTimes(2);
     expect(repository.updates.at(-1)).toMatchObject({ status: "awaiting_base_review" });
+  });
+
+  it("continues a validating run to final review", async () => {
+    vi.mocked(hatchV2Pet).mockResolvedValueOnce({
+      artifacts: [], qa: { pass: true, issues: [], atlas: V2_ATLAS, despillPasses: 1, lookDirections: [] },
+      review: { pass: true, issues: [] }, chroma: "#00ff00",
+    });
+    const repository = memoryRepository({ base: await basePng(), status: "validating" });
+    await createGenerationWorkerRuntime({ repository, provider: {}, config: config(), workerId: "one", log: () => {} })
+      .processNextRun();
+
+    expect(repository.updates[0]).toMatchObject({ status: "validating", expectedStatuses: ["generating", "validating"] });
+    expect(repository.updates[1]).toMatchObject({ status: "awaiting_final_review", expectedStatuses: ["validating"] });
   });
 
   it("retries explicit 5xx responses at most twice and records every dispatch", async () => {
