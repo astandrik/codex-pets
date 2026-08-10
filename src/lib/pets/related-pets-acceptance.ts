@@ -9,6 +9,11 @@ const TOP_8 = 8;
 
 export type RelatedPetAcceptanceGrade = 1 | 2 | 3;
 
+export type RelatedPetAcceptanceOrdering = {
+  higherSlug: string;
+  lowerSlug: string;
+};
+
 export type RelatedPetAcceptanceFixture = {
   id: string;
   sourceSlug: string;
@@ -16,6 +21,7 @@ export type RelatedPetAcceptanceFixture = {
   mustIncludeOneOfTop4: string[];
   mustIncludeAllTop4: string[];
   mustIncludeAllTop8: string[];
+  mustRankBefore?: RelatedPetAcceptanceOrdering[];
   negativeSlugs: string[];
 };
 
@@ -79,6 +85,7 @@ export function parseRelatedPetsAcceptanceFixtures(
       item.mustIncludeAllTop8,
       id,
     );
+    const mustRankBefore = optionalOrderings(item.mustRankBefore, id);
     const negativeSlugs = optionalUniqueSlugs(item.negativeSlugs, id);
     if (
       [
@@ -86,6 +93,11 @@ export function parseRelatedPetsAcceptanceFixtures(
         ...mustIncludeAllTop4,
         ...mustIncludeAllTop8,
       ].some((slug) => relevance[slug] === undefined) ||
+      mustRankBefore.some(
+        ({ higherSlug, lowerSlug }) =>
+          relevance[higherSlug] === undefined ||
+          relevance[lowerSlug] === undefined,
+      ) ||
       negativeSlugs.some(
         (slug) => slug === sourceSlug || relevance[slug] !== undefined,
       )
@@ -100,6 +112,7 @@ export function parseRelatedPetsAcceptanceFixtures(
       mustIncludeOneOfTop4,
       mustIncludeAllTop4,
       mustIncludeAllTop8,
+      mustRankBefore,
       negativeSlugs,
     };
   });
@@ -107,10 +120,11 @@ export function parseRelatedPetsAcceptanceFixtures(
 
 export function createRelatedPetsAcceptanceCases(
   fixtures: readonly RelatedPetAcceptanceFixture[],
+  split: "calibration" | "holdout" = "holdout",
 ): RelatedPetCalibrationCase[] {
   return fixtures.map((fixture) => ({
     groupId: `acceptance:${fixture.id}`,
-    split: "holdout",
+    split,
     sourceSlug: fixture.sourceSlug,
     relevantSlugs: Object.keys(fixture.relevance),
     negativeSlugs: fixture.negativeSlugs,
@@ -212,6 +226,15 @@ export function evaluateRelatedPetsAcceptance(input: {
     const mustIncludeAllTop8Satisfied = fixture.mustIncludeAllTop8.every(
       (slug) => ranking.candidateSlugs.slice(0, TOP_8).includes(slug),
     );
+    const orderingConstraintsSatisfied = (fixture.mustRankBefore ?? []).every(
+      ({ higherSlug, lowerSlug }) => {
+        const top8 = ranking.candidateSlugs.slice(0, TOP_8);
+        const higherIndex = top8.indexOf(higherSlug);
+        const lowerIndex = top8.indexOf(lowerSlug);
+        return higherIndex >= 0 &&
+          (lowerIndex < 0 || higherIndex < lowerIndex);
+      },
+    );
 
     return {
       id: fixture.id,
@@ -220,6 +243,7 @@ export function evaluateRelatedPetsAcceptance(input: {
       mustIncludeTop4Satisfied,
       mustIncludeAllTop4Satisfied,
       mustIncludeAllTop8Satisfied,
+      orderingConstraintsSatisfied,
       negativeTop8Slugs,
       textNdcgAt8Delta:
         metrics.candidateNdcgAt8 - metrics.noVisualNdcgAt8,
@@ -304,6 +328,9 @@ export function evaluateRelatedPetsAcceptance(input: {
     allExplicitTop8NeighborsPresent: cases.every(
       (item) => item.mustIncludeAllTop8Satisfied,
     ),
+    allOrderingConstraintsSatisfied: cases.every(
+      (item) => item.orderingConstraintsSatisfied,
+    ),
     noExplicitNegativeInTop8: cases.every(
       (item) => item.negativeTop8Slugs.length === 0,
     ),
@@ -356,6 +383,31 @@ function optionalUniqueSlugs(value: unknown, fixtureId: string): string[] {
     throw incompatibleFixture(fixtureId);
   }
   return slugs;
+}
+
+function optionalOrderings(
+  value: unknown,
+  fixtureId: string,
+): RelatedPetAcceptanceOrdering[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw incompatibleFixture(fixtureId);
+  const keys = new Set<string>();
+  return value.map((item) => {
+    if (!isRecord(item)) throw incompatibleFixture(fixtureId);
+    const higherSlug = normalizedSlug(item.higherSlug);
+    const lowerSlug = normalizedSlug(item.lowerSlug);
+    const key = `${higherSlug}\n${lowerSlug}`;
+    if (
+      !higherSlug ||
+      !lowerSlug ||
+      higherSlug === lowerSlug ||
+      keys.has(key)
+    ) {
+      throw incompatibleFixture(fixtureId);
+    }
+    keys.add(key);
+    return { higherSlug, lowerSlug };
+  });
 }
 
 function validTop8(slugs: readonly string[], sourceSlug: string): boolean {

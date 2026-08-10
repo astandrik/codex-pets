@@ -10,6 +10,7 @@ import {
   rankRelatedPetsByMetadata,
   rankRelatedPetsByTextFirstMetadata,
   rankRelatedPetsByThemeMetadata,
+  rankRelatedPetsByTopicMetadata,
   type RelatedPetCandidate,
 } from "@/lib/pets/related-pets";
 import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
@@ -18,6 +19,16 @@ export const RELATED_PETS_VISUAL_WEIGHT_CANDIDATES = [
   0.25,
   0.5,
   0.75,
+] as const;
+export const RELATED_PETS_V10_VISUAL_WEIGHT_CANDIDATES = [
+  0.1,
+  0.25,
+  0.5,
+] as const;
+export const RELATED_PETS_TOPIC_WEIGHT_CANDIDATES = [
+  0.1,
+  0.2,
+  0.3,
 ] as const;
 
 export type RelatedPetCalibrationObservation = {
@@ -29,6 +40,7 @@ export type RelatedPetCalibrationObservation = {
   metadataSlugs: readonly string[];
   sharedTagCounts: Readonly<Record<string, number>>;
   textMatches: readonly RelatedPetSimilarity[];
+  topicMatches?: readonly RelatedPetSimilarity[];
   visualMatches: readonly RelatedPetSimilarity[];
 };
 
@@ -134,6 +146,8 @@ export function createRelatedPetsCalibrationObservations(input: {
   candidates: readonly RelatedPetCandidate[];
   textQueryVectors: ReadonlyMap<string, readonly number[]>;
   textDocumentVectors: ReadonlyMap<string, readonly number[]>;
+  topicQueryVectors?: ReadonlyMap<string, readonly number[]>;
+  topicDocumentVectors?: ReadonlyMap<string, readonly number[]>;
   visualVectors: ReadonlyMap<string, readonly number[]>;
   strategy?: RelatedPetsRankingStrategy;
 }): RelatedPetCalibrationObservation[] {
@@ -148,7 +162,12 @@ export function createRelatedPetsCalibrationObservations(input: {
         `Related-pet calibration source ${calibrationCase.sourceSlug} is missing from the approved catalog.`,
       );
     }
-    const metadataRanking = input.strategy === "text-first-v9"
+    const metadataRanking = input.strategy === "description-theme-v10"
+      ? rankRelatedPetsByTopicMetadata(
+          Array.from(candidatesBySlug.values()),
+          source,
+        )
+      : input.strategy === "text-first-v9"
       ? rankRelatedPetsByTextFirstMetadata(
           Array.from(candidatesBySlug.values()),
           source,
@@ -177,6 +196,15 @@ export function createRelatedPetsCalibrationObservations(input: {
         input.textQueryVectors,
         input.textDocumentVectors,
       ),
+      ...(input.topicQueryVectors && input.topicDocumentVectors
+        ? {
+            topicMatches: rankRelatedPetVectorMatches(
+              source.slug,
+              input.topicQueryVectors,
+              input.topicDocumentVectors,
+            ),
+          }
+        : {}),
       visualMatches: rankRelatedPetVectorMatches(
         source.slug,
         input.visualVectors,
@@ -482,6 +510,7 @@ export function evaluateRelatedPetsProfile(
       metadataSlugs: observation.metadataSlugs,
       sharedTagCounts: observation.sharedTagCounts,
       textMatches: observation.textMatches,
+      topicMatches: observation.topicMatches ?? [],
       visualMatches: observation.visualMatches,
       ...profile,
     });

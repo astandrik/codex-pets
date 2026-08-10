@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import fixturesJson from "@/lib/pets/related-pets-acceptance-fixtures.json";
 import v9HoldoutJson from "@/lib/pets/related-pets-v9-holdout-fixtures.json";
+import v10CalibrationJson from "@/lib/pets/related-pets-v10-calibration-fixtures.json";
 import {
   createRelatedPetsAcceptanceCases,
   evaluateRelatedPetsAcceptance,
@@ -40,6 +41,27 @@ describe("related pets acceptance fixtures", () => {
       "aerith-chibi-2",
       "yuffie-3",
     ]);
+  });
+
+  it("loads the frozen explicit V10 calibration and ordering constraints", () => {
+    const fixtures = parseRelatedPetsAcceptanceFixtures(v10CalibrationJson);
+    const cases = createRelatedPetsAcceptanceCases(fixtures, "calibration");
+
+    expect(fixtures).toHaveLength(13);
+    expect(cases).toHaveLength(13);
+    expect(cases.every(({ split }) => split === "calibration")).toBe(true);
+    expect(fixtures.find(({ sourceSlug }) => sourceSlug === "dracula"))
+      .toMatchObject({
+        mustRankBefore: [
+          { higherSlug: "lady-d-2", lowerSlug: "velvet-luma" },
+        ],
+        negativeSlugs: expect.arrayContaining(["jinx", "jinx-2"]),
+      });
+    expect(fixtures.find(({ sourceSlug }) => sourceSlug === "cheburashka"))
+      .toMatchObject({
+        relevance: { "round-bear": 2, "foggy-hedgehog": 1 },
+        negativeSlugs: ["crawlstack-polished"],
+      });
   });
 
   it("rejects duplicate sources, invalid grades, and overlapping negatives", () => {
@@ -108,6 +130,7 @@ describe("graded related pets acceptance", () => {
       allRequiredNeighborsInTop4: false,
       allExplicitTop4NeighborsPresent: false,
       allExplicitTop8NeighborsPresent: false,
+      allOrderingConstraintsSatisfied: false,
       noExplicitNegativeInTop8: false,
     });
   });
@@ -153,6 +176,10 @@ function acceptanceFixtures() {
     mustIncludeOneOfTop4: ["exact"],
     mustIncludeAllTop4: index === 0 ? ["exact", "same"] : [],
     mustIncludeAllTop8: index === 0 ? ["peer"] : [],
+    mustRankBefore:
+      index === 0
+        ? [{ higherSlug: "exact", lowerSlug: "same" }]
+        : [],
     negativeSlugs: ["negative"],
   }));
 }
