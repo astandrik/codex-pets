@@ -17,6 +17,7 @@ import type { RelatedPetCandidate } from "@/lib/pets/related-pets";
 import {
   CURRENT_RELATED_PETS_RANKING_PROFILE,
   RELATED_PETS_V8_CALIBRATION_PROFILE,
+  RELATED_PETS_V8_PROFILE,
   isCurrentRelatedPetsRankingRevision,
 } from "@/lib/pets/related-pets-profile";
 
@@ -627,21 +628,21 @@ describe("related pet ranking", () => {
 });
 
 describe("related pet ranking profile", () => {
-  it("binds compatibility to the calibrated theme-first v8 profile", () => {
+  it("keeps v7 current while retaining the calibrated v8 profile", () => {
     expect(CURRENT_RELATED_PETS_RANKING_PROFILE).toMatchObject({
       rankingRevision:
-        "related-pets-theme-first-v8:depth=8:cal=related-pets-eval-v3:text-min=0.45777065618272195:visual-min=0.7431592921968864:visual-weight=0.75:text=yandex-text-embeddings-v2-768-2026-07:text-query=yandex-text-embeddings-v2-768-related-theme-query-2026-08-v2:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
-      strategy: "theme-first-v8",
+        "related-pets-rrf60-v7:depth=8:tail=semantic:cal=related-pets-eval-groups-v2:text=yandex-text-embeddings-v2-768-2026-07:text-query=yandex-text-embeddings-v2-768-related-tags-query-2026-08:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
+      strategy: "legacy-v7",
       textRevision: "yandex-text-embeddings-v2-768-2026-07",
       textQueryRevision:
-        "yandex-text-embeddings-v2-768-related-theme-query-2026-08-v2",
+        "yandex-text-embeddings-v2-768-related-tags-query-2026-08",
       textDimensions: 768,
-      textMinSimilarity: 0.45777065618272195,
+      textMinSimilarity: 0.4523258982119597,
       visualRevision:
         "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
       visualDimensions: 768,
-      visualMinSimilarity: 0.7431592921968864,
-      visualWeight: 0.75,
+      visualMinSimilarity: 0.7573239783550058,
+      visualWeight: 0.5,
     });
     expect(
       isCurrentRelatedPetsRankingRevision(
@@ -663,6 +664,17 @@ describe("related pet ranking profile", () => {
     expect(
       isCurrentRelatedPetsRankingRevision(
         RELATED_PETS_V8_CALIBRATION_PROFILE.rankingRevision,
+      ),
+    ).toBe(false);
+    expect(RELATED_PETS_V8_PROFILE).toMatchObject({
+      strategy: "theme-first-v8",
+      textMinSimilarity: 0.45777065618272195,
+      visualMinSimilarity: 0.7431592921968864,
+      visualWeight: 0.75,
+    });
+    expect(
+      isCurrentRelatedPetsRankingRevision(
+        RELATED_PETS_V8_PROFILE.rankingRevision,
       ),
     ).toBe(false);
   });

@@ -12,9 +12,9 @@ import {
   evaluateRelatedPetsProfile,
 } from "@/lib/pets/related-pets-calibration";
 import {
-  CURRENT_RELATED_PETS_RANKING_PROFILE,
   LEGACY_RELATED_PETS_V7_PROFILE,
   RELATED_PETS_V8_CALIBRATION_PROFILE,
+  RELATED_PETS_V8_PROFILE,
 } from "@/lib/pets/related-pets-profile";
 import { rankRelatedPetsWithDiagnostics } from "@/lib/pets/related-pets-ranking";
 import {
@@ -41,13 +41,13 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
       }
       const selectedBaseProfile = LIVE_EVAL_MODE === "select"
         ? RELATED_PETS_V8_CALIBRATION_PROFILE
-        : CURRENT_RELATED_PETS_RANKING_PROFILE;
+        : RELATED_PETS_V8_PROFILE;
       if (
         LIVE_EVAL_MODE !== "select" &&
         selectedBaseProfile.strategy !== "theme-first-v8"
       ) {
         throw new Error(
-          "Pinned calibration and holdout require v8 to be the current immutable profile.",
+          "Pinned calibration and holdout require the immutable v8 profile.",
         );
       }
 

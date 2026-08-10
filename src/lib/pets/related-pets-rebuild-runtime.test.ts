@@ -33,7 +33,7 @@ vi.mock("@/lib/ydb/client", () => ({
 
 const TEXT_REVISION = "yandex-text-embeddings-v2-768-2026-07";
 const TEXT_QUERY_REVISION =
-  "yandex-text-embeddings-v2-768-related-theme-query-2026-08-v2";
+  "yandex-text-embeddings-v2-768-related-tags-query-2026-08";
 const VISUAL_REVISION =
   "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1";
 const CAPTION_REVISION =
