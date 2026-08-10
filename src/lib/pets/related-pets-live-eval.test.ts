@@ -8,13 +8,13 @@ import {
   createRelatedPetsCalibrationCases,
   createRelatedPetsCalibrationObservations,
   evaluateRelatedPetsCalibration,
-  evaluateRelatedPetsHoldout,
   evaluateRelatedPetsProfile,
 } from "@/lib/pets/related-pets-calibration";
 import {
   LEGACY_RELATED_PETS_V7_PROFILE,
-  RELATED_PETS_V8_CALIBRATION_PROFILE,
   RELATED_PETS_V8_PROFILE,
+  RELATED_PETS_V9_CALIBRATION_PROFILE,
+  RELATED_PETS_V9_PROFILE,
 } from "@/lib/pets/related-pets-profile";
 import { rankRelatedPetsWithDiagnostics } from "@/lib/pets/related-pets-ranking";
 import {
@@ -25,29 +25,27 @@ import {
 import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 
 const LIVE_EVAL_MODE = process.env.PET_RELATED_LIVE_EVAL;
-const LIVE_EVAL_SPLIT = LIVE_EVAL_MODE === "select" ||
-    LIVE_EVAL_MODE === "calibrate"
+const LIVE_EVAL_SPLIT =
+  LIVE_EVAL_MODE === "select" || LIVE_EVAL_MODE === "calibrate"
   ? "calibration"
-  : LIVE_EVAL_MODE === "holdout"
-    ? "holdout"
-    : null;
+  : null;
 
 describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
   it(
-    "selects, pins, and checks the v8 profile without fitting holdout",
+    "selects and checks the v9 profile on calibration fixtures only",
     async () => {
       if (!LIVE_EVAL_SPLIT) {
         throw new Error("Related-pet live eval mode is invalid.");
       }
       const selectedBaseProfile = LIVE_EVAL_MODE === "select"
-        ? RELATED_PETS_V8_CALIBRATION_PROFILE
-        : RELATED_PETS_V8_PROFILE;
+        ? RELATED_PETS_V9_CALIBRATION_PROFILE
+        : RELATED_PETS_V9_PROFILE;
       if (
         LIVE_EVAL_MODE !== "select" &&
-        selectedBaseProfile.strategy !== "theme-first-v8"
+        selectedBaseProfile.rankingRevision.endsWith(":candidate")
       ) {
         throw new Error(
-          "Pinned calibration and holdout require the immutable v8 profile.",
+          "Pin the immutable v9 profile in a separate commit before running calibration verification.",
         );
       }
 
@@ -55,6 +53,7 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
       const legacyProfile = withVisualCaptionRevision(
         LEGACY_RELATED_PETS_V7_PROFILE,
       );
+      const v8Profile = withVisualCaptionRevision(RELATED_PETS_V8_PROFILE);
       const visualContext = getCurrentRelatedPetsVisualSourceContext();
       if (!visualContext) {
         throw new Error(
@@ -65,15 +64,19 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
       const [
         pets,
         textQueryRows,
+        v8TextQueryRows,
         legacyTextQueryRows,
         textRows,
+        baselineTextRows,
         visualRows,
         captions,
       ] = await Promise.all([
         listApprovedPetsForSearch(),
         listRawPetSearchEmbeddings(profile.textQueryRevision),
+        listRawPetSearchEmbeddings(v8Profile.textQueryRevision),
         listRawPetSearchEmbeddings(legacyProfile.textQueryRevision),
         listRawPetSearchEmbeddings(profile.textRevision),
+        listRawPetSearchEmbeddings(v8Profile.textRevision),
         listRawPetSearchEmbeddings(profile.visualRevision),
         listPetSearchCaptions(profile.visualCaptionRevision),
       ]);
@@ -89,16 +92,23 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
       const legacyPrepared = prepareRelatedPetsRankingInputs({
         pets,
         textQueryRows: legacyTextQueryRows,
-        textRows,
+        textRows: baselineTextRows,
         visualRows,
         captions,
         profile: legacyProfile,
         visualContext,
       });
+      const v8Prepared = prepareRelatedPetsRankingInputs({
+        pets,
+        textQueryRows: v8TextQueryRows,
+        textRows: baselineTextRows,
+        visualRows,
+        captions,
+        profile: v8Profile,
+        visualContext,
+      });
       const cases = createRelatedPetsCalibrationCases(fixtures);
-      const selectedCases = LIVE_EVAL_SPLIT === "calibration"
-        ? cases.calibration
-        : cases.holdout;
+      const selectedCases = cases.calibration;
       const requiredSlugs = new Set(
         selectedCases.flatMap(
           ({ sourceSlug, relevantSlugs, negativeSlugs = [] }) => [
@@ -125,6 +135,10 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
           requiredSlugs,
           legacyPrepared.textQueryVectors,
         ),
+        missingV8TextQuerySlugs: missingSlugs(
+          requiredSlugs,
+          v8Prepared.textQueryVectors,
+        ),
         missingVisualSlugs: missingSlugs(
           requiredSlugs,
           prepared.visualVectors,
@@ -135,6 +149,7 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
         missingTextSlugs: [],
         missingTextQuerySlugs: [],
         missingLegacyTextQuerySlugs: [],
+        missingV8TextQuerySlugs: [],
         missingVisualSlugs: [],
       });
 
@@ -144,7 +159,7 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
         textQueryVectors: prepared.textQueryVectors,
         textDocumentVectors: prepared.textDocumentVectors,
         visualVectors: prepared.visualVectors,
-        strategy: "theme-first-v8",
+        strategy: "text-first-v9",
       });
       const legacyObservations = createRelatedPetsCalibrationObservations({
         cases: selectedCases,
@@ -153,6 +168,14 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
         textDocumentVectors: legacyPrepared.textDocumentVectors,
         visualVectors: legacyPrepared.visualVectors,
         strategy: "legacy-v7",
+      });
+      const v8Observations = createRelatedPetsCalibrationObservations({
+        cases: selectedCases,
+        candidates: v8Prepared.approvedPets,
+        textQueryVectors: v8Prepared.textQueryVectors,
+        textDocumentVectors: v8Prepared.textDocumentVectors,
+        visualVectors: v8Prepared.visualVectors,
+        strategy: "theme-first-v8",
       });
       const profileIdentity = {
         rankingRevision: profile.rankingRevision,
@@ -170,6 +193,10 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
         const legacyReport = evaluateRelatedPetsProfile(
           legacyObservations,
           legacyProfile,
+        );
+        const v8Report = evaluateRelatedPetsProfile(
+          v8Observations,
+          v8Profile,
         );
         const draculaCase = calibration.report.cases.find(
           ({ sourceSlug }) => sourceSlug === "dracula",
@@ -201,6 +228,10 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
             calibration.report.hybridNdcgAt4 >= legacyReport.hybridNdcgAt4,
           noWorseThanV7At8:
             calibration.report.hybridNdcgAt8 >= legacyReport.hybridNdcgAt8,
+          noWorseThanV8At4:
+            calibration.report.hybridNdcgAt4 >= v8Report.hybridNdcgAt4,
+          noWorseThanV8At8:
+            calibration.report.hybridNdcgAt8 >= v8Report.hybridNdcgAt8,
           ladyDInTop4: draculaRanking.slugs.slice(0, 4).includes("lady-d-2"),
           fourRelevantInTop8:
             draculaRanking.slugs.filter((slug) => relevant.has(slug)).length >=
@@ -208,19 +239,25 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
           noDraculaNegativeInTop8:
             draculaRanking.slugs.every((slug) => !negatives.has(slug)),
         };
-        console.info("[codex-pets][related-pets-calibration]", {
-          ...profileIdentity,
-          mode: LIVE_EVAL_MODE,
-          caseCount: observations.length,
-          calibration,
-          legacyReport,
-          gates,
-          draculaRanking,
-        });
+        console.info(
+          "[codex-pets][related-pets-calibration]",
+          JSON.stringify({
+            ...profileIdentity,
+            mode: LIVE_EVAL_MODE,
+            caseCount: observations.length,
+            calibration,
+            v8Report,
+            legacyReport,
+            gates,
+            draculaRanking,
+          }),
+        );
         expect(gates).toEqual({
           calibrationGates: true,
           noWorseThanV7At4: true,
           noWorseThanV7At8: true,
+          noWorseThanV8At4: true,
+          noWorseThanV8At8: true,
           ladyDInTop4: true,
           fourRelevantInTop8: true,
           noDraculaNegativeInTop8: true,
@@ -232,58 +269,6 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
         }
         return;
       }
-
-      const report = evaluateRelatedPetsHoldout(observations, profile);
-      const legacyReport = evaluateRelatedPetsProfile(
-        legacyObservations,
-        legacyProfile,
-      );
-      const yunaCase = report.cases.find(
-        ({ sourceSlug }) => sourceSlug === "yuna",
-      );
-      const legacyYunaCase = legacyReport.cases.find(
-        ({ sourceSlug }) => sourceSlug === "yuna",
-      );
-      if (!yunaCase || !legacyYunaCase) {
-        throw new Error("Yuna holdout case is required.");
-      }
-      const gates = {
-        baselineGates: report.passed,
-        noWorseThanV7At4:
-          report.hybridNdcgAt4 >= legacyReport.hybridNdcgAt4,
-        noWorseThanV7At8:
-          report.hybridNdcgAt8 >= legacyReport.hybridNdcgAt8,
-        yunaNoWorseThanTextAt4:
-          yunaCase.hybridNdcgAt4 >= yunaCase.textMetadataNdcgAt4,
-        yunaNoWorseThanTextAt8:
-          yunaCase.hybridNdcgAt8 >= yunaCase.textMetadataNdcgAt8,
-        yunaNoWorseThanV7At4:
-          yunaCase.hybridNdcgAt4 >= legacyYunaCase.hybridNdcgAt4,
-        yunaNoWorseThanV7At8:
-          yunaCase.hybridNdcgAt8 >= legacyYunaCase.hybridNdcgAt8,
-      };
-      console.info("[codex-pets][related-pets-holdout]", {
-        ...profileIdentity,
-        caseCount: observations.length,
-        profile: {
-          strategy: profile.strategy,
-          textMinSimilarity: profile.textMinSimilarity,
-          visualMinSimilarity: profile.visualMinSimilarity,
-          visualWeight: profile.visualWeight,
-        },
-        report,
-        legacyReport,
-        gates,
-      });
-      expect(gates).toEqual({
-        baselineGates: true,
-        noWorseThanV7At4: true,
-        noWorseThanV7At8: true,
-        yunaNoWorseThanTextAt4: true,
-        yunaNoWorseThanTextAt8: true,
-        yunaNoWorseThanV7At4: true,
-        yunaNoWorseThanV7At8: true,
-      });
     },
     180_000,
   );

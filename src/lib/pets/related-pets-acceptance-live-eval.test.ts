@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import fixturesJson from "@/lib/pets/related-pets-acceptance-fixtures.json";
+import holdoutFixturesJson from "@/lib/pets/related-pets-v9-holdout-fixtures.json";
 import {
   createRelatedPetsAcceptanceCases,
   evaluateRelatedPetsAcceptance,
@@ -13,6 +14,7 @@ import {
 import {
   LEGACY_RELATED_PETS_V7_PROFILE,
   RELATED_PETS_V8_PROFILE,
+  RELATED_PETS_V9_PROFILE,
 } from "@/lib/pets/related-pets-profile";
 import {
   getCurrentRelatedPetsVisualSourceContext,
@@ -24,14 +26,25 @@ import { PET_VISUAL_MODEL_REVISIONS } from "@/lib/pets/search-config";
 import { listRawPetSearchEmbeddings } from "@/lib/pets/search-embeddings-repository";
 import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 
-const ACCEPTANCE_ENABLED = process.env.PET_RELATED_ACCEPTANCE_EVAL === "1";
+const EVALUATION_MODE = process.env.PET_RELATED_ACCEPTANCE_EVAL;
+const ACCEPTANCE_ENABLED =
+  EVALUATION_MODE === "acceptance" || EVALUATION_MODE === "holdout";
 
 describe.skipIf(!ACCEPTANCE_ENABLED)("live related-pets acceptance", () => {
   it(
-    "checks the frozen graded product gate without fitting parameters",
+    "checks a frozen v9 product gate without fitting parameters",
     async () => {
-      const fixtures = parseRelatedPetsAcceptanceFixtures(fixturesJson);
+      const fixtureInput = EVALUATION_MODE === "holdout"
+        ? holdoutFixturesJson
+        : fixturesJson;
+      const fixtures = parseRelatedPetsAcceptanceFixtures(fixtureInput);
       const cases = createRelatedPetsAcceptanceCases(fixtures);
+      if (RELATED_PETS_V9_PROFILE.rankingRevision.endsWith(":candidate")) {
+        throw new Error(
+          "Pin the immutable v9 profile before running acceptance.",
+        );
+      }
+      const v9Profile = withVisualCaptionRevision(RELATED_PETS_V9_PROFILE);
       const v8Profile = withVisualCaptionRevision(RELATED_PETS_V8_PROFILE);
       const v7Profile = withVisualCaptionRevision(
         LEGACY_RELATED_PETS_V7_PROFILE,
@@ -45,19 +58,32 @@ describe.skipIf(!ACCEPTANCE_ENABLED)("live related-pets acceptance", () => {
 
       const [
         pets,
+        v9TextQueryRows,
         v8TextQueryRows,
         v7TextQueryRows,
+        v9TextRows,
         textRows,
         visualRows,
         captions,
       ] = await Promise.all([
         listApprovedPetsForSearch(),
+        listRawPetSearchEmbeddings(v9Profile.textQueryRevision),
         listRawPetSearchEmbeddings(v8Profile.textQueryRevision),
         listRawPetSearchEmbeddings(v7Profile.textQueryRevision),
+        listRawPetSearchEmbeddings(v9Profile.textRevision),
         listRawPetSearchEmbeddings(v8Profile.textRevision),
         listRawPetSearchEmbeddings(v8Profile.visualRevision),
         listPetSearchCaptions(v8Profile.visualCaptionRevision),
       ]);
+      const v9Prepared = prepareRelatedPetsRankingInputs({
+        pets,
+        textQueryRows: v9TextQueryRows,
+        textRows: v9TextRows,
+        visualRows,
+        captions,
+        profile: v9Profile,
+        visualContext,
+      });
       const v8Prepared = prepareRelatedPetsRankingInputs({
         pets,
         textQueryRows: v8TextQueryRows,
@@ -84,10 +110,18 @@ describe.skipIf(!ACCEPTANCE_ENABLED)("live related-pets acceptance", () => {
         ]),
       );
       const coverage = {
-        approvedPets: v8Prepared.approvedPets.length,
+        approvedPets: v9Prepared.approvedPets.length,
         missingApprovedSlugs: missingSlugs(
           requiredSlugs,
-          new Set(v8Prepared.approvedPets.map(({ slug }) => slug)),
+          new Set(v9Prepared.approvedPets.map(({ slug }) => slug)),
+        ),
+        missingV9TextQuerySlugs: missingSlugs(
+          requiredSlugs,
+          v9Prepared.textQueryVectors,
+        ),
+        missingV9TextDocumentSlugs: missingSlugs(
+          requiredSlugs,
+          v9Prepared.textDocumentVectors,
         ),
         missingV8TextQuerySlugs: missingSlugs(
           requiredSlugs,
@@ -109,11 +143,25 @@ describe.skipIf(!ACCEPTANCE_ENABLED)("live related-pets acceptance", () => {
       expect(coverage).toEqual({
         approvedPets: pets.length,
         missingApprovedSlugs: [],
+        missingV9TextQuerySlugs: [],
+        missingV9TextDocumentSlugs: [],
         missingV8TextQuerySlugs: [],
         missingV7TextQuerySlugs: [],
         missingTextDocumentSlugs: [],
         missingVisualSlugs: [],
       });
+
+      const v9Report = evaluateRelatedPetsProfile(
+        createRelatedPetsCalibrationObservations({
+          cases,
+          candidates: v9Prepared.approvedPets,
+          textQueryVectors: v9Prepared.textQueryVectors,
+          textDocumentVectors: v9Prepared.textDocumentVectors,
+          visualVectors: v9Prepared.visualVectors,
+          strategy: "text-first-v9",
+        }),
+        v9Profile,
+      );
 
       const v8Report = evaluateRelatedPetsProfile(
         createRelatedPetsCalibrationObservations({
@@ -140,49 +188,46 @@ describe.skipIf(!ACCEPTANCE_ENABLED)("live related-pets acceptance", () => {
       const v7CasesBySource = new Map(
         v7Report.cases.map((item) => [item.sourceSlug, item]),
       );
+      const v8CasesBySource = new Map(
+        v8Report.cases.map((item) => [item.sourceSlug, item]),
+      );
       const report = evaluateRelatedPetsAcceptance({
         fixtures,
-        rankings: v8Report.cases.map((item) => {
+        minimumCaseCount: EVALUATION_MODE === "holdout" ? 3 : undefined,
+        rankings: v9Report.cases.map((item) => {
+          const v8Case = v8CasesBySource.get(item.sourceSlug);
           const v7Case = v7CasesBySource.get(item.sourceSlug);
-          if (!v7Case) {
+          if (!v8Case || !v7Case) {
             throw new Error(
-              `V7 acceptance ranking is missing for ${item.sourceSlug}.`,
+              `Baseline acceptance ranking is missing for ${item.sourceSlug}.`,
             );
           }
           return {
             sourceSlug: item.sourceSlug,
             metadataSlugs: item.metadataSlugs,
-            textSlugs: item.textMetadataSlugs,
-            v8Slugs: item.hybridSlugs,
+            textSlugs: item.textOnlySlugs,
+            noVisualSlugs: item.textMetadataSlugs,
+            candidateSlugs: item.hybridSlugs,
+            v8Slugs: v8Case.hybridSlugs,
             v7Slugs: v7Case.hybridSlugs,
           };
         }),
       });
 
-      console.info("[codex-pets][related-pets-acceptance]", {
-        profile: {
-          rankingRevision: v8Profile.rankingRevision,
-          textMinSimilarity: v8Profile.textMinSimilarity,
-          visualMinSimilarity: v8Profile.visualMinSimilarity,
-          visualWeight: v8Profile.visualWeight,
-        },
-        coverage,
-        passed: report.passed,
-        checks: report.checks,
-        aggregate: report.aggregate,
-        improvedCaseCount: report.improvedCaseCount,
-        cases: report.cases.map((item) => ({
-          id: item.id,
-          sourceSlug: item.sourceSlug,
-          metrics: item.metrics,
-          v8Slugs: item.v8Slugs,
-          textSlugs: item.textSlugs,
-          v7Slugs: item.v7Slugs,
-          textNdcgAt8Delta: item.textNdcgAt8Delta,
-          mustIncludeTop4Satisfied: item.mustIncludeTop4Satisfied,
-          negativeTop8Slugs: item.negativeTop8Slugs,
-        })),
-      });
+      console.info(
+        `[codex-pets][related-pets-${EVALUATION_MODE}]`,
+        JSON.stringify({
+          profile: {
+            rankingRevision: v9Profile.rankingRevision,
+            textMinSimilarity: v9Profile.textMinSimilarity,
+            visualMinSimilarity: v9Profile.visualMinSimilarity,
+            visualWeight: v9Profile.visualWeight,
+          },
+          mode: EVALUATION_MODE,
+          coverage,
+          report,
+        }),
+      );
       expect(report.passed).toBe(true);
       expect(Object.values(report.checks)).not.toContain(false);
     },

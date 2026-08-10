@@ -5,7 +5,9 @@ import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
 import {
+  buildRelatedPetDocument,
   buildRelatedPetQuery,
+  createRelatedPetDocumentSourceHash,
   createRequestStartLimiter,
   createRelatedPetQuerySourceHash,
   embeddingToBuffer,
@@ -77,7 +79,13 @@ export async function main(argv = process.argv.slice(2)) {
             buildInput: (pet) => buildRelatedPetQuery(pet, revision),
             createSourceHash: createRelatedPetQuerySourceHash,
           }
-        : {}),
+        : revisionDefinition.inputKind === "related-document"
+          ? {
+              buildInput: (pet) =>
+                buildRelatedPetDocument(pet, revision),
+              createSourceHash: createRelatedPetDocumentSourceHash,
+            }
+          : {}),
       log: (entry) => console.log(JSON.stringify(entry)),
     });
   } finally {

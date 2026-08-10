@@ -18,6 +18,7 @@ import {
   CURRENT_RELATED_PETS_RANKING_PROFILE,
   RELATED_PETS_V8_CALIBRATION_PROFILE,
   RELATED_PETS_V8_PROFILE,
+  RELATED_PETS_V9_CALIBRATION_PROFILE,
   isCurrentRelatedPetsRankingRevision,
 } from "@/lib/pets/related-pets-profile";
 
@@ -280,6 +281,79 @@ describe("related pet weighted RRF", () => {
 });
 
 describe("related pet ranking", () => {
+  it("lets only text similarity qualify v9 candidates", () => {
+    const input = {
+      sourceSlug: "source",
+      metadataSlugs: [
+        "tag-only",
+        "visual-only",
+        "qualified",
+        "text-tail",
+      ],
+      sharedTagCounts: { "tag-only": 2, qualified: 1 },
+      textMatches: [
+        { slug: "qualified", score: 0.9 },
+        { slug: "text-tail", score: 0.7 },
+        { slug: "tag-only", score: 0.2 },
+        { slug: "visual-only", score: 0.1 },
+      ],
+      visualMatches: [
+        { slug: "visual-only", score: 0.99 },
+        { slug: "qualified", score: 0.9 },
+      ],
+      textMinSimilarity: 0.8,
+      visualMinSimilarity: 0.8,
+      visualWeight: 0.5,
+    } as const;
+
+    const v8 = fuseRelatedPetRankingsWithDiagnostics({
+      ...input,
+      strategy: "theme-first-v8",
+    });
+    const v9 = fuseRelatedPetRankingsWithDiagnostics({
+      ...input,
+      strategy: "text-first-v9",
+    });
+
+    expect(v8.diagnostics.find(({ slug }) => slug === "tag-only")?.tier)
+      .toBe("qualified");
+    expect(v9.slugs).toEqual([
+      "qualified",
+      "text-tail",
+      "tag-only",
+      "visual-only",
+    ]);
+    expect(v9.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slug: "qualified",
+          tier: "qualified",
+          textSimilarity: 0.9,
+          visualSimilarity: 0.9,
+          textMinSimilarity: 0.8,
+          visualMinSimilarity: 0.8,
+          passesTextThreshold: true,
+          passesVisualThreshold: true,
+          contributions: {
+            metadata: 0.15 / 62,
+            text: 1 / 61,
+            visual: 0.5 / 62,
+          },
+        }),
+        expect.objectContaining({
+          slug: "tag-only",
+          tier: "semantic_backfill",
+          contributions: { metadata: 0, text: 1 / 63, visual: 0 },
+        }),
+        expect.objectContaining({
+          slug: "visual-only",
+          tier: "semantic_backfill",
+          contributions: { metadata: 0, text: 1 / 64, visual: 0 },
+        }),
+      ]),
+    );
+  });
+
   it("keeps visual-only look-alikes below thematic candidates in v8", () => {
     const input = {
       sourceSlug: "dracula",
@@ -367,6 +441,38 @@ describe("related pet ranking", () => {
     expect(result.diagnostics.map(({ sharedTagCount }) => sharedTagCount)).toEqual([
       1, 0,
     ]);
+  });
+
+  it("keeps generic v9 tags as weak bonuses but removes detail markers", () => {
+    const source = candidate("source", {
+      tags: ["girl", "anime", "chibi", "detailed", "detaiiled"],
+    });
+    const result = rankRelatedPetsWithDiagnostics({
+      source,
+      candidates: [
+        source,
+        candidate("detail-only", { tags: ["detailed", "detaiiled"] }),
+        candidate("generic-peer", { tags: ["girl"] }),
+      ],
+      textQueryVectors: new Map([["source", [1, 0]]]),
+      textDocumentVectors: new Map([
+        ["detail-only", [0, 1]],
+        ["generic-peer", [0, 1]],
+      ]),
+      profile: {
+        strategy: "text-first-v9",
+        textMinSimilarity: 0.5,
+        visualMinSimilarity: null,
+        visualWeight: 0,
+      },
+    });
+
+    expect(
+      result.diagnostics.find(({ slug }) => slug === "detail-only"),
+    ).toMatchObject({ sharedTagCount: 0, tier: "semantic_backfill" });
+    expect(
+      result.diagnostics.find(({ slug }) => slug === "generic-peer"),
+    ).toMatchObject({ sharedTagCount: 1, tier: "semantic_backfill" });
   });
 
   it("uses kind and date only to break equal v8 tag scores", () => {
@@ -677,5 +783,17 @@ describe("related pet ranking profile", () => {
         RELATED_PETS_V8_PROFILE.rankingRevision,
       ),
     ).toBe(false);
+    expect(RELATED_PETS_V9_CALIBRATION_PROFILE).toMatchObject({
+      strategy: "text-first-v9",
+      embeddingRevision: "yandex-text-embeddings-v2-768-2026-07",
+      textRevision:
+        "yandex-text-embeddings-v2-768-related-description-document-2026-08-v1",
+      textQueryRevision:
+        "yandex-text-embeddings-v2-768-related-description-query-2026-08-v3",
+      textDimensions: 768,
+      visualMinSimilarity: null,
+      visualWeight: 0,
+    });
+    expect(CURRENT_RELATED_PETS_RANKING_PROFILE.strategy).toBe("legacy-v7");
   });
 });

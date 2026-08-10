@@ -165,55 +165,56 @@ embeddings must not be copied into deployment logs.
 
 For hybrid related pets, keep `PET_RELATED_HYBRID_ENABLED=false` while applying
 the additive migrations and calibrating the revision-bound ranking profile.
-Backfill the additive related query-vector revision before calibration; its
-dry-run reads YDB only, while apply calls the query embedding model and writes
-revision-scoped rows to the existing embeddings table:
+Backfill the additive V9 query and document revisions sequentially before
+calibration. Dry-run reads YDB only; apply calls the corresponding embedding
+role and writes revision-scoped rows to the existing embeddings table:
 
 ```bash
 npm run related:backfill-query -- --dry-run
 npm run related:backfill-query -- --apply
+npm run related:backfill-document -- --dry-run
+npm run related:backfill-document -- --apply
 ```
 
-The query source is normalized pet tags, with description only as the fallback
-for pets without tags. Candidate vectors remain the existing search document
-revision, so related ranking uses query-to-document cosine rather than the
-unsupported document-to-document shortcut. The depth-eight ranking first orders
-candidates that pass either semantic threshold or share a normalized tag using
-weighted RRF. Remaining slots use only full text and visual ranks, with no kind,
-date, freshness, or metadata-rank contribution. When both semantic modalities
-are absent, the existing metadata-only order is preserved. The text-plus-
-metadata evaluation control stays on its thresholded weighted RRF policy;
-semantic backfill applies only to the evaluated full hybrid ranking. Both
-evaluation commands below read only the approved catalog and existing text-
-query/text-document/visual/caption rows; they do not call an embedding provider:
+Both inputs contain normalized name, kind, and description; tags are excluded.
+The query side uses the model's query role and candidates use its document
+role. A V9 candidate qualifies only by the calibrated text threshold. Shared
+semantic tags and visual similarity are weighted RRF bonuses inside that
+qualified tier. Remaining slots are ordered strictly by text rank, so neither a
+tag-only nor a visual-only match can enter the qualified tier. The selection
+command reads only the approved catalog and existing query, document, visual,
+and caption rows; it does not call an embedding provider:
 
 ```bash
-npm run related:eval:calibrate
-npm run related:eval:holdout
+npm run related:eval:select
 ```
 
 The dedicated related fixtures live in
 `src/lib/pets/related-pets-eval-fixtures.json`; they do not change search eval.
-Calibration uses exactly 12 frozen source cases, including both directions of
-Sans and Fire Skull. A text profile is eligible only when text-plus-metadata
-nDCG@4 is no worse than metadata, at least one case strictly improves, and text
-changes at least one final top four. Sans must include Fire Skull in both the
-text-plus-metadata and final hybrid top four; metadata-only output does not
-satisfy this gate. If no eligible text profile exists, calibration exits
-nonzero and rollout stops. Reports also include nDCG@8 for the stored depth;
-the profile selection rules remain based on nDCG@4.
+V9 selects the text threshold first. It then requires a nonzero visual profile
+that improves at least one calibration case without degrading V9 text-only
+nDCG@4 or nDCG@8. If either selection fails, rollout stops. Record the selected
+profile in a separate immutable commit and verify the exact pin:
 
-Visual-off is represented only as `visualMinSimilarity: null`. Calibration
-prefers an enabled visual profile with the smallest tied weight and disables
-visual only when every enabled profile degrades the text-plus-metadata
-baseline. The command exits nonzero unless the exact selected thresholds and
-weight match `CURRENT_RELATED_PETS_RANKING_PROFILE`. When it reports a
-different `selectedProfile`, stop the rollout; thresholds must not be changed
-automatically. A new pinned profile requires a separate calibrated code change.
-The holdout command uses four untouched source cases exactly once
-and must report `passed: true`; full hybrid nDCG@4 and nDCG@8 must each be no
-worse than both metadata-only and text-plus-metadata. Missing approved fixture
-pets or missing current query, document, or visual vectors fail either command.
+```bash
+npm run related:eval:calibrate
+```
+
+The verification command exits nonzero unless the recalculated values match
+the pinned V9 profile. Thresholds must not be changed automatically.
+After pinning the selected V9 profile in a separate immutable commit, run the
+graded acceptance gate and then the Leon/Sakura/Cloud holdout exactly once:
+
+```bash
+npm run related:eval:acceptance
+npm run related:eval:holdout
+```
+
+Both must report `passed: true`. V9 aggregate graded nDCG@4 and nDCG@8 must be
+no worse than text-only, V8, or V7; hard negatives and mandatory neighbors are
+checked from frozen fixtures. Missing approved pets or current query, document,
+or visual vectors fail the command. Do not change thresholds or fixture labels
+after inspecting holdout output.
 
 Only after both evaluation commands pass, build the initial snapshots:
 
@@ -252,13 +253,14 @@ approved external step. Existing `pet_install_command_copy` and
 need replacement goals. Compare positions 1-4 with 5-8 after 7 and 14 days,
 separating direct card conversions from conversions after detail navigation.
 
-Approval refreshes the search document vector and the related query vector in
-parallel. `updated` and `unchanged` are the only ready outcomes. With an enabled
-visual profile, approval publishes no generation until the visual refresh also
-succeeds; its callback then rebuilds with complete document, query, and visual
-coverage. With a compatible text profile, a skipped or failed text refresh, or
-a failed visual refresh, keeps the previous generation ready while approval
-itself remains successful. A missing or incompatible text profile explicitly
+Approval refreshes the ordinary search document, V9 related query, and V9
+related document independently. `updated` and `unchanged` are the only ready
+outcomes for each required related role. With an enabled visual profile,
+approval publishes no generation until both related vectors and visual refresh
+succeed; its callback then rebuilds with complete document, query, and visual
+coverage. Partial successful rows remain stored, while any skipped or failed
+required refresh keeps the previous generation ready and approval itself
+successful. A missing or incompatible underlying embedding profile explicitly
 invalidates related-pet state, so hybrid reads fall back to heuristics until the
 configuration, embedding backfill, and rebuild are complete. Retry the ordinary
 embedding refresh/backfill and rebuild operationally; there is no separate

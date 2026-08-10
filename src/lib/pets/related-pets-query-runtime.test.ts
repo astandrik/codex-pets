@@ -1,14 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildRelatedPetDocument,
   buildRelatedPetQuery,
+  createRelatedPetDocumentSourceHash,
   createRelatedPetQuerySourceHash,
 } from "@/lib/pets/search-embeddings";
 import { createRelatedPetQueryRuntime } from "@/lib/pets/related-pets-query-runtime";
-import { RELATED_PETS_THEME_QUERY_REVISION } from "@/lib/pets/related-pets-semantics.mjs";
+import {
+  RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+  RELATED_PETS_DESCRIPTION_QUERY_REVISION,
+  RELATED_PETS_THEME_QUERY_REVISION,
+} from "@/lib/pets/related-pets-semantics.mjs";
 import type { PublicPet } from "@/lib/pets/types";
 
 const profile = {
+  embeddingRevision: "document-v1",
   textRevision: "document-v1",
   textQueryRevision: "related-query-v1",
   textDimensions: 3,
@@ -45,6 +52,7 @@ function dependencies(overrides = {}) {
       revision: profile.textRevision,
       dimensions: 3,
       embedPreparedQuery: vi.fn(async () => [0.1, 0.2, 0.3]),
+      embedDocument: vi.fn(async () => [0.3, 0.2, 0.1]),
     },
     getMetadata: vi.fn(async () => null),
     upsert: vi.fn(async () => undefined),
@@ -104,6 +112,60 @@ describe("related pet query runtime", () => {
     });
   });
 
+  it("stores independent v9 query and document vectors from the same text", async () => {
+    const input = pet({ tags: ["anime", "detailed", "source-github"] });
+    const v9Profile = {
+      ...profile,
+      embeddingRevision: "document-v1",
+      textQueryRevision: RELATED_PETS_DESCRIPTION_QUERY_REVISION,
+      textRevision: RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+    };
+    const deps = dependencies({ profile: v9Profile });
+    const runtime = createRelatedPetQueryRuntime(deps);
+
+    await expect(runtime.refreshApprovedPetRelatedQueryEmbedding(input)).resolves.toBe(
+      "updated",
+    );
+    await expect(runtime.refreshApprovedPetRelatedDocumentEmbedding(input)).resolves.toBe(
+      "updated",
+    );
+
+    const expectedText =
+      "name: Velvet Byte\nkind: character\ndescription: A gothic coding character";
+    expect(deps.embeddingClient.embedPreparedQuery).toHaveBeenCalledWith(
+      expectedText,
+    );
+    expect(deps.embeddingClient.embedDocument).toHaveBeenCalledWith(
+      expectedText,
+    );
+    expect(deps.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelRevision: RELATED_PETS_DESCRIPTION_QUERY_REVISION,
+        sourceHash: createRelatedPetQuerySourceHash(
+          input,
+          RELATED_PETS_DESCRIPTION_QUERY_REVISION,
+        ),
+      }),
+    );
+    expect(deps.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelRevision: RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+        sourceHash: createRelatedPetDocumentSourceHash(
+          input,
+          RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+        ),
+      }),
+    );
+    expect(
+      buildRelatedPetDocument(
+        input,
+        RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+      ),
+    ).toBe(
+      buildRelatedPetQuery(input, RELATED_PETS_DESCRIPTION_QUERY_REVISION),
+    );
+  });
+
   it("uses the description fallback without search truncation", async () => {
     const input = pet({
       tags: [],
@@ -158,6 +220,7 @@ describe("related pet query runtime", () => {
             revision: profile.textRevision,
             dimensions: 2,
             embedPreparedQuery: vi.fn(async () => [0.1, 0.2]),
+            embedDocument: vi.fn(async () => [0.2, 0.1]),
           },
         }),
       ).refreshApprovedPetRelatedQueryEmbedding(pet()),
@@ -169,6 +232,7 @@ describe("related pet query runtime", () => {
             revision: "document-v2",
             dimensions: 3,
             embedPreparedQuery: vi.fn(async () => [0.1, 0.2, 0.3]),
+            embedDocument: vi.fn(async () => [0.3, 0.2, 0.1]),
           },
         }),
       ).refreshApprovedPetRelatedQueryEmbedding(pet()),
@@ -184,6 +248,7 @@ describe("related pet query runtime", () => {
           embedPreparedQuery: vi.fn(async () => {
             throw new Error("provider secret");
           }),
+          embedDocument: vi.fn(async () => [0.3, 0.2, 0.1]),
         },
       }),
     );

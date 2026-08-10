@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildRelatedPetDocument as buildRuntimeRelatedDocument,
   buildRelatedPetQuery as buildRuntimeRelatedQuery,
   buildPetSearchDocument as buildRuntimeDocument,
+  createRelatedPetDocumentSourceHash as createRuntimeRelatedDocumentHash,
   createRelatedPetQuerySourceHash as createRuntimeRelatedQueryHash,
   createPetSearchSourceHash as createRuntimeHash,
   embeddingToBuffer as runtimeEmbeddingToBuffer,
@@ -11,11 +13,17 @@ import {
   PET_SEARCH_EMBEDDING_MODELS,
   PET_SEARCH_MODEL_REVISIONS,
 } from "../src/lib/pets/search-config";
-import { RELATED_PETS_V8_TEXT_QUERY_REVISION } from "../src/lib/pets/related-pets-profile";
+import {
+  RELATED_PETS_V8_TEXT_QUERY_REVISION,
+  RELATED_PETS_V9_TEXT_DOCUMENT_REVISION,
+  RELATED_PETS_V9_TEXT_QUERY_REVISION,
+} from "../src/lib/pets/related-pets-profile";
 
 const {
+  buildRelatedPetDocument,
   buildRelatedPetQuery,
   buildPetSearchDocument,
+  createRelatedPetDocumentSourceHash,
   createRelatedPetQuerySourceHash,
   createPetSearchSourceHash,
   createRequestStartLimiter,
@@ -88,6 +96,65 @@ describe("pet search embeddings backfill", () => {
       text: "skeleton pixel art",
       dim: "768",
     });
+    expect(
+      PET_SEARCH_BACKFILL_REVISIONS[RELATED_PETS_V9_TEXT_QUERY_REVISION],
+    ).toMatchObject({
+      modelPath: "text-embeddings-v2-query",
+      inputKind: "related-query",
+    });
+    expect(
+      PET_SEARCH_BACKFILL_REVISIONS[RELATED_PETS_V9_TEXT_DOCUMENT_REVISION],
+    ).toMatchObject({
+      documentModelPath: "text-embeddings-v2-doc",
+      inputKind: "related-document",
+    });
+    expect(
+      createEmbeddingRequest({
+        folderId: "folder-1",
+        definition:
+          PET_SEARCH_BACKFILL_REVISIONS[
+            RELATED_PETS_V9_TEXT_QUERY_REVISION
+          ],
+        text: "related input",
+      }).modelUri,
+    ).toBe("emb://folder-1/text-embeddings-v2-query");
+    expect(
+      createEmbeddingRequest({
+        folderId: "folder-1",
+        definition:
+          PET_SEARCH_BACKFILL_REVISIONS[
+            RELATED_PETS_V9_TEXT_DOCUMENT_REVISION
+          ],
+        text: "related input",
+      }).modelUri,
+    ).toBe("emb://folder-1/text-embeddings-v2-doc");
+  });
+
+  it("keeps v9 app and CLI description inputs byte-identical", () => {
+    expect(
+      buildRelatedPetQuery(pet, RELATED_PETS_V9_TEXT_QUERY_REVISION),
+    ).toBe(
+      buildRuntimeRelatedQuery(pet, RELATED_PETS_V9_TEXT_QUERY_REVISION),
+    );
+    expect(
+      buildRelatedPetDocument(pet, RELATED_PETS_V9_TEXT_DOCUMENT_REVISION),
+    ).toBe(
+      buildRuntimeRelatedDocument(
+        pet,
+        RELATED_PETS_V9_TEXT_DOCUMENT_REVISION,
+      ),
+    );
+    expect(
+      createRelatedPetDocumentSourceHash(
+        pet,
+        RELATED_PETS_V9_TEXT_DOCUMENT_REVISION,
+      ),
+    ).toBe(
+      createRuntimeRelatedDocumentHash(
+        pet,
+        RELATED_PETS_V9_TEXT_DOCUMENT_REVISION,
+      ),
+    );
   });
 
   it("parses explicit dry-run/apply modes and optional flags", () => {

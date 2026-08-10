@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import fixturesJson from "@/lib/pets/related-pets-acceptance-fixtures.json";
+import v9HoldoutJson from "@/lib/pets/related-pets-v9-holdout-fixtures.json";
 import {
   createRelatedPetsAcceptanceCases,
   evaluateRelatedPetsAcceptance,
@@ -22,6 +23,23 @@ describe("related pets acceptance fixtures", () => {
       split: "holdout",
       sourceSlug: "dracula",
     });
+  });
+
+  it("loads the frozen one-time v9 holdout constraints", () => {
+    const fixtures = parseRelatedPetsAcceptanceFixtures(v9HoldoutJson);
+
+    expect(fixtures.map(({ sourceSlug }) => sourceSlug)).toEqual([
+      "leon",
+      "sakura",
+      "cloud-flat-2",
+    ]);
+    expect(fixtures[0]?.mustIncludeAllTop4).toEqual([]);
+    expect(fixtures[2]?.mustIncludeAllTop8).toEqual([
+      "sephiroth-2",
+      "tifa-chibi",
+      "aerith-chibi-2",
+      "yuffie-3",
+    ]);
   });
 
   it("rejects duplicate sources, invalid grades, and overlapping negatives", () => {
@@ -80,7 +98,7 @@ describe("graded related pets acceptance", () => {
     const rankings = fixtures.map(({ sourceSlug }) => ranking(sourceSlug));
     rankings[0] = {
       ...rankings[0],
-      v8Slugs: ["negative", "a", "b", "c", "d", "e", "f", "g"],
+      candidateSlugs: ["negative", "a", "b", "c", "d", "e", "f", "g"],
     };
     const report = evaluateRelatedPetsAcceptance({ fixtures, rankings });
 
@@ -88,6 +106,8 @@ describe("graded related pets acceptance", () => {
     expect(report.checks).toMatchObject({
       noSevereTextRegressionAt8: false,
       allRequiredNeighborsInTop4: false,
+      allExplicitTop4NeighborsPresent: false,
+      allExplicitTop8NeighborsPresent: false,
       noExplicitNegativeInTop8: false,
     });
   });
@@ -97,7 +117,7 @@ describe("graded related pets acceptance", () => {
     const rankings = fixtures.map(({ sourceSlug }) => ranking(sourceSlug));
     rankings[0] = {
       ...rankings[0],
-      v8Slugs: ["exact", "exact", "peer"],
+      candidateSlugs: ["exact", "exact", "peer"],
     };
 
     expect(
@@ -114,7 +134,15 @@ function fixture(
   sourceSlug: string,
   relevance: Record<string, number>,
 ) {
-  return { id, sourceSlug, relevance, mustIncludeOneOfTop4: ["related"] };
+  return {
+    id,
+    sourceSlug,
+    relevance,
+    mustIncludeOneOfTop4: ["related"],
+    mustIncludeAllTop4: [],
+    mustIncludeAllTop8: [],
+    negativeSlugs: [],
+  };
 }
 
 function acceptanceFixtures() {
@@ -123,19 +151,23 @@ function acceptanceFixtures() {
     sourceSlug: `source-${index}`,
     relevance: { exact: 3, same: 2, peer: 1 } as const,
     mustIncludeOneOfTop4: ["exact"],
+    mustIncludeAllTop4: index === 0 ? ["exact", "same"] : [],
+    mustIncludeAllTop8: index === 0 ? ["peer"] : [],
     negativeSlugs: ["negative"],
   }));
 }
 
 function ranking(
   sourceSlug: string,
-  v8Slugs = ["exact", "same", "peer", "tail", "a", "b", "c", "d"],
+  candidateSlugs = ["exact", "same", "peer", "tail", "a", "b", "c", "d"],
 ): RelatedPetAcceptanceRankingCase {
   return {
     sourceSlug,
     metadataSlugs: ["same", "exact", "peer", "tail", "a", "b", "c", "d"],
     textSlugs: ["same", "exact", "peer", "tail", "a", "b", "c", "d"],
-    v8Slugs,
+    noVisualSlugs: ["same", "exact", "peer", "tail", "a", "b", "c", "d"],
+    candidateSlugs,
+    v8Slugs: ["same", "exact", "peer", "tail", "a", "b", "c", "d"],
     v7Slugs: ["peer", "same", "exact", "tail", "a", "b", "c", "d"],
   };
 }

@@ -14,6 +14,8 @@ export type RelatedPetAcceptanceFixture = {
   sourceSlug: string;
   relevance: Record<string, RelatedPetAcceptanceGrade>;
   mustIncludeOneOfTop4: string[];
+  mustIncludeAllTop4: string[];
+  mustIncludeAllTop8: string[];
   negativeSlugs: string[];
 };
 
@@ -21,6 +23,8 @@ export type RelatedPetAcceptanceRankingCase = {
   sourceSlug: string;
   metadataSlugs: readonly string[];
   textSlugs: readonly string[];
+  noVisualSlugs: readonly string[];
+  candidateSlugs: readonly string[];
   v8Slugs: readonly string[];
   v7Slugs: readonly string[];
 };
@@ -67,9 +71,21 @@ export function parseRelatedPetsAcceptanceFixtures(
       item.mustIncludeOneOfTop4,
       id,
     );
+    const mustIncludeAllTop4 = optionalUniqueSlugs(
+      item.mustIncludeAllTop4,
+      id,
+    );
+    const mustIncludeAllTop8 = optionalUniqueSlugs(
+      item.mustIncludeAllTop8,
+      id,
+    );
     const negativeSlugs = optionalUniqueSlugs(item.negativeSlugs, id);
     if (
-      mustIncludeOneOfTop4.some((slug) => relevance[slug] === undefined) ||
+      [
+        ...mustIncludeOneOfTop4,
+        ...mustIncludeAllTop4,
+        ...mustIncludeAllTop8,
+      ].some((slug) => relevance[slug] === undefined) ||
       negativeSlugs.some(
         (slug) => slug === sourceSlug || relevance[slug] !== undefined,
       )
@@ -82,6 +98,8 @@ export function parseRelatedPetsAcceptanceFixtures(
       sourceSlug,
       relevance,
       mustIncludeOneOfTop4,
+      mustIncludeAllTop4,
+      mustIncludeAllTop8,
       negativeSlugs,
     };
   });
@@ -102,6 +120,7 @@ export function createRelatedPetsAcceptanceCases(
 export function evaluateRelatedPetsAcceptance(input: {
   fixtures: readonly RelatedPetAcceptanceFixture[];
   rankings: readonly RelatedPetAcceptanceRankingCase[];
+  minimumCaseCount?: number;
 }) {
   const rankingsBySource = new Map(
     input.rankings.map((ranking) => [ranking.sourceSlug, ranking]),
@@ -128,6 +147,16 @@ export function evaluateRelatedPetsAcceptance(input: {
         fixture.relevance,
         TOP_4,
       ),
+      noVisualNdcgAt4: gradedNdcgAtK(
+        ranking.noVisualSlugs,
+        fixture.relevance,
+        TOP_4,
+      ),
+      candidateNdcgAt4: gradedNdcgAtK(
+        ranking.candidateSlugs,
+        fixture.relevance,
+        TOP_4,
+      ),
       v8NdcgAt4: gradedNdcgAtK(
         ranking.v8Slugs,
         fixture.relevance,
@@ -148,6 +177,16 @@ export function evaluateRelatedPetsAcceptance(input: {
         fixture.relevance,
         TOP_8,
       ),
+      noVisualNdcgAt8: gradedNdcgAtK(
+        ranking.noVisualSlugs,
+        fixture.relevance,
+        TOP_8,
+      ),
+      candidateNdcgAt8: gradedNdcgAtK(
+        ranking.candidateSlugs,
+        fixture.relevance,
+        TOP_8,
+      ),
       v8NdcgAt8: gradedNdcgAtK(
         ranking.v8Slugs,
         fixture.relevance,
@@ -159,28 +198,41 @@ export function evaluateRelatedPetsAcceptance(input: {
         TOP_8,
       ),
     };
-    const negativeTop8Slugs = ranking.v8Slugs
+    const negativeTop8Slugs = ranking.candidateSlugs
       .slice(0, TOP_8)
       .filter((slug) => fixture.negativeSlugs.includes(slug));
     const mustIncludeTop4Satisfied =
       fixture.mustIncludeOneOfTop4.length === 0 ||
-      ranking.v8Slugs
+      ranking.candidateSlugs
         .slice(0, TOP_4)
         .some((slug) => fixture.mustIncludeOneOfTop4.includes(slug));
+    const mustIncludeAllTop4Satisfied = fixture.mustIncludeAllTop4.every(
+      (slug) => ranking.candidateSlugs.slice(0, TOP_4).includes(slug),
+    );
+    const mustIncludeAllTop8Satisfied = fixture.mustIncludeAllTop8.every(
+      (slug) => ranking.candidateSlugs.slice(0, TOP_8).includes(slug),
+    );
 
     return {
       id: fixture.id,
       ...ranking,
       metrics,
       mustIncludeTop4Satisfied,
+      mustIncludeAllTop4Satisfied,
+      mustIncludeAllTop8Satisfied,
       negativeTop8Slugs,
-      textNdcgAt8Delta: metrics.v8NdcgAt8 - metrics.textNdcgAt8,
+      textNdcgAt8Delta:
+        metrics.candidateNdcgAt8 - metrics.noVisualNdcgAt8,
       visualImproved:
-        metrics.v8NdcgAt4 > metrics.textNdcgAt4 + COMPARISON_EPSILON ||
-        metrics.v8NdcgAt8 > metrics.textNdcgAt8 + COMPARISON_EPSILON,
+        metrics.candidateNdcgAt4 >
+          metrics.noVisualNdcgAt4 + COMPARISON_EPSILON ||
+        metrics.candidateNdcgAt8 >
+          metrics.noVisualNdcgAt8 + COMPARISON_EPSILON,
       rankingIntegrity: [
         ranking.metadataSlugs,
         ranking.textSlugs,
+        ranking.noVisualSlugs,
+        ranking.candidateSlugs,
         ranking.v8Slugs,
         ranking.v7Slugs,
       ].every((slugs) => validTop8(slugs, fixture.sourceSlug)),
@@ -190,25 +242,54 @@ export function evaluateRelatedPetsAcceptance(input: {
   const aggregate = {
     metadataNdcgAt4: mean(cases.map(({ metrics }) => metrics.metadataNdcgAt4)),
     textNdcgAt4: mean(cases.map(({ metrics }) => metrics.textNdcgAt4)),
+    noVisualNdcgAt4: mean(
+      cases.map(({ metrics }) => metrics.noVisualNdcgAt4),
+    ),
+    candidateNdcgAt4: mean(
+      cases.map(({ metrics }) => metrics.candidateNdcgAt4),
+    ),
     v8NdcgAt4: mean(cases.map(({ metrics }) => metrics.v8NdcgAt4)),
     v7NdcgAt4: mean(cases.map(({ metrics }) => metrics.v7NdcgAt4)),
     metadataNdcgAt8: mean(cases.map(({ metrics }) => metrics.metadataNdcgAt8)),
     textNdcgAt8: mean(cases.map(({ metrics }) => metrics.textNdcgAt8)),
+    noVisualNdcgAt8: mean(
+      cases.map(({ metrics }) => metrics.noVisualNdcgAt8),
+    ),
+    candidateNdcgAt8: mean(
+      cases.map(({ metrics }) => metrics.candidateNdcgAt8),
+    ),
     v8NdcgAt8: mean(cases.map(({ metrics }) => metrics.v8NdcgAt8)),
     v7NdcgAt8: mean(cases.map(({ metrics }) => metrics.v7NdcgAt8)),
   };
   const checks = {
     minimumCaseCount:
-      cases.length >= RELATED_PETS_ACCEPTANCE_MIN_CASES,
+      cases.length >=
+      (input.minimumCaseCount ?? RELATED_PETS_ACCEPTANCE_MIN_CASES),
     rankingIntegrity: cases.every((item) => item.rankingIntegrity),
-    v8NoWorseThanTextAt4:
-      aggregate.v8NdcgAt4 + COMPARISON_EPSILON >= aggregate.textNdcgAt4,
-    v8NoWorseThanTextAt8:
-      aggregate.v8NdcgAt8 + COMPARISON_EPSILON >= aggregate.textNdcgAt8,
-    v8NoWorseThanV7At4:
-      aggregate.v8NdcgAt4 + COMPARISON_EPSILON >= aggregate.v7NdcgAt4,
-    v8NoWorseThanV7At8:
-      aggregate.v8NdcgAt8 + COMPARISON_EPSILON >= aggregate.v7NdcgAt8,
+    candidateNoWorseThanTextAt4:
+      aggregate.candidateNdcgAt4 + COMPARISON_EPSILON >=
+      aggregate.textNdcgAt4,
+    candidateNoWorseThanTextAt8:
+      aggregate.candidateNdcgAt8 + COMPARISON_EPSILON >=
+      aggregate.textNdcgAt8,
+    candidateNoWorseThanNoVisualAt4:
+      aggregate.candidateNdcgAt4 + COMPARISON_EPSILON >=
+      aggregate.noVisualNdcgAt4,
+    candidateNoWorseThanNoVisualAt8:
+      aggregate.candidateNdcgAt8 + COMPARISON_EPSILON >=
+      aggregate.noVisualNdcgAt8,
+    candidateNoWorseThanV8At4:
+      aggregate.candidateNdcgAt4 + COMPARISON_EPSILON >=
+      aggregate.v8NdcgAt4,
+    candidateNoWorseThanV8At8:
+      aggregate.candidateNdcgAt8 + COMPARISON_EPSILON >=
+      aggregate.v8NdcgAt8,
+    candidateNoWorseThanV7At4:
+      aggregate.candidateNdcgAt4 + COMPARISON_EPSILON >=
+      aggregate.v7NdcgAt4,
+    candidateNoWorseThanV7At8:
+      aggregate.candidateNdcgAt8 + COMPARISON_EPSILON >=
+      aggregate.v7NdcgAt8,
     noSevereTextRegressionAt8: cases.every(
       ({ textNdcgAt8Delta }) =>
         textNdcgAt8Delta + COMPARISON_EPSILON >=
@@ -216,6 +297,12 @@ export function evaluateRelatedPetsAcceptance(input: {
     ),
     allRequiredNeighborsInTop4: cases.every(
       (item) => item.mustIncludeTop4Satisfied,
+    ),
+    allExplicitTop4NeighborsPresent: cases.every(
+      (item) => item.mustIncludeAllTop4Satisfied,
+    ),
+    allExplicitTop8NeighborsPresent: cases.every(
+      (item) => item.mustIncludeAllTop8Satisfied,
     ),
     noExplicitNegativeInTop8: cases.every(
       (item) => item.negativeTop8Slugs.length === 0,

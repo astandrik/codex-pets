@@ -74,6 +74,7 @@
       "jinx-2": 3
     },
     "mustIncludeOneOfTop4": ["jinx", "jinx-2"],
+    "mustIncludeAllTop4": ["jinx", "jinx-2"],
     "negativeSlugs": ["ashe", "fran", "viera", "zero-two"]
   },
   {

@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 
 import {
+  RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+  RELATED_PETS_DESCRIPTION_QUERY_REVISION,
   RELATED_PETS_THEME_QUERY_REVISION,
+  buildRelatedPetDescriptionText,
   buildRelatedPetThemeQuery,
 } from "../../src/lib/pets/related-pets-semantics.mjs";
 import { createRelatedPetsRebuildRequiredLog } from "./related-pets-maintenance.mjs";
@@ -62,6 +65,9 @@ export function buildPetSearchDocument(pet) {
 }
 
 export function buildRelatedPetQuery(pet, modelRevision) {
+  if (modelRevision === RELATED_PETS_DESCRIPTION_QUERY_REVISION) {
+    return buildRelatedPetDescriptionText(pet);
+  }
   if (modelRevision === RELATED_PETS_THEME_QUERY_REVISION) {
     return buildRelatedPetThemeQuery(pet);
   }
@@ -69,6 +75,13 @@ export function buildRelatedPetQuery(pet, modelRevision) {
   return tags.length > 0
     ? tags.join(" ")
     : pet.description.normalize("NFKC").trim();
+}
+
+export function buildRelatedPetDocument(pet, modelRevision) {
+  if (modelRevision !== RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION) {
+    return buildPetSearchDocument(pet);
+  }
+  return buildRelatedPetDescriptionText(pet);
 }
 
 export function createPetSearchSourceHash(pet, modelRevision) {
@@ -84,6 +97,14 @@ export function createRelatedPetQuerySourceHash(pet, modelRevision) {
     .update(modelRevision)
     .update("\n")
     .update(buildRelatedPetQuery(pet, modelRevision))
+    .digest("hex");
+}
+
+export function createRelatedPetDocumentSourceHash(pet, modelRevision) {
+  return createHash("sha256")
+    .update(modelRevision)
+    .update("\n")
+    .update(buildRelatedPetDocument(pet, modelRevision))
     .digest("hex");
 }
 

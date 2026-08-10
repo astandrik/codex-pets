@@ -8,6 +8,7 @@ import {
 } from "@/lib/pets/related-pets-ranking";
 import {
   rankRelatedPetsByMetadata,
+  rankRelatedPetsByTextFirstMetadata,
   rankRelatedPetsByThemeMetadata,
   type RelatedPetCandidate,
 } from "@/lib/pets/related-pets";
@@ -147,12 +148,17 @@ export function createRelatedPetsCalibrationObservations(input: {
         `Related-pet calibration source ${calibrationCase.sourceSlug} is missing from the approved catalog.`,
       );
     }
-    const metadataRanking = input.strategy === "theme-first-v8"
-      ? rankRelatedPetsByThemeMetadata(
+    const metadataRanking = input.strategy === "text-first-v9"
+      ? rankRelatedPetsByTextFirstMetadata(
           Array.from(candidatesBySlug.values()),
           source,
         )
-      : rankRelatedPetsByMetadata(
+      : input.strategy === "theme-first-v8"
+        ? rankRelatedPetsByThemeMetadata(
+          Array.from(candidatesBySlug.values()),
+          source,
+        )
+        : rankRelatedPetsByMetadata(
           Array.from(candidatesBySlug.values()),
           source,
         );
@@ -220,6 +226,7 @@ export function ndcgAt8(
 export function selectRelatedTextThreshold(
   observations: readonly RelatedPetCalibrationObservation[],
   thresholds?: readonly number[],
+  strategy: RelatedPetsRankingStrategy = "theme-first-v8",
 ) {
   assertObservationSplit(observations, "calibration");
   const candidates = thresholdCandidates(
@@ -239,7 +246,7 @@ export function selectRelatedTextThreshold(
 
   for (const textMinSimilarity of candidates) {
     const report = evaluateRelatedPetsProfile(observations, {
-      strategy: "theme-first-v8",
+      strategy,
       textMinSimilarity,
       visualMinSimilarity: null,
       visualWeight: 0,
@@ -282,6 +289,7 @@ export function selectRelatedVisualProfile(
   observations: readonly RelatedPetCalibrationObservation[],
   textMinSimilarity: number,
   thresholds?: readonly number[],
+  strategy: RelatedPetsRankingStrategy = "theme-first-v8",
 ) {
   assertObservationSplit(observations, "calibration");
   const candidates = thresholdCandidates(
@@ -292,7 +300,7 @@ export function selectRelatedVisualProfile(
     "visual",
   );
   const baseline = evaluateRelatedPetsProfile(observations, {
-    strategy: "theme-first-v8",
+    strategy,
     textMinSimilarity,
     visualMinSimilarity: null,
     visualWeight: 0,
@@ -309,7 +317,7 @@ export function selectRelatedVisualProfile(
   for (const visualMinSimilarity of candidates) {
     for (const visualWeight of RELATED_PETS_VISUAL_WEIGHT_CANDIDATES) {
       const report = evaluateRelatedPetsProfile(observations, {
-        strategy: "theme-first-v8",
+        strategy,
         textMinSimilarity,
         visualMinSimilarity,
         visualWeight,
@@ -359,19 +367,26 @@ export function evaluateRelatedPetsCalibration(
   observations: readonly RelatedPetCalibrationObservation[],
   pinnedProfile: RelatedPetsRankingProfile,
 ) {
-  const textSelection = selectRelatedTextThreshold(observations);
+  const strategy = pinnedProfile.strategy ?? "legacy-v7";
+  const textSelection = selectRelatedTextThreshold(
+    observations,
+    undefined,
+    strategy,
+  );
   const visualSelection = selectRelatedVisualProfile(
     observations,
     textSelection.textMinSimilarity,
+    undefined,
+    strategy,
   );
   const selectedProfile = {
-    strategy: "theme-first-v8" as const,
+    strategy,
     textMinSimilarity: textSelection.textMinSimilarity,
     visualMinSimilarity: visualSelection.visualMinSimilarity,
     visualWeight: visualSelection.visualWeight,
   };
   const profileMatches =
-    pinnedProfile.strategy === "theme-first-v8" &&
+    pinnedProfile.strategy === strategy &&
     selectedProfile.textMinSimilarity ===
       pinnedProfile.textMinSimilarity &&
     selectedProfile.visualMinSimilarity ===
@@ -458,6 +473,10 @@ export function evaluateRelatedPetsProfile(
       textMinSimilarity: profile.textMinSimilarity,
       strategy: profile.strategy,
     });
+    const textOnlySlugs = uniqueSlugs(
+      observation.textMatches.map(({ slug }) => slug),
+      observation.sourceSlug,
+    ).slice(0, RELATED_PETS_SNAPSHOT_DEPTH);
     const hybridRanking = fuseRelatedPetRankingsWithDiagnostics({
       sourceSlug: observation.sourceSlug,
       metadataSlugs: observation.metadataSlugs,
@@ -475,6 +494,7 @@ export function evaluateRelatedPetsProfile(
       groupId: observation.groupId,
       sourceSlug: observation.sourceSlug,
       metadataSlugs,
+      textOnlySlugs,
       textMetadataSlugs,
       hybridSlugs,
       negativeTop8Slugs,

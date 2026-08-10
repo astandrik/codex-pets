@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildRelatedPetDescriptionText,
   buildRelatedPetThemeQuery,
   normalizeRelatedPetSemanticTags,
+  normalizeRelatedPetTextFirstTags,
 } from "@/lib/pets/related-pets-semantics.mjs";
 
 describe("related pet semantic tags", () => {
@@ -19,9 +21,41 @@ describe("related pet semantic tags", () => {
         "V12",
         "license-mit",
         "source-github",
+        "detailed",
+        "detaiiled",
         "Vampire",
       ]),
-    ).toEqual(["gothic", "vampire"]);
+    ).toEqual(["detaiiled", "detailed", "gothic", "vampire"]);
+  });
+
+  it("removes v9-only operational detail tags without changing v8", () => {
+    const tags = ["anime", "chibi", "girl", "detailed", "detaiiled"];
+
+    expect(normalizeRelatedPetSemanticTags(tags)).toEqual([
+      "anime",
+      "chibi",
+      "detaiiled",
+      "detailed",
+      "girl",
+    ]);
+    expect(normalizeRelatedPetTextFirstTags(tags)).toEqual([
+      "anime",
+      "chibi",
+      "girl",
+    ]);
+  });
+
+  it("builds the v9 description text without tags", () => {
+    expect(
+      buildRelatedPetDescriptionText({
+        displayName: " Ｖｅｌｖｅｔ Byte ",
+        description: " A gothic coding character. ",
+        kind: "character",
+        tags: ["anime", "chibi", "gothic"],
+      }),
+    ).toBe(
+      "name: Velvet Byte\nkind: character\ndescription: A gothic coding character.",
+    );
   });
 
   it("builds a stable name, kind, and topics query", () => {

@@ -14,6 +14,7 @@ vi.mock("@/lib/pets/search-runtime", () => ({
 }));
 
 vi.mock("@/lib/pets/related-pets-query-runtime", () => ({
+  refreshApprovedPetRelatedDocumentEmbedding: vi.fn(),
   refreshApprovedPetRelatedQueryEmbedding: vi.fn(),
 }));
 
@@ -49,7 +50,10 @@ import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
 import { moderatePet } from "@/lib/pets/repository";
 import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
-import { refreshApprovedPetRelatedQueryEmbedding } from "@/lib/pets/related-pets-query-runtime";
+import {
+  refreshApprovedPetRelatedDocumentEmbedding,
+  refreshApprovedPetRelatedQueryEmbedding,
+} from "@/lib/pets/related-pets-query-runtime";
 import {
   invalidateRelatedPets,
   rebuildRelatedPets,
@@ -62,6 +66,10 @@ import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 const currentVisualMinSimilarity =
   CURRENT_RELATED_PETS_RANKING_PROFILE.visualMinSimilarity;
+const currentEmbeddingRevision =
+  CURRENT_RELATED_PETS_RANKING_PROFILE.embeddingRevision;
+const currentTextRevision =
+  CURRENT_RELATED_PETS_RANKING_PROFILE.textRevision;
 
 function currentRelatedPetsSemanticConfig() {
   return {
@@ -80,6 +88,18 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     vi.unstubAllEnvs();
     (
       CURRENT_RELATED_PETS_RANKING_PROFILE as {
+        embeddingRevision: string;
+        textRevision: string;
+        visualMinSimilarity: number | null;
+      }
+    ).embeddingRevision = currentEmbeddingRevision;
+    (
+      CURRENT_RELATED_PETS_RANKING_PROFILE as {
+        textRevision: string;
+      }
+    ).textRevision = currentTextRevision;
+    (
+      CURRENT_RELATED_PETS_RANKING_PROFILE as {
         visualMinSimilarity: number | null;
       }
     ).visualMinSimilarity = currentVisualMinSimilarity;
@@ -89,6 +109,9 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     vi.clearAllMocks();
     petSearchRuntimeConfig.semantic = currentRelatedPetsSemanticConfig();
     vi.mocked(refreshApprovedPetSearchEmbedding).mockResolvedValue("updated");
+    vi.mocked(refreshApprovedPetRelatedDocumentEmbedding).mockResolvedValue(
+      "updated",
+    );
     vi.mocked(refreshApprovedPetRelatedQueryEmbedding).mockResolvedValue(
       "updated",
     );
@@ -279,6 +302,63 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     warnSpy.mockRestore();
   });
 
+  it("requires both dedicated related vectors but not the ordinary search document", async () => {
+    (
+      CURRENT_RELATED_PETS_RANKING_PROFILE as {
+        textRevision: string;
+      }
+    ).textRevision = "related-description-document-v9";
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce({
+      id: "pet_1",
+      slug: "boba",
+      displayName: "Boba",
+      description: "desc",
+      spritesheetUrl: "/api/assets/asset-123/spritesheet.webp",
+      petJsonUrl: "/api/assets/asset-123/pet.json",
+      zipUrl: "/api/assets/asset-123/pet.zip",
+      spritesheetExt: "webp",
+      kind: "creature",
+      tags: [],
+      status: "approved",
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString(),
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    });
+    vi.mocked(refreshApprovedPetSearchEmbedding).mockRejectedValueOnce(
+      new Error("ordinary search provider failure"),
+    );
+    vi.mocked(refreshApprovedPetVisionSearchBestEffort).mockImplementationOnce(
+      async (_pet, options) => {
+        await options?.onSuccessfulRefresh?.("caption-and-vector");
+        return true;
+      },
+    );
+
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ id: "pet_1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(refreshApprovedPetRelatedQueryEmbedding).toHaveBeenCalledOnce();
+    expect(refreshApprovedPetRelatedDocumentEmbedding).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(rebuildRelatedPets).toHaveBeenCalledOnce());
+    expect(rebuildRelatedPets).toHaveBeenCalledWith({
+      mode: "apply",
+      includeVisual: true,
+    });
+  });
+
   it("does not publish related snapshots when text indexing uses an incompatible profile", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     petSearchRuntimeConfig.semantic = {
@@ -346,8 +426,9 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
       {
         operation: "refresh",
         status: "incomplete",
-        document: "updated",
+        searchDocument: "updated",
         query: "skipped",
+        relatedDocument: "updated",
       },
     );
     warnSpy.mockRestore();
@@ -629,8 +710,9 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
       {
         operation: "refresh",
         status: "incomplete",
-        document: "failed",
+        searchDocument: "failed",
         query: "updated",
+        relatedDocument: "failed",
       },
     );
     expect(JSON.stringify(warnSpy.mock.calls)).not.toContain("provider failed");
@@ -689,8 +771,9 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
       {
         operation: "refresh",
         status: "incomplete",
-        document: "updated",
+        searchDocument: "updated",
         query: "failed",
+        relatedDocument: "updated",
       },
     );
     const logPayload = JSON.stringify(warnSpy.mock.calls);
@@ -741,6 +824,59 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     });
 
     expect(response.status).toBe(200);
+    expect(rebuildRelatedPets).not.toHaveBeenCalled();
+  });
+
+  it("does not publish a v9 generation after a partial related refresh", async () => {
+    (
+      CURRENT_RELATED_PETS_RANKING_PROFILE as {
+        textRevision: string;
+      }
+    ).textRevision = "related-description-document-v9";
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce({
+      id: "pet_1",
+      slug: "boba",
+      displayName: "Boba",
+      description: "desc",
+      spritesheetUrl: "/api/assets/asset-123/spritesheet.webp",
+      petJsonUrl: "/api/assets/asset-123/pet.json",
+      zipUrl: "/api/assets/asset-123/pet.zip",
+      spritesheetExt: "webp",
+      kind: "creature",
+      tags: [],
+      status: "approved",
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString(),
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    });
+    vi.mocked(refreshApprovedPetRelatedDocumentEmbedding).mockResolvedValueOnce(
+      "skipped",
+    );
+    vi.mocked(refreshApprovedPetVisionSearchBestEffort).mockImplementationOnce(
+      async (_pet, options) => {
+        await options?.onSuccessfulRefresh?.("caption-and-vector");
+        return true;
+      },
+    );
+
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ id: "pet_1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(refreshApprovedPetRelatedQueryEmbedding).toHaveBeenCalledOnce();
+    expect(refreshApprovedPetRelatedDocumentEmbedding).toHaveBeenCalledOnce();
     expect(rebuildRelatedPets).not.toHaveBeenCalled();
   });
 

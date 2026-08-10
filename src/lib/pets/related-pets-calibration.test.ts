@@ -214,6 +214,31 @@ function observation(
 }
 
 describe("related pet profile selection", () => {
+  it("selects visual reranking only inside the v9 text-qualified tier", () => {
+    const report = selectRelatedVisualProfile(
+      [
+        observation({
+          metadataSlugs: ["other", "peer"],
+          textMatches: [
+            { slug: "other", score: 0.95 },
+            { slug: "peer", score: 0.9 },
+          ],
+          visualMatches: [{ slug: "peer", score: 0.95 }],
+        }),
+      ],
+      0.9,
+      [0.95],
+      "text-first-v9",
+    );
+
+    expect(report).toMatchObject({
+      visualMinSimilarity: 0.95,
+      visualWeight: 0.25,
+      ndcgAt4: 1,
+      ndcgAt8: 1,
+    });
+  });
+
   it("selects a later text threshold when it strictly improves nDCG@4", () => {
     expect(
       selectRelatedTextThreshold(

@@ -1,0 +1,41 @@
+[
+  {
+    "id": "resident-evil-leon",
+    "sourceSlug": "leon",
+    "relevance": {
+      "alice": 3,
+      "lady-d-2": 1
+    },
+    "mustIncludeOneOfTop4": ["alice"],
+    "negativeSlugs": ["johnny", "gordon-freeman", "ovi", "tigran"]
+  },
+  {
+    "id": "kunoichi-sakura",
+    "sourceSlug": "sakura",
+    "relevance": {
+      "sakura-chibi": 3,
+      "rose-katana": 2,
+      "mai-shiranui": 2,
+      "kasumi": 1
+    },
+    "mustIncludeOneOfTop4": ["sakura-chibi"],
+    "negativeSlugs": ["paprika-2", "aurelia", "anime-girl-2"]
+  },
+  {
+    "id": "ffvii-cloud",
+    "sourceSlug": "cloud-flat-2",
+    "relevance": {
+      "sephiroth-2": 3,
+      "tifa-chibi": 3,
+      "aerith-chibi-2": 3,
+      "yuffie-3": 2
+    },
+    "mustIncludeAllTop8": [
+      "sephiroth-2",
+      "tifa-chibi",
+      "aerith-chibi-2",
+      "yuffie-3"
+    ],
+    "negativeSlugs": ["dante-2", "anime-knight", "sageblade-2"]
+  }
+]

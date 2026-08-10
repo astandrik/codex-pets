@@ -8,7 +8,10 @@ import {
   rebuildRelatedPetsBestEffort,
 } from "@/lib/pets/related-pets-rebuild-trigger";
 import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
-import { refreshApprovedPetRelatedQueryEmbedding } from "@/lib/pets/related-pets-query-runtime";
+import {
+  refreshApprovedPetRelatedDocumentEmbedding,
+  refreshApprovedPetRelatedQueryEmbedding,
+} from "@/lib/pets/related-pets-query-runtime";
 import { moderatePet } from "@/lib/pets/repository";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { petSearchRuntimeConfig } from "@/lib/pets/search-provider-runtime";
@@ -43,15 +46,24 @@ export async function POST(
   const canPublishRelatedPets = isRelatedPetsTextRefreshCompatible(
     petSearchRuntimeConfig.semantic,
   );
-  const [documentRefresh, queryRefresh] = await Promise.allSettled([
-    refreshApprovedPetSearchEmbedding(pet),
-    refreshApprovedPetRelatedQueryEmbedding(pet),
-  ]);
-  const documentStatus = refreshStatus(documentRefresh);
+  const searchDocumentRefresh = refreshApprovedPetSearchEmbedding(pet);
+  const relatedDocumentRefresh =
+    CURRENT_RELATED_PETS_RANKING_PROFILE.textRevision ===
+    CURRENT_RELATED_PETS_RANKING_PROFILE.embeddingRevision
+      ? searchDocumentRefresh
+      : refreshApprovedPetRelatedDocumentEmbedding(pet);
+  const [searchDocumentResult, queryRefresh, relatedDocumentResult] =
+    await Promise.allSettled([
+      searchDocumentRefresh,
+      refreshApprovedPetRelatedQueryEmbedding(pet),
+      relatedDocumentRefresh,
+    ]);
+  const searchDocumentStatus = refreshStatus(searchDocumentResult);
   const queryStatus = refreshStatus(queryRefresh);
+  const relatedDocumentStatus = refreshStatus(relatedDocumentResult);
   const textReady =
-    isReadyRefreshStatus(documentStatus) &&
-    isReadyRefreshStatus(queryStatus);
+    isReadyRefreshStatus(queryStatus) &&
+    isReadyRefreshStatus(relatedDocumentStatus);
   const requiresVisual =
     CURRENT_RELATED_PETS_RANKING_PROFILE.visualMinSimilarity !== null;
 
@@ -59,8 +71,16 @@ export async function POST(
     console.warn("[codex-pets][related-pets-text-refresh]", {
       operation: "refresh",
       status: "incomplete",
-      document: documentStatus,
+      searchDocument: searchDocumentStatus,
       query: queryStatus,
+      relatedDocument: relatedDocumentStatus,
+    });
+  }
+
+  if (!isReadyRefreshStatus(searchDocumentStatus)) {
+    console.warn("[codex-pets][search-document-refresh]", {
+      operation: "refresh",
+      status: searchDocumentStatus,
     });
   }
 

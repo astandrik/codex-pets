@@ -3,11 +3,11 @@ export const RELATED_PETS_REBUILD_COMMANDS = Object.freeze([
   "npm run related:rebuild -- --apply",
 ]);
 
-export function buildRelatedPetsQueryBackfillCommands(slugs) {
-  return slugs.map(
-    (slug) =>
-      `npm run related:backfill-query -- --apply --slug ${slug}`,
-  );
+export function buildRelatedPetsTextBackfillCommands(slugs) {
+  return slugs.flatMap((slug) => [
+    `npm run related:backfill-query -- --apply --slug ${slug}`,
+    `npm run related:backfill-document -- --apply --slug ${slug}`,
+  ]);
 }
 
 export function createRelatedPetsRebuildRequiredLog() {

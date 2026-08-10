@@ -1,6 +1,8 @@
 import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
 import {
+  buildRelatedPetDocument,
   buildRelatedPetQuery,
+  createRelatedPetDocumentSourceHash,
   createRelatedPetQuerySourceHash,
   type YandexEmbeddingClient,
 } from "@/lib/pets/search-embeddings";
@@ -13,6 +15,7 @@ import { petSearchEmbeddingClient } from "@/lib/pets/search-provider-runtime";
 import type { PublicPet } from "@/lib/pets/types";
 
 type RelatedPetQueryProfile = {
+  embeddingRevision: string;
   textRevision: string;
   textQueryRevision: string;
   textDimensions: number;
@@ -22,7 +25,10 @@ type RelatedPetQueryRuntimeDependencies = {
   profile: RelatedPetQueryProfile;
   embeddingClient: Pick<
     YandexEmbeddingClient,
-    "revision" | "dimensions" | "embedPreparedQuery"
+    | "revision"
+    | "dimensions"
+    | "embedPreparedQuery"
+    | "embedDocument"
   > | null;
   getMetadata: (
     modelRevision: string,
@@ -47,28 +53,61 @@ export type RelatedPetQueryEmbeddingRefreshResult =
 export function createRelatedPetQueryRuntime(
   dependencies: RelatedPetQueryRuntimeDependencies,
 ) {
-  return { refreshApprovedPetRelatedQueryEmbedding };
+  return {
+    refreshApprovedPetRelatedDocumentEmbedding,
+    refreshApprovedPetRelatedQueryEmbedding,
+  };
 
   async function refreshApprovedPetRelatedQueryEmbedding(
     pet: PublicPet,
+  ): Promise<RelatedPetQueryEmbeddingRefreshResult> {
+    return refreshApprovedPetRelatedEmbedding(pet, {
+      modelRevision: dependencies.profile.textQueryRevision,
+      buildInput: buildRelatedPetQuery,
+      createSourceHash: createRelatedPetQuerySourceHash,
+      embed: (client, text) => client.embedPreparedQuery(text),
+    });
+  }
+
+  async function refreshApprovedPetRelatedDocumentEmbedding(
+    pet: PublicPet,
+  ): Promise<RelatedPetQueryEmbeddingRefreshResult> {
+    return refreshApprovedPetRelatedEmbedding(pet, {
+      modelRevision: dependencies.profile.textRevision,
+      buildInput: buildRelatedPetDocument,
+      createSourceHash: createRelatedPetDocumentSourceHash,
+      embed: (client, text) => client.embedDocument(text),
+    });
+  }
+
+  async function refreshApprovedPetRelatedEmbedding(
+    pet: PublicPet,
+    input: {
+      modelRevision: string;
+      buildInput: (pet: PublicPet, revision: string) => string;
+      createSourceHash: (pet: PublicPet, revision: string) => string;
+      embed: (
+        client: NonNullable<
+          RelatedPetQueryRuntimeDependencies["embeddingClient"]
+        >,
+        text: string,
+      ) => Promise<number[]>;
+    },
   ): Promise<RelatedPetQueryEmbeddingRefreshResult> {
     if (pet.status !== "approved") return "skipped";
 
     const embeddingClient = dependencies.embeddingClient;
     if (
       !embeddingClient ||
-      embeddingClient.revision !== dependencies.profile.textRevision ||
+      embeddingClient.revision !== dependencies.profile.embeddingRevision ||
       embeddingClient.dimensions !== dependencies.profile.textDimensions
     ) {
       return "skipped";
     }
 
-    const sourceHash = createRelatedPetQuerySourceHash(
-      pet,
-      dependencies.profile.textQueryRevision,
-    );
+    const sourceHash = input.createSourceHash(pet, input.modelRevision);
     const metadata = await dependencies.getMetadata(
-      dependencies.profile.textQueryRevision,
+      input.modelRevision,
       pet.slug,
     );
     if (
@@ -78,11 +117,12 @@ export function createRelatedPetQueryRuntime(
       return "unchanged";
     }
 
-    const embedding = await embeddingClient.embedPreparedQuery(
-      buildRelatedPetQuery(pet, dependencies.profile.textQueryRevision),
+    const embedding = await input.embed(
+      embeddingClient,
+      input.buildInput(pet, input.modelRevision),
     );
     await dependencies.upsert({
-      modelRevision: dependencies.profile.textQueryRevision,
+      modelRevision: input.modelRevision,
       slug: pet.slug,
       sourceHash,
       dimensions: dependencies.profile.textDimensions,
@@ -104,4 +144,10 @@ export function refreshApprovedPetRelatedQueryEmbedding(
   pet: PublicPet,
 ): Promise<RelatedPetQueryEmbeddingRefreshResult> {
   return runtime.refreshApprovedPetRelatedQueryEmbedding(pet);
+}
+
+export function refreshApprovedPetRelatedDocumentEmbedding(
+  pet: PublicPet,
+): Promise<RelatedPetQueryEmbeddingRefreshResult> {
+  return runtime.refreshApprovedPetRelatedDocumentEmbedding(pet);
 }

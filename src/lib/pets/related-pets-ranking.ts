@@ -1,5 +1,6 @@
 import {
   rankRelatedPetsByMetadata,
+  rankRelatedPetsByTextFirstMetadata,
   rankRelatedPetsByThemeMetadata,
   type RelatedPetCandidate,
 } from "@/lib/pets/related-pets";
@@ -33,7 +34,8 @@ export type RelatedPetsRankingProfile = {
 
 export type RelatedPetsRankingStrategy =
   | "legacy-v7"
-  | "theme-first-v8";
+  | "theme-first-v8"
+  | "text-first-v9";
 
 export type RelatedPetRankingTier =
   | "qualified"
@@ -46,8 +48,12 @@ export type RelatedPetRankingDiagnostic = {
   metadataRank: number;
   textRank: number | null;
   visualRank: number | null;
+  textSimilarity: number | null;
+  visualSimilarity: number | null;
   sharedTagCount: number;
   sharedTagRank: number | null;
+  textMinSimilarity: number;
+  visualMinSimilarity: number | null;
   passesTextThreshold: boolean;
   passesVisualThreshold: boolean;
   score: number;
@@ -217,7 +223,9 @@ export function fuseRelatedPetRankingsWithDiagnostics(input: {
   const semanticAvailable = strategy === "theme-first-v8"
     ? textPositions.size > 0 ||
       Object.values(sharedTagCounts).some((count) => count > 0)
-    : textPositions.size > 0 || visualPositions.size > 0;
+    : strategy === "text-first-v9"
+      ? textPositions.size > 0
+      : textPositions.size > 0 || visualPositions.size > 0;
   const diagnostics = metadataSlugs.map((slug) =>
     createRankingDiagnostic({
       slug,
@@ -244,8 +252,11 @@ export function fuseRelatedPetRankingsWithDiagnostics(input: {
           .toSorted(compareQualifiedDiagnostics),
         ...diagnostics
           .filter(({ tier }) => tier === "semantic_backfill")
+          .filter(({ textRank }) =>
+            strategy === "text-first-v9" ? textRank !== null : true,
+          )
           .toSorted(
-            strategy === "theme-first-v8"
+            isThemeAwareStrategy(strategy)
               ? compareThemeFirstBackfillDiagnostics
               : compareSemanticBackfillDiagnostics,
           ),
@@ -272,7 +283,7 @@ export function fuseRelatedPetTextMetadataBaseline(input: {
   sharedTagCounts?: Readonly<Record<string, number>>;
   limit?: number;
 }): string[] {
-  if (input.strategy === "theme-first-v8") {
+  if (isThemeAwareStrategy(input.strategy)) {
     return fuseRelatedPetRankingsWithDiagnostics({
       ...input,
       visualMinSimilarity: null,
@@ -354,12 +365,17 @@ export function rankRelatedPetsWithDiagnostics(input: {
     }
   }
   const strategy = input.profile.strategy ?? "legacy-v7";
-  const metadataRanking = strategy === "theme-first-v8"
-    ? rankRelatedPetsByThemeMetadata(
+  const metadataRanking = strategy === "text-first-v9"
+    ? rankRelatedPetsByTextFirstMetadata(
         Array.from(candidatesBySlug.values()),
         input.source,
       )
-    : rankRelatedPetsByMetadata(
+    : strategy === "theme-first-v8"
+      ? rankRelatedPetsByThemeMetadata(
+        Array.from(candidatesBySlug.values()),
+        input.source,
+      )
+      : rankRelatedPetsByMetadata(
         Array.from(candidatesBySlug.values()),
         input.source,
       );
@@ -441,11 +457,13 @@ function createRankingDiagnostic(input: {
     input.visualMinSimilarity !== null &&
     input.visualScore !== null &&
     input.visualScore >= input.visualMinSimilarity;
-  const qualified = input.strategy === "theme-first-v8"
-    ? input.sharedTagCount > 0 || passesText
-    : input.sharedTagCount > 0 || passesText || passesVisual;
+  const qualified = input.strategy === "text-first-v9"
+    ? passesText
+    : input.strategy === "theme-first-v8"
+      ? input.sharedTagCount > 0 || passesText
+      : input.sharedTagCount > 0 || passesText || passesVisual;
   const metadata = rrfContribution(
-    input.strategy === "theme-first-v8"
+    isThemeAwareStrategy(input.strategy)
       ? input.sharedTagRank
       : input.metadataRank,
     RELATED_PETS_METADATA_WEIGHT,
@@ -464,18 +482,25 @@ function createRankingDiagnostic(input: {
     input.visualRank,
     RELATED_PETS_SEMANTIC_FALLBACK_VISUAL_WEIGHT,
   );
+  const diagnosticContext = {
+    slug: input.slug,
+    metadataRank: input.metadataRank,
+    textRank: input.textRank,
+    visualRank: input.visualRank,
+    textSimilarity: input.textScore,
+    visualSimilarity: input.visualScore,
+    sharedTagCount: input.sharedTagCount,
+    sharedTagRank: input.sharedTagRank,
+    textMinSimilarity: input.textMinSimilarity,
+    visualMinSimilarity: input.visualMinSimilarity,
+    passesTextThreshold: passesText,
+    passesVisualThreshold: passesVisual,
+  };
 
   if (!input.semanticAvailable) {
     return {
-      slug: input.slug,
+      ...diagnosticContext,
       tier: qualified ? "qualified" : "metadata_fallback",
-      metadataRank: input.metadataRank,
-      textRank: input.textRank,
-      visualRank: input.visualRank,
-      sharedTagCount: input.sharedTagCount,
-      sharedTagRank: input.sharedTagRank,
-      passesTextThreshold: passesText,
-      passesVisualThreshold: passesVisual,
       score: metadata,
       contributions: { metadata, text: 0, visual: 0 },
     };
@@ -486,18 +511,14 @@ function createRankingDiagnostic(input: {
     : {
         metadata: 0,
         text: fallbackText,
-        visual: input.strategy === "theme-first-v8" ? 0 : fallbackVisual,
+        visual:
+          isThemeAwareStrategy(input.strategy)
+            ? 0
+            : fallbackVisual,
       };
   return {
-    slug: input.slug,
+    ...diagnosticContext,
     tier: qualified ? "qualified" : "semantic_backfill",
-    metadataRank: input.metadataRank,
-    textRank: input.textRank,
-    visualRank: input.visualRank,
-    sharedTagCount: input.sharedTagCount,
-    sharedTagRank: input.sharedTagRank,
-    passesTextThreshold: passesText,
-    passesVisualThreshold: passesVisual,
     score:
       contributions.metadata + contributions.text + contributions.visual,
     contributions,
@@ -529,6 +550,12 @@ function compareThemeFirstBackfillDiagnostics(
   return leftTextRank - rightTextRank ||
     left.metadataRank - right.metadataRank ||
     left.slug.localeCompare(right.slug);
+}
+
+function isThemeAwareStrategy(
+  strategy: RelatedPetsRankingStrategy | undefined,
+): boolean {
+  return strategy === "theme-first-v8" || strategy === "text-first-v9";
 }
 
 function rrfContribution(rank: number | null, weight: number): number {

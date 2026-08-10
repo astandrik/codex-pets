@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  createPetSearchSourceHash,
+  createRelatedPetDocumentSourceHash,
   createRelatedPetQuerySourceHash,
   embeddingToBuffer,
 } from "@/lib/pets/search-embeddings";
@@ -163,7 +163,10 @@ function createHarness(options: {
       rawVector({
         slug: item.slug,
         modelRevision: profile.textRevision,
-        sourceHash: createPetSearchSourceHash(item, profile.textRevision),
+        sourceHash: createRelatedPetDocumentSourceHash(
+          item,
+          profile.textRevision,
+        ),
         vector: index === 2 ? [0, 1] : [1, 0],
       }),
     );

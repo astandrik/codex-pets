@@ -21,7 +21,7 @@ export function isRelatedPetsTextRefreshCompatible(
 ): boolean {
   return (
     semanticConfig?.revision ===
-      CURRENT_RELATED_PETS_RANKING_PROFILE.textRevision &&
+      CURRENT_RELATED_PETS_RANKING_PROFILE.embeddingRevision &&
     semanticConfig.dimensions ===
       CURRENT_RELATED_PETS_RANKING_PROFILE.textDimensions
   );

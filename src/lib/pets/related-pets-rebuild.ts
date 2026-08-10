@@ -10,7 +10,7 @@ import {
   PET_VISUAL_MODEL_REVISIONS,
 } from "@/lib/pets/search-config";
 import {
-  createPetSearchSourceHash,
+  createRelatedPetDocumentSourceHash,
   createRelatedPetQuerySourceHash,
 } from "@/lib/pets/search-embeddings";
 import {
@@ -447,6 +447,23 @@ export function createRelatedPetsRebuildService(
         limit: RELATED_PETS_SNAPSHOT_DEPTH,
       }),
     }));
+    const approvedSlugs = new Set(
+      prepared.approvedPets.map(({ slug }) => slug),
+    );
+    const expectedRankingDepth = Math.min(
+      RELATED_PETS_SNAPSHOT_DEPTH,
+      Math.max(0, prepared.approvedPets.length - 1),
+    );
+    if (
+      rankings.some(({ sourceSlug, relatedSlugs }) =>
+        relatedSlugs.length !== expectedRankingDepth ||
+        new Set(relatedSlugs).size !== relatedSlugs.length ||
+        relatedSlugs.includes(sourceSlug) ||
+        relatedSlugs.some((slug) => !approvedSlugs.has(slug)),
+      )
+    ) {
+      throw new RelatedPetsRebuildError("rebuild_failed");
+    }
     return {
       rankings,
       coverage: {
@@ -732,7 +749,7 @@ export function prepareRelatedPetsRankingInputs(input: {
     {
       revision: input.profile.textRevision,
       dimensions: input.profile.textDimensions,
-      sourceHash: createPetSearchSourceHash,
+      sourceHash: createRelatedPetDocumentSourceHash,
     },
   );
   const visualVectors = input.visualContext
