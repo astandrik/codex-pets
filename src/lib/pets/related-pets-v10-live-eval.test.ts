@@ -29,15 +29,20 @@ import {
   createV10AcceptanceRankings,
   selectRelatedPetsV10Profile,
 } from "@/lib/pets/related-pets-v10-eval";
+import {
+  assertRelatedPetsV10DiagnosticCoverage,
+  diagnoseRelatedPetsV10TopicProfiles,
+} from "@/lib/pets/related-pets-v10-diagnostics";
 
 const MODE = process.env.PET_RELATED_V10_EVAL;
 const ENABLED = MODE === "calibrate" ||
+  MODE === "diagnose" ||
   MODE === "acceptance" ||
   MODE === "holdout";
 
 describe.skipIf(!ENABLED)("live related-pets V10 evaluation", () => {
   it(
-    "calibrates or verifies the frozen explicit V10 gate",
+    "calibrates, diagnoses or verifies the frozen explicit V10 gate",
     async () => {
       const holdout = MODE === "holdout";
       const fixtures = parseRelatedPetsAcceptanceFixtures(
@@ -48,7 +53,7 @@ describe.skipIf(!ENABLED)("live related-pets V10 evaluation", () => {
         holdout ? "holdout" : "calibration",
       );
       if (
-        MODE !== "calibrate" &&
+        (MODE === "acceptance" || MODE === "holdout") &&
         RELATED_PETS_V10_PROFILE.rankingRevision.endsWith(":candidate")
       ) {
         throw new Error(
@@ -136,14 +141,7 @@ describe.skipIf(!ENABLED)("live related-pets V10 evaluation", () => {
         topicDocument: v10Prepared.topicDocumentVectors.size,
         visual: v10Prepared.visualVectors.size,
       };
-      expect(coverage).toEqual({
-        approvedPets: pets.length,
-        descriptionQuery: pets.length,
-        descriptionDocument: pets.length,
-        topicQuery: pets.length,
-        topicDocument: pets.length,
-        visual: pets.length,
-      });
+      assertRelatedPetsV10DiagnosticCoverage(coverage);
 
       const v10Observations = createRelatedPetsCalibrationObservations({
         cases,
@@ -155,6 +153,27 @@ describe.skipIf(!ENABLED)("live related-pets V10 evaluation", () => {
         visualVectors: v10Prepared.visualVectors,
         strategy: "description-theme-v10",
       });
+      if (MODE === "diagnose") {
+        const diagnostic = diagnoseRelatedPetsV10TopicProfiles({
+          fixtures,
+          observations: v10Observations,
+        });
+        const serialized = JSON.stringify({
+          mode: MODE,
+          coverage,
+          diagnostic,
+        });
+        console.info(
+          "[codex-pets][related-pets-v10-diagnose]",
+          serialized,
+        );
+        expect(diagnostic.caseCount).toBe(13);
+        expect(diagnostic.evaluatedProfileCount).toBe(
+          diagnostic.profileCount,
+        );
+        expect(serialized).not.toContain("[Array]");
+        return;
+      }
       const v8Report = evaluateRelatedPetsProfile(
         createRelatedPetsCalibrationObservations({
           cases,

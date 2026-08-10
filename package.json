@@ -25,6 +25,7 @@
     "related:eval:holdout": "PET_RELATED_ACCEPTANCE_EVAL=holdout vitest run src/lib/pets/related-pets-acceptance-live-eval.test.ts",
     "related:eval:acceptance": "PET_RELATED_ACCEPTANCE_EVAL=acceptance vitest run src/lib/pets/related-pets-acceptance-live-eval.test.ts",
     "related:eval:v10:calibrate": "PET_RELATED_V10_EVAL=calibrate vitest run src/lib/pets/related-pets-v10-live-eval.test.ts",
+    "related:eval:v10:diagnose": "PET_RELATED_V10_EVAL=diagnose vitest run src/lib/pets/related-pets-v10-live-eval.test.ts",
     "related:eval:v10:acceptance": "PET_RELATED_V10_EVAL=acceptance vitest run src/lib/pets/related-pets-v10-live-eval.test.ts",
     "related:eval:v10:holdout": "PET_RELATED_V10_EVAL=holdout vitest run src/lib/pets/related-pets-v10-live-eval.test.ts",
     "search:eval:calibrate": "PET_SEARCH_LIVE_EVAL=calibrate vitest run src/lib/pets/search-live-eval.test.ts",

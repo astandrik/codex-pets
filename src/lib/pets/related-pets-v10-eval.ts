@@ -28,13 +28,23 @@ export type RelatedPetsV10Profile = RelatedPetsRankingProfile & {
   metadataWeight: number;
 };
 
-export function selectRelatedPetsV10Profile(input: {
+export type RelatedPetsV10TopicProfileEvaluation = {
+  profile: RelatedPetsV10Profile;
+  report: RelatedPetsEvaluationReport;
+  descriptionReport: RelatedPetsEvaluationReport;
+  acceptance: ReturnType<typeof evaluateRelatedPetsAcceptance>;
+};
+
+type RelatedPetsV10TopicScanInput = {
   fixtures: readonly RelatedPetAcceptanceFixture[];
   observations: readonly RelatedPetCalibrationObservation[];
   descriptionThresholds?: readonly number[];
   topicThresholds?: readonly number[];
-  visualThresholds?: readonly number[];
-}) {
+};
+
+export function createRelatedPetsV10TopicProfileScan(
+  input: RelatedPetsV10TopicScanInput,
+) {
   assertCalibrationObservations(input.observations);
   const descriptionThresholds = thresholdCandidates(
     input.descriptionThresholds ??
@@ -48,6 +58,65 @@ export function selectRelatedPetsV10Profile(input: {
         topicMatches.map(({ score }) => score),
       ),
   );
+
+  function* evaluations(): Generator<RelatedPetsV10TopicProfileEvaluation> {
+    for (const textMinSimilarity of descriptionThresholds) {
+      const descriptionReport = evaluateRelatedPetsProfile(
+        input.observations,
+        {
+          strategy: "text-first-v9",
+          textMinSimilarity,
+          metadataWeight: 0,
+          visualMinSimilarity: null,
+          visualWeight: 0,
+        },
+      );
+      for (const topicMinSimilarity of topicThresholds) {
+        for (const topicWeight of RELATED_PETS_TOPIC_WEIGHT_CANDIDATES) {
+          const profile: RelatedPetsV10Profile = {
+            strategy: "description-theme-v10",
+            textMinSimilarity,
+            topicMinSimilarity,
+            topicWeight,
+            metadataWeight: RELATED_PETS_V10_METADATA_WEIGHT,
+            visualMinSimilarity: null,
+            visualWeight: 0,
+          };
+          const report = evaluateRelatedPetsProfile(
+            input.observations,
+            profile,
+          );
+          yield {
+            profile,
+            report,
+            descriptionReport,
+            acceptance: evaluateCandidate({
+              fixtures: input.fixtures,
+              candidate: report,
+              noVisual: descriptionReport,
+            }),
+          };
+        }
+      }
+    }
+  }
+
+  return {
+    descriptionThresholds,
+    topicThresholds,
+    topicWeights: RELATED_PETS_TOPIC_WEIGHT_CANDIDATES,
+    profileCount:
+      descriptionThresholds.length *
+      topicThresholds.length *
+      RELATED_PETS_TOPIC_WEIGHT_CANDIDATES.length,
+    evaluations: evaluations(),
+  };
+}
+
+export function selectRelatedPetsV10Profile(input: RelatedPetsV10TopicScanInput & {
+  visualThresholds?: readonly number[];
+}) {
+  const topicScan = createRelatedPetsV10TopicProfileScan(input);
   const visualThresholds = thresholdCandidates(
     input.visualThresholds ??
       input.observations.flatMap(({ visualMatches }) =>
@@ -64,53 +133,13 @@ export function selectRelatedPetsV10Profile(input: {
       }
     | undefined;
 
-  for (const textMinSimilarity of descriptionThresholds) {
-    const descriptionReport = evaluateRelatedPetsProfile(
-      input.observations,
-      {
-        strategy: "text-first-v9",
-        textMinSimilarity,
-        metadataWeight: 0,
-        visualMinSimilarity: null,
-        visualWeight: 0,
-      },
-    );
-    for (const topicMinSimilarity of topicThresholds) {
-      for (const topicWeight of RELATED_PETS_TOPIC_WEIGHT_CANDIDATES) {
-        const profile: RelatedPetsV10Profile = {
-          strategy: "description-theme-v10",
-          textMinSimilarity,
-          topicMinSimilarity,
-          topicWeight,
-          metadataWeight: RELATED_PETS_V10_METADATA_WEIGHT,
-          visualMinSimilarity: null,
-          visualWeight: 0,
-        };
-        const report = evaluateRelatedPetsProfile(
-          input.observations,
-          profile,
-        );
-        const acceptance = evaluateCandidate({
-          fixtures: input.fixtures,
-          candidate: report,
-          noVisual: descriptionReport,
-        });
-        if (!safeTopicCandidate(acceptance)) continue;
-        if (
-          !topicSelection ||
-          betterTopicSelection(
-            { profile, acceptance },
-            topicSelection,
-          )
-        ) {
-          topicSelection = {
-            profile,
-            report,
-            descriptionReport,
-            acceptance,
-          };
-        }
-      }
+  for (const evaluation of topicScan.evaluations) {
+    if (!safeTopicCandidate(evaluation.acceptance)) continue;
+    if (
+      !topicSelection ||
+      betterTopicSelection(evaluation, topicSelection)
+    ) {
+      topicSelection = evaluation;
     }
   }
   if (!topicSelection) {
@@ -164,11 +193,8 @@ export function selectRelatedPetsV10Profile(input: {
     report: visualSelection.report,
     topicAcceptance: topicSelection.acceptance,
     acceptance: visualSelection.acceptance,
-    descriptionThresholdCount: descriptionThresholds.length,
-    topicProfileCount:
-      descriptionThresholds.length *
-      topicThresholds.length *
-      RELATED_PETS_TOPIC_WEIGHT_CANDIDATES.length,
+    descriptionThresholdCount: topicScan.descriptionThresholds.length,
+    topicProfileCount: topicScan.profileCount,
     visualProfileCount:
       visualThresholds.length *
       RELATED_PETS_V10_VISUAL_WEIGHT_CANDIDATES.length,
