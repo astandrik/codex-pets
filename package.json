@@ -20,6 +20,7 @@
     "related:eval:select": "PET_RELATED_LIVE_EVAL=select vitest run src/lib/pets/related-pets-live-eval.test.ts",
     "related:eval:calibrate": "PET_RELATED_LIVE_EVAL=calibrate vitest run src/lib/pets/related-pets-live-eval.test.ts",
     "related:eval:holdout": "PET_RELATED_LIVE_EVAL=holdout vitest run src/lib/pets/related-pets-live-eval.test.ts",
+    "related:eval:acceptance": "PET_RELATED_ACCEPTANCE_EVAL=1 vitest run src/lib/pets/related-pets-acceptance-live-eval.test.ts",
     "search:eval:calibrate": "PET_SEARCH_LIVE_EVAL=calibrate vitest run src/lib/pets/search-live-eval.test.ts",
     "search:eval:holdout": "PET_SEARCH_LIVE_EVAL=holdout vitest run src/lib/pets/search-live-eval.test.ts",
     "seed:dev": "node scripts/seed-dev-data.mjs",
