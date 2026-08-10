@@ -27,6 +27,11 @@ const PINNED_CALIBRATED_PROFILE = {
   visualMinSimilarity: 0.7573239783550058,
   visualWeight: 0.5,
 } as const;
+const PINNED_V8_PROFILE = {
+  textMinSimilarity: 0.45777065618272195,
+  visualMinSimilarity: 0.7431592921968864,
+  visualWeight: 0.75,
+} as const;
 
 type RelatedPetsRuntimeProfile = RelatedPetsRankingProfile & {
   rankingRevision: string;
@@ -69,8 +74,16 @@ export const RELATED_PETS_V8_CALIBRATION_PROFILE = {
   visualWeight: 0,
 } as const satisfies RelatedPetsRuntimeProfile;
 
+export const RELATED_PETS_V8_PROFILE = {
+  ...RELATED_PETS_V8_CALIBRATION_PROFILE,
+  rankingRevision: `related-pets-theme-first-v8:depth=8:cal=${V8_CALIBRATION_REVISION}:text-min=${PINNED_V8_PROFILE.textMinSimilarity}:visual-min=${PINNED_V8_PROFILE.visualMinSimilarity}:visual-weight=${PINNED_V8_PROFILE.visualWeight}:text=${TEXT_REVISION}:text-query=${RELATED_PETS_V8_TEXT_QUERY_REVISION}:visual=${VISUAL_REVISION}`,
+  textMinSimilarity: PINNED_V8_PROFILE.textMinSimilarity,
+  visualMinSimilarity: PINNED_V8_PROFILE.visualMinSimilarity,
+  visualWeight: PINNED_V8_PROFILE.visualWeight,
+} as const satisfies RelatedPetsRuntimeProfile;
+
 export const CURRENT_RELATED_PETS_RANKING_PROFILE =
-  LEGACY_RELATED_PETS_V7_PROFILE;
+  RELATED_PETS_V8_PROFILE;
 
 export function isCurrentRelatedPetsRankingRevision(
   value: string,
