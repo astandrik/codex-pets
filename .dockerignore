@@ -15,4 +15,5 @@ AGENTS.md
 src/**/*.test.ts
 src/**/*.test.tsx
 !src/lib/pets/related-pets-live-eval.test.ts
+!src/lib/pets/related-pets-acceptance-live-eval.test.ts
 !src/lib/pets/search-live-eval.test.ts

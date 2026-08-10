@@ -32,6 +32,9 @@ describe("runner image maintenance contract", () => {
     expect(dockerignore).toContain(
       "!src/lib/pets/related-pets-live-eval.test.ts",
     );
+    expect(dockerignore).toContain(
+      "!src/lib/pets/related-pets-acceptance-live-eval.test.ts",
+    );
     expect(dockerignore).toContain("!src/lib/pets/search-live-eval.test.ts");
   });
 });
