@@ -2,6 +2,7 @@ import {
   rankRelatedPetsByMetadata,
   rankRelatedPetsByTextFirstMetadata,
   rankRelatedPetsByThemeMetadata,
+  rankRelatedPetsByTopicMetadata,
   type RelatedPetCandidate,
 } from "@/lib/pets/related-pets";
 import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
@@ -9,6 +10,7 @@ import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
 export const RELATED_PETS_RRF_K = 60;
 export const RELATED_PETS_TEXT_WEIGHT = 1;
 export const RELATED_PETS_METADATA_WEIGHT = 0.15;
+export const RELATED_PETS_V10_METADATA_WEIGHT = 0.05;
 export const RELATED_PETS_SEMANTIC_FALLBACK_VISUAL_WEIGHT = 0.5;
 export const RELATED_PETS_DEFAULT_LIMIT = RELATED_PETS_SNAPSHOT_DEPTH;
 
@@ -28,6 +30,9 @@ export type RelatedPetSimilarity = {
 export type RelatedPetsRankingProfile = {
   strategy?: RelatedPetsRankingStrategy;
   textMinSimilarity: number;
+  topicMinSimilarity?: number;
+  topicWeight?: number;
+  metadataWeight?: number;
   visualMinSimilarity: number | null;
   visualWeight: number;
 };
@@ -35,7 +40,8 @@ export type RelatedPetsRankingProfile = {
 export type RelatedPetsRankingStrategy =
   | "legacy-v7"
   | "theme-first-v8"
-  | "text-first-v9";
+  | "text-first-v9"
+  | "description-theme-v10";
 
 export type RelatedPetRankingTier =
   | "qualified"
@@ -47,19 +53,24 @@ export type RelatedPetRankingDiagnostic = {
   tier: RelatedPetRankingTier;
   metadataRank: number;
   textRank: number | null;
+  topicRank: number | null;
   visualRank: number | null;
   textSimilarity: number | null;
+  topicSimilarity: number | null;
   visualSimilarity: number | null;
   sharedTagCount: number;
   sharedTagRank: number | null;
   textMinSimilarity: number;
+  topicMinSimilarity: number | null;
   visualMinSimilarity: number | null;
   passesTextThreshold: boolean;
+  passesTopicThreshold: boolean;
   passesVisualThreshold: boolean;
   score: number;
   contributions: {
     metadata: number;
     text: number;
+    topic?: number;
     visual: number;
   };
 };
@@ -157,8 +168,12 @@ export function fuseRelatedPetRankings(input: {
   sourceSlug: string;
   metadataSlugs: readonly string[];
   textMatches?: readonly RelatedPetSimilarity[];
+  topicMatches?: readonly RelatedPetSimilarity[];
   visualMatches?: readonly RelatedPetSimilarity[];
   textMinSimilarity: number;
+  topicMinSimilarity?: number;
+  topicWeight?: number;
+  metadataWeight?: number;
   visualMinSimilarity: number | null;
   visualWeight: number;
   strategy?: RelatedPetsRankingStrategy;
@@ -172,8 +187,12 @@ export function fuseRelatedPetRankingsWithDiagnostics(input: {
   sourceSlug: string;
   metadataSlugs: readonly string[];
   textMatches?: readonly RelatedPetSimilarity[];
+  topicMatches?: readonly RelatedPetSimilarity[];
   visualMatches?: readonly RelatedPetSimilarity[];
   textMinSimilarity: number;
+  topicMinSimilarity?: number;
+  topicWeight?: number;
+  metadataWeight?: number;
   visualMinSimilarity: number | null;
   visualWeight: number;
   strategy?: RelatedPetsRankingStrategy;
@@ -181,6 +200,9 @@ export function fuseRelatedPetRankingsWithDiagnostics(input: {
   limit?: number;
 }): RelatedPetsRankingResult {
   assertCosineThreshold("text", input.textMinSimilarity);
+  if (input.topicMinSimilarity !== undefined) {
+    assertCosineThreshold("topic", input.topicMinSimilarity);
+  }
   if (input.visualMinSimilarity !== null) {
     assertCosineThreshold("visual", input.visualMinSimilarity);
   }
@@ -197,6 +219,11 @@ export function fuseRelatedPetRankingsWithDiagnostics(input: {
     input.sourceSlug,
     metadataPosition,
   );
+  const topicMatches = knownMatches(
+    input.topicMatches ?? [],
+    input.sourceSlug,
+    metadataPosition,
+  );
   const visualMatches = input.visualMinSimilarity === null
     ? []
     : knownMatches(
@@ -205,9 +232,13 @@ export function fuseRelatedPetRankingsWithDiagnostics(input: {
         metadataPosition,
       );
   const textPositions = rankingPositions(textMatches);
+  const topicPositions = rankingPositions(topicMatches);
   const visualPositions = rankingPositions(visualMatches);
   const textScores = new Map(
     textMatches.map(({ slug, score }) => [slug, score]),
+  );
+  const topicScores = new Map(
+    topicMatches.map(({ slug, score }) => [slug, score]),
   );
   const visualScores = new Map(
     visualMatches.map(({ slug, score }) => [slug, score]),
@@ -223,7 +254,7 @@ export function fuseRelatedPetRankingsWithDiagnostics(input: {
   const semanticAvailable = strategy === "theme-first-v8"
     ? textPositions.size > 0 ||
       Object.values(sharedTagCounts).some((count) => count > 0)
-    : strategy === "text-first-v9"
+    : strategy === "text-first-v9" || strategy === "description-theme-v10"
       ? textPositions.size > 0
       : textPositions.size > 0 || visualPositions.size > 0;
   const diagnostics = metadataSlugs.map((slug) =>
@@ -231,12 +262,21 @@ export function fuseRelatedPetRankingsWithDiagnostics(input: {
       slug,
       metadataRank: metadataPosition.get(slug) ?? Number.MAX_SAFE_INTEGER,
       textRank: textPositions.get(slug) ?? null,
+      topicRank: topicPositions.get(slug) ?? null,
       visualRank: visualPositions.get(slug) ?? null,
       textScore: textScores.get(slug) ?? null,
+      topicScore: topicScores.get(slug) ?? null,
       visualScore: visualScores.get(slug) ?? null,
       sharedTagCount: sharedTagCounts[slug] ?? 0,
       sharedTagRank: sharedTagRanks.get(slug) ?? null,
       textMinSimilarity: input.textMinSimilarity,
+      topicMinSimilarity: input.topicMinSimilarity ?? null,
+      topicWeight: input.topicWeight ?? 0,
+      metadataWeight:
+        input.metadataWeight ??
+        (strategy === "description-theme-v10"
+          ? RELATED_PETS_V10_METADATA_WEIGHT
+          : RELATED_PETS_METADATA_WEIGHT),
       visualMinSimilarity: input.visualMinSimilarity,
       visualWeight: input.visualWeight,
       semanticAvailable,
@@ -253,7 +293,10 @@ export function fuseRelatedPetRankingsWithDiagnostics(input: {
         ...diagnostics
           .filter(({ tier }) => tier === "semantic_backfill")
           .filter(({ textRank }) =>
-            strategy === "text-first-v9" ? textRank !== null : true,
+            strategy === "text-first-v9" ||
+              strategy === "description-theme-v10"
+              ? textRank !== null
+              : true,
           )
           .toSorted(
             isThemeAwareStrategy(strategy)
@@ -342,6 +385,8 @@ export function rankRelatedPets(input: {
   candidates: readonly RelatedPetCandidate[];
   textQueryVectors?: ReadonlyMap<string, readonly number[]>;
   textDocumentVectors?: ReadonlyMap<string, readonly number[]>;
+  topicQueryVectors?: ReadonlyMap<string, readonly number[]>;
+  topicDocumentVectors?: ReadonlyMap<string, readonly number[]>;
   visualVectors?: ReadonlyMap<string, readonly number[]>;
   profile: RelatedPetsRankingProfile;
   limit?: number;
@@ -354,6 +399,8 @@ export function rankRelatedPetsWithDiagnostics(input: {
   candidates: readonly RelatedPetCandidate[];
   textQueryVectors?: ReadonlyMap<string, readonly number[]>;
   textDocumentVectors?: ReadonlyMap<string, readonly number[]>;
+  topicQueryVectors?: ReadonlyMap<string, readonly number[]>;
+  topicDocumentVectors?: ReadonlyMap<string, readonly number[]>;
   visualVectors?: ReadonlyMap<string, readonly number[]>;
   profile: RelatedPetsRankingProfile;
   limit?: number;
@@ -365,7 +412,12 @@ export function rankRelatedPetsWithDiagnostics(input: {
     }
   }
   const strategy = input.profile.strategy ?? "legacy-v7";
-  const metadataRanking = strategy === "text-first-v9"
+  const metadataRanking = strategy === "description-theme-v10"
+    ? rankRelatedPetsByTopicMetadata(
+        Array.from(candidatesBySlug.values()),
+        input.source,
+      )
+    : strategy === "text-first-v9"
     ? rankRelatedPetsByTextFirstMetadata(
         Array.from(candidatesBySlug.values()),
         input.source,
@@ -397,6 +449,14 @@ export function rankRelatedPetsWithDiagnostics(input: {
           input.source.slug,
           input.textQueryVectors,
           input.textDocumentVectors,
+        )
+      : [],
+    topicMatches:
+      input.topicQueryVectors && input.topicDocumentVectors
+      ? rankRelatedPetVectorMatches(
+          input.source.slug,
+          input.topicQueryVectors,
+          input.topicDocumentVectors,
         )
       : [],
     visualMatches: input.visualVectors
@@ -440,12 +500,17 @@ function createRankingDiagnostic(input: {
   slug: string;
   metadataRank: number;
   textRank: number | null;
+  topicRank: number | null;
   visualRank: number | null;
   textScore: number | null;
+  topicScore: number | null;
   visualScore: number | null;
   sharedTagCount: number;
   sharedTagRank: number | null;
   textMinSimilarity: number;
+  topicMinSimilarity: number | null;
+  topicWeight: number;
+  metadataWeight: number;
   visualMinSimilarity: number | null;
   visualWeight: number;
   semanticAvailable: boolean;
@@ -453,11 +518,17 @@ function createRankingDiagnostic(input: {
 }): RelatedPetRankingDiagnostic {
   const passesText =
     input.textScore !== null && input.textScore >= input.textMinSimilarity;
+  const passesTopic =
+    input.topicMinSimilarity !== null &&
+    input.topicScore !== null &&
+    input.topicScore >= input.topicMinSimilarity;
   const passesVisual =
     input.visualMinSimilarity !== null &&
     input.visualScore !== null &&
     input.visualScore >= input.visualMinSimilarity;
-  const qualified = input.strategy === "text-first-v9"
+  const qualified = input.strategy === "description-theme-v10"
+    ? passesText && passesTopic
+    : input.strategy === "text-first-v9"
     ? passesText
     : input.strategy === "theme-first-v8"
       ? input.sharedTagCount > 0 || passesText
@@ -466,10 +537,13 @@ function createRankingDiagnostic(input: {
     isThemeAwareStrategy(input.strategy)
       ? input.sharedTagRank
       : input.metadataRank,
-    RELATED_PETS_METADATA_WEIGHT,
+    input.metadataWeight,
   );
   const qualifiedText = passesText
     ? rrfContribution(input.textRank, RELATED_PETS_TEXT_WEIGHT)
+    : 0;
+  const qualifiedTopic = passesTopic
+    ? rrfContribution(input.topicRank, input.topicWeight)
     : 0;
   const qualifiedVisual = passesVisual
     ? rrfContribution(input.visualRank, input.visualWeight)
@@ -486,28 +560,42 @@ function createRankingDiagnostic(input: {
     slug: input.slug,
     metadataRank: input.metadataRank,
     textRank: input.textRank,
+    topicRank: input.topicRank,
     visualRank: input.visualRank,
     textSimilarity: input.textScore,
+    topicSimilarity: input.topicScore,
     visualSimilarity: input.visualScore,
     sharedTagCount: input.sharedTagCount,
     sharedTagRank: input.sharedTagRank,
     textMinSimilarity: input.textMinSimilarity,
+    topicMinSimilarity: input.topicMinSimilarity,
     visualMinSimilarity: input.visualMinSimilarity,
     passesTextThreshold: passesText,
+    passesTopicThreshold: passesTopic,
     passesVisualThreshold: passesVisual,
   };
 
   if (!input.semanticAvailable) {
+    const contributions = input.strategy === "description-theme-v10"
+      ? { metadata, text: 0, topic: 0, visual: 0 }
+      : { metadata, text: 0, visual: 0 };
     return {
       ...diagnosticContext,
       tier: qualified ? "qualified" : "metadata_fallback",
       score: metadata,
-      contributions: { metadata, text: 0, visual: 0 },
+      contributions,
     };
   }
 
   const contributions = qualified
-    ? { metadata, text: qualifiedText, visual: qualifiedVisual }
+    ? input.strategy === "description-theme-v10"
+      ? {
+          metadata,
+          text: qualifiedText,
+          topic: qualifiedTopic,
+          visual: qualifiedVisual,
+        }
+      : { metadata, text: qualifiedText, visual: qualifiedVisual }
     : {
         metadata: 0,
         text: fallbackText,
@@ -520,7 +608,10 @@ function createRankingDiagnostic(input: {
     ...diagnosticContext,
     tier: qualified ? "qualified" : "semantic_backfill",
     score:
-      contributions.metadata + contributions.text + contributions.visual,
+      contributions.metadata +
+      contributions.text +
+      (contributions.topic ?? 0) +
+      contributions.visual,
     contributions,
   };
 }
@@ -555,7 +646,9 @@ function compareThemeFirstBackfillDiagnostics(
 function isThemeAwareStrategy(
   strategy: RelatedPetsRankingStrategy | undefined,
 ): boolean {
-  return strategy === "theme-first-v8" || strategy === "text-first-v9";
+  return strategy === "theme-first-v8" ||
+    strategy === "text-first-v9" ||
+    strategy === "description-theme-v10";
 }
 
 function rrfContribution(rank: number | null, weight: number): number {
@@ -588,7 +681,7 @@ function rankSharedTagCounts(
 }
 
 function assertCosineThreshold(
-  modality: "text" | "visual",
+  modality: "text" | "topic" | "visual",
   value: number,
 ): void {
   if (!Number.isFinite(value) || value < -1 || value > 1) {

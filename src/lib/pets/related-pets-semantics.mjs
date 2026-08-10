@@ -9,6 +9,12 @@ const TEXT_FIRST_EXCLUDED_TAGS = new Set([
   "detailed",
   "detaiiled",
 ]);
+const TOPIC_EXCLUDED_TAGS = new Set([
+  ...TEXT_FIRST_EXCLUDED_TAGS,
+  "girl",
+  "anime",
+  "chibi",
+]);
 
 export const RELATED_PETS_THEME_QUERY_REVISION =
   "yandex-text-embeddings-v2-768-related-theme-query-2026-08-v2";
@@ -16,6 +22,10 @@ export const RELATED_PETS_DESCRIPTION_QUERY_REVISION =
   "yandex-text-embeddings-v2-768-related-description-query-2026-08-v3";
 export const RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION =
   "yandex-text-embeddings-v2-768-related-description-document-2026-08-v1";
+export const RELATED_PETS_TOPIC_QUERY_REVISION =
+  "yandex-text-embeddings-v2-768-related-topic-query-2026-08-v10";
+export const RELATED_PETS_TOPIC_DOCUMENT_REVISION =
+  "yandex-text-embeddings-v2-768-related-topic-document-2026-08-v10";
 
 export function normalizeRelatedPetSemanticTags(tags) {
   return normalizeSemanticTags(tags, EXCLUDED_TAGS);
@@ -23,6 +33,10 @@ export function normalizeRelatedPetSemanticTags(tags) {
 
 export function normalizeRelatedPetTextFirstTags(tags) {
   return normalizeSemanticTags(tags, TEXT_FIRST_EXCLUDED_TAGS);
+}
+
+export function normalizeRelatedPetTopicTags(tags) {
+  return normalizeSemanticTags(tags, TOPIC_EXCLUDED_TAGS);
 }
 
 function normalizeSemanticTags(tags, excludedTags) {
@@ -58,6 +72,16 @@ export function buildRelatedPetDescriptionText(pet) {
     `kind: ${pet.kind}`,
     `description: ${pet.description.normalize("NFKC").trim()}`,
   ].join("\n");
+}
+
+export function buildRelatedPetTopicText(pet) {
+  const lines = [
+    `name: ${pet.displayName.normalize("NFKC").trim()}`,
+    `kind: ${pet.kind}`,
+  ];
+  const topics = normalizeRelatedPetTopicTags(pet.tags);
+  if (topics.length > 0) lines.push(`topics: ${topics.join(", ")}`);
+  return lines.join("\n");
 }
 
 function isOperationalTag(tag, excludedTags) {

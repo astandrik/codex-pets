@@ -4,8 +4,11 @@ import {
   RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
   RELATED_PETS_DESCRIPTION_QUERY_REVISION,
   RELATED_PETS_THEME_QUERY_REVISION,
+  RELATED_PETS_TOPIC_DOCUMENT_REVISION,
+  RELATED_PETS_TOPIC_QUERY_REVISION,
   buildRelatedPetDescriptionText,
   buildRelatedPetThemeQuery,
+  buildRelatedPetTopicText,
 } from "../../src/lib/pets/related-pets-semantics.mjs";
 import { createRelatedPetsRebuildRequiredLog } from "./related-pets-maintenance.mjs";
 
@@ -71,6 +74,9 @@ export function buildRelatedPetQuery(pet, modelRevision) {
   if (modelRevision === RELATED_PETS_THEME_QUERY_REVISION) {
     return buildRelatedPetThemeQuery(pet);
   }
+  if (modelRevision === RELATED_PETS_TOPIC_QUERY_REVISION) {
+    return buildRelatedPetTopicText(pet);
+  }
   const tags = normalizedPetTags(pet.tags);
   return tags.length > 0
     ? tags.join(" ")
@@ -78,10 +84,13 @@ export function buildRelatedPetQuery(pet, modelRevision) {
 }
 
 export function buildRelatedPetDocument(pet, modelRevision) {
-  if (modelRevision !== RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION) {
-    return buildPetSearchDocument(pet);
+  if (modelRevision === RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION) {
+    return buildRelatedPetDescriptionText(pet);
   }
-  return buildRelatedPetDescriptionText(pet);
+  if (modelRevision === RELATED_PETS_TOPIC_DOCUMENT_REVISION) {
+    return buildRelatedPetTopicText(pet);
+  }
+  return buildPetSearchDocument(pet);
 }
 
 export function createPetSearchSourceHash(pet, modelRevision) {

@@ -16,6 +16,7 @@ vi.mock("@/lib/pets/search-runtime", () => ({
 vi.mock("@/lib/pets/related-pets-query-runtime", () => ({
   refreshApprovedPetRelatedDocumentEmbedding: vi.fn(),
   refreshApprovedPetRelatedQueryEmbedding: vi.fn(),
+  refreshApprovedPetRelatedV10Embeddings: vi.fn(),
 }));
 
 vi.mock("@/lib/pets/search-provider-runtime", () => ({
@@ -53,6 +54,7 @@ import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-pr
 import {
   refreshApprovedPetRelatedDocumentEmbedding,
   refreshApprovedPetRelatedQueryEmbedding,
+  refreshApprovedPetRelatedV10Embeddings,
 } from "@/lib/pets/related-pets-query-runtime";
 import {
   invalidateRelatedPets,
@@ -70,6 +72,7 @@ const currentEmbeddingRevision =
   CURRENT_RELATED_PETS_RANKING_PROFILE.embeddingRevision;
 const currentTextRevision =
   CURRENT_RELATED_PETS_RANKING_PROFILE.textRevision;
+const currentStrategy = CURRENT_RELATED_PETS_RANKING_PROFILE.strategy;
 
 function currentRelatedPetsSemanticConfig() {
   return {
@@ -100,6 +103,11 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     ).textRevision = currentTextRevision;
     (
       CURRENT_RELATED_PETS_RANKING_PROFILE as {
+        strategy: string;
+      }
+    ).strategy = currentStrategy;
+    (
+      CURRENT_RELATED_PETS_RANKING_PROFILE as {
         visualMinSimilarity: number | null;
       }
     ).visualMinSimilarity = currentVisualMinSimilarity;
@@ -115,6 +123,12 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     vi.mocked(refreshApprovedPetRelatedQueryEmbedding).mockResolvedValue(
       "updated",
     );
+    vi.mocked(refreshApprovedPetRelatedV10Embeddings).mockResolvedValue({
+      descriptionQuery: "updated",
+      descriptionDocument: "updated",
+      topicQuery: "updated",
+      topicDocument: "updated",
+    });
     vi.stubEnv("INDEXNOW_KEY", "indexnow-key-123");
     vi.mocked(notifyIndexNowOfApprovedPet).mockResolvedValue({
       status: "skipped",
@@ -878,6 +892,67 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     expect(refreshApprovedPetRelatedQueryEmbedding).toHaveBeenCalledOnce();
     expect(refreshApprovedPetRelatedDocumentEmbedding).toHaveBeenCalledOnce();
     expect(rebuildRelatedPets).not.toHaveBeenCalled();
+  });
+
+  it("does not publish V10 after a partial topic refresh", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    (
+      CURRENT_RELATED_PETS_RANKING_PROFILE as {
+        strategy: string;
+      }
+    ).strategy = "description-theme-v10";
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce({
+      id: "pet_1",
+      slug: "boba",
+      displayName: "Boba",
+      description: "desc",
+      spritesheetUrl: "/api/assets/asset-123/spritesheet.webp",
+      petJsonUrl: "/api/assets/asset-123/pet.json",
+      zipUrl: "/api/assets/asset-123/pet.zip",
+      spritesheetExt: "webp",
+      kind: "creature",
+      tags: [],
+      status: "approved",
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString(),
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    });
+    vi.mocked(refreshApprovedPetRelatedV10Embeddings).mockResolvedValueOnce({
+      descriptionQuery: "updated",
+      descriptionDocument: "updated",
+      topicQuery: "updated",
+      topicDocument: "skipped",
+    });
+    vi.mocked(refreshApprovedPetVisionSearchBestEffort).mockImplementationOnce(
+      async (_pet, options) => {
+        await options?.onSuccessfulRefresh?.("caption-and-vector");
+        return true;
+      },
+    );
+
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ id: "pet_1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(refreshApprovedPetRelatedQueryEmbedding).not.toHaveBeenCalled();
+    expect(refreshApprovedPetRelatedDocumentEmbedding).not.toHaveBeenCalled();
+    expect(rebuildRelatedPets).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[codex-pets][related-pets-v10-refresh]",
+      expect.objectContaining({ topicDocument: "skipped" }),
+    );
   });
 
   it("logs successful IndexNow submissions without URL payloads", async () => {

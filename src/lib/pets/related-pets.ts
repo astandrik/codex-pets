@@ -2,6 +2,7 @@ import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
 import {
   normalizeRelatedPetSemanticTags,
   normalizeRelatedPetTextFirstTags,
+  normalizeRelatedPetTopicTags,
 } from "@/lib/pets/related-pets-semantics.mjs";
 import type { PetKind } from "@/lib/pets/types";
 
@@ -68,6 +69,17 @@ export function rankRelatedPetsByTextFirstMetadata(
     candidates,
     current,
     (tags) => new Set(normalizeRelatedPetTextFirstTags(tags)),
+  );
+}
+
+export function rankRelatedPetsByTopicMetadata(
+  candidates: readonly RelatedPetCandidate[],
+  current: Pick<RelatedPetCandidate, "slug" | "kind" | "tags">,
+): RelatedPetMetadataRanking[] {
+  return rankRelatedPetsByTags(
+    candidates,
+    current,
+    (tags) => new Set(normalizeRelatedPetTopicTags(tags)),
   );
 }
 

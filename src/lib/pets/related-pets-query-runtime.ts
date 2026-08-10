@@ -1,4 +1,7 @@
-import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
+import {
+  CURRENT_RELATED_PETS_RANKING_PROFILE,
+  RELATED_PETS_V10_CALIBRATION_PROFILE,
+} from "@/lib/pets/related-pets-profile";
 import {
   buildRelatedPetDocument,
   buildRelatedPetQuery,
@@ -19,6 +22,9 @@ type RelatedPetQueryProfile = {
   textRevision: string;
   textQueryRevision: string;
   textDimensions: number;
+  topicRevision?: string;
+  topicQueryRevision?: string;
+  topicDimensions?: number;
 };
 
 type RelatedPetQueryRuntimeDependencies = {
@@ -56,6 +62,8 @@ export function createRelatedPetQueryRuntime(
   return {
     refreshApprovedPetRelatedDocumentEmbedding,
     refreshApprovedPetRelatedQueryEmbedding,
+    refreshApprovedPetRelatedTopicDocumentEmbedding,
+    refreshApprovedPetRelatedTopicQueryEmbedding,
   };
 
   async function refreshApprovedPetRelatedQueryEmbedding(
@@ -80,10 +88,41 @@ export function createRelatedPetQueryRuntime(
     });
   }
 
+  async function refreshApprovedPetRelatedTopicQueryEmbedding(
+    pet: PublicPet,
+  ): Promise<RelatedPetQueryEmbeddingRefreshResult> {
+    if (!dependencies.profile.topicQueryRevision) return "skipped";
+    return refreshApprovedPetRelatedEmbedding(pet, {
+      modelRevision: dependencies.profile.topicQueryRevision,
+      dimensions:
+        dependencies.profile.topicDimensions ??
+        dependencies.profile.textDimensions,
+      buildInput: buildRelatedPetQuery,
+      createSourceHash: createRelatedPetQuerySourceHash,
+      embed: (client, text) => client.embedPreparedQuery(text),
+    });
+  }
+
+  async function refreshApprovedPetRelatedTopicDocumentEmbedding(
+    pet: PublicPet,
+  ): Promise<RelatedPetQueryEmbeddingRefreshResult> {
+    if (!dependencies.profile.topicRevision) return "skipped";
+    return refreshApprovedPetRelatedEmbedding(pet, {
+      modelRevision: dependencies.profile.topicRevision,
+      dimensions:
+        dependencies.profile.topicDimensions ??
+        dependencies.profile.textDimensions,
+      buildInput: buildRelatedPetDocument,
+      createSourceHash: createRelatedPetDocumentSourceHash,
+      embed: (client, text) => client.embedDocument(text),
+    });
+  }
+
   async function refreshApprovedPetRelatedEmbedding(
     pet: PublicPet,
     input: {
       modelRevision: string;
+      dimensions?: number;
       buildInput: (pet: PublicPet, revision: string) => string;
       createSourceHash: (pet: PublicPet, revision: string) => string;
       embed: (
@@ -105,6 +144,7 @@ export function createRelatedPetQueryRuntime(
       return "skipped";
     }
 
+    const dimensions = input.dimensions ?? dependencies.profile.textDimensions;
     const sourceHash = input.createSourceHash(pet, input.modelRevision);
     const metadata = await dependencies.getMetadata(
       input.modelRevision,
@@ -112,7 +152,7 @@ export function createRelatedPetQueryRuntime(
     );
     if (
       metadata?.sourceHash === sourceHash &&
-      metadata.dimensions === dependencies.profile.textDimensions
+      metadata.dimensions === dimensions
     ) {
       return "unchanged";
     }
@@ -125,7 +165,7 @@ export function createRelatedPetQueryRuntime(
       modelRevision: input.modelRevision,
       slug: pet.slug,
       sourceHash,
-      dimensions: dependencies.profile.textDimensions,
+      dimensions,
       embedding,
       updatedAt: (dependencies.now ?? (() => new Date()))().toISOString(),
     });
@@ -135,6 +175,13 @@ export function createRelatedPetQueryRuntime(
 
 const runtime = createRelatedPetQueryRuntime({
   profile: CURRENT_RELATED_PETS_RANKING_PROFILE,
+  embeddingClient: petSearchEmbeddingClient,
+  getMetadata: getPetSearchEmbeddingMetadata,
+  upsert: upsertPetSearchEmbedding,
+});
+
+const v10Runtime = createRelatedPetQueryRuntime({
+  profile: RELATED_PETS_V10_CALIBRATION_PROFILE,
   embeddingClient: petSearchEmbeddingClient,
   getMetadata: getPetSearchEmbeddingMetadata,
   upsert: upsertPetSearchEmbedding,
@@ -150,4 +197,34 @@ export function refreshApprovedPetRelatedDocumentEmbedding(
   pet: PublicPet,
 ): Promise<RelatedPetQueryEmbeddingRefreshResult> {
   return runtime.refreshApprovedPetRelatedDocumentEmbedding(pet);
+}
+
+export type RelatedPetV10EmbeddingRefresh = {
+  descriptionQuery: RelatedPetQueryEmbeddingRefreshResult | "failed";
+  descriptionDocument: RelatedPetQueryEmbeddingRefreshResult | "failed";
+  topicQuery: RelatedPetQueryEmbeddingRefreshResult | "failed";
+  topicDocument: RelatedPetQueryEmbeddingRefreshResult | "failed";
+};
+
+export async function refreshApprovedPetRelatedV10Embeddings(
+  pet: PublicPet,
+): Promise<RelatedPetV10EmbeddingRefresh> {
+  const results = await Promise.allSettled([
+    v10Runtime.refreshApprovedPetRelatedQueryEmbedding(pet),
+    v10Runtime.refreshApprovedPetRelatedDocumentEmbedding(pet),
+    v10Runtime.refreshApprovedPetRelatedTopicQueryEmbedding(pet),
+    v10Runtime.refreshApprovedPetRelatedTopicDocumentEmbedding(pet),
+  ]);
+  return {
+    descriptionQuery: settledStatus(results[0]),
+    descriptionDocument: settledStatus(results[1]),
+    topicQuery: settledStatus(results[2]),
+    topicDocument: settledStatus(results[3]),
+  };
+}
+
+function settledStatus(
+  result: PromiseSettledResult<RelatedPetQueryEmbeddingRefreshResult>,
+): RelatedPetQueryEmbeddingRefreshResult | "failed" {
+  return result.status === "fulfilled" ? result.value : "failed";
 }

@@ -57,6 +57,9 @@ export type RelatedPetsRebuildProfile = RelatedPetsRankingProfile & {
   textRevision: string;
   textQueryRevision: string;
   textDimensions: number;
+  topicRevision?: string;
+  topicQueryRevision?: string;
+  topicDimensions?: number;
   visualRevision: string;
   visualCaptionRevision: string;
   visualDimensions: number;
@@ -110,6 +113,7 @@ type RelatedPetsRebuildCoverage = {
   approvedPetCount: number;
   snapshotCount: number;
   textVectorCount: number;
+  topicVectorCount?: number;
   visualVectorCount: number;
 };
 
@@ -119,6 +123,7 @@ type RelatedPetsRebuildFailureReason =
   | "rebuild_failed"
   | "storage_unavailable"
   | "text_vectors_incomplete"
+  | "topic_vectors_incomplete"
   | "visual_vectors_incomplete";
 
 export type RelatedPetsRebuildLog = {
@@ -400,10 +405,24 @@ export function createRelatedPetsRebuildService(
         ? requestedVisualContext
         : null;
     const pets = await dependencies.listApprovedPets();
-    const [textQueryRows, textRows, visualRows, captions] =
+    const topicProfile = getTopicProfile(dependencies.profile);
+    const [
+      textQueryRows,
+      textRows,
+      topicQueryRows,
+      topicRows,
+      visualRows,
+      captions,
+    ] =
       await Promise.all([
         dependencies.listRawVectors(dependencies.profile.textQueryRevision),
         dependencies.listRawVectors(dependencies.profile.textRevision),
+        topicProfile
+          ? dependencies.listRawVectors(topicProfile.topicQueryRevision)
+          : Promise.resolve([]),
+        topicProfile
+          ? dependencies.listRawVectors(topicProfile.topicRevision)
+          : Promise.resolve([]),
         visualContext
           ? dependencies.listRawVectors(dependencies.profile.visualRevision)
           : Promise.resolve([]),
@@ -415,6 +434,8 @@ export function createRelatedPetsRebuildService(
       pets,
       textQueryRows,
       textRows,
+      topicQueryRows,
+      topicRows,
       visualRows,
       captions,
       profile: dependencies.profile,
@@ -427,6 +448,16 @@ export function createRelatedPetsRebuildService(
     ).length;
     if (textVectorCount !== prepared.approvedPets.length) {
       throw new RelatedPetsRebuildError("text_vectors_incomplete");
+    }
+    const topicVectorCount = topicProfile
+      ? prepared.approvedPets.filter(
+          ({ slug }) =>
+            prepared.topicQueryVectors.has(slug) &&
+            prepared.topicDocumentVectors.has(slug),
+        ).length
+      : 0;
+    if (topicProfile && topicVectorCount !== prepared.approvedPets.length) {
+      throw new RelatedPetsRebuildError("topic_vectors_incomplete");
     }
     if (
       includeVisual &&
@@ -442,6 +473,8 @@ export function createRelatedPetsRebuildService(
         candidates: prepared.approvedPets,
         textQueryVectors: prepared.textQueryVectors,
         textDocumentVectors: prepared.textDocumentVectors,
+        topicQueryVectors: prepared.topicQueryVectors,
+        topicDocumentVectors: prepared.topicDocumentVectors,
         visualVectors: prepared.visualVectors,
         profile: dependencies.profile,
         limit: RELATED_PETS_SNAPSHOT_DEPTH,
@@ -470,6 +503,7 @@ export function createRelatedPetsRebuildService(
         approvedPetCount: prepared.approvedPets.length,
         snapshotCount: rankings.length,
         textVectorCount,
+        ...(topicProfile ? { topicVectorCount } : {}),
         visualVectorCount: prepared.visualVectors.size,
       },
     };
@@ -480,10 +514,17 @@ export function createRelatedPetsRebuildService(
   ): RelatedPetsRankingInputScope {
     const includeVisualInputs =
       includeVisual && dependencies.profile.visualMinSimilarity !== null;
+    const topicProfile = getTopicProfile(dependencies.profile);
     return {
       embeddingModelRevisions: [
         dependencies.profile.textQueryRevision,
         dependencies.profile.textRevision,
+        ...(topicProfile
+          ? [
+              topicProfile.topicQueryRevision,
+              topicProfile.topicRevision,
+            ]
+          : []),
         ...(includeVisualInputs ? [dependencies.profile.visualRevision] : []),
       ],
       captionRevision: includeVisualInputs
@@ -719,10 +760,42 @@ function uniqueApprovedPets(pets: readonly PublicPet[]): PublicPet[] {
   return Array.from(unique.values());
 }
 
+function getTopicProfile(
+  profile: RelatedPetsRebuildProfile,
+): {
+  topicRevision: string;
+  topicQueryRevision: string;
+  topicDimensions: number;
+} | null {
+  const values = [
+    profile.topicRevision,
+    profile.topicQueryRevision,
+    profile.topicDimensions,
+  ];
+  if (values.every((value) => value === undefined)) return null;
+  const topicDimensions = profile.topicDimensions;
+  if (
+    !profile.topicRevision ||
+    !profile.topicQueryRevision ||
+    typeof topicDimensions !== "number" ||
+    !Number.isSafeInteger(topicDimensions) ||
+    topicDimensions <= 0
+  ) {
+    throw new Error("Related-pet topic profile is incomplete.");
+  }
+  return {
+    topicRevision: profile.topicRevision,
+    topicQueryRevision: profile.topicQueryRevision,
+    topicDimensions,
+  };
+}
+
 export function prepareRelatedPetsRankingInputs(input: {
   pets: readonly PublicPet[];
   textQueryRows: readonly StoredRawPetSearchEmbedding[];
   textRows: readonly StoredRawPetSearchEmbedding[];
+  topicQueryRows?: readonly StoredRawPetSearchEmbedding[];
+  topicRows?: readonly StoredRawPetSearchEmbedding[];
   visualRows: readonly StoredRawPetSearchEmbedding[];
   captions: readonly StoredPetSearchCaption[];
   profile: RelatedPetsRebuildProfile;
@@ -731,6 +804,8 @@ export function prepareRelatedPetsRankingInputs(input: {
   approvedPets: PublicPet[];
   textQueryVectors: Map<string, readonly number[]>;
   textDocumentVectors: Map<string, readonly number[]>;
+  topicQueryVectors: Map<string, readonly number[]>;
+  topicDocumentVectors: Map<string, readonly number[]>;
   visualVectors: Map<string, readonly number[]>;
 } {
   const approvedPets = uniqueApprovedPets(input.pets);
@@ -752,6 +827,29 @@ export function prepareRelatedPetsRankingInputs(input: {
       sourceHash: createRelatedPetDocumentSourceHash,
     },
   );
+  const topicProfile = getTopicProfile(input.profile);
+  const topicQueryVectors = topicProfile
+    ? validatedTextVectors(
+        approvedPets,
+        input.topicQueryRows ?? [],
+        {
+          revision: topicProfile.topicQueryRevision,
+          dimensions: topicProfile.topicDimensions,
+          sourceHash: createRelatedPetQuerySourceHash,
+        },
+      )
+    : new Map<string, readonly number[]>();
+  const topicDocumentVectors = topicProfile
+    ? validatedTextVectors(
+        approvedPets,
+        input.topicRows ?? [],
+        {
+          revision: topicProfile.topicRevision,
+          dimensions: topicProfile.topicDimensions,
+          sourceHash: createRelatedPetDocumentSourceHash,
+        },
+      )
+    : new Map<string, readonly number[]>();
   const visualVectors = input.visualContext
     ? validatedVisualVectors({
         petsBySlug: new Map(
@@ -767,6 +865,8 @@ export function prepareRelatedPetsRankingInputs(input: {
     approvedPets,
     textQueryVectors,
     textDocumentVectors,
+    topicQueryVectors,
+    topicDocumentVectors,
     visualVectors,
   };
 }

@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildRelatedPetDescriptionText,
   buildRelatedPetThemeQuery,
+  buildRelatedPetTopicText,
   normalizeRelatedPetSemanticTags,
   normalizeRelatedPetTextFirstTags,
+  normalizeRelatedPetTopicTags,
 } from "@/lib/pets/related-pets-semantics.mjs";
 
 describe("related pet semantic tags", () => {
@@ -56,6 +58,33 @@ describe("related pet semantic tags", () => {
     ).toBe(
       "name: Velvet Byte\nkind: character\ndescription: A gothic coding character.",
     );
+  });
+
+  it("builds the V10 topic text without generic tags or description fallback", () => {
+    const input = {
+      displayName: " Ｄｒａｃｕｌａ ",
+      description: "This description belongs only to the primary contour.",
+      kind: "character" as const,
+      tags: [
+        "Vampire",
+        "Gothic",
+        "girl",
+        "anime",
+        "chibi",
+        "detailed",
+        "source-github",
+      ],
+    };
+
+    expect(normalizeRelatedPetTopicTags(input.tags)).toEqual([
+      "gothic",
+      "vampire",
+    ]);
+    expect(buildRelatedPetTopicText(input)).toBe(
+      "name: Dracula\nkind: character\ntopics: gothic, vampire",
+    );
+    expect(buildRelatedPetTopicText({ ...input, tags: ["anime", "cc0"] }))
+      .toBe("name: Dracula\nkind: character");
   });
 
   it("builds a stable name, kind, and topics query", () => {

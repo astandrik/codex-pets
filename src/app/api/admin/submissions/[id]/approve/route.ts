@@ -11,6 +11,7 @@ import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-pr
 import {
   refreshApprovedPetRelatedDocumentEmbedding,
   refreshApprovedPetRelatedQueryEmbedding,
+  refreshApprovedPetRelatedV10Embeddings,
 } from "@/lib/pets/related-pets-query-runtime";
 import { moderatePet } from "@/lib/pets/repository";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
@@ -47,23 +48,46 @@ export async function POST(
     petSearchRuntimeConfig.semantic,
   );
   const searchDocumentRefresh = refreshApprovedPetSearchEmbedding(pet);
-  const relatedDocumentRefresh =
-    CURRENT_RELATED_PETS_RANKING_PROFILE.textRevision ===
-    CURRENT_RELATED_PETS_RANKING_PROFILE.embeddingRevision
+  const v10Active = isV10Strategy(
+    CURRENT_RELATED_PETS_RANKING_PROFILE.strategy,
+  );
+  const activeQueryRefresh = v10Active
+    ? Promise.resolve("skipped" as const)
+    : refreshApprovedPetRelatedQueryEmbedding(pet);
+  const activeDocumentRefresh = v10Active
+    ? Promise.resolve("skipped" as const)
+    : CURRENT_RELATED_PETS_RANKING_PROFILE.textRevision ===
+        CURRENT_RELATED_PETS_RANKING_PROFILE.embeddingRevision
       ? searchDocumentRefresh
       : refreshApprovedPetRelatedDocumentEmbedding(pet);
-  const [searchDocumentResult, queryRefresh, relatedDocumentResult] =
+  const [
+    searchDocumentResult,
+    activeQueryResult,
+    activeDocumentResult,
+    v10Result,
+  ] =
     await Promise.allSettled([
       searchDocumentRefresh,
-      refreshApprovedPetRelatedQueryEmbedding(pet),
-      relatedDocumentRefresh,
+      activeQueryRefresh,
+      activeDocumentRefresh,
+      refreshApprovedPetRelatedV10Embeddings(pet),
     ]);
   const searchDocumentStatus = refreshStatus(searchDocumentResult);
-  const queryStatus = refreshStatus(queryRefresh);
-  const relatedDocumentStatus = refreshStatus(relatedDocumentResult);
-  const textReady =
-    isReadyRefreshStatus(queryStatus) &&
-    isReadyRefreshStatus(relatedDocumentStatus);
+  const activeQueryStatus = refreshStatus(activeQueryResult);
+  const activeDocumentStatus = refreshStatus(activeDocumentResult);
+  const v10Statuses = v10Result.status === "fulfilled"
+    ? v10Result.value
+    : {
+        descriptionQuery: "failed" as const,
+        descriptionDocument: "failed" as const,
+        topicQuery: "failed" as const,
+        topicDocument: "failed" as const,
+      };
+  const v10Ready = Object.values(v10Statuses).every(isReadyRefreshStatus);
+  const textReady = v10Active
+    ? v10Ready
+    : isReadyRefreshStatus(activeQueryStatus) &&
+      isReadyRefreshStatus(activeDocumentStatus);
   const requiresVisual =
     CURRENT_RELATED_PETS_RANKING_PROFILE.visualMinSimilarity !== null;
 
@@ -72,8 +96,16 @@ export async function POST(
       operation: "refresh",
       status: "incomplete",
       searchDocument: searchDocumentStatus,
-      query: queryStatus,
-      relatedDocument: relatedDocumentStatus,
+      query: activeQueryStatus,
+      relatedDocument: activeDocumentStatus,
+    });
+  }
+
+  if (!v10Ready) {
+    console.warn("[codex-pets][related-pets-v10-refresh]", {
+      operation: "refresh",
+      status: "incomplete",
+      ...v10Statuses,
     });
   }
 
@@ -147,4 +179,8 @@ function isReadyRefreshStatus(
   status: RefreshStatus,
 ): status is "updated" | "unchanged" {
   return status === "updated" || status === "unchanged";
+}
+
+function isV10Strategy(strategy: string): boolean {
+  return strategy === "description-theme-v10";
 }

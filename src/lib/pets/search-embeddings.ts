@@ -4,8 +4,11 @@ import {
   RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
   RELATED_PETS_DESCRIPTION_QUERY_REVISION,
   RELATED_PETS_THEME_QUERY_REVISION,
+  RELATED_PETS_TOPIC_DOCUMENT_REVISION,
+  RELATED_PETS_TOPIC_QUERY_REVISION,
   buildRelatedPetDescriptionText,
   buildRelatedPetThemeQuery,
+  buildRelatedPetTopicText,
 } from "@/lib/pets/related-pets-semantics.mjs";
 import { normalizeSearchQuery } from "@/lib/pets/search-ranking";
 import type { PetKind } from "@/lib/pets/types";
@@ -92,6 +95,9 @@ export function buildRelatedPetQuery(
   if (modelRevision === RELATED_PETS_THEME_QUERY_REVISION) {
     return buildRelatedPetThemeQuery(pet);
   }
+  if (modelRevision === RELATED_PETS_TOPIC_QUERY_REVISION) {
+    return buildRelatedPetTopicText(pet);
+  }
   const tags = normalizedPetTags(pet.tags);
   return tags.length > 0
     ? tags.join(" ")
@@ -102,10 +108,13 @@ export function buildRelatedPetDocument(
   pet: PetSearchDocumentInput,
   modelRevision: string,
 ): string {
-  if (modelRevision !== RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION) {
-    return buildPetSearchDocument(pet);
+  if (modelRevision === RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION) {
+    return buildRelatedPetDescriptionText(pet);
   }
-  return buildRelatedPetDescriptionText(pet);
+  if (modelRevision === RELATED_PETS_TOPIC_DOCUMENT_REVISION) {
+    return buildRelatedPetTopicText(pet);
+  }
+  return buildPetSearchDocument(pet);
 }
 
 export function createPetSearchSourceHash(

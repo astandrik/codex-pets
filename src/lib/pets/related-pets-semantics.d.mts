@@ -10,11 +10,16 @@ export type RelatedPetThemeInput = {
 export const RELATED_PETS_THEME_QUERY_REVISION: string;
 export const RELATED_PETS_DESCRIPTION_QUERY_REVISION: string;
 export const RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION: string;
+export const RELATED_PETS_TOPIC_QUERY_REVISION: string;
+export const RELATED_PETS_TOPIC_DOCUMENT_REVISION: string;
 
 export function normalizeRelatedPetSemanticTags(
   tags: readonly string[],
 ): string[];
 export function normalizeRelatedPetTextFirstTags(
+  tags: readonly string[],
+): string[];
+export function normalizeRelatedPetTopicTags(
   tags: readonly string[],
 ): string[];
 
@@ -23,5 +28,8 @@ export function buildRelatedPetThemeQuery(
 ): string;
 
 export function buildRelatedPetDescriptionText(
+  pet: RelatedPetThemeInput,
+): string;
+export function buildRelatedPetTopicText(
   pet: RelatedPetThemeInput,
 ): string;

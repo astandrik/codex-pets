@@ -17,6 +17,8 @@
     "search:backfill-vision": "node scripts/backfill-pet-vision-search.mjs",
     "related:backfill-query": "PET_SEARCH_MODEL_REVISION=yandex-text-embeddings-v2-768-related-description-query-2026-08-v3 node scripts/backfill-pet-search-embeddings.mjs",
     "related:backfill-document": "PET_SEARCH_MODEL_REVISION=yandex-text-embeddings-v2-768-related-description-document-2026-08-v1 node scripts/backfill-pet-search-embeddings.mjs",
+    "related:backfill-topic-query": "PET_SEARCH_MODEL_REVISION=yandex-text-embeddings-v2-768-related-topic-query-2026-08-v10 node scripts/backfill-pet-search-embeddings.mjs",
+    "related:backfill-topic-document": "PET_SEARCH_MODEL_REVISION=yandex-text-embeddings-v2-768-related-topic-document-2026-08-v10 node scripts/backfill-pet-search-embeddings.mjs",
     "related:rebuild": "node --disable-warning=ExperimentalWarning scripts/rebuild-related-pets.mjs",
     "related:eval:select": "PET_RELATED_LIVE_EVAL=select vitest run src/lib/pets/related-pets-live-eval.test.ts",
     "related:eval:calibrate": "PET_RELATED_LIVE_EVAL=calibrate vitest run src/lib/pets/related-pets-live-eval.test.ts",

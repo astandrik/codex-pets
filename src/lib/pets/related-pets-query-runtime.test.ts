@@ -11,6 +11,8 @@ import {
   RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
   RELATED_PETS_DESCRIPTION_QUERY_REVISION,
   RELATED_PETS_THEME_QUERY_REVISION,
+  RELATED_PETS_TOPIC_DOCUMENT_REVISION,
+  RELATED_PETS_TOPIC_QUERY_REVISION,
 } from "@/lib/pets/related-pets-semantics.mjs";
 import type { PublicPet } from "@/lib/pets/types";
 
@@ -163,6 +165,54 @@ describe("related pet query runtime", () => {
       ),
     ).toBe(
       buildRelatedPetQuery(input, RELATED_PETS_DESCRIPTION_QUERY_REVISION),
+    );
+  });
+
+  it("stores independent V10 topic query and document vectors", async () => {
+    const input = pet({
+      tags: ["Vampire", "Gothic", "girl", "anime", "source-github"],
+    });
+    const v10Profile = {
+      ...profile,
+      topicQueryRevision: RELATED_PETS_TOPIC_QUERY_REVISION,
+      topicRevision: RELATED_PETS_TOPIC_DOCUMENT_REVISION,
+      topicDimensions: 3,
+    };
+    const deps = dependencies({ profile: v10Profile });
+    const runtime = createRelatedPetQueryRuntime(deps);
+
+    await expect(
+      runtime.refreshApprovedPetRelatedTopicQueryEmbedding(input),
+    ).resolves.toBe("updated");
+    await expect(
+      runtime.refreshApprovedPetRelatedTopicDocumentEmbedding(input),
+    ).resolves.toBe("updated");
+
+    const expectedText =
+      "name: Velvet Byte\nkind: character\ntopics: gothic, vampire";
+    expect(deps.embeddingClient.embedPreparedQuery).toHaveBeenCalledWith(
+      expectedText,
+    );
+    expect(deps.embeddingClient.embedDocument).toHaveBeenCalledWith(
+      expectedText,
+    );
+    expect(deps.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelRevision: RELATED_PETS_TOPIC_QUERY_REVISION,
+        sourceHash: createRelatedPetQuerySourceHash(
+          input,
+          RELATED_PETS_TOPIC_QUERY_REVISION,
+        ),
+      }),
+    );
+    expect(deps.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelRevision: RELATED_PETS_TOPIC_DOCUMENT_REVISION,
+        sourceHash: createRelatedPetDocumentSourceHash(
+          input,
+          RELATED_PETS_TOPIC_DOCUMENT_REVISION,
+        ),
+      }),
     );
   });
 

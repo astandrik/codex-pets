@@ -2,6 +2,8 @@ import {
   RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
   RELATED_PETS_DESCRIPTION_QUERY_REVISION,
   RELATED_PETS_THEME_QUERY_REVISION,
+  RELATED_PETS_TOPIC_DOCUMENT_REVISION,
+  RELATED_PETS_TOPIC_QUERY_REVISION,
 } from "../../src/lib/pets/related-pets-semantics.mjs";
 
 export const PET_SEARCH_BACKFILL_REVISIONS = {
@@ -35,6 +37,18 @@ export const PET_SEARCH_BACKFILL_REVISIONS = {
     inputKind: "related-query",
   },
   [RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION]: {
+    dimensions: 768,
+    documentModelPath: "text-embeddings-v2-doc",
+    requestDimensions: 768,
+    inputKind: "related-document",
+  },
+  [RELATED_PETS_TOPIC_QUERY_REVISION]: {
+    dimensions: 768,
+    modelPath: "text-embeddings-v2-query",
+    requestDimensions: 768,
+    inputKind: "related-query",
+  },
+  [RELATED_PETS_TOPIC_DOCUMENT_REVISION]: {
     dimensions: 768,
     documentModelPath: "text-embeddings-v2-doc",
     requestDimensions: 768,

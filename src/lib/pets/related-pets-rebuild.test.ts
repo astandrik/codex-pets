@@ -16,6 +16,7 @@ import {
 import {
   createRelatedPetsRebuildService,
   RelatedPetsRebuildError,
+  type RelatedPetsRebuildProfile,
 } from "@/lib/pets/related-pets-rebuild";
 import type {
   RelatedPetsSnapshot,
@@ -23,7 +24,7 @@ import type {
 } from "@/lib/pets/related-pets-repository";
 import type { PublicPet } from "@/lib/pets/types";
 
-const profile = {
+const profile: RelatedPetsRebuildProfile = {
   rankingRevision: "ranking-v1",
   textRevision: "text-v1",
   textQueryRevision: "text-query-v1",
@@ -34,7 +35,7 @@ const profile = {
   visualDimensions: 2,
   visualMinSimilarity: 0.1,
   visualWeight: 0.5,
-} as const;
+};
 
 const visualContext = {
   captionRevision: "caption-v1",
@@ -133,9 +134,12 @@ function visualVectorFor(item: PublicPet, vector: readonly number[] = [1, 0]) {
 }
 
 function createHarness(options: {
+  rebuildProfile?: RelatedPetsRebuildProfile;
   pets?: PublicPet[];
   textQueryRows?: StoredRawPetSearchEmbedding[];
   textRows?: StoredRawPetSearchEmbedding[];
+  topicQueryRows?: StoredRawPetSearchEmbedding[];
+  topicRows?: StoredRawPetSearchEmbedding[];
   visualRows?: StoredRawPetSearchEmbedding[];
   captions?: ReturnType<typeof captionFor>[];
   superseded?: boolean;
@@ -156,16 +160,17 @@ function createHarness(options: {
   supersedeInvalidationBeforeFailure?: boolean;
   visualSourceContext?: { captionRevision: string; modelUri: string } | null;
 } = {}) {
+  const rebuildProfile = options.rebuildProfile ?? profile;
   const pets = options.pets ?? [pet("source"), pet("peer-a"), pet("peer-b")];
   const textRows =
     options.textRows ??
     pets.map((item, index) =>
       rawVector({
         slug: item.slug,
-        modelRevision: profile.textRevision,
+        modelRevision: rebuildProfile.textRevision,
         sourceHash: createRelatedPetDocumentSourceHash(
           item,
-          profile.textRevision,
+          rebuildProfile.textRevision,
         ),
         vector: index === 2 ? [0, 1] : [1, 0],
       }),
@@ -175,13 +180,39 @@ function createHarness(options: {
     pets.map((item) =>
       rawVector({
         slug: item.slug,
-        modelRevision: profile.textQueryRevision,
+        modelRevision: rebuildProfile.textQueryRevision,
         sourceHash: createRelatedPetQuerySourceHash(
           item,
-          profile.textQueryRevision,
+          rebuildProfile.textQueryRevision,
         ),
       }),
     );
+  const topicQueryRows = options.topicQueryRows ??
+    (rebuildProfile.topicQueryRevision
+      ? pets.map((item) =>
+          rawVector({
+            slug: item.slug,
+            modelRevision: rebuildProfile.topicQueryRevision ?? "",
+            sourceHash: createRelatedPetQuerySourceHash(
+              item,
+              rebuildProfile.topicQueryRevision ?? "",
+            ),
+          }),
+        )
+      : []);
+  const topicRows = options.topicRows ??
+    (rebuildProfile.topicRevision
+      ? pets.map((item) =>
+          rawVector({
+            slug: item.slug,
+            modelRevision: rebuildProfile.topicRevision ?? "",
+            sourceHash: createRelatedPetDocumentSourceHash(
+              item,
+              rebuildProfile.topicRevision ?? "",
+            ),
+          }),
+        )
+      : []);
   const visualRows = options.visualRows ?? pets.map((item) => visualVectorFor(item));
   const captions = options.captions ?? pets.map((item) => captionFor(item));
   const snapshots: RelatedPetsSnapshot[] = [];
@@ -233,7 +264,7 @@ function createHarness(options: {
           activeGenerationId: "generation-old",
           previousGenerationId: "generation-older",
           status: "building",
-          rankingRevision: profile.rankingRevision,
+          rankingRevision: rebuildProfile.rankingRevision,
           failureReason: null,
           updatedAt: "2026-08-03T10:01:00.000Z",
         };
@@ -294,14 +325,14 @@ function createHarness(options: {
           activeGenerationId: "generation-old",
           previousGenerationId: "generation-older",
           status: "building",
-          rankingRevision: profile.rankingRevision,
+          rankingRevision: rebuildProfile.rankingRevision,
           failureReason: null,
           updatedAt: "2026-08-03T10:01:00.000Z",
         };
         snapshots.push({
           generationId: "generation-newer",
           sourceSlug: "source",
-          rankingRevision: profile.rankingRevision,
+          rankingRevision: rebuildProfile.rankingRevision,
           relatedSlugs: ["peer-a"],
           createdAt: "2026-08-03T10:01:00.000Z",
         });
@@ -334,7 +365,7 @@ function createHarness(options: {
           activeGenerationId: "generation-old",
           previousGenerationId: "generation-older",
           status: "building",
-          rankingRevision: profile.rankingRevision,
+          rankingRevision: rebuildProfile.rankingRevision,
           failureReason: null,
           updatedAt: "2026-08-03T10:01:00.000Z",
         };
@@ -369,14 +400,14 @@ function createHarness(options: {
           activeGenerationId: "generation-new",
           previousGenerationId: "generation-old",
           status: "building",
-          rankingRevision: profile.rankingRevision,
+          rankingRevision: rebuildProfile.rankingRevision,
           failureReason: null,
           updatedAt: "2026-08-03T10:01:00.000Z",
         };
         snapshots.push({
           generationId: "generation-newer",
           sourceSlug: "source",
-          rankingRevision: profile.rankingRevision,
+          rankingRevision: rebuildProfile.rankingRevision,
           relatedSlugs: ["peer-a"],
           createdAt: "2026-08-03T10:01:00.000Z",
         });
@@ -454,7 +485,7 @@ function createHarness(options: {
         state.activeGenerationId !== input.expectedActiveGenerationId ||
         state.previousGenerationId !== input.targetPreviousGenerationId ||
         input.expectedRankingRevision !==
-          (options.retainedRankingRevision ?? profile.rankingRevision)
+          (options.retainedRankingRevision ?? rebuildProfile.rankingRevision)
       ) {
         return null;
       }
@@ -464,7 +495,7 @@ function createHarness(options: {
         previousGenerationId: input.expectedActiveGenerationId,
         status: "ready",
         rankingRevision:
-          options.retainedRankingRevision ?? profile.rankingRevision,
+          options.retainedRankingRevision ?? rebuildProfile.rankingRevision,
         failureReason: null,
         updatedAt: input.updatedAt,
       };
@@ -472,13 +503,13 @@ function createHarness(options: {
         activeGenerationId: input.targetPreviousGenerationId,
         previousGenerationId: input.expectedActiveGenerationId,
         rankingRevision:
-          options.retainedRankingRevision ?? profile.rankingRevision,
+          options.retainedRankingRevision ?? rebuildProfile.rankingRevision,
       };
     },
   };
 
   const service = createRelatedPetsRebuildService({
-    profile,
+    profile: rebuildProfile,
     repository,
     isStorageAvailable: () => options.storageAvailable ?? true,
     listApprovedPets: async () => {
@@ -489,7 +520,7 @@ function createHarness(options: {
           activeGenerationId: "generation-newer",
           previousGenerationId: "generation-old",
           status: "ready",
-          rankingRevision: profile.rankingRevision,
+          rankingRevision: rebuildProfile.rankingRevision,
           failureReason: null,
           updatedAt: "2026-08-03T10:01:00.000Z",
         };
@@ -502,8 +533,11 @@ function createHarness(options: {
     },
     listRawVectors: async (revision) => {
       vectorRevisionReads.push(revision);
-      if (revision === profile.textQueryRevision) return textQueryRows;
-      return revision === profile.textRevision ? textRows : visualRows;
+      if (revision === rebuildProfile.textQueryRevision) return textQueryRows;
+      if (revision === rebuildProfile.textRevision) return textRows;
+      if (revision === rebuildProfile.topicQueryRevision) return topicQueryRows;
+      if (revision === rebuildProfile.topicRevision) return topicRows;
+      return visualRows;
     },
     listCaptions: async () => captions,
     getVisualSourceContext: () =>
@@ -590,6 +624,71 @@ describe("related pets rebuild service", () => {
       generationId: "generation-new",
       rankingRevision: profile.rankingRevision,
       durationMs: expect.any(Number),
+    });
+  });
+
+  it("requires and reports complete V10 description and topic vector pairs", async () => {
+    const v10Profile: RelatedPetsRebuildProfile = {
+      ...profile,
+      strategy: "description-theme-v10",
+      rankingRevision: "ranking-v10-candidate",
+      topicRevision: "topic-document-v10",
+      topicQueryRevision: "topic-query-v10",
+      topicDimensions: 2,
+      topicMinSimilarity: 0.1,
+      topicWeight: 0.2,
+      metadataWeight: 0.05,
+    };
+    const harness = createHarness({ rebuildProfile: v10Profile });
+
+    const result = await harness.service.rebuild({
+      mode: "dry-run",
+      includeVisual: true,
+    });
+
+    expect(result.coverage).toEqual({
+      approvedPetCount: 3,
+      snapshotCount: 3,
+      textVectorCount: 3,
+      topicVectorCount: 3,
+      visualVectorCount: 3,
+    });
+    expect(harness.vectorRevisionReads).toEqual([
+      v10Profile.textQueryRevision,
+      v10Profile.textRevision,
+      v10Profile.topicQueryRevision,
+      v10Profile.topicRevision,
+      v10Profile.visualRevision,
+    ]);
+  });
+
+  it("blocks V10 rebuild before writes when one topic contour is incomplete", async () => {
+    const v10Profile: RelatedPetsRebuildProfile = {
+      ...profile,
+      strategy: "description-theme-v10",
+      rankingRevision: "ranking-v10-candidate",
+      topicRevision: "topic-document-v10",
+      topicQueryRevision: "topic-query-v10",
+      topicDimensions: 2,
+      topicMinSimilarity: 0.1,
+      topicWeight: 0.2,
+      metadataWeight: 0.05,
+    };
+    const harness = createHarness({
+      rebuildProfile: v10Profile,
+      topicRows: [],
+    });
+
+    await expect(
+      harness.service.rebuild({ mode: "apply", includeVisual: true }),
+    ).rejects.toMatchObject({
+      name: "RelatedPetsRebuildError",
+      message: "topic_vectors_incomplete",
+    });
+    expect(harness.mutations).toEqual([]);
+    expect(harness.logs.at(-1)).toMatchObject({
+      status: "failed",
+      failureReason: "topic_vectors_incomplete",
     });
   });
 

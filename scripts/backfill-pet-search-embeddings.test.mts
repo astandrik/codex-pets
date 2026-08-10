@@ -17,6 +17,8 @@ import {
   RELATED_PETS_V8_TEXT_QUERY_REVISION,
   RELATED_PETS_V9_TEXT_DOCUMENT_REVISION,
   RELATED_PETS_V9_TEXT_QUERY_REVISION,
+  RELATED_PETS_V10_TOPIC_DOCUMENT_REVISION,
+  RELATED_PETS_V10_TOPIC_QUERY_REVISION,
 } from "../src/lib/pets/related-pets-profile";
 
 const {
@@ -128,6 +130,20 @@ describe("pet search embeddings backfill", () => {
         text: "related input",
       }).modelUri,
     ).toBe("emb://folder-1/text-embeddings-v2-doc");
+    expect(
+      PET_SEARCH_BACKFILL_REVISIONS[RELATED_PETS_V10_TOPIC_QUERY_REVISION],
+    ).toMatchObject({
+      modelPath: "text-embeddings-v2-query",
+      inputKind: "related-query",
+    });
+    expect(
+      PET_SEARCH_BACKFILL_REVISIONS[
+        RELATED_PETS_V10_TOPIC_DOCUMENT_REVISION
+      ],
+    ).toMatchObject({
+      documentModelPath: "text-embeddings-v2-doc",
+      inputKind: "related-document",
+    });
   });
 
   it("keeps v9 app and CLI description inputs byte-identical", () => {
@@ -153,6 +169,47 @@ describe("pet search embeddings backfill", () => {
       createRuntimeRelatedDocumentHash(
         pet,
         RELATED_PETS_V9_TEXT_DOCUMENT_REVISION,
+      ),
+    );
+  });
+
+  it("keeps V10 app and CLI topic inputs byte-identical", () => {
+    expect(
+      buildRelatedPetQuery(pet, RELATED_PETS_V10_TOPIC_QUERY_REVISION),
+    ).toBe(
+      buildRuntimeRelatedQuery(pet, RELATED_PETS_V10_TOPIC_QUERY_REVISION),
+    );
+    expect(
+      buildRelatedPetDocument(
+        pet,
+        RELATED_PETS_V10_TOPIC_DOCUMENT_REVISION,
+      ),
+    ).toBe(
+      buildRuntimeRelatedDocument(
+        pet,
+        RELATED_PETS_V10_TOPIC_DOCUMENT_REVISION,
+      ),
+    );
+    expect(
+      createRelatedPetQuerySourceHash(
+        pet,
+        RELATED_PETS_V10_TOPIC_QUERY_REVISION,
+      ),
+    ).toBe(
+      createRuntimeRelatedQueryHash(
+        pet,
+        RELATED_PETS_V10_TOPIC_QUERY_REVISION,
+      ),
+    );
+    expect(
+      createRelatedPetDocumentSourceHash(
+        pet,
+        RELATED_PETS_V10_TOPIC_DOCUMENT_REVISION,
+      ),
+    ).toBe(
+      createRuntimeRelatedDocumentHash(
+        pet,
+        RELATED_PETS_V10_TOPIC_DOCUMENT_REVISION,
       ),
     );
   });

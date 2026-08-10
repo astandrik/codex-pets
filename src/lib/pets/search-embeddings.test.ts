@@ -15,6 +15,8 @@ import {
   RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
   RELATED_PETS_DESCRIPTION_QUERY_REVISION,
   RELATED_PETS_THEME_QUERY_REVISION,
+  RELATED_PETS_TOPIC_DOCUMENT_REVISION,
+  RELATED_PETS_TOPIC_QUERY_REVISION,
 } from "@/lib/pets/related-pets-semantics.mjs";
 
 const pet = {
@@ -155,6 +157,50 @@ describe("pet search embeddings", () => {
         pet,
         RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
       ),
+    );
+  });
+
+  it("hashes V10 topic query and document inputs independently of description", () => {
+    const query = buildRelatedPetQuery(pet, RELATED_PETS_TOPIC_QUERY_REVISION);
+    const document = buildRelatedPetDocument(
+      pet,
+      RELATED_PETS_TOPIC_DOCUMENT_REVISION,
+    );
+    expect(query).toBe(document);
+    expect(query).toBe(
+      "name: Velvet Byte\nkind: character\ntopics: gothic, night",
+    );
+
+    const descriptionOnlyChange = {
+      ...pet,
+      description: "A completely different description",
+    };
+    expect(
+      createRelatedPetQuerySourceHash(
+        descriptionOnlyChange,
+        RELATED_PETS_TOPIC_QUERY_REVISION,
+      ),
+    ).toBe(
+      createRelatedPetQuerySourceHash(pet, RELATED_PETS_TOPIC_QUERY_REVISION),
+    );
+    expect(
+      createRelatedPetDocumentSourceHash(
+        descriptionOnlyChange,
+        RELATED_PETS_TOPIC_DOCUMENT_REVISION,
+      ),
+    ).toBe(
+      createRelatedPetDocumentSourceHash(
+        pet,
+        RELATED_PETS_TOPIC_DOCUMENT_REVISION,
+      ),
+    );
+    expect(
+      createRelatedPetQuerySourceHash(
+        { ...pet, tags: ["night", "vampire"] },
+        RELATED_PETS_TOPIC_QUERY_REVISION,
+      ),
+    ).not.toBe(
+      createRelatedPetQuerySourceHash(pet, RELATED_PETS_TOPIC_QUERY_REVISION),
     );
   });
 

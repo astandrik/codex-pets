@@ -19,6 +19,7 @@ import {
   RELATED_PETS_V8_CALIBRATION_PROFILE,
   RELATED_PETS_V8_PROFILE,
   RELATED_PETS_V9_CALIBRATION_PROFILE,
+  RELATED_PETS_V10_CALIBRATION_PROFILE,
   isCurrentRelatedPetsRankingRevision,
 } from "@/lib/pets/related-pets-profile";
 
@@ -354,6 +355,86 @@ describe("related pet ranking", () => {
     );
   });
 
+  it("requires both description and topic while keeping V10 fallback text-only", () => {
+    const result = fuseRelatedPetRankingsWithDiagnostics({
+      sourceSlug: "source",
+      metadataSlugs: [
+        "topic-only",
+        "visual-only",
+        "qualified",
+        "description-only",
+      ],
+      sharedTagCounts: { "topic-only": 2, qualified: 1 },
+      textMatches: [
+        { slug: "qualified", score: 0.95 },
+        { slug: "description-only", score: 0.9 },
+        { slug: "topic-only", score: 0.2 },
+        { slug: "visual-only", score: 0.1 },
+      ],
+      topicMatches: [
+        { slug: "topic-only", score: 0.99 },
+        { slug: "qualified", score: 0.9 },
+        { slug: "description-only", score: 0.2 },
+        { slug: "visual-only", score: 0.1 },
+      ],
+      visualMatches: [
+        { slug: "visual-only", score: 0.99 },
+        { slug: "qualified", score: 0.9 },
+      ],
+      strategy: "description-theme-v10",
+      textMinSimilarity: 0.8,
+      topicMinSimilarity: 0.8,
+      topicWeight: 0.2,
+      metadataWeight: 0.05,
+      visualMinSimilarity: 0.8,
+      visualWeight: 0.5,
+    });
+
+    expect(result.slugs).toEqual([
+      "qualified",
+      "description-only",
+      "topic-only",
+      "visual-only",
+    ]);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slug: "qualified",
+          tier: "qualified",
+          passesTextThreshold: true,
+          passesTopicThreshold: true,
+          passesVisualThreshold: true,
+          contributions: {
+            metadata: 0.05 / 62,
+            text: 1 / 61,
+            topic: 0.2 / 62,
+            visual: 0.5 / 62,
+          },
+        }),
+        expect.objectContaining({
+          slug: "description-only",
+          tier: "semantic_backfill",
+          passesTextThreshold: true,
+          passesTopicThreshold: false,
+          contributions: { metadata: 0, text: 1 / 62, visual: 0 },
+        }),
+        expect.objectContaining({
+          slug: "topic-only",
+          tier: "semantic_backfill",
+          passesTextThreshold: false,
+          passesTopicThreshold: true,
+          contributions: { metadata: 0, text: 1 / 63, visual: 0 },
+        }),
+        expect.objectContaining({
+          slug: "visual-only",
+          tier: "semantic_backfill",
+          passesVisualThreshold: true,
+          contributions: { metadata: 0, text: 1 / 64, visual: 0 },
+        }),
+      ]),
+    );
+  });
+
   it("keeps visual-only look-alikes below thematic candidates in v8", () => {
     const input = {
       sourceSlug: "dracula",
@@ -473,6 +554,47 @@ describe("related pet ranking", () => {
     expect(
       result.diagnostics.find(({ slug }) => slug === "generic-peer"),
     ).toMatchObject({ sharedTagCount: 1, tier: "semantic_backfill" });
+  });
+
+  it("uses only filtered topics for the V10 shared-tag bonus", () => {
+    const source = candidate("source", {
+      tags: ["girl", "anime", "chibi", "detailed", "gothic"],
+    });
+    const result = rankRelatedPetsWithDiagnostics({
+      source,
+      candidates: [
+        source,
+        candidate("generic-peer", { tags: ["girl", "anime", "chibi"] }),
+        candidate("topic-peer", { tags: ["gothic"] }),
+      ],
+      textQueryVectors: new Map([["source", [1, 0]]]),
+      textDocumentVectors: new Map([
+        ["generic-peer", [1, 0]],
+        ["topic-peer", [1, 0]],
+      ]),
+      topicQueryVectors: new Map([["source", [1, 0]]]),
+      topicDocumentVectors: new Map([
+        ["generic-peer", [1, 0]],
+        ["topic-peer", [1, 0]],
+      ]),
+      profile: {
+        strategy: "description-theme-v10",
+        textMinSimilarity: 0.5,
+        topicMinSimilarity: 0.5,
+        topicWeight: 0.1,
+        metadataWeight: 0.05,
+        visualMinSimilarity: null,
+        visualWeight: 0,
+      },
+    });
+
+    expect(result.slugs).toEqual(["topic-peer", "generic-peer"]);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ slug: "topic-peer", sharedTagCount: 1 }),
+        expect.objectContaining({ slug: "generic-peer", sharedTagCount: 0 }),
+      ]),
+    );
   });
 
   it("uses kind and date only to break equal v8 tag scores", () => {
@@ -791,6 +913,22 @@ describe("related pet ranking profile", () => {
       textQueryRevision:
         "yandex-text-embeddings-v2-768-related-description-query-2026-08-v3",
       textDimensions: 768,
+      visualMinSimilarity: null,
+      visualWeight: 0,
+    });
+    expect(RELATED_PETS_V10_CALIBRATION_PROFILE).toMatchObject({
+      strategy: "description-theme-v10",
+      textRevision:
+        "yandex-text-embeddings-v2-768-related-description-document-2026-08-v1",
+      textQueryRevision:
+        "yandex-text-embeddings-v2-768-related-description-query-2026-08-v3",
+      topicRevision:
+        "yandex-text-embeddings-v2-768-related-topic-document-2026-08-v10",
+      topicQueryRevision:
+        "yandex-text-embeddings-v2-768-related-topic-query-2026-08-v10",
+      topicDimensions: 768,
+      topicWeight: 0.1,
+      metadataWeight: 0.05,
       visualMinSimilarity: null,
       visualWeight: 0,
     });
