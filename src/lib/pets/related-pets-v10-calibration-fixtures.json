@@ -1,0 +1,179 @@
+[
+  {
+    "id": "gothic-dracula",
+    "sourceSlug": "dracula",
+    "relevance": {
+      "lady-d-2": 3,
+      "glamorous-succubus": 2,
+      "gothic-flying-demon": 2,
+      "nightmare-creature": 2,
+      "fire-skull": 2,
+      "tallulah": 1,
+      "bloodrayne-2": 1,
+      "velvet-luma": 1
+    },
+    "mustIncludeOneOfTop4": ["lady-d-2"],
+    "mustRankBefore": [
+      {
+        "higherSlug": "lady-d-2",
+        "lowerSlug": "velvet-luma"
+      }
+    ],
+    "negativeSlugs": [
+      "jinx",
+      "jinx-2",
+      "burnice",
+      "daenerys",
+      "tigran",
+      "otets-potets",
+      "zero-two-2",
+      "zero-two",
+      "anime-elf-girl",
+      "yunalesca"
+    ]
+  },
+  {
+    "id": "ffx-yuna",
+    "sourceSlug": "yuna",
+    "relevance": {
+      "ffx-yuna": 3,
+      "rikku": 2,
+      "rikku-3": 2,
+      "auron": 2,
+      "anima": 2,
+      "yunalesca": 2,
+      "ashe": 1,
+      "ashe-2": 1,
+      "fran": 1,
+      "viera": 1,
+      "yuffie-3": 1,
+      "aerith-chibi-2": 1,
+      "cloud-flat-2": 1
+    },
+    "mustIncludeOneOfTop4": ["ffx-yuna"],
+    "negativeSlugs": ["burnice", "daenerys", "tigran", "otets-potets"]
+  },
+  {
+    "id": "ffxii-ashe",
+    "sourceSlug": "ashe",
+    "relevance": {
+      "ashe-2": 3,
+      "fran": 2,
+      "viera": 2,
+      "ffx-yuna": 1,
+      "yuna": 1,
+      "rikku": 1,
+      "rikku-3": 1,
+      "auron": 1,
+      "anima": 1,
+      "yunalesca": 1,
+      "yuffie-3": 1,
+      "aerith-chibi-2": 1,
+      "cloud-flat-2": 1
+    },
+    "mustIncludeOneOfTop4": ["ashe-2"],
+    "negativeSlugs": ["burnice", "daenerys", "tigran", "otets-potets"]
+  },
+  {
+    "id": "arcane-vi",
+    "sourceSlug": "vi",
+    "relevance": {
+      "jinx": 3,
+      "jinx-2": 3
+    },
+    "mustIncludeOneOfTop4": ["jinx", "jinx-2"],
+    "mustIncludeAllTop4": ["jinx", "jinx-2"],
+    "negativeSlugs": ["ashe", "fran", "viera", "zero-two"]
+  },
+  {
+    "id": "wh40k-master-of-terra",
+    "sourceSlug": "master-of-terra",
+    "relevance": {
+      "emperor": 3,
+      "nurgle-2": 2,
+      "slaanesh": 2,
+      "primaris": 1
+    },
+    "mustIncludeOneOfTop4": ["emperor"],
+    "negativeSlugs": ["ashe", "maelle", "anime-knight", "aurelia"]
+  },
+  {
+    "id": "konosuba-aqua",
+    "sourceSlug": "aqua",
+    "relevance": {
+      "aqua-2": 3,
+      "megumin-3": 2,
+      "megumin-detailed": 2
+    },
+    "mustIncludeOneOfTop4": ["aqua-2"],
+    "negativeSlugs": [
+      "ice-crown-girl",
+      "zero-two",
+      "anime-girl-2",
+      "anime-girl-3"
+    ]
+  },
+  {
+    "id": "genshin-fischl",
+    "sourceSlug": "fischl-detailed",
+    "relevance": {
+      "fischl": 3,
+      "amber-detailed": 2,
+      "xiangling": 2
+    },
+    "mustIncludeOneOfTop4": ["fischl"],
+    "negativeSlugs": ["ashe-detailed", "iris", "sakura", "rose-katana"]
+  },
+  {
+    "id": "evangelion-asuka",
+    "sourceSlug": "asuka",
+    "relevance": {
+      "rei-ayanami": 3
+    },
+    "mustIncludeOneOfTop4": ["rei-ayanami"],
+    "negativeSlugs": ["zero-two", "zero-two-2", "anime-girl-2"]
+  },
+  {
+    "id": "lotr-grey-pilgrim",
+    "sourceSlug": "grey-pilgrim-3",
+    "relevance": {
+      "gandalf-the-white-2": 3
+    },
+    "mustIncludeOneOfTop4": ["gandalf-the-white-2"]
+  },
+  {
+    "id": "smeshariki-krosh",
+    "sourceSlug": "blue-rabbit-2",
+    "relevance": {
+      "purple-hedgehog": 3
+    },
+    "mustIncludeOneOfTop4": ["purple-hedgehog"]
+  },
+  {
+    "id": "anime-catgirl",
+    "sourceSlug": "pink-catgirl",
+    "relevance": {
+      "catgirl-chibi": 3
+    },
+    "mustIncludeOneOfTop4": ["catgirl-chibi"]
+  },
+  {
+    "id": "wildlife-red-panda",
+    "sourceSlug": "red-panda",
+    "relevance": {
+      "woodland-deer": 2,
+      "wild-boar": 2,
+      "fennec-fox": 1
+    }
+  },
+  {
+    "id": "storybook-cheburashka",
+    "sourceSlug": "cheburashka",
+    "relevance": {
+      "round-bear": 2,
+      "foggy-hedgehog": 1
+    },
+    "mustIncludeOneOfTop4": ["round-bear", "foggy-hedgehog"],
+    "negativeSlugs": ["crawlstack-polished"]
+  }
+]
