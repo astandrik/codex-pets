@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 
+import {
+  RELATED_PETS_THEME_QUERY_REVISION,
+  buildRelatedPetThemeQuery,
+} from "../../src/lib/pets/related-pets-semantics.mjs";
 import { createRelatedPetsRebuildRequiredLog } from "./related-pets-maintenance.mjs";
 
 const SAFE_SLUG = /^[a-z0-9][a-z0-9-]{0,47}$/;
@@ -57,11 +61,14 @@ export function buildPetSearchDocument(pet) {
   ].join("\n");
 }
 
-export function buildRelatedPetQuery(pet) {
+export function buildRelatedPetQuery(pet, modelRevision) {
+  if (modelRevision === RELATED_PETS_THEME_QUERY_REVISION) {
+    return buildRelatedPetThemeQuery(pet);
+  }
   const tags = normalizedPetTags(pet.tags);
-  if (tags.length > 0) return tags.join(" ");
-
-  return pet.description.normalize("NFKC").trim();
+  return tags.length > 0
+    ? tags.join(" ")
+    : pet.description.normalize("NFKC").trim();
 }
 
 export function createPetSearchSourceHash(pet, modelRevision) {
@@ -76,7 +83,7 @@ export function createRelatedPetQuerySourceHash(pet, modelRevision) {
   return createHash("sha256")
     .update(modelRevision)
     .update("\n")
-    .update(buildRelatedPetQuery(pet))
+    .update(buildRelatedPetQuery(pet, modelRevision))
     .digest("hex");
 }
 

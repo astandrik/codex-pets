@@ -20,8 +20,52 @@
     "relevantSlugs": ["sans", "fire-skull"]
   },
   {
+    "id": "dracula-theme-first",
+    "split": "calibration",
+    "cases": [
+      {
+        "sourceSlug": "dracula",
+        "relevantSlugs": [
+          "lady-d-2",
+          "fire-skull",
+          "tallulah",
+          "gothic-flying-demon",
+          "glamorous-succubus",
+          "nightmare-creature"
+        ],
+        "negativeSlugs": [
+          "burnice",
+          "daenerys",
+          "tigran",
+          "otets-potets",
+          "zero-two-2",
+          "zero-two",
+          "anime-elf-girl",
+          "yunalesca"
+        ]
+      }
+    ]
+  },
+  {
     "id": "style-badass",
     "split": "holdout",
     "relevantSlugs": ["vi", "jinx-2", "master-of-terra", "primaris"]
+  },
+  {
+    "id": "ffx-yuna",
+    "split": "holdout",
+    "cases": [
+      {
+        "sourceSlug": "yuna",
+        "relevantSlugs": [
+          "ffx-yuna",
+          "rikku",
+          "rikku-3",
+          "auron",
+          "anima",
+          "yunalesca"
+        ]
+      }
+    ]
   }
 ]

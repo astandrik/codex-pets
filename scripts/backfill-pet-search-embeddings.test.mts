@@ -11,7 +11,7 @@ import {
   PET_SEARCH_EMBEDDING_MODELS,
   PET_SEARCH_MODEL_REVISIONS,
 } from "../src/lib/pets/search-config";
-import { RELATED_PETS_TEXT_QUERY_REVISION } from "../src/lib/pets/related-pets-profile";
+import { RELATED_PETS_V8_TEXT_QUERY_REVISION } from "../src/lib/pets/related-pets-profile";
 
 const {
   buildRelatedPetQuery,
@@ -67,7 +67,7 @@ describe("pet search embeddings backfill", () => {
       dim: "768",
     });
     expect(
-      PET_SEARCH_BACKFILL_REVISIONS[RELATED_PETS_TEXT_QUERY_REVISION],
+      PET_SEARCH_BACKFILL_REVISIONS[RELATED_PETS_V8_TEXT_QUERY_REVISION],
     ).toEqual({
       dimensions: 768,
       modelPath: "text-embeddings-v2-query",
@@ -79,7 +79,7 @@ describe("pet search embeddings backfill", () => {
         folderId: "folder-1",
         definition:
           PET_SEARCH_BACKFILL_REVISIONS[
-            RELATED_PETS_TEXT_QUERY_REVISION
+            RELATED_PETS_V8_TEXT_QUERY_REVISION
           ],
         text: "skeleton pixel art",
       }),
@@ -129,7 +129,11 @@ describe("pet search embeddings backfill", () => {
   });
 
   it("keeps the related query and source hash in runtime parity", () => {
-    expect(buildRelatedPetQuery(pet)).toBe(buildRuntimeRelatedQuery(pet));
+    expect(
+      buildRelatedPetQuery(pet, RELATED_PETS_V8_TEXT_QUERY_REVISION),
+    ).toBe(
+      buildRuntimeRelatedQuery(pet, RELATED_PETS_V8_TEXT_QUERY_REVISION),
+    );
     expect(createRelatedPetQuerySourceHash(pet, "query-v1")).toBe(
       createRuntimeRelatedQueryHash(pet, "query-v1"),
     );
@@ -191,24 +195,27 @@ describe("pet search embeddings backfill", () => {
 
     await runPetSearchBackfill({
       options: { mode: "apply", slug: null, force: false },
-      revision: RELATED_PETS_TEXT_QUERY_REVISION,
+      revision: RELATED_PETS_V8_TEXT_QUERY_REVISION,
       dimensions: 768,
       pets: [pet],
       getMetadata: async () => null,
       embedDocument,
       upsert,
-      buildInput: buildRelatedPetQuery,
+      buildInput: (input) =>
+        buildRelatedPetQuery(input, RELATED_PETS_V8_TEXT_QUERY_REVISION),
       createSourceHash: createRelatedPetQuerySourceHash,
       log: () => undefined,
     });
 
-    expect(embedDocument).toHaveBeenCalledWith("night gothic");
+    expect(embedDocument).toHaveBeenCalledWith(
+      "name: Velvet Byte\nkind: character\ntopics: gothic, night",
+    );
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        modelRevision: RELATED_PETS_TEXT_QUERY_REVISION,
+        modelRevision: RELATED_PETS_V8_TEXT_QUERY_REVISION,
         sourceHash: createRelatedPetQuerySourceHash(
           pet,
-          RELATED_PETS_TEXT_QUERY_REVISION,
+          RELATED_PETS_V8_TEXT_QUERY_REVISION,
         ),
       }),
     );

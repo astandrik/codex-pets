@@ -5,6 +5,7 @@ import {
   createRelatedPetQuerySourceHash,
 } from "@/lib/pets/search-embeddings";
 import { createRelatedPetQueryRuntime } from "@/lib/pets/related-pets-query-runtime";
+import { RELATED_PETS_THEME_QUERY_REVISION } from "@/lib/pets/related-pets-semantics.mjs";
 import type { PublicPet } from "@/lib/pets/types";
 
 const profile = {
@@ -53,6 +54,32 @@ function dependencies(overrides = {}) {
 }
 
 describe("related pet query runtime", () => {
+  it("refreshes approvals with the v8 theme query revision", async () => {
+    const input = pet({ tags: ["Gothic", "cc0", "source-github"] });
+    const v8Profile = {
+      ...profile,
+      textQueryRevision: RELATED_PETS_THEME_QUERY_REVISION,
+    };
+    const deps = dependencies({ profile: v8Profile });
+    const runtime = createRelatedPetQueryRuntime(deps);
+
+    await expect(runtime.refreshApprovedPetRelatedQueryEmbedding(input)).resolves.toBe(
+      "updated",
+    );
+    expect(deps.embeddingClient.embedPreparedQuery).toHaveBeenCalledWith(
+      "name: Velvet Byte\nkind: character\ntopics: gothic",
+    );
+    expect(deps.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelRevision: RELATED_PETS_THEME_QUERY_REVISION,
+        sourceHash: createRelatedPetQuerySourceHash(
+          input,
+          RELATED_PETS_THEME_QUERY_REVISION,
+        ),
+      }),
+    );
+  });
+
   it("stores the canonical related query with the pinned query revision", async () => {
     const input = pet();
     const deps = dependencies();
@@ -62,7 +89,7 @@ describe("related pet query runtime", () => {
       "updated",
     );
     expect(deps.embeddingClient.embedPreparedQuery).toHaveBeenCalledWith(
-      buildRelatedPetQuery(input),
+      buildRelatedPetQuery(input, profile.textQueryRevision),
     );
     expect(deps.upsert).toHaveBeenCalledWith({
       modelRevision: profile.textQueryRevision,
@@ -88,7 +115,7 @@ describe("related pet query runtime", () => {
     await runtime.refreshApprovedPetRelatedQueryEmbedding(input);
 
     expect(deps.embeddingClient.embedPreparedQuery).toHaveBeenCalledWith(
-      buildRelatedPetQuery(input),
+      buildRelatedPetQuery(input, profile.textQueryRevision),
     );
   });
 

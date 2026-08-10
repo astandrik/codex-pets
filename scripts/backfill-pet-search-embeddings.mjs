@@ -74,7 +74,7 @@ export async function main(argv = process.argv.slice(2)) {
       upsert: (input) => upsertEmbedding(driver, input),
       ...(revisionDefinition.inputKind === "related-query"
         ? {
-            buildInput: buildRelatedPetQuery,
+            buildInput: (pet) => buildRelatedPetQuery(pet, revision),
             createSourceHash: createRelatedPetQuerySourceHash,
           }
         : {}),

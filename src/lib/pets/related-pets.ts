@@ -1,4 +1,5 @@
 import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
+import { normalizeRelatedPetSemanticTags } from "@/lib/pets/related-pets-semantics.mjs";
 import type { PetKind } from "@/lib/pets/types";
 
 export type RelatedPetCandidate = {
@@ -42,14 +43,33 @@ export function rankRelatedPetsByMetadata(
   candidates: readonly RelatedPetCandidate[],
   current: Pick<RelatedPetCandidate, "slug" | "kind" | "tags">,
 ): RelatedPetMetadataRanking[] {
-  const currentTags = normalizeTagSet(current.tags);
+  return rankRelatedPetsByTags(candidates, current, normalizeTagSet);
+}
+
+export function rankRelatedPetsByThemeMetadata(
+  candidates: readonly RelatedPetCandidate[],
+  current: Pick<RelatedPetCandidate, "slug" | "kind" | "tags">,
+): RelatedPetMetadataRanking[] {
+  return rankRelatedPetsByTags(
+    candidates,
+    current,
+    (tags) => new Set(normalizeRelatedPetSemanticTags(tags)),
+  );
+}
+
+function rankRelatedPetsByTags(
+  candidates: readonly RelatedPetCandidate[],
+  current: Pick<RelatedPetCandidate, "slug" | "kind" | "tags">,
+  normalizeTags: (tags: string[]) => Set<string>,
+): RelatedPetMetadataRanking[] {
+  const currentTags = normalizeTags(current.tags);
 
   return candidates
     .filter((candidate) => candidate.slug !== current.slug)
     .map((candidate) => ({
       candidate,
       sharedTagCount: intersectionSize(
-        normalizeTagSet(candidate.tags),
+        normalizeTags(candidate.tags),
         currentTags,
       ),
     }))

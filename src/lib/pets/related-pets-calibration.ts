@@ -4,9 +4,11 @@ import {
   rankRelatedPetVectorMatches,
   type RelatedPetSimilarity,
   type RelatedPetsRankingProfile,
+  type RelatedPetsRankingStrategy,
 } from "@/lib/pets/related-pets-ranking";
 import {
   rankRelatedPetsByMetadata,
+  rankRelatedPetsByThemeMetadata,
   type RelatedPetCandidate,
 } from "@/lib/pets/related-pets";
 import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
@@ -22,6 +24,7 @@ export type RelatedPetCalibrationObservation = {
   split: "calibration" | "holdout";
   sourceSlug: string;
   relevantSlugs: readonly string[];
+  negativeSlugs: readonly string[];
   metadataSlugs: readonly string[];
   sharedTagCounts: Readonly<Record<string, number>>;
   textMatches: readonly RelatedPetSimilarity[];
@@ -33,12 +36,20 @@ export type RelatedPetCalibrationCase = {
   split: "calibration" | "holdout";
   sourceSlug: string;
   relevantSlugs: string[];
+  negativeSlugs?: string[];
+};
+
+type RelatedPetEvalCaseFixture = {
+  sourceSlug: string;
+  relevantSlugs: readonly string[];
+  negativeSlugs?: readonly string[];
 };
 
 type RelatedPetEvalFixture = {
   id: string;
   split: string;
-  relevantSlugs: readonly string[];
+  relevantSlugs?: readonly string[];
+  cases?: readonly RelatedPetEvalCaseFixture[];
 };
 
 export function createRelatedPetsCalibrationCases(
@@ -58,9 +69,8 @@ export function createRelatedPetsCalibrationCases(
       fixture.id.length === 0 ||
       groupIds.has(fixture.id) ||
       (fixture.split !== "calibration" && fixture.split !== "holdout") ||
-      fixture.relevantSlugs.length < 2 ||
-      new Set(fixture.relevantSlugs).size !== fixture.relevantSlugs.length ||
-      fixture.relevantSlugs.some((slug) => slug.length === 0)
+      (fixture.relevantSlugs === undefined) ===
+        (fixture.cases === undefined)
     ) {
       throw new Error(
         `Related-pet calibration fixture ${fixture.id || "<unnamed>"} is incompatible.`,
@@ -69,14 +79,48 @@ export function createRelatedPetsCalibrationCases(
     groupIds.add(fixture.id);
     const split = fixture.split;
     const splitCases = cases[split];
-    for (const sourceSlug of fixture.relevantSlugs) {
+    if (fixture.relevantSlugs) {
+      assertFixtureSlugs(fixture.id, fixture.relevantSlugs, 2);
+      for (const sourceSlug of fixture.relevantSlugs) {
+        splitCases.push({
+          groupId: fixture.id,
+          split,
+          sourceSlug,
+          relevantSlugs: fixture.relevantSlugs.filter(
+            (slug) => slug !== sourceSlug,
+          ),
+          negativeSlugs: [],
+        });
+      }
+      continue;
+    }
+
+    if (!fixture.cases || fixture.cases.length === 0) {
+      throw incompatibleFixture(fixture.id);
+    }
+    const sourceSlugs = new Set<string>();
+    for (const fixtureCase of fixture.cases) {
+      const negativeSlugs = fixtureCase.negativeSlugs ?? [];
+      assertFixtureSlugs(fixture.id, fixtureCase.relevantSlugs, 1);
+      assertFixtureSlugs(fixture.id, negativeSlugs, 0);
+      if (
+        fixtureCase.sourceSlug.length === 0 ||
+        sourceSlugs.has(fixtureCase.sourceSlug) ||
+        fixtureCase.relevantSlugs.includes(fixtureCase.sourceSlug) ||
+        negativeSlugs.includes(fixtureCase.sourceSlug) ||
+        negativeSlugs.some((slug) =>
+          fixtureCase.relevantSlugs.includes(slug)
+        )
+      ) {
+        throw incompatibleFixture(fixture.id);
+      }
+      sourceSlugs.add(fixtureCase.sourceSlug);
       splitCases.push({
         groupId: fixture.id,
         split,
-        sourceSlug,
-        relevantSlugs: fixture.relevantSlugs.filter(
-          (slug) => slug !== sourceSlug,
-        ),
+        sourceSlug: fixtureCase.sourceSlug,
+        relevantSlugs: [...fixtureCase.relevantSlugs],
+        negativeSlugs: [...negativeSlugs],
       });
     }
   }
@@ -90,6 +134,7 @@ export function createRelatedPetsCalibrationObservations(input: {
   textQueryVectors: ReadonlyMap<string, readonly number[]>;
   textDocumentVectors: ReadonlyMap<string, readonly number[]>;
   visualVectors: ReadonlyMap<string, readonly number[]>;
+  strategy?: RelatedPetsRankingStrategy;
 }): RelatedPetCalibrationObservation[] {
   const candidatesBySlug = new Map(
     input.candidates.map((candidate) => [candidate.slug, candidate]),
@@ -102,12 +147,18 @@ export function createRelatedPetsCalibrationObservations(input: {
         `Related-pet calibration source ${calibrationCase.sourceSlug} is missing from the approved catalog.`,
       );
     }
-    const metadataRanking = rankRelatedPetsByMetadata(
-      Array.from(candidatesBySlug.values()),
-      source,
-    );
+    const metadataRanking = input.strategy === "theme-first-v8"
+      ? rankRelatedPetsByThemeMetadata(
+          Array.from(candidatesBySlug.values()),
+          source,
+        )
+      : rankRelatedPetsByMetadata(
+          Array.from(candidatesBySlug.values()),
+          source,
+        );
     return {
       ...calibrationCase,
+      negativeSlugs: calibrationCase.negativeSlugs ?? [],
       metadataSlugs: metadataRanking.map(({ candidate }) => candidate.slug),
       sharedTagCounts: Object.fromEntries(
         metadataRanking.map(({ candidate, sharedTagCount }) => [
@@ -182,11 +233,13 @@ export function selectRelatedTextThreshold(
     | {
         textMinSimilarity: number;
         ndcgAt4: number;
+        ndcgAt8: number;
       }
     | undefined;
 
   for (const textMinSimilarity of candidates) {
     const report = evaluateRelatedPetsProfile(observations, {
+      strategy: "theme-first-v8",
       textMinSimilarity,
       visualMinSimilarity: null,
       visualWeight: 0,
@@ -202,11 +255,14 @@ export function selectRelatedTextThreshold(
       !selected ||
       report.textMetadataNdcgAt4 > selected.ndcgAt4 ||
       (report.textMetadataNdcgAt4 === selected.ndcgAt4 &&
-        textMinSimilarity > selected.textMinSimilarity)
+        (report.textMetadataNdcgAt8 > selected.ndcgAt8 ||
+          (report.textMetadataNdcgAt8 === selected.ndcgAt8 &&
+            textMinSimilarity > selected.textMinSimilarity)))
     ) {
       selected = {
         textMinSimilarity,
         ndcgAt4: report.textMetadataNdcgAt4,
+        ndcgAt8: report.textMetadataNdcgAt8,
       };
     }
   }
@@ -236,6 +292,7 @@ export function selectRelatedVisualProfile(
     "visual",
   );
   const baseline = evaluateRelatedPetsProfile(observations, {
+    strategy: "theme-first-v8",
     textMinSimilarity,
     visualMinSimilarity: null,
     visualWeight: 0,
@@ -245,44 +302,49 @@ export function selectRelatedVisualProfile(
         visualMinSimilarity: number;
         visualWeight: (typeof RELATED_PETS_VISUAL_WEIGHT_CANDIDATES)[number];
         ndcgAt4: number;
+        ndcgAt8: number;
       }
     | undefined;
 
   for (const visualMinSimilarity of candidates) {
     for (const visualWeight of RELATED_PETS_VISUAL_WEIGHT_CANDIDATES) {
       const report = evaluateRelatedPetsProfile(observations, {
+        strategy: "theme-first-v8",
         textMinSimilarity,
         visualMinSimilarity,
         visualWeight,
       });
-      if (report.hybridNdcgAt4 < report.textMetadataNdcgAt4) {
+      if (
+        report.hybridNdcgAt4 < baseline.hybridNdcgAt4 ||
+        report.hybridNdcgAt8 < baseline.hybridNdcgAt8 ||
+        report.visualContribution.improvedCaseCount === 0 ||
+        report.negativeTop8Count > 0
+      ) {
         continue;
       }
       if (
         !selected ||
         report.hybridNdcgAt4 > selected.ndcgAt4 ||
         (report.hybridNdcgAt4 === selected.ndcgAt4 &&
-          (visualWeight < selected.visualWeight ||
-            (visualWeight === selected.visualWeight &&
-              visualMinSimilarity > selected.visualMinSimilarity)))
+          (report.hybridNdcgAt8 > selected.ndcgAt8 ||
+            (report.hybridNdcgAt8 === selected.ndcgAt8 &&
+              (visualWeight < selected.visualWeight ||
+                (visualWeight === selected.visualWeight &&
+                  visualMinSimilarity > selected.visualMinSimilarity)))))
       ) {
         selected = {
           visualMinSimilarity,
           visualWeight,
           ndcgAt4: report.hybridNdcgAt4,
+          ndcgAt8: report.hybridNdcgAt8,
         };
       }
     }
   }
   if (!selected) {
-    return {
-      visualMinSimilarity: null,
-      visualWeight: 0,
-      ndcgAt4: baseline.textMetadataNdcgAt4,
-      evaluatedProfileCount:
-        candidates.length * RELATED_PETS_VISUAL_WEIGHT_CANDIDATES.length +
-        1,
-    };
+    throw new Error(
+      "Related-pet calibration found no safe, improving non-zero visual profile.",
+    );
   }
 
   return {
@@ -303,11 +365,13 @@ export function evaluateRelatedPetsCalibration(
     textSelection.textMinSimilarity,
   );
   const selectedProfile = {
+    strategy: "theme-first-v8" as const,
     textMinSimilarity: textSelection.textMinSimilarity,
     visualMinSimilarity: visualSelection.visualMinSimilarity,
     visualWeight: visualSelection.visualWeight,
   };
   const profileMatches =
+    pinnedProfile.strategy === "theme-first-v8" &&
     selectedProfile.textMinSimilarity ===
       pinnedProfile.textMinSimilarity &&
     selectedProfile.visualMinSimilarity ===
@@ -330,11 +394,15 @@ export function evaluateRelatedPetsCalibration(
       report.hybridNdcgAt8 >= report.metadataNdcgAt8,
     hybridNoWorseThanTextMetadataAt8:
       report.hybridNdcgAt8 >= report.textMetadataNdcgAt8,
+    visualImprovesAtLeastOneCase:
+      report.visualContribution.improvedCaseCount > 0,
+    noExplicitNegativeInTop8: report.negativeTop8Count === 0,
   };
 
   return {
     selectedProfile,
     pinnedProfile: {
+      strategy: pinnedProfile.strategy,
       textMinSimilarity: pinnedProfile.textMinSimilarity,
       visualMinSimilarity: pinnedProfile.visualMinSimilarity,
       visualWeight: pinnedProfile.visualWeight,
@@ -385,8 +453,10 @@ export function evaluateRelatedPetsProfile(
     const textMetadataSlugs = fuseRelatedPetTextMetadataBaseline({
       sourceSlug: observation.sourceSlug,
       metadataSlugs: observation.metadataSlugs,
+      sharedTagCounts: observation.sharedTagCounts,
       textMatches: observation.textMatches,
       textMinSimilarity: profile.textMinSimilarity,
+      strategy: profile.strategy,
     });
     const hybridRanking = fuseRelatedPetRankingsWithDiagnostics({
       sourceSlug: observation.sourceSlug,
@@ -397,12 +467,17 @@ export function evaluateRelatedPetsProfile(
       ...profile,
     });
     const hybridSlugs = hybridRanking.slugs;
+    const negativeSlugs = observation.negativeSlugs ?? [];
+    const negativeTop8Slugs = hybridSlugs.filter((slug) =>
+      negativeSlugs.includes(slug)
+    );
     return {
       groupId: observation.groupId,
       sourceSlug: observation.sourceSlug,
       metadataSlugs,
       textMetadataSlugs,
       hybridSlugs,
+      negativeTop8Slugs,
       hybridDiagnostics: hybridRanking.diagnostics,
       qualifiedCount: hybridRanking.qualifiedCount,
       semanticBackfillCount: hybridRanking.semanticBackfillCount,
@@ -456,15 +531,30 @@ export function evaluateRelatedPetsProfile(
     semanticBackfillCount: sum(
       cases.map((item) => item.semanticBackfillCount),
     ),
+    negativeTop8Count: sum(
+      cases.map((item) => item.negativeTop8Slugs.length),
+    ),
     textContribution: {
       aggregateNoWorseThanMetadata:
+        textMetadataNdcgAt4 >= metadataNdcgAt4 &&
+        textMetadataNdcgAt8 >= metadataNdcgAt8,
+      aggregateNoWorseThanMetadataAt4:
         textMetadataNdcgAt4 >= metadataNdcgAt4,
+      aggregateNoWorseThanMetadataAt8:
+        textMetadataNdcgAt8 >= metadataNdcgAt8,
       improvedCaseCount: cases.filter(
         (item) => item.textMetadataNdcgAt4 > item.metadataNdcgAt4,
       ).length,
       changedTop4CaseCount: cases.filter(
         (item) =>
           !sameTopK(item.textMetadataSlugs, item.metadataSlugs, 4),
+      ).length,
+    },
+    visualContribution: {
+      improvedCaseCount: cases.filter(
+        (item) =>
+          item.hybridNdcgAt4 > item.textMetadataNdcgAt4 ||
+          item.hybridNdcgAt8 > item.textMetadataNdcgAt8,
       ).length,
     },
     cases,
@@ -487,6 +577,26 @@ function thresholdCandidates(
   }
   return Array.from(new Set(values)).sort(
     (left, right) => right - left,
+  );
+}
+
+function assertFixtureSlugs(
+  fixtureId: string,
+  slugs: readonly string[],
+  minimumLength: number,
+): void {
+  if (
+    slugs.length < minimumLength ||
+    new Set(slugs).size !== slugs.length ||
+    slugs.some((slug) => slug.length === 0)
+  ) {
+    throw incompatibleFixture(fixtureId);
+  }
+}
+
+function incompatibleFixture(fixtureId: string): Error {
+  return new Error(
+    `Related-pet calibration fixture ${fixtureId || "<unnamed>"} is incompatible.`,
   );
 }
 

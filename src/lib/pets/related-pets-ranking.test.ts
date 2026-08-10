@@ -16,6 +16,7 @@ import {
 import type { RelatedPetCandidate } from "@/lib/pets/related-pets";
 import {
   CURRENT_RELATED_PETS_RANKING_PROFILE,
+  RELATED_PETS_V8_CALIBRATION_PROFILE,
   isCurrentRelatedPetsRankingRevision,
 } from "@/lib/pets/related-pets-profile";
 
@@ -278,6 +279,122 @@ describe("related pet weighted RRF", () => {
 });
 
 describe("related pet ranking", () => {
+  it("keeps visual-only look-alikes below thematic candidates in v8", () => {
+    const input = {
+      sourceSlug: "dracula",
+      metadataSlugs: ["theme-peer", "visual-lookalike", "text-tail"],
+      sharedTagCounts: { "theme-peer": 1 },
+      textMatches: [
+        { slug: "theme-peer", score: 0.49 },
+        { slug: "text-tail", score: 0.48 },
+        { slug: "visual-lookalike", score: 0.2 },
+      ],
+      visualMatches: [
+        { slug: "visual-lookalike", score: 0.99 },
+        { slug: "theme-peer", score: 0.4 },
+      ],
+      textMinSimilarity: 0.5,
+      visualMinSimilarity: 0.8,
+      visualWeight: 0.5,
+    } as const;
+
+    const legacy = fuseRelatedPetRankingsWithDiagnostics({
+      ...input,
+      strategy: "legacy-v7",
+    });
+    const themeFirst = fuseRelatedPetRankingsWithDiagnostics({
+      ...input,
+      strategy: "theme-first-v8",
+    });
+
+    expect(legacy.slugs[0]).toBe("visual-lookalike");
+    expect(themeFirst.slugs).toEqual([
+      "theme-peer",
+      "text-tail",
+      "visual-lookalike",
+    ]);
+    expect(themeFirst.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slug: "theme-peer",
+          tier: "qualified",
+          sharedTagCount: 1,
+          passesTextThreshold: false,
+          passesVisualThreshold: false,
+        }),
+        expect.objectContaining({
+          slug: "visual-lookalike",
+          tier: "semantic_backfill",
+          passesVisualThreshold: true,
+          contributions: { metadata: 0, text: 1 / 63, visual: 0 },
+        }),
+      ]),
+    );
+  });
+
+  it("ignores operational tags when v8 computes thematic overlap", () => {
+    const source = candidate("source", {
+      tags: ["gothic", "cc0", "source-github"],
+    });
+    const result = rankRelatedPetsWithDiagnostics({
+      source,
+      candidates: [
+        source,
+        candidate("operational-peer", {
+          tags: ["cc0", "source-github"],
+          approvedAt: "2026-08-01T00:00:00.000Z",
+        }),
+        candidate("theme-peer", {
+          tags: ["gothic", "license-mit", "v2"],
+          approvedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+      textQueryVectors: new Map([["source", [1, 0]]]),
+      textDocumentVectors: new Map([
+        ["operational-peer", [0, 1]],
+        ["theme-peer", [0, 1]],
+      ]),
+      profile: {
+        strategy: "theme-first-v8",
+        textMinSimilarity: 0.5,
+        visualMinSimilarity: null,
+        visualWeight: 0,
+      },
+    });
+
+    expect(result.slugs).toEqual(["theme-peer", "operational-peer"]);
+    expect(result.diagnostics.map(({ sharedTagCount }) => sharedTagCount)).toEqual([
+      1, 0,
+    ]);
+  });
+
+  it("uses kind and date only to break equal v8 tag scores", () => {
+    const result = fuseRelatedPetRankingsWithDiagnostics({
+      sourceSlug: "source",
+      metadataSlugs: ["same-kind-newer", "other-kind-older"],
+      sharedTagCounts: {
+        "same-kind-newer": 1,
+        "other-kind-older": 1,
+      },
+      textMatches: [],
+      visualMatches: [],
+      strategy: "theme-first-v8",
+      textMinSimilarity: 0.5,
+      visualMinSimilarity: null,
+      visualWeight: 0,
+    });
+
+    expect(result.slugs).toEqual(["same-kind-newer", "other-kind-older"]);
+    expect(result.diagnostics[0]).toMatchObject({
+      sharedTagRank: 1,
+      contributions: { metadata: 0.15 / 61, text: 0, visual: 0 },
+    });
+    expect(result.diagnostics[1]).toMatchObject({
+      sharedTagRank: 1,
+      contributions: { metadata: 0.15 / 61, text: 0, visual: 0 },
+    });
+  });
+
   it("omits self, zero-norm, and non-finite vector similarities", () => {
     expect(
       rankRelatedPetVectorMatches(
@@ -533,5 +650,19 @@ describe("related pet ranking profile", () => {
     expect(isCurrentRelatedPetsRankingRevision("related-pets-stale")).toBe(
       false,
     );
+    expect(RELATED_PETS_V8_CALIBRATION_PROFILE).toMatchObject({
+      strategy: "theme-first-v8",
+      textQueryRevision:
+        "yandex-text-embeddings-v2-768-related-theme-query-2026-08-v2",
+      textDimensions: 768,
+      visualDimensions: 768,
+      visualMinSimilarity: null,
+      visualWeight: 0,
+    });
+    expect(
+      isCurrentRelatedPetsRankingRevision(
+        RELATED_PETS_V8_CALIBRATION_PROFILE.rankingRevision,
+      ),
+    ).toBe(false);
   });
 });

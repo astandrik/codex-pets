@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 
+import {
+  RELATED_PETS_THEME_QUERY_REVISION,
+  buildRelatedPetThemeQuery,
+} from "@/lib/pets/related-pets-semantics.mjs";
 import { normalizeSearchQuery } from "@/lib/pets/search-ranking";
 import type { PetKind } from "@/lib/pets/types";
 
@@ -75,11 +79,17 @@ export function buildPetSearchDocument(pet: PetSearchDocumentInput): string {
   ].join("\n");
 }
 
-export function buildRelatedPetQuery(pet: PetSearchDocumentInput): string {
+export function buildRelatedPetQuery(
+  pet: PetSearchDocumentInput,
+  modelRevision: string,
+): string {
+  if (modelRevision === RELATED_PETS_THEME_QUERY_REVISION) {
+    return buildRelatedPetThemeQuery(pet);
+  }
   const tags = normalizedPetTags(pet.tags);
-  if (tags.length > 0) return tags.join(" ");
-
-  return pet.description.normalize("NFKC").trim();
+  return tags.length > 0
+    ? tags.join(" ")
+    : pet.description.normalize("NFKC").trim();
 }
 
 export function createPetSearchSourceHash(
@@ -100,7 +110,7 @@ export function createRelatedPetQuerySourceHash(
   return createHash("sha256")
     .update(modelRevision)
     .update("\n")
-    .update(buildRelatedPetQuery(pet))
+    .update(buildRelatedPetQuery(pet, modelRevision))
     .digest("hex");
 }
 

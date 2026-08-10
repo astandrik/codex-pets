@@ -3,6 +3,7 @@ import {
   PET_SEARCH_MODEL_REVISIONS,
   PET_VISUAL_MODEL_REVISIONS,
 } from "@/lib/pets/search-config";
+import { RELATED_PETS_THEME_QUERY_REVISION } from "@/lib/pets/related-pets-semantics.mjs";
 import {
   RELATED_PETS_METADATA_WEIGHT,
   RELATED_PETS_RRF_K,
@@ -11,11 +12,14 @@ import {
 } from "@/lib/pets/related-pets-ranking";
 
 const TEXT_REVISION = "yandex-text-embeddings-v2-768-2026-07";
-export const RELATED_PETS_TEXT_QUERY_REVISION =
+export const RELATED_PETS_V7_TEXT_QUERY_REVISION =
   "yandex-text-embeddings-v2-768-related-tags-query-2026-08";
+export const RELATED_PETS_V8_TEXT_QUERY_REVISION =
+  RELATED_PETS_THEME_QUERY_REVISION;
 const VISUAL_REVISION =
   "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1";
-const CALIBRATION_REVISION = "related-pets-eval-groups-v2";
+const V7_CALIBRATION_REVISION = "related-pets-eval-groups-v2";
+const V8_CALIBRATION_REVISION = "related-pets-eval-v3";
 const textDefinition = PET_SEARCH_MODEL_REVISIONS[TEXT_REVISION];
 const visualDefinition = PET_VISUAL_MODEL_REVISIONS[VISUAL_REVISION];
 const PINNED_CALIBRATED_PROFILE = {
@@ -24,10 +28,23 @@ const PINNED_CALIBRATED_PROFILE = {
   visualWeight: 0.5,
 } as const;
 
-export const CURRENT_RELATED_PETS_RANKING_PROFILE = {
-  rankingRevision: `related-pets-rrf60-v7:depth=8:tail=semantic:cal=${CALIBRATION_REVISION}:text=${TEXT_REVISION}:text-query=${RELATED_PETS_TEXT_QUERY_REVISION}:visual=${VISUAL_REVISION}`,
+type RelatedPetsRuntimeProfile = RelatedPetsRankingProfile & {
+  rankingRevision: string;
+  textRevision: string;
+  textQueryRevision: string;
+  textDimensions: number;
+  textWeight: number;
+  metadataWeight: number;
+  visualRevision: string;
+  visualDimensions: number;
+  rrfK: number;
+};
+
+export const LEGACY_RELATED_PETS_V7_PROFILE = {
+  strategy: "legacy-v7",
+  rankingRevision: `related-pets-rrf60-v7:depth=8:tail=semantic:cal=${V7_CALIBRATION_REVISION}:text=${TEXT_REVISION}:text-query=${RELATED_PETS_V7_TEXT_QUERY_REVISION}:visual=${VISUAL_REVISION}`,
   textRevision: TEXT_REVISION,
-  textQueryRevision: RELATED_PETS_TEXT_QUERY_REVISION,
+  textQueryRevision: RELATED_PETS_V7_TEXT_QUERY_REVISION,
   textDimensions:
     PET_SEARCH_EMBEDDING_MODELS[textDefinition.embeddingModelId].dimensions,
   textMinSimilarity: PINNED_CALIBRATED_PROFILE.textMinSimilarity,
@@ -40,17 +57,20 @@ export const CURRENT_RELATED_PETS_RANKING_PROFILE = {
     PINNED_CALIBRATED_PROFILE.visualMinSimilarity,
   visualWeight: PINNED_CALIBRATED_PROFILE.visualWeight,
   rrfK: RELATED_PETS_RRF_K,
-} as const satisfies RelatedPetsRankingProfile & {
-  rankingRevision: string;
-  textRevision: string;
-  textQueryRevision: string;
-  textDimensions: number;
-  textWeight: number;
-  metadataWeight: number;
-  visualRevision: string;
-  visualDimensions: number;
-  rrfK: number;
-};
+} as const satisfies RelatedPetsRuntimeProfile;
+
+export const RELATED_PETS_V8_CALIBRATION_PROFILE = {
+  ...LEGACY_RELATED_PETS_V7_PROFILE,
+  strategy: "theme-first-v8",
+  rankingRevision: `related-pets-theme-first-v8:depth=8:cal=${V8_CALIBRATION_REVISION}:text=${TEXT_REVISION}:text-query=${RELATED_PETS_V8_TEXT_QUERY_REVISION}:visual=${VISUAL_REVISION}:candidate`,
+  textQueryRevision: RELATED_PETS_V8_TEXT_QUERY_REVISION,
+  textMinSimilarity: 0,
+  visualMinSimilarity: null,
+  visualWeight: 0,
+} as const satisfies RelatedPetsRuntimeProfile;
+
+export const CURRENT_RELATED_PETS_RANKING_PROFILE =
+  LEGACY_RELATED_PETS_V7_PROFILE;
 
 export function isCurrentRelatedPetsRankingRevision(
   value: string,

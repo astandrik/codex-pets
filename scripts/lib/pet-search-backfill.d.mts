@@ -22,7 +22,10 @@ export type BackfillSummary = {
 
 export function parseBackfillArgs(argv: string[]): BackfillOptions;
 export function buildPetSearchDocument(pet: BackfillPet): string;
-export function buildRelatedPetQuery(pet: BackfillPet): string;
+export function buildRelatedPetQuery(
+  pet: BackfillPet,
+  modelRevision: string,
+): string;
 export function createPetSearchSourceHash(
   pet: BackfillPet,
   modelRevision: string,

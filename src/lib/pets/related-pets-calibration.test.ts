@@ -18,15 +18,16 @@ import {
 } from "@/lib/pets/related-pets-calibration";
 
 describe("related pet calibration fixtures", () => {
-  it("derives exactly 12 calibration and 4 untouched holdout source cases", () => {
+  it("derives grouped and explicit calibration and holdout cases", () => {
     const cases = createRelatedPetsCalibrationCases(relatedFixtures);
 
-    expect(cases.calibration).toHaveLength(12);
-    expect(cases.holdout).toHaveLength(4);
+    expect(cases.calibration).toHaveLength(13);
+    expect(cases.holdout).toHaveLength(5);
     expect(cases.calibration[0]).toEqual({
       groupId: "multi-token-gothic-anime",
       sourceSlug: "velvet-luma",
       relevantSlugs: ["nightshade-2", "fischl-detailed"],
+      negativeSlugs: [],
       split: "calibration",
     });
     expect(cases.holdout.map(({ sourceSlug }) => sourceSlug)).toEqual([
@@ -34,6 +35,7 @@ describe("related pet calibration fixtures", () => {
       "jinx-2",
       "master-of-terra",
       "primaris",
+      "yuna",
     ]);
     expect(
       new Set(cases.calibration.map(({ groupId }) => groupId)),
@@ -43,10 +45,11 @@ describe("related pet calibration fixtures", () => {
         "style-cute",
         "style-sexy",
         "concept-skeleton-pixel-art",
+        "dracula-theme-first",
       ]),
     );
     expect(new Set(cases.holdout.map(({ groupId }) => groupId))).toEqual(
-      new Set(["style-badass"]),
+      new Set(["style-badass", "ffx-yuna"]),
     );
     expect(
       cases.calibration.filter(
@@ -57,15 +60,30 @@ describe("related pet calibration fixtures", () => {
         groupId: "concept-skeleton-pixel-art",
         sourceSlug: "sans",
         relevantSlugs: ["fire-skull"],
+        negativeSlugs: [],
         split: "calibration",
       },
       {
         groupId: "concept-skeleton-pixel-art",
         sourceSlug: "fire-skull",
         relevantSlugs: ["sans"],
+        negativeSlugs: [],
         split: "calibration",
       },
     ]);
+    expect(
+      cases.calibration.find(({ sourceSlug }) => sourceSlug === "dracula"),
+    ).toMatchObject({
+      relevantSlugs: [
+        "lady-d-2",
+        "fire-skull",
+        "tallulah",
+        "gothic-flying-demon",
+        "glamorous-succubus",
+        "nightmare-creature",
+      ],
+      negativeSlugs: expect.arrayContaining(["burnice", "daenerys"]),
+    });
     expect(searchFixtures.some(({ id }) => id === "concept-skeleton-pixel-art")).toBe(
       false,
     );
@@ -109,6 +127,7 @@ describe("related pet calibration observations", () => {
         split: "calibration",
         sourceSlug: "source",
         relevantSlugs: ["peer"],
+        negativeSlugs: [],
         metadataSlugs: ["peer", "other"],
         sharedTagCounts: { peer: 1, other: 0 },
         textMatches: [
@@ -185,6 +204,7 @@ function observation(
     split: "calibration",
     sourceSlug: "source",
     relevantSlugs: ["peer"],
+    negativeSlugs: [],
     metadataSlugs: ["peer", "other"],
     sharedTagCounts: {},
     textMatches: [{ slug: "peer", score: 0.9 }],
@@ -274,11 +294,13 @@ describe("related pet profile selection", () => {
       observation({
         sourceSlug: "visual-source",
         metadataSlugs: ["other", "peer"],
+        sharedTagCounts: { other: 1, peer: 1 },
         textMatches: [],
         visualMatches: [{ slug: "peer", score: 0.85 }],
       }),
     ];
     const pinnedProfile = {
+      strategy: "theme-first-v8" as const,
       textMinSimilarity: 0.8,
       visualMinSimilarity: 0.85,
       visualWeight: 0.25,
@@ -302,6 +324,8 @@ describe("related pet profile selection", () => {
       hybridNoWorseThanTextMetadataAt4: true,
       hybridNoWorseThanMetadataAt8: true,
       hybridNoWorseThanTextMetadataAt8: true,
+      visualImprovesAtLeastOneCase: true,
+      noExplicitNegativeInTop8: true,
     });
     expect(
       evaluateRelatedPetsCalibration(observations, {
@@ -321,7 +345,7 @@ describe("related pet profile selection", () => {
         [
           observation({
             metadataSlugs: ["other", "peer"],
-            sharedTagCounts: { other: 1 },
+            sharedTagCounts: { other: 1, peer: 1 },
             textMatches: [],
             visualMatches: [{ slug: "peer", score: 0.8 }],
           }),
@@ -337,15 +361,18 @@ describe("related pet profile selection", () => {
     });
   });
 
-  it("uses only approved visual weights and prefers enabled visual on a tie", () => {
+  it("uses only approved non-zero visual weights", () => {
     expect(RELATED_PETS_VISUAL_WEIGHT_CANDIDATES).toEqual([
       0.25, 0.5, 0.75,
     ]);
-    const report = selectRelatedVisualProfile(
-      [observation()],
-      0.9,
-      [0.9],
-    );
+    const report = selectRelatedVisualProfile([
+      observation({
+        metadataSlugs: ["other", "peer"],
+        sharedTagCounts: { other: 1, peer: 1 },
+        textMatches: [],
+        visualMatches: [{ slug: "peer", score: 0.9 }],
+      }),
+    ], 1, [0.9]);
     expect(report.visualMinSimilarity).toBe(0.9);
     expect(report).toMatchObject({
       visualWeight: 0.25,
@@ -355,8 +382,15 @@ describe("related pet profile selection", () => {
 
   it("breaks remaining visual profile ties by higher threshold", () => {
     const report = selectRelatedVisualProfile(
-      [observation()],
-      0.9,
+      [
+        observation({
+          metadataSlugs: ["other", "peer"],
+          sharedTagCounts: { other: 1, peer: 1 },
+          textMatches: [],
+          visualMatches: [{ slug: "peer", score: 0.9 }],
+        }),
+      ],
+      1,
       [0.4, 0.9],
     );
 
@@ -367,22 +401,20 @@ describe("related pet profile selection", () => {
     });
   });
 
-  it("uses explicit visual-off only when every enabled profile degrades the baseline", () => {
-    const report = selectRelatedVisualProfile(
-      [
-        observation({
-          metadataSlugs: ["peer", "other"],
-          textMatches: [],
-          visualMatches: [{ slug: "other", score: 0.9 }],
-        }),
-      ],
-      1,
-    );
-
-    expect(report.visualMinSimilarity).toBeNull();
-    expect(report.visualWeight).toBe(0);
-    expect(report.ndcgAt4).toBe(1);
-    expect(report.evaluatedProfileCount).toBe(4);
+  it("blocks rollout when no non-zero visual profile improves safely", () => {
+    expect(() =>
+      selectRelatedVisualProfile(
+        [
+          observation({
+            metadataSlugs: ["peer", "other"],
+            sharedTagCounts: { peer: 1, other: 1 },
+            textMatches: [],
+            visualMatches: [{ slug: "other", score: 0.9 }],
+          }),
+        ],
+        1,
+      )
+    ).toThrow(/no safe.*non-zero visual profile/i);
   });
 
   it("rejects holdout observations during profile selection", () => {
@@ -417,6 +449,7 @@ describe("related pet semantic regressions", () => {
         }),
       ],
       {
+        strategy: "theme-first-v8",
         textMinSimilarity: 0.9,
         visualMinSimilarity: null,
         visualWeight: 0,
@@ -429,7 +462,7 @@ describe("related pet semantic regressions", () => {
     expect(report.cases[0]?.textMetadataSlugs.slice(0, 4)).toContain(
       "fire-skull",
     );
-    expect(report.textContribution).toEqual({
+    expect(report.textContribution).toMatchObject({
       aggregateNoWorseThanMetadata: true,
       improvedCaseCount: 1,
       changedTop4CaseCount: 1,
@@ -465,6 +498,7 @@ describe("related pet holdout reporting", () => {
         }),
       ],
       {
+        strategy: "theme-first-v8",
         textMinSimilarity: 0.8,
         visualMinSimilarity: 0.9,
         visualWeight: 0.25,
@@ -495,6 +529,7 @@ describe("related pet holdout reporting", () => {
   it("rejects calibration observations from holdout reporting", () => {
     expect(() =>
       evaluateRelatedPetsHoldout([observation()], {
+        strategy: "theme-first-v8",
         textMinSimilarity: 0.8,
         visualMinSimilarity: 0.9,
         visualWeight: 0.25,
@@ -510,8 +545,8 @@ describe("related pet holdout reporting", () => {
       "irrelevant-4",
       "irrelevant-5",
       "irrelevant-6",
-      "irrelevant-7",
       "peer",
+      "irrelevant-7",
       "irrelevant-8",
     ];
     const report = evaluateRelatedPetsHoldout(
@@ -520,24 +555,31 @@ describe("related pet holdout reporting", () => {
           split: "holdout",
           metadataSlugs,
           sharedTagCounts: Object.fromEntries(
-            metadataSlugs.slice(0, 7).map((slug) => [slug, 1]),
+            metadataSlugs.map((slug) => [slug, 1]),
           ),
-          textMatches: [{ slug: "peer", score: 0.4 }],
+          textMatches: metadataSlugs.map((slug, index) => ({
+            slug,
+            score: 0.95 - index / 100,
+          })),
           visualMatches: metadataSlugs
             .filter((slug) => slug !== "peer")
+            .slice(4)
             .map((slug) => ({ slug, score: 0.9 })),
         }),
       ],
       {
+        strategy: "theme-first-v8",
         textMinSimilarity: 0.5,
         visualMinSimilarity: 0.5,
-        visualWeight: 0.5,
+        visualWeight: 0.75,
       },
     );
 
-    expect(report.hybridNdcgAt4).toBe(report.metadataNdcgAt4);
-    expect(report.hybridNdcgAt8).toBeLessThan(report.metadataNdcgAt8);
-    expect(report.comparisons.hybridNoWorseThanMetadataAt8).toBe(false);
+    expect(report.hybridNdcgAt4).toBe(report.textMetadataNdcgAt4);
+    expect(report.hybridNdcgAt8).toBeLessThan(
+      report.textMetadataNdcgAt8,
+    );
+    expect(report.comparisons.hybridNoWorseThanTextMetadataAt8).toBe(false);
     expect(report.passed).toBe(false);
   });
 });

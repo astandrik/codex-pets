@@ -9,6 +9,7 @@ import {
   createYandexEmbeddingClient,
   embeddingToBuffer,
 } from "@/lib/pets/search-embeddings";
+import { RELATED_PETS_THEME_QUERY_REVISION } from "@/lib/pets/related-pets-semantics.mjs";
 
 const pet = {
   slug: "velvet-byte",
@@ -31,24 +32,46 @@ describe("pet search embeddings", () => {
     );
   });
 
-  it("builds a stable related query from tags with a description fallback", () => {
+  it("builds a stable related theme query with a description fallback", () => {
     expect(
       buildRelatedPetQuery({
         ...pet,
         tags: [" Night ", "gothic", "night", "ＰＩＸＥＬ"],
-      }),
-    ).toBe("night gothic pixel");
-    expect(buildRelatedPetQuery({ ...pet, tags: [] })).toBe(
-      pet.description,
+      }, RELATED_PETS_THEME_QUERY_REVISION),
+    ).toBe(
+      "name: Velvet Byte\nkind: character\ntopics: gothic, night, pixel",
     );
-    expect(createRelatedPetQuerySourceHash(pet, "query-v1")).not.toBe(
+    expect(
+      buildRelatedPetQuery(
+        { ...pet, tags: [] },
+        RELATED_PETS_THEME_QUERY_REVISION,
+      ),
+    ).toBe(
+      "name: Velvet Byte\nkind: character\ndescription: A gothic coding character",
+    );
+    expect(buildRelatedPetQuery(pet, "legacy-query-v1")).toBe(
+      "night gothic",
+    );
+    expect(
+      createRelatedPetQuerySourceHash(pet, RELATED_PETS_THEME_QUERY_REVISION),
+    ).toBe(
       createRelatedPetQuerySourceHash(
         { ...pet, tags: ["gothic", "night"] },
-        "query-v1",
+        RELATED_PETS_THEME_QUERY_REVISION,
       ),
     );
-    expect(createRelatedPetQuerySourceHash(pet, "query-v2")).not.toBe(
-      createRelatedPetQuerySourceHash(pet, "query-v1"),
+    expect(
+      createRelatedPetQuerySourceHash(pet, RELATED_PETS_THEME_QUERY_REVISION),
+    ).toBe(
+      createRelatedPetQuerySourceHash(
+        { ...pet, tags: ["night", "gothic", "license-mit", "v2"] },
+        RELATED_PETS_THEME_QUERY_REVISION,
+      ),
+    );
+    expect(
+      createRelatedPetQuerySourceHash(pet, RELATED_PETS_THEME_QUERY_REVISION),
+    ).not.toBe(
+      createRelatedPetQuerySourceHash(pet, "legacy-query-v1"),
     );
   });
 
