@@ -31,6 +31,7 @@ import {
   createRelatedPetsV11ComparisonReport,
 } from "@/lib/pets/related-pets-v11-shadow";
 import {
+  diagnoseRelatedPetsV11AnnotationProfiles,
   evaluateRelatedPetsV11Profile,
   selectRelatedPetsV11Profile,
   type RelatedPetsV11Profile,
@@ -41,7 +42,14 @@ import { listRawPetSearchEmbeddings } from "@/lib/pets/search-embeddings-reposit
 import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 
 const MODE = process.env.PET_RELATED_V11_EVAL;
-const ENABLED = ["audit", "calibrate", "acceptance", "compare", "holdout"]
+const ENABLED = [
+  "audit",
+  "calibrate",
+  "diagnose",
+  "acceptance",
+  "compare",
+  "holdout",
+]
   .includes(MODE ?? "");
 const BENCHMARK_WARMUPS = 2;
 const BENCHMARK_RUNS = 20;
@@ -197,13 +205,21 @@ describe.skipIf(!ENABLED)("live related-pets V11 evaluation", () => {
       visualVectors: preparedV11.visualVectors,
       annotations: preparedV11.annotations,
     };
-    const report = MODE === "calibrate"
-      ? selectRelatedPetsV11Profile({ dataset, comparisons })
-      : evaluateRelatedPetsV11Profile({
-          dataset,
-          comparisons,
-          profile: v11 as RelatedPetsV11Profile,
-        });
+    let report;
+    if (MODE === "calibrate") {
+      report = selectRelatedPetsV11Profile({ dataset, comparisons });
+    } else if (MODE === "diagnose") {
+      report = diagnoseRelatedPetsV11AnnotationProfiles({
+        dataset,
+        comparisons,
+      });
+    } else {
+      report = evaluateRelatedPetsV11Profile({
+        dataset,
+        comparisons,
+        profile: v11 as RelatedPetsV11Profile,
+      });
+    }
     console.info("[codex-pets][related-pets-v11-eval]", JSON.stringify({
       mode: MODE,
       catalogFingerprint,

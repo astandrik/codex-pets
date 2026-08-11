@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createRelatedPetsV11SimilarityCache,
+  diagnoseRelatedPetsV11AnnotationProfiles,
   evaluateRelatedPetsV11Profile,
 } from "@/lib/pets/related-pets-v11-eval";
 import type { RelatedPetCandidate } from "@/lib/pets/related-pets";
@@ -67,6 +68,55 @@ describe("V11 evaluation safety", () => {
     });
 
     expect(cached).toEqual(direct);
+  });
+
+  it("diagnoses the frozen annotation grid without opening a holdout", () => {
+    const safe = dataset(false);
+    const unsafe = dataset(true);
+    const descriptionThresholds = [0];
+    const annotationThresholds = [0];
+    const reversed = new Map([
+      ["source", ["g", "f", "e", "d", "c", "b", "a", "relevant"]],
+    ]);
+    safe.comparisons = {
+      description: reversed,
+      v7: reversed,
+      v8: reversed,
+      v10Best: reversed,
+    };
+    unsafe.comparisons = safe.comparisons;
+
+    const safeReport = diagnoseRelatedPetsV11AnnotationProfiles({
+      ...safe,
+      descriptionThresholds,
+      annotationThresholds,
+    });
+    const unsafeReport = diagnoseRelatedPetsV11AnnotationProfiles({
+      ...unsafe,
+      descriptionThresholds,
+      annotationThresholds,
+    });
+
+    expect(safeReport).toMatchObject({
+      split: "calibration",
+      caseCount: 1,
+      profileCount: 3,
+      evaluatedProfileCount: 3,
+      screeningSafeAndImprovingCount: 3,
+      fullSafeAndImprovingCount: 3,
+      frontierLimit: 8,
+    });
+    expect(unsafeReport.gatePassCounts.noConflictFallback).toBe(0);
+    expect(unsafeReport.frontier[0]?.failedGates).toContain(
+      "noConflictFallback",
+    );
+    expect(unsafeReport.frontier).toHaveLength(3);
+    expect(JSON.stringify(unsafeReport)).not.toContain("textQueryVectors");
+    expect(diagnoseRelatedPetsV11AnnotationProfiles({
+      ...unsafe,
+      descriptionThresholds,
+      annotationThresholds,
+    })).toEqual(unsafeReport);
   });
 });
 

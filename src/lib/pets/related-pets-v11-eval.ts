@@ -14,7 +14,19 @@ import {
 const ANNOTATION_WEIGHTS = [0.25, 0.5, 1] as const;
 const VISUAL_WEIGHTS = [0.1, 0.25, 0.5] as const;
 const MAX_THRESHOLD_CANDIDATES = 64;
+const DIAGNOSTIC_FRONTIER_LIMIT = 8;
 const EPSILON = 1e-12;
+const DIAGNOSTIC_GATE_NAMES = [
+  "hasCaseLift",
+  "noHardNegatives",
+  "mandatorySatisfied",
+  "orderingSatisfied",
+  "integritySatisfied",
+  "noConflictFallback",
+  "noWorseThanDescription",
+  "noWorseThanV7V8",
+  "withinV10Tolerance",
+] as const;
 
 export type RelatedPetsV11Dataset = {
   fixtures: readonly RelatedPetAcceptanceFixture[];
@@ -319,6 +331,154 @@ export function selectRelatedPetsV11Profile(input: {
       descriptionThresholds.length * annotationThresholds.length * ANNOTATION_WEIGHTS.length,
     evaluatedVisualProfileCount: visualThresholds.length * VISUAL_WEIGHTS.length,
   };
+}
+
+export function diagnoseRelatedPetsV11AnnotationProfiles(input: {
+  dataset: RelatedPetsV11Dataset;
+  comparisons: RelatedPetsV11ComparisonRankings;
+  descriptionThresholds?: readonly number[];
+  annotationThresholds?: readonly number[];
+}) {
+  const similarityCache = createRelatedPetsV11SimilarityCache(input.dataset);
+  const descriptionThresholds = thresholdCandidates(
+    input.descriptionThresholds ?? similarities(input.dataset, "description"),
+  );
+  const annotationThresholds = thresholdCandidates(
+    input.annotationThresholds ?? similarities(input.dataset, "annotation"),
+  );
+  const gatePassCounts = Object.fromEntries(
+    DIAGNOSTIC_GATE_NAMES.map((name) => [name, 0]),
+  ) as Record<(typeof DIAGNOSTIC_GATE_NAMES)[number], number>;
+  const frontier: ReturnType<typeof createDiagnosticDigest>[] = [];
+  let evaluatedProfileCount = 0;
+  let screeningSafeAndImprovingCount = 0;
+  let fullSafeAndImprovingCount = 0;
+
+  for (const textMinSimilarity of descriptionThresholds) {
+    for (const annotationMinSimilarity of annotationThresholds) {
+      for (const annotationWeight of ANNOTATION_WEIGHTS) {
+        evaluatedProfileCount += 1;
+        const profile = {
+          strategy: "entity-controlled-v11" as const,
+          textMinSimilarity,
+          annotationMinSimilarity,
+          annotationWeight,
+          visualMinSimilarity: null,
+          visualWeight: 0,
+        };
+        const screeningReport = evaluateRelatedPetsV11Profile({
+          dataset: input.dataset,
+          comparisons: input.comparisons,
+          similarityCache,
+          catalogIntegrityScope: "fixture-sources",
+          profile,
+        });
+        const screeningGates = diagnosticGates(screeningReport);
+        for (const name of DIAGNOSTIC_GATE_NAMES) {
+          if (screeningGates[name]) gatePassCounts[name] += 1;
+        }
+
+        let report = screeningReport;
+        let scope: "fixture-sources" | "all" = "fixture-sources";
+        if (Object.values(screeningGates).every(Boolean)) {
+          screeningSafeAndImprovingCount += 1;
+          report = evaluateRelatedPetsV11Profile({
+            dataset: input.dataset,
+            comparisons: input.comparisons,
+            similarityCache,
+            profile,
+          });
+          scope = "all";
+          if (Object.values(diagnosticGates(report)).every(Boolean)) {
+            fullSafeAndImprovingCount += 1;
+          }
+        }
+        addDiagnosticFrontier(
+          frontier,
+          createDiagnosticDigest(report, scope),
+        );
+      }
+    }
+  }
+
+  return {
+    version: 1,
+    split: "calibration" as const,
+    caseCount: input.dataset.fixtures.length,
+    thresholds: {
+      descriptionCount: descriptionThresholds.length,
+      annotationCount: annotationThresholds.length,
+      annotationWeights: ANNOTATION_WEIGHTS,
+    },
+    profileCount:
+      descriptionThresholds.length * annotationThresholds.length *
+      ANNOTATION_WEIGHTS.length,
+    evaluatedProfileCount,
+    gatePassCounts,
+    screeningSafeAndImprovingCount,
+    fullSafeAndImprovingCount,
+    frontierLimit: DIAGNOSTIC_FRONTIER_LIMIT,
+    frontier,
+  };
+}
+
+function diagnosticGates(
+  report: ReturnType<typeof evaluateRelatedPetsV11Profile>,
+) {
+  return {
+    hasCaseLift: improvesDescriptionCase(report),
+    ...report.checks,
+  };
+}
+
+function createDiagnosticDigest(
+  report: ReturnType<typeof evaluateRelatedPetsV11Profile>,
+  scope: "fixture-sources" | "all",
+) {
+  const gates = diagnosticGates(report);
+  return {
+    profile: report.profile,
+    scope,
+    failedGates: DIAGNOSTIC_GATE_NAMES.filter((name) => !gates[name]),
+    ndcgAt4: report.ndcgAt4,
+    ndcgAt8: report.ndcgAt8,
+    baselines: report.baselines,
+    allCatalogConflictFallbackCount: report.allCatalogConflictFallbackCount,
+    cases: report.cases.map((item) => ({
+      sourceSlug: item.sourceSlug,
+      slugs: item.slugs,
+      ndcgAt4: item.ndcgAt4,
+      ndcgAt8: item.ndcgAt8,
+      negativeSlugsPresent: item.negativeSlugsPresent,
+      mandatorySatisfied: item.mandatorySatisfied,
+      orderingSatisfied: item.orderingSatisfied,
+      conflictFallbackCount: item.diagnostics.filter(
+        ({ tier }) => tier === "conflict_fallback",
+      ).length,
+    })),
+  };
+}
+
+function addDiagnosticFrontier(
+  frontier: ReturnType<typeof createDiagnosticDigest>[],
+  candidate: ReturnType<typeof createDiagnosticDigest>,
+) {
+  frontier.push(candidate);
+  frontier.sort(compareDiagnosticDigests);
+  if (frontier.length > DIAGNOSTIC_FRONTIER_LIMIT) frontier.pop();
+}
+
+function compareDiagnosticDigests(
+  left: ReturnType<typeof createDiagnosticDigest>,
+  right: ReturnType<typeof createDiagnosticDigest>,
+) {
+  return left.failedGates.length - right.failedGates.length ||
+    right.ndcgAt4 - left.ndcgAt4 ||
+    right.ndcgAt8 - left.ndcgAt8 ||
+    left.profile.annotationWeight - right.profile.annotationWeight ||
+    right.profile.annotationMinSimilarity -
+      left.profile.annotationMinSimilarity ||
+    right.profile.textMinSimilarity - left.profile.textMinSimilarity;
 }
 
 function passesSafety(report: ReturnType<typeof evaluateRelatedPetsV11Profile>): boolean {
