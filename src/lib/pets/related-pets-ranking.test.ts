@@ -16,6 +16,7 @@ import {
 import type { RelatedPetCandidate } from "@/lib/pets/related-pets";
 import {
   CURRENT_RELATED_PETS_RANKING_PROFILE,
+  LEGACY_RELATED_PETS_V7_PROFILE,
   RELATED_PETS_V8_CALIBRATION_PROFILE,
   RELATED_PETS_V8_PROFILE,
   RELATED_PETS_V9_CALIBRATION_PROFILE,
@@ -1027,8 +1028,8 @@ function v11Profile() {
 }
 
 describe("related pet ranking profile", () => {
-  it("keeps v7 current while retaining the calibrated v8 profile", () => {
-    expect(CURRENT_RELATED_PETS_RANKING_PROFILE).toMatchObject({
+  it("activates the pinned v11 profile while retaining v7 and v8", () => {
+    expect(LEGACY_RELATED_PETS_V7_PROFILE).toMatchObject({
       rankingRevision:
         "related-pets-rrf60-v7:depth=8:tail=semantic:cal=related-pets-eval-groups-v2:text=yandex-text-embeddings-v2-768-2026-07:text-query=yandex-text-embeddings-v2-768-related-tags-query-2026-08:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
       strategy: "legacy-v7",
@@ -1043,11 +1044,6 @@ describe("related pet ranking profile", () => {
       visualMinSimilarity: 0.7573239783550058,
       visualWeight: 0.5,
     });
-    expect(
-      isCurrentRelatedPetsRankingRevision(
-        CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
-      ),
-    ).toBe(true);
     expect(isCurrentRelatedPetsRankingRevision("related-pets-stale")).toBe(
       false,
     );
@@ -1123,6 +1119,18 @@ describe("related pet ranking profile", () => {
     expect(RELATED_PETS_V11_PROFILE.rankingRevision).not.toContain(
       ":candidate",
     );
-    expect(CURRENT_RELATED_PETS_RANKING_PROFILE.strategy).toBe("legacy-v7");
+    expect(CURRENT_RELATED_PETS_RANKING_PROFILE).toBe(
+      RELATED_PETS_V11_PROFILE,
+    );
+    expect(
+      isCurrentRelatedPetsRankingRevision(
+        CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
+      ),
+    ).toBe(true);
+    expect(
+      isCurrentRelatedPetsRankingRevision(
+        LEGACY_RELATED_PETS_V7_PROFILE.rankingRevision,
+      ),
+    ).toBe(false);
   });
 });

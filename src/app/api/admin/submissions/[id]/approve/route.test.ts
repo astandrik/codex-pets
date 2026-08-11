@@ -817,14 +817,15 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     expect(rebuildRelatedPets).not.toHaveBeenCalled();
     expect(refreshApprovedPetVisionSearchBestEffort).toHaveBeenCalledOnce();
     expect(notifyIndexNowOfApprovedPet).toHaveBeenCalledWith("boba");
-    expect(warnSpy).toHaveBeenCalledWith(
+    expect(warnSpy).not.toHaveBeenCalledWith(
       "[codex-pets][related-pets-text-refresh]",
+      expect.anything(),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[codex-pets][search-document-refresh]",
       {
         operation: "refresh",
-        status: "incomplete",
-        searchDocument: "failed",
-        query: "updated",
-        relatedDocument: "failed",
+        status: "failed",
       },
     );
     expect(JSON.stringify(warnSpy.mock.calls)).not.toContain("provider failed");

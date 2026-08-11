@@ -187,7 +187,7 @@ export const RELATED_PETS_V8_PROFILE = {
 } as const satisfies RelatedPetsRuntimeProfile;
 
 export const CURRENT_RELATED_PETS_RANKING_PROFILE =
-  LEGACY_RELATED_PETS_V7_PROFILE;
+  RELATED_PETS_V11_PROFILE;
 
 export function isCurrentRelatedPetsRankingRevision(
   value: string,
