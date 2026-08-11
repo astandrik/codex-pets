@@ -21,6 +21,7 @@ export type RelatedPetAnnotationBackfillOptions = {
   slug: string | null;
   force: boolean;
   continueOnError: boolean;
+  concurrency: number;
 };
 export type RelatedPetAnnotationBackfillSummary = {
   scanned: number;

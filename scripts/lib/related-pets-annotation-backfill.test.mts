@@ -53,6 +53,7 @@ describe("related pet annotation backfill", () => {
       slug: null,
       force: false,
       continueOnError: true,
+      concurrency: 1,
     });
     expect(() => parseRelatedPetAnnotationBackfillArgs([
       "--apply",
@@ -60,6 +61,24 @@ describe("related pet annotation backfill", () => {
       "vi",
       "--continue-on-error",
     ])).toThrow(/cannot be combined/i);
+  });
+
+  it("parses bounded concurrency and requires continue-on-error for parallel apply", () => {
+    expect(parseRelatedPetAnnotationBackfillArgs([
+      "--apply",
+      "--continue-on-error",
+      "--concurrency=5",
+    ])).toMatchObject({ concurrency: 5 });
+    expect(() => parseRelatedPetAnnotationBackfillArgs([
+      "--apply",
+      "--concurrency",
+      "5",
+    ])).toThrow(/requires --continue-on-error/i);
+    expect(() => parseRelatedPetAnnotationBackfillArgs([
+      "--apply",
+      "--continue-on-error",
+      "--concurrency=11",
+    ])).toThrow(/integer from 1 to 10/i);
   });
 
   it("dry-runs without provider calls or writes", async () => {
@@ -126,6 +145,45 @@ describe("related pet annotation backfill", () => {
     });
     expect(summary).toMatchObject({ updated: 1, failed: 1, failedSlugs: ["vi"] });
     expect(JSON.stringify(logs)).not.toContain("SECRET_BODY");
+  });
+
+  it("limits parallel provider work and returns sorted failed slugs", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const summary = await runRelatedPetAnnotationBackfill({
+      options: {
+        ...options("apply"),
+        continueOnError: true,
+        concurrency: 2,
+      },
+      annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+      modelUri: "gpt://folder/qwen3.6-35b-a3b",
+      pets: ["zeta", "alpha", "beta", "gamma"].map((slug) => ({
+        ...pet,
+        slug,
+      })),
+      getAnnotation: async () => null,
+      createProposal: async (candidate) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        active -= 1;
+        if (candidate.slug === "zeta" || candidate.slug === "beta") {
+          throw new Error("provider_failed");
+        }
+        return proposal;
+      },
+      upsertAnnotation: async () => undefined,
+      createSourceHash: createRelatedPetAnnotationSourceHash,
+      log: () => undefined,
+    });
+
+    expect(maxActive).toBe(2);
+    expect(summary).toMatchObject({
+      updated: 2,
+      failed: 2,
+      failedSlugs: ["beta", "zeta"],
+    });
   });
 
   it("reports only safe field names for unresolved strong relations", async () => {
@@ -200,5 +258,11 @@ describe("related pet annotation backfill", () => {
 });
 
 function options(mode: "dry-run" | "apply") {
-  return { mode, slug: null, force: false, continueOnError: false };
+  return {
+    mode,
+    slug: null,
+    force: false,
+    continueOnError: false,
+    concurrency: 1,
+  };
 }

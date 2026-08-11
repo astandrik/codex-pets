@@ -9,12 +9,14 @@ import {
 } from "../../src/lib/pets/related-pets-annotation-contract.mjs";
 
 const SAFE_SLUG = /^[a-z0-9][a-z0-9-]{0,47}$/;
+const MAX_CONCURRENCY = 10;
 
 export function parseRelatedPetAnnotationBackfillArgs(argv) {
   let mode = null;
   let slug = null;
   let force = false;
   let continueOnError = false;
+  let concurrency = 1;
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -32,6 +34,19 @@ export function parseRelatedPetAnnotationBackfillArgs(argv) {
     }
     if (argument === "--continue-on-error") {
       continueOnError = true;
+      continue;
+    }
+    if (argument === "--concurrency" || argument?.startsWith("--concurrency=")) {
+      const value = argument === "--concurrency"
+        ? argv[index += 1]
+        : argument.slice("--concurrency=".length);
+      if (!/^\d+$/.test(value ?? "")) {
+        throw new Error("--concurrency must be an integer from 1 to 10.");
+      }
+      concurrency = Number(value);
+      if (concurrency < 1 || concurrency > MAX_CONCURRENCY) {
+        throw new Error("--concurrency must be an integer from 1 to 10.");
+      }
       continue;
     }
     if (argument === "--slug" || argument?.startsWith("--slug=")) {
@@ -52,7 +67,13 @@ export function parseRelatedPetAnnotationBackfillArgs(argv) {
   if (continueOnError && slug) {
     throw new Error("--continue-on-error cannot be combined with --slug.");
   }
-  return { mode, slug, force, continueOnError };
+  if (slug && concurrency !== 1) {
+    throw new Error("--concurrency cannot be combined with --slug.");
+  }
+  if (mode === "apply" && concurrency > 1 && !continueOnError) {
+    throw new Error("Parallel --apply requires --continue-on-error.");
+  }
+  return { mode, slug, force, continueOnError, concurrency };
 }
 
 export async function runRelatedPetAnnotationBackfill({
@@ -70,7 +91,7 @@ export async function runRelatedPetAnnotationBackfill({
   const selectedPets = selectApprovedPets(pets, options.slug);
   const summary = createSummary(selectedPets.length);
 
-  for (const pet of selectedPets) {
+  await runWithConcurrency(selectedPets, options.concurrency, async (pet) => {
     try {
       const sourceHash = createSourceHash({ pet, modelUri, annotationRevision });
       const stored = options.force
@@ -78,13 +99,13 @@ export async function runRelatedPetAnnotationBackfill({
         : await getAnnotation(annotationRevision, pet.slug);
       if (stored?.sourceHash === sourceHash) {
         summary.unchanged += 1;
-        continue;
+        return;
       }
 
       summary.planned += 1;
       if (options.mode === "dry-run") {
         log({ action: "would-update", slug: pet.slug });
-        continue;
+        return;
       }
 
       const proposal = await createProposal(pet);
@@ -125,8 +146,9 @@ export async function runRelatedPetAnnotationBackfill({
       });
       if (!options.continueOnError) throw error;
     }
-  }
+  });
 
+  summary.failedSlugs.sort();
   log({ action: "summary", ...summary });
   return summary;
 }
@@ -152,7 +174,7 @@ export async function runRelatedPetAnnotationEmbeddingBackfill({
   );
   const summary = createSummary(selectedPets.length);
 
-  for (const pet of selectedPets) {
+  await runWithConcurrency(selectedPets, options.concurrency, async (pet) => {
     try {
       const storedAnnotation = annotationsBySlug.get(pet.slug);
       if (!storedAnnotation) {
@@ -180,13 +202,13 @@ export async function runRelatedPetAnnotationEmbeddingBackfill({
         metadata.dimensions === dimensions
       ) {
         summary.unchanged += 1;
-        continue;
+        return;
       }
 
       summary.planned += 1;
       if (options.mode === "dry-run") {
         log({ action: "would-update", slug: pet.slug });
-        continue;
+        return;
       }
 
       const embedding = await embed(annotationText, role);
@@ -213,8 +235,9 @@ export async function runRelatedPetAnnotationEmbeddingBackfill({
       log({ action: "failed", slug: pet.slug, reason: sanitizedReason(error) });
       if (!options.continueOnError) throw error;
     }
-  }
+  });
 
+  summary.failedSlugs.sort();
   log({ action: "summary", ...summary });
   return summary;
 }
@@ -250,6 +273,18 @@ function createSummary(scanned) {
     failed: 0,
     failedSlugs: [],
   };
+}
+
+async function runWithConcurrency(items, concurrency, worker) {
+  let nextIndex = 0;
+  const workerCount = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const item = items[nextIndex];
+      nextIndex += 1;
+      await worker(item);
+    }
+  }));
 }
 
 function sanitizedReason(error) {
