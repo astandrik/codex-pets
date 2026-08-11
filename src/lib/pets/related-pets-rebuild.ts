@@ -2,6 +2,15 @@ import { randomUUID } from "node:crypto";
 
 import { getPetAssetIdFromSpritesheetUrl } from "@/lib/pets/asset-urls";
 import {
+  RELATED_PETS_ANNOTATION_MODEL_NAME,
+  buildRelatedPetAnnotationText,
+  createRelatedPetAnnotationEmbeddingSourceHash,
+  createRelatedPetAnnotationSourceHash,
+  parseResolvedRelatedPetAnnotation,
+  type ResolvedRelatedPetAnnotation,
+} from "@/lib/pets/related-pets-annotation-contract.mjs";
+import type { StoredRelatedPetAnnotation } from "@/lib/pets/related-pets-annotations-repository";
+import {
   listPetSearchCaptions,
   type StoredPetSearchCaption,
 } from "@/lib/pets/search-captions-repository";
@@ -60,6 +69,10 @@ export type RelatedPetsRebuildProfile = RelatedPetsRankingProfile & {
   topicRevision?: string;
   topicQueryRevision?: string;
   topicDimensions?: number;
+  annotationRevision?: string;
+  annotationDocumentRevision?: string;
+  annotationQueryRevision?: string;
+  annotationDimensions?: number;
   visualRevision: string;
   visualCaptionRevision: string;
   visualDimensions: number;
@@ -114,6 +127,8 @@ type RelatedPetsRebuildCoverage = {
   snapshotCount: number;
   textVectorCount: number;
   topicVectorCount?: number;
+  annotationCount?: number;
+  annotationVectorCount?: number;
   visualVectorCount: number;
 };
 
@@ -124,6 +139,8 @@ type RelatedPetsRebuildFailureReason =
   | "storage_unavailable"
   | "text_vectors_incomplete"
   | "topic_vectors_incomplete"
+  | "annotations_incomplete"
+  | "annotation_vectors_incomplete"
   | "visual_vectors_incomplete";
 
 export type RelatedPetsRebuildLog = {
@@ -155,6 +172,10 @@ type RelatedPetsRebuildDependencies = {
   listCaptions: (
     captionRevision: string,
   ) => Promise<StoredPetSearchCaption[]>;
+  listAnnotations?: (
+    annotationRevision: string,
+  ) => Promise<StoredRelatedPetAnnotation[]>;
+  getAnnotationModelUri?: () => string | null;
   getVisualSourceContext: () => VisualSourceContext | null;
   createGenerationId: () => string;
   now: () => Date;
@@ -201,9 +222,60 @@ export function createRelatedPetsRebuildService(
 ) {
   return {
     rebuild,
+    prepareGeneration,
     invalidate,
     recoverPrevious,
   };
+
+  async function prepareGeneration(input: {
+    generationId: string;
+    candidatePets: readonly PublicPet[];
+    includeVisual?: boolean;
+  }): Promise<{
+    generationId: string;
+    rankingRevision: string;
+    coverage: RelatedPetsRebuildCoverage;
+    rankings: Array<{ sourceSlug: string; relatedSlugs: string[] }>;
+    inputScope: RelatedPetsRankingInputScope;
+    expectedInputRevision: string;
+  }> {
+    if (!dependencies.isStorageAvailable()) {
+      throw new RelatedPetsRebuildError("storage_unavailable");
+    }
+    const inputScope = createRankingInputScope(input.includeVisual ?? true);
+    const expectedInputRevision = await dependencies.repository
+      .getRankingInputRevision(inputScope);
+    if (!expectedInputRevision) {
+      throw new RelatedPetsRebuildError("storage_unavailable");
+    }
+    const { rankings, coverage } = await buildRankings(
+      input.includeVisual ?? true,
+      input.candidatePets,
+    );
+    const createdAt = dependencies.now().toISOString();
+    for (const ranking of rankings) {
+      await dependencies.repository.writeSnapshot({
+        generationId: input.generationId,
+        sourceSlug: ranking.sourceSlug,
+        rankingRevision: dependencies.profile.rankingRevision,
+        relatedSlugs: ranking.relatedSlugs,
+        createdAt,
+      });
+    }
+    const currentInputRevision = await dependencies.repository
+      .getRankingInputRevision(inputScope);
+    if (currentInputRevision !== expectedInputRevision) {
+      throw new RelatedPetsRebuildError("rebuild_failed");
+    }
+    return {
+      generationId: input.generationId,
+      rankingRevision: dependencies.profile.rankingRevision,
+      coverage,
+      rankings,
+      inputScope,
+      expectedInputRevision,
+    };
+  }
 
   async function rebuild(input: {
     mode: "dry-run" | "apply";
@@ -391,7 +463,10 @@ export function createRelatedPetsRebuildService(
     }
   }
 
-  async function buildRankings(includeVisual: boolean): Promise<{
+  async function buildRankings(
+    includeVisual: boolean,
+    candidatePets?: readonly PublicPet[],
+  ): Promise<{
     rankings: Array<{ sourceSlug: string; relatedSlugs: string[] }>;
     coverage: RelatedPetsRebuildCoverage;
   }> {
@@ -404,13 +479,23 @@ export function createRelatedPetsRebuildService(
       requestedVisualContext.modelUri.trim()
         ? requestedVisualContext
         : null;
-    const pets = await dependencies.listApprovedPets();
+    const pets = candidatePets ?? await dependencies.listApprovedPets();
     const topicProfile = getTopicProfile(dependencies.profile);
+    const annotationProfile = getAnnotationProfile(dependencies.profile);
+    const annotationModelUri = annotationProfile
+      ? dependencies.getAnnotationModelUri?.() ?? null
+      : null;
+    if (annotationProfile && !annotationModelUri) {
+      throw new RelatedPetsRebuildError("annotations_incomplete");
+    }
     const [
       textQueryRows,
       textRows,
       topicQueryRows,
       topicRows,
+      annotationQueryRows,
+      annotationRows,
+      annotations,
       visualRows,
       captions,
     ] =
@@ -422,6 +507,18 @@ export function createRelatedPetsRebuildService(
           : Promise.resolve([]),
         topicProfile
           ? dependencies.listRawVectors(topicProfile.topicRevision)
+          : Promise.resolve([]),
+        annotationProfile
+          ? dependencies.listRawVectors(annotationProfile.annotationQueryRevision)
+          : Promise.resolve([]),
+        annotationProfile
+          ? dependencies.listRawVectors(
+              annotationProfile.annotationDocumentRevision,
+            )
+          : Promise.resolve([]),
+        annotationProfile
+          ? dependencies.listAnnotations?.(annotationProfile.annotationRevision) ??
+            Promise.resolve([])
           : Promise.resolve([]),
         visualContext
           ? dependencies.listRawVectors(dependencies.profile.visualRevision)
@@ -436,6 +533,10 @@ export function createRelatedPetsRebuildService(
       textRows,
       topicQueryRows,
       topicRows,
+      annotationQueryRows,
+      annotationRows,
+      annotations,
+      annotationModelUri,
       visualRows,
       captions,
       profile: dependencies.profile,
@@ -459,6 +560,25 @@ export function createRelatedPetsRebuildService(
     if (topicProfile && topicVectorCount !== prepared.approvedPets.length) {
       throw new RelatedPetsRebuildError("topic_vectors_incomplete");
     }
+    const annotationCount = annotationProfile
+      ? prepared.annotations.size
+      : 0;
+    if (annotationProfile && annotationCount !== prepared.approvedPets.length) {
+      throw new RelatedPetsRebuildError("annotations_incomplete");
+    }
+    const annotationVectorCount = annotationProfile
+      ? prepared.approvedPets.filter(
+          ({ slug }) =>
+            prepared.annotationQueryVectors.has(slug) &&
+            prepared.annotationDocumentVectors.has(slug),
+        ).length
+      : 0;
+    if (
+      annotationProfile &&
+      annotationVectorCount !== prepared.approvedPets.length
+    ) {
+      throw new RelatedPetsRebuildError("annotation_vectors_incomplete");
+    }
     if (
       includeVisual &&
       dependencies.profile.visualMinSimilarity !== null &&
@@ -475,6 +595,9 @@ export function createRelatedPetsRebuildService(
         textDocumentVectors: prepared.textDocumentVectors,
         topicQueryVectors: prepared.topicQueryVectors,
         topicDocumentVectors: prepared.topicDocumentVectors,
+        annotationQueryVectors: prepared.annotationQueryVectors,
+        annotationDocumentVectors: prepared.annotationDocumentVectors,
+        annotations: prepared.annotations,
         visualVectors: prepared.visualVectors,
         profile: dependencies.profile,
         limit: RELATED_PETS_SNAPSHOT_DEPTH,
@@ -504,6 +627,9 @@ export function createRelatedPetsRebuildService(
         snapshotCount: rankings.length,
         textVectorCount,
         ...(topicProfile ? { topicVectorCount } : {}),
+        ...(annotationProfile
+          ? { annotationCount, annotationVectorCount }
+          : {}),
         visualVectorCount: prepared.visualVectors.size,
       },
     };
@@ -515,6 +641,7 @@ export function createRelatedPetsRebuildService(
     const includeVisualInputs =
       includeVisual && dependencies.profile.visualMinSimilarity !== null;
     const topicProfile = getTopicProfile(dependencies.profile);
+    const annotationProfile = getAnnotationProfile(dependencies.profile);
     return {
       embeddingModelRevisions: [
         dependencies.profile.textQueryRevision,
@@ -525,11 +652,20 @@ export function createRelatedPetsRebuildService(
               topicProfile.topicRevision,
             ]
           : []),
+        ...(annotationProfile
+          ? [
+              annotationProfile.annotationQueryRevision,
+              annotationProfile.annotationDocumentRevision,
+            ]
+          : []),
         ...(includeVisualInputs ? [dependencies.profile.visualRevision] : []),
       ],
       captionRevision: includeVisualInputs
         ? dependencies.profile.visualCaptionRevision
         : null,
+      ...(annotationProfile
+        ? { annotationRevision: annotationProfile.annotationRevision }
+        : {}),
     };
   }
 
@@ -790,12 +926,49 @@ function getTopicProfile(
   };
 }
 
+function getAnnotationProfile(
+  profile: RelatedPetsRebuildProfile,
+): {
+  annotationRevision: string;
+  annotationDocumentRevision: string;
+  annotationQueryRevision: string;
+  annotationDimensions: number;
+} | null {
+  const annotationDimensions = profile.annotationDimensions;
+  const values = [
+    profile.annotationRevision,
+    profile.annotationDocumentRevision,
+    profile.annotationQueryRevision,
+    profile.annotationDimensions,
+  ];
+  if (values.every((value) => value === undefined)) return null;
+  if (
+    !profile.annotationRevision ||
+    !profile.annotationDocumentRevision ||
+    !profile.annotationQueryRevision ||
+    !Number.isSafeInteger(annotationDimensions) ||
+    (annotationDimensions ?? 0) <= 0
+  ) {
+    throw new Error("Related-pet annotation profile is incomplete.");
+  }
+  return {
+    annotationRevision: profile.annotationRevision,
+    annotationDocumentRevision: profile.annotationDocumentRevision,
+    annotationQueryRevision: profile.annotationQueryRevision,
+    annotationDimensions: annotationDimensions as number,
+  };
+}
+
 export function prepareRelatedPetsRankingInputs(input: {
   pets: readonly PublicPet[];
   textQueryRows: readonly StoredRawPetSearchEmbedding[];
   textRows: readonly StoredRawPetSearchEmbedding[];
   topicQueryRows?: readonly StoredRawPetSearchEmbedding[];
   topicRows?: readonly StoredRawPetSearchEmbedding[];
+  annotationQueryRows?: readonly StoredRawPetSearchEmbedding[];
+  annotationRows?: readonly StoredRawPetSearchEmbedding[];
+  annotations?: readonly StoredRelatedPetAnnotation[];
+  annotationModelUri?: string | null;
   visualRows: readonly StoredRawPetSearchEmbedding[];
   captions: readonly StoredPetSearchCaption[];
   profile: RelatedPetsRebuildProfile;
@@ -806,6 +979,9 @@ export function prepareRelatedPetsRankingInputs(input: {
   textDocumentVectors: Map<string, readonly number[]>;
   topicQueryVectors: Map<string, readonly number[]>;
   topicDocumentVectors: Map<string, readonly number[]>;
+  annotationQueryVectors: Map<string, readonly number[]>;
+  annotationDocumentVectors: Map<string, readonly number[]>;
+  annotations: Map<string, ResolvedRelatedPetAnnotation>;
   visualVectors: Map<string, readonly number[]>;
 } {
   const approvedPets = uniqueApprovedPets(input.pets);
@@ -850,6 +1026,41 @@ export function prepareRelatedPetsRankingInputs(input: {
         },
       )
     : new Map<string, readonly number[]>();
+  const annotationProfile = getAnnotationProfile(input.profile);
+  const preparedAnnotations = annotationProfile && input.annotationModelUri
+    ? validatedAnnotations({
+        pets: approvedPets,
+        rows: input.annotations ?? [],
+        profile: annotationProfile,
+        modelUri: input.annotationModelUri,
+      })
+    : {
+        values: new Map<string, ResolvedRelatedPetAnnotation>(),
+        sourceHashes: new Map<string, string>(),
+        texts: new Map<string, string>(),
+      };
+  const annotationQueryVectors = annotationProfile
+    ? validatedAnnotationVectors({
+        rows: input.annotationQueryRows ?? [],
+        revision: annotationProfile.annotationQueryRevision,
+        dimensions: annotationProfile.annotationDimensions,
+        role: "query",
+        annotationRevision: annotationProfile.annotationRevision,
+        sourceHashes: preparedAnnotations.sourceHashes,
+        texts: preparedAnnotations.texts,
+      })
+    : new Map<string, readonly number[]>();
+  const annotationDocumentVectors = annotationProfile
+    ? validatedAnnotationVectors({
+        rows: input.annotationRows ?? [],
+        revision: annotationProfile.annotationDocumentRevision,
+        dimensions: annotationProfile.annotationDimensions,
+        role: "document",
+        annotationRevision: annotationProfile.annotationRevision,
+        sourceHashes: preparedAnnotations.sourceHashes,
+        texts: preparedAnnotations.texts,
+      })
+    : new Map<string, readonly number[]>();
   const visualVectors = input.visualContext
     ? validatedVisualVectors({
         petsBySlug: new Map(
@@ -867,8 +1078,82 @@ export function prepareRelatedPetsRankingInputs(input: {
     textDocumentVectors,
     topicQueryVectors,
     topicDocumentVectors,
+    annotationQueryVectors,
+    annotationDocumentVectors,
+    annotations: preparedAnnotations.values,
     visualVectors,
   };
+}
+
+function validatedAnnotations(input: {
+  pets: readonly PublicPet[];
+  rows: readonly StoredRelatedPetAnnotation[];
+  profile: NonNullable<ReturnType<typeof getAnnotationProfile>>;
+  modelUri: string;
+}): {
+  values: Map<string, ResolvedRelatedPetAnnotation>;
+  sourceHashes: Map<string, string>;
+  texts: Map<string, string>;
+} {
+  const petsBySlug = new Map(input.pets.map((pet) => [pet.slug, pet]));
+  const values = new Map<string, ResolvedRelatedPetAnnotation>();
+  const sourceHashes = new Map<string, string>();
+  const texts = new Map<string, string>();
+  for (const row of input.rows) {
+    const pet = petsBySlug.get(row.slug);
+    if (!pet) continue;
+    try {
+      const expectedSourceHash = createRelatedPetAnnotationSourceHash({
+        pet,
+        modelUri: input.modelUri,
+        annotationRevision: input.profile.annotationRevision,
+      });
+      const annotation = parseResolvedRelatedPetAnnotation(row.annotationJson);
+      const annotationText = buildRelatedPetAnnotationText(annotation);
+      if (
+        row.sourceHash !== expectedSourceHash ||
+        row.annotationText !== annotationText
+      ) {
+        continue;
+      }
+      values.set(row.slug, annotation);
+      sourceHashes.set(row.slug, row.sourceHash);
+      texts.set(row.slug, annotationText);
+    } catch {
+      // Malformed derived rows are excluded from V11 coverage.
+    }
+  }
+  return { values, sourceHashes, texts };
+}
+
+function validatedAnnotationVectors(input: {
+  rows: readonly StoredRawPetSearchEmbedding[];
+  revision: string;
+  dimensions: number;
+  role: "query" | "document";
+  annotationRevision: string;
+  sourceHashes: ReadonlyMap<string, string>;
+  texts: ReadonlyMap<string, string>;
+}): Map<string, readonly number[]> {
+  const vectors = new Map<string, readonly number[]>();
+  for (const row of input.rows) {
+    const annotationSourceHash = input.sourceHashes.get(row.slug);
+    const annotationText = input.texts.get(row.slug);
+    if (!annotationSourceHash || !annotationText) continue;
+    const vector = decodeRelatedPetVector(row, {
+      modelRevision: input.revision,
+      dimensions: input.dimensions,
+      sourceHash: createRelatedPetAnnotationEmbeddingSourceHash({
+        modelRevision: input.revision,
+        role: input.role,
+        annotationRevision: input.annotationRevision,
+        annotationSourceHash,
+        annotationText,
+      }),
+    });
+    if (vector) vectors.set(row.slug, vector);
+  }
+  return vectors;
 }
 
 function validatedTextVectors(
@@ -998,6 +1283,18 @@ const service = createRelatedPetsRebuildService({
   listApprovedPets: listApprovedPetsForSearch,
   listRawVectors: listRawPetSearchEmbeddings,
   listCaptions: listPetSearchCaptions,
+  listAnnotations: async (annotationRevision) => {
+    const { listRelatedPetAnnotations } = await import(
+      "@/lib/pets/related-pets-annotations-repository"
+    );
+    return listRelatedPetAnnotations(annotationRevision);
+  },
+  getAnnotationModelUri: () => {
+    const folderId = process.env.YANDEX_AI_STUDIO_FOLDER_ID?.trim();
+    return folderId
+      ? `gpt://${folderId}/${RELATED_PETS_ANNOTATION_MODEL_NAME}`
+      : null;
+  },
   getVisualSourceContext: getCurrentRelatedPetsVisualSourceContext,
   createGenerationId: randomUUID,
   now: () => new Date(),
@@ -1007,5 +1304,6 @@ const service = createRelatedPetsRebuildService({
 });
 
 export const rebuildRelatedPets = service.rebuild;
+export const prepareRelatedPetsGeneration = service.prepareGeneration;
 export const invalidateRelatedPets = service.invalidate;
 export const recoverPreviousRelatedPets = service.recoverPrevious;

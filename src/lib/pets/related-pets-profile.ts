@@ -11,6 +11,11 @@ import {
   RELATED_PETS_TOPIC_QUERY_REVISION,
 } from "@/lib/pets/related-pets-semantics.mjs";
 import {
+  RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+  RELATED_PETS_ANNOTATION_QUERY_REVISION,
+  RELATED_PETS_ANNOTATION_REVISION,
+} from "@/lib/pets/related-pets-annotation-contract.mjs";
+import {
   RELATED_PETS_METADATA_WEIGHT,
   RELATED_PETS_RRF_K,
   RELATED_PETS_TEXT_WEIGHT,
@@ -36,6 +41,7 @@ const V7_CALIBRATION_REVISION = "related-pets-eval-groups-v2";
 const V8_CALIBRATION_REVISION = "related-pets-eval-v3";
 const V9_CALIBRATION_REVISION = "related-pets-eval-v4";
 const V10_CALIBRATION_REVISION = "related-pets-eval-v5";
+const V11_CALIBRATION_REVISION = "related-pets-eval-v6";
 const textDefinition = PET_SEARCH_MODEL_REVISIONS[TEXT_REVISION];
 const visualDefinition = PET_VISUAL_MODEL_REVISIONS[VISUAL_REVISION];
 const PINNED_CALIBRATED_PROFILE = {
@@ -62,6 +68,12 @@ type RelatedPetsRuntimeProfile = RelatedPetsRankingProfile & {
   topicDimensions?: number;
   topicMinSimilarity?: number;
   topicWeight?: number;
+  annotationRevision?: string;
+  annotationDocumentRevision?: string;
+  annotationQueryRevision?: string;
+  annotationDimensions?: number;
+  annotationMinSimilarity?: number;
+  annotationWeight?: number;
   visualRevision: string;
   visualDimensions: number;
   rrfK: number;
@@ -123,6 +135,29 @@ export const RELATED_PETS_V10_CALIBRATION_PROFILE = {
 // Replaced by the immutable calibrated profile in the separate pinning commit.
 export const RELATED_PETS_V10_PROFILE =
   RELATED_PETS_V10_CALIBRATION_PROFILE;
+
+export const RELATED_PETS_V11_CALIBRATION_PROFILE = {
+  ...LEGACY_RELATED_PETS_V7_PROFILE,
+  strategy: "entity-controlled-v11",
+  rankingRevision: `related-pets-entity-controlled-v11:depth=8:cal=${V11_CALIBRATION_REVISION}:description=${RELATED_PETS_V9_TEXT_DOCUMENT_REVISION}:description-query=${RELATED_PETS_V9_TEXT_QUERY_REVISION}:annotation=${RELATED_PETS_ANNOTATION_REVISION}:annotation-document=${RELATED_PETS_ANNOTATION_DOCUMENT_REVISION}:annotation-query=${RELATED_PETS_ANNOTATION_QUERY_REVISION}:visual=${VISUAL_REVISION}:candidate`,
+  textRevision: RELATED_PETS_V9_TEXT_DOCUMENT_REVISION,
+  textQueryRevision: RELATED_PETS_V9_TEXT_QUERY_REVISION,
+  textMinSimilarity: 0,
+  metadataWeight: 0,
+  annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+  annotationDocumentRevision: RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+  annotationQueryRevision: RELATED_PETS_ANNOTATION_QUERY_REVISION,
+  annotationDimensions:
+    PET_SEARCH_EMBEDDING_MODELS[textDefinition.embeddingModelId].dimensions,
+  annotationMinSimilarity: 0,
+  annotationWeight: 0.25,
+  visualMinSimilarity: null,
+  visualWeight: 0,
+} as const satisfies RelatedPetsRuntimeProfile;
+
+// Replaced only by the immutable profile pinning commit after calibration.
+export const RELATED_PETS_V11_PROFILE =
+  RELATED_PETS_V11_CALIBRATION_PROFILE;
 
 export const RELATED_PETS_V8_CALIBRATION_PROFILE = {
   ...LEGACY_RELATED_PETS_V7_PROFILE,

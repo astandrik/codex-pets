@@ -282,6 +282,98 @@ describe("related pet weighted RRF", () => {
 });
 
 describe("related pet ranking", () => {
+  it("orders V11 relation tiers before semantic and visual signals", () => {
+    const source = candidate("vi");
+    const peers = [
+      source,
+      candidate("arcane-peer"),
+      candidate("semantic-peer"),
+      candidate("visual-conflict"),
+    ];
+    const annotations = new Map([
+      ["vi", annotation({ franchises: ["arcane"] })],
+      ["arcane-peer", annotation({ franchises: ["arcane"] })],
+      ["semantic-peer", annotation()],
+      ["visual-conflict", annotation({ franchises: ["final-fantasy"] })],
+    ]);
+    const result = rankRelatedPetsWithDiagnostics({
+      source,
+      candidates: peers,
+      textQueryVectors: vectors({ vi: [1, 0] }),
+      textDocumentVectors: vectors({
+        "arcane-peer": [0.7, 0.3],
+        "semantic-peer": [1, 0],
+        "visual-conflict": [0, 1],
+      }),
+      annotationQueryVectors: vectors({ vi: [1, 0] }),
+      annotationDocumentVectors: vectors({
+        "arcane-peer": [0.7, 0.3],
+        "semantic-peer": [1, 0],
+        "visual-conflict": [0, 1],
+      }),
+      visualVectors: vectors({
+        vi: [1, 0],
+        "arcane-peer": [0, 1],
+        "semantic-peer": [0.8, 0.2],
+        "visual-conflict": [1, 0],
+      }),
+      annotations,
+      profile: v11Profile(),
+    });
+
+    expect(result.slugs).toEqual([
+      "arcane-peer",
+      "semantic-peer",
+      "visual-conflict",
+    ]);
+    expect(result.diagnostics.map(({ tier }) => tier)).toEqual([
+      "franchise",
+      "semantic_safe",
+      "conflict_fallback",
+    ]);
+    expect(result.diagnostics[2]).toMatchObject({
+      passesVisualThreshold: true,
+      contributions: { visual: 0 },
+      franchiseConflict: true,
+      fallbackProvenance: "conflict_contract",
+    });
+  });
+
+  it("uses V11 visual evidence only to reorder an existing tier", () => {
+    const source = candidate("source");
+    const annotations = new Map([
+      ["source", annotation({ collections: ["soviet-animation"] })],
+      ["text-first", annotation({ collections: ["soviet-animation"] })],
+      ["visual-first", annotation({ collections: ["soviet-animation"] })],
+    ]);
+    const result = rankRelatedPetsWithDiagnostics({
+      source,
+      candidates: [source, candidate("text-first"), candidate("visual-first")],
+      textQueryVectors: vectors({ source: [1, 0] }),
+      textDocumentVectors: vectors({
+        "text-first": [1, 0],
+        "visual-first": [0.9, 0.1],
+      }),
+      annotationQueryVectors: vectors({ source: [1, 0] }),
+      annotationDocumentVectors: vectors({
+        "text-first": [1, 0],
+        "visual-first": [0.9, 0.1],
+      }),
+      visualVectors: vectors({
+        source: [1, 0],
+        "text-first": [0, 1],
+        "visual-first": [1, 0],
+      }),
+      annotations,
+      profile: { ...v11Profile(), visualWeight: 1 },
+    });
+
+    expect(result.slugs).toEqual(["visual-first", "text-first"]);
+    expect(result.diagnostics.every(({ tier }) =>
+      tier === "franchise_family_collection"
+    )).toBe(true);
+  });
+
   it("lets only text similarity qualify v9 candidates", () => {
     const input = {
       sourceSlug: "source",
@@ -854,6 +946,42 @@ describe("related pet ranking", () => {
     expect(ranked).not.toContain("deleted-or-unknown");
   });
 });
+
+function annotation(overrides: Partial<{
+  entity: string | null;
+  franchises: string[];
+  franchiseFamilies: string[];
+  collections: string[];
+  specificArchetypes: string[];
+}> = {}) {
+  return {
+    schemaVersion: 1 as const,
+    entity: null,
+    aliases: [],
+    franchises: [],
+    franchiseFamilies: [],
+    collections: [],
+    specificArchetypes: [],
+    themes: [],
+    mediaOrigins: [],
+    ...overrides,
+  };
+}
+
+function vectors(values: Record<string, readonly number[]>) {
+  return new Map(Object.entries(values));
+}
+
+function v11Profile() {
+  return {
+    strategy: "entity-controlled-v11" as const,
+    textMinSimilarity: 0.8,
+    annotationMinSimilarity: 0.8,
+    annotationWeight: 0.5,
+    visualMinSimilarity: 0.8,
+    visualWeight: 0.5,
+  };
+}
 
 describe("related pet ranking profile", () => {
   it("keeps v7 current while retaining the calibrated v8 profile", () => {

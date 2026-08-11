@@ -1,5 +1,7 @@
 import {
   CURRENT_RELATED_PETS_RANKING_PROFILE,
+  LEGACY_RELATED_PETS_V7_PROFILE,
+  RELATED_PETS_V9_CALIBRATION_PROFILE,
   RELATED_PETS_V10_CALIBRATION_PROFILE,
 } from "@/lib/pets/related-pets-profile";
 import {
@@ -187,6 +189,20 @@ const v10Runtime = createRelatedPetQueryRuntime({
   upsert: upsertPetSearchEmbedding,
 });
 
+const v9Runtime = createRelatedPetQueryRuntime({
+  profile: RELATED_PETS_V9_CALIBRATION_PROFILE,
+  embeddingClient: petSearchEmbeddingClient,
+  getMetadata: getPetSearchEmbeddingMetadata,
+  upsert: upsertPetSearchEmbedding,
+});
+
+const v7Runtime = createRelatedPetQueryRuntime({
+  profile: LEGACY_RELATED_PETS_V7_PROFILE,
+  embeddingClient: petSearchEmbeddingClient,
+  getMetadata: getPetSearchEmbeddingMetadata,
+  upsert: upsertPetSearchEmbedding,
+});
+
 export function refreshApprovedPetRelatedQueryEmbedding(
   pet: PublicPet,
 ): Promise<RelatedPetQueryEmbeddingRefreshResult> {
@@ -205,6 +221,64 @@ export type RelatedPetV10EmbeddingRefresh = {
   topicQuery: RelatedPetQueryEmbeddingRefreshResult | "failed";
   topicDocument: RelatedPetQueryEmbeddingRefreshResult | "failed";
 };
+
+export async function refreshApprovedPetRelatedV9Embeddings(
+  pet: PublicPet,
+): Promise<{
+  descriptionQuery: RelatedPetQueryEmbeddingRefreshResult | "failed";
+  descriptionDocument: RelatedPetQueryEmbeddingRefreshResult | "failed";
+}> {
+  const results = await Promise.allSettled([
+    v9Runtime.refreshApprovedPetRelatedQueryEmbedding(pet),
+    v9Runtime.refreshApprovedPetRelatedDocumentEmbedding(pet),
+  ]);
+  return {
+    descriptionQuery: settledStatus(results[0]),
+    descriptionDocument: settledStatus(results[1]),
+  };
+}
+
+export async function refreshApprovedPetRelatedV7Embeddings(
+  pet: PublicPet,
+): Promise<{
+  query: RelatedPetQueryEmbeddingRefreshResult | "failed";
+  document: RelatedPetQueryEmbeddingRefreshResult | "failed";
+}> {
+  const results = await Promise.allSettled([
+    v7Runtime.refreshApprovedPetRelatedQueryEmbedding(pet),
+    v7Runtime.refreshApprovedPetRelatedDocumentEmbedding(pet),
+  ]);
+  return {
+    query: settledStatus(results[0]),
+    document: settledStatus(results[1]),
+  };
+}
+
+export async function refreshApprovedPetRelatedV7EmbeddingsStrict(
+  pet: PublicPet,
+): Promise<{
+  query: RelatedPetQueryEmbeddingRefreshResult;
+  document: RelatedPetQueryEmbeddingRefreshResult;
+}> {
+  const query = await v7Runtime.refreshApprovedPetRelatedQueryEmbedding(pet);
+  const document = await v7Runtime.refreshApprovedPetRelatedDocumentEmbedding(
+    pet,
+  );
+  return { query, document };
+}
+
+export async function refreshApprovedPetRelatedV9EmbeddingsStrict(
+  pet: PublicPet,
+): Promise<{
+  descriptionQuery: RelatedPetQueryEmbeddingRefreshResult;
+  descriptionDocument: RelatedPetQueryEmbeddingRefreshResult;
+}> {
+  const descriptionQuery = await v9Runtime
+    .refreshApprovedPetRelatedQueryEmbedding(pet);
+  const descriptionDocument = await v9Runtime
+    .refreshApprovedPetRelatedDocumentEmbedding(pet);
+  return { descriptionQuery, descriptionDocument };
+}
 
 export async function refreshApprovedPetRelatedV10Embeddings(
   pet: PublicPet,

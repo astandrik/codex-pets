@@ -6,6 +6,7 @@ import {
   type RelatedPetCandidate,
 } from "@/lib/pets/related-pets";
 import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
+import type { ResolvedRelatedPetAnnotation } from "@/lib/pets/related-pets-annotation-contract.mjs";
 
 export const RELATED_PETS_RRF_K = 60;
 export const RELATED_PETS_TEXT_WEIGHT = 1;
@@ -32,6 +33,8 @@ export type RelatedPetsRankingProfile = {
   textMinSimilarity: number;
   topicMinSimilarity?: number;
   topicWeight?: number;
+  annotationMinSimilarity?: number;
+  annotationWeight?: number;
   metadataWeight?: number;
   visualMinSimilarity: number | null;
   visualWeight: number;
@@ -41,12 +44,20 @@ export type RelatedPetsRankingStrategy =
   | "legacy-v7"
   | "theme-first-v8"
   | "text-first-v9"
-  | "description-theme-v10";
+  | "description-theme-v10"
+  | "entity-controlled-v11";
 
 export type RelatedPetRankingTier =
   | "qualified"
   | "semantic_backfill"
-  | "metadata_fallback";
+  | "metadata_fallback"
+  | "canonical_entity"
+  | "franchise"
+  | "franchise_family_collection"
+  | "specific_archetype"
+  | "semantic_safe"
+  | "controlled_fallback"
+  | "conflict_fallback";
 
 export type RelatedPetRankingDiagnostic = {
   slug: string;
@@ -71,8 +82,16 @@ export type RelatedPetRankingDiagnostic = {
     metadata: number;
     text: number;
     topic?: number;
+    annotation?: number;
     visual: number;
   };
+  matchedFacets?: string[];
+  franchiseConflict?: boolean;
+  annotationRank?: number | null;
+  annotationSimilarity?: number | null;
+  annotationMinSimilarity?: number;
+  passesAnnotationThreshold?: boolean;
+  fallbackProvenance?: "annotation_then_description" | "conflict_contract" | null;
 };
 
 export type RelatedPetsRankingResult = {
@@ -80,6 +99,12 @@ export type RelatedPetsRankingResult = {
   diagnostics: RelatedPetRankingDiagnostic[];
   qualifiedCount: number;
   semanticBackfillCount: number;
+};
+
+export type RelatedPetsPrecomputedMatches = {
+  text: readonly RelatedPetSimilarity[];
+  annotation: readonly RelatedPetSimilarity[];
+  visual: readonly RelatedPetSimilarity[];
 };
 
 export function decodeRelatedPetVector(
@@ -388,6 +413,10 @@ export function rankRelatedPets(input: {
   topicQueryVectors?: ReadonlyMap<string, readonly number[]>;
   topicDocumentVectors?: ReadonlyMap<string, readonly number[]>;
   visualVectors?: ReadonlyMap<string, readonly number[]>;
+  annotationQueryVectors?: ReadonlyMap<string, readonly number[]>;
+  annotationDocumentVectors?: ReadonlyMap<string, readonly number[]>;
+  annotations?: ReadonlyMap<string, ResolvedRelatedPetAnnotation>;
+  precomputedMatches?: RelatedPetsPrecomputedMatches;
   profile: RelatedPetsRankingProfile;
   limit?: number;
 }): string[] {
@@ -402,6 +431,10 @@ export function rankRelatedPetsWithDiagnostics(input: {
   topicQueryVectors?: ReadonlyMap<string, readonly number[]>;
   topicDocumentVectors?: ReadonlyMap<string, readonly number[]>;
   visualVectors?: ReadonlyMap<string, readonly number[]>;
+  annotationQueryVectors?: ReadonlyMap<string, readonly number[]>;
+  annotationDocumentVectors?: ReadonlyMap<string, readonly number[]>;
+  annotations?: ReadonlyMap<string, ResolvedRelatedPetAnnotation>;
+  precomputedMatches?: RelatedPetsPrecomputedMatches;
   profile: RelatedPetsRankingProfile;
   limit?: number;
 }): RelatedPetsRankingResult {
@@ -412,6 +445,12 @@ export function rankRelatedPetsWithDiagnostics(input: {
     }
   }
   const strategy = input.profile.strategy ?? "legacy-v7";
+  if (strategy === "entity-controlled-v11") {
+    return rankEntityControlledRelatedPets({
+      ...input,
+      candidates: Array.from(candidatesBySlug.values()),
+    });
+  }
   const metadataRanking = strategy === "description-theme-v10"
     ? rankRelatedPetsByTopicMetadata(
         Array.from(candidatesBySlug.values()),
@@ -465,6 +504,265 @@ export function rankRelatedPetsWithDiagnostics(input: {
     ...input.profile,
     limit: input.limit,
   });
+}
+
+type V11Tier = Extract<
+  RelatedPetRankingTier,
+  | "canonical_entity"
+  | "franchise"
+  | "franchise_family_collection"
+  | "specific_archetype"
+  | "semantic_safe"
+  | "controlled_fallback"
+  | "conflict_fallback"
+>;
+
+const V11_TIER_ORDER: Readonly<Record<V11Tier, number>> = {
+  canonical_entity: 1,
+  franchise: 2,
+  franchise_family_collection: 3,
+  specific_archetype: 4,
+  semantic_safe: 5,
+  controlled_fallback: 6,
+  conflict_fallback: 7,
+};
+
+function rankEntityControlledRelatedPets(input: {
+  source: Pick<RelatedPetCandidate, "slug" | "kind" | "tags">;
+  candidates: readonly RelatedPetCandidate[];
+  textQueryVectors?: ReadonlyMap<string, readonly number[]>;
+  textDocumentVectors?: ReadonlyMap<string, readonly number[]>;
+  visualVectors?: ReadonlyMap<string, readonly number[]>;
+  annotationQueryVectors?: ReadonlyMap<string, readonly number[]>;
+  annotationDocumentVectors?: ReadonlyMap<string, readonly number[]>;
+  annotations?: ReadonlyMap<string, ResolvedRelatedPetAnnotation>;
+  precomputedMatches?: RelatedPetsPrecomputedMatches;
+  profile: RelatedPetsRankingProfile;
+  limit?: number;
+}): RelatedPetsRankingResult {
+  const annotationMinSimilarity = input.profile.annotationMinSimilarity;
+  if (annotationMinSimilarity === undefined) {
+    throw new Error("V11 requires annotationMinSimilarity.");
+  }
+  assertCosineThreshold("annotation", annotationMinSimilarity);
+  assertCosineThreshold("text", input.profile.textMinSimilarity);
+  if (input.profile.visualMinSimilarity !== null) {
+    assertCosineThreshold("visual", input.profile.visualMinSimilarity);
+  }
+
+  const candidateSlugs = uniqueKnownSlugs(
+    input.candidates.map(({ slug }) => slug),
+    input.source.slug,
+  );
+  const textMatches = input.precomputedMatches?.text ??
+    (input.textQueryVectors && input.textDocumentVectors
+    ? rankRelatedPetVectorMatches(
+        input.source.slug,
+        input.textQueryVectors,
+        input.textDocumentVectors,
+      )
+    : []);
+  const annotationMatches = input.precomputedMatches?.annotation ??
+    (input.annotationQueryVectors && input.annotationDocumentVectors
+      ? rankRelatedPetVectorMatches(
+          input.source.slug,
+          input.annotationQueryVectors,
+          input.annotationDocumentVectors,
+        )
+      : []);
+  const visualMatches = input.precomputedMatches?.visual ??
+    (input.visualVectors
+    ? rankRelatedPetVectorMatches(input.source.slug, input.visualVectors)
+    : []);
+  const textRanks = rankingPositions(textMatches);
+  const annotationRanks = rankingPositions(annotationMatches);
+  const visualRanks = rankingPositions(visualMatches);
+  const textScores = new Map(textMatches.map(({ slug, score }) => [slug, score]));
+  const annotationScores = new Map(
+    annotationMatches.map(({ slug, score }) => [slug, score]),
+  );
+  const visualScores = new Map(
+    visualMatches.map(({ slug, score }) => [slug, score]),
+  );
+  const sourceAnnotation = input.annotations?.get(input.source.slug) ?? null;
+  const diagnostics = candidateSlugs.map((slug, metadataIndex) => {
+    const candidateAnnotation = input.annotations?.get(slug) ?? null;
+    const textSimilarity = textScores.get(slug) ?? null;
+    const annotationSimilarity = annotationScores.get(slug) ?? null;
+    const visualSimilarity = visualScores.get(slug) ?? null;
+    const passesText = textSimilarity !== null &&
+      textSimilarity >= input.profile.textMinSimilarity;
+    const passesAnnotation = annotationSimilarity !== null &&
+      annotationSimilarity >= annotationMinSimilarity;
+    const passesVisual = input.profile.visualMinSimilarity !== null &&
+      visualSimilarity !== null &&
+      visualSimilarity >= input.profile.visualMinSimilarity;
+    const relation = classifyV11Relation(
+      sourceAnnotation,
+      candidateAnnotation,
+      passesText,
+      passesAnnotation,
+    );
+    const qualified = V11_TIER_ORDER[relation.tier] <= 5;
+    const contributions = qualified
+      ? {
+          metadata: 0,
+          text: rrfContribution(textRanks.get(slug) ?? null, 1),
+          annotation: rrfContribution(
+            annotationRanks.get(slug) ?? null,
+            input.profile.annotationWeight ?? 0,
+          ),
+          visual: passesVisual
+            ? rrfContribution(
+                visualRanks.get(slug) ?? null,
+                input.profile.visualWeight,
+              )
+            : 0,
+        }
+      : { metadata: 0, text: 0, annotation: 0, visual: 0 };
+    return {
+      slug,
+      tier: relation.tier,
+      metadataRank: metadataIndex + 1,
+      textRank: textRanks.get(slug) ?? null,
+      topicRank: null,
+      annotationRank: annotationRanks.get(slug) ?? null,
+      visualRank: visualRanks.get(slug) ?? null,
+      textSimilarity,
+      topicSimilarity: null,
+      annotationSimilarity,
+      visualSimilarity,
+      sharedTagCount: 0,
+      sharedTagRank: null,
+      textMinSimilarity: input.profile.textMinSimilarity,
+      topicMinSimilarity: null,
+      annotationMinSimilarity,
+      visualMinSimilarity: input.profile.visualMinSimilarity,
+      passesTextThreshold: passesText,
+      passesTopicThreshold: false,
+      passesAnnotationThreshold: passesAnnotation,
+      passesVisualThreshold: passesVisual,
+      matchedFacets: relation.matchedFacets,
+      franchiseConflict: relation.franchiseConflict,
+      fallbackProvenance: relation.tier === "controlled_fallback"
+        ? "annotation_then_description" as const
+        : relation.tier === "conflict_fallback"
+          ? "conflict_contract" as const
+          : null,
+      contributions,
+      score:
+        contributions.text + contributions.annotation + contributions.visual,
+    } satisfies RelatedPetRankingDiagnostic;
+  });
+  const selected = diagnostics.toSorted(compareV11Diagnostics).slice(
+    0,
+    normalizedLimit(input.limit),
+  );
+  return {
+    slugs: selected.map(({ slug }) => slug),
+    diagnostics: selected,
+    qualifiedCount: selected.filter(({ tier }) =>
+      V11_TIER_ORDER[tier as V11Tier] <= 5
+    ).length,
+    semanticBackfillCount: selected.filter(({ tier }) =>
+      tier === "controlled_fallback" || tier === "conflict_fallback"
+    ).length,
+  };
+}
+
+function classifyV11Relation(
+  source: ResolvedRelatedPetAnnotation | null,
+  candidate: ResolvedRelatedPetAnnotation | null,
+  passesText: boolean,
+  passesAnnotation: boolean,
+): { tier: V11Tier; matchedFacets: string[]; franchiseConflict: boolean } {
+  const entity = source?.entity && source.entity === candidate?.entity
+    ? [source.entity]
+    : [];
+  const franchises = intersection(source?.franchises, candidate?.franchises);
+  const families = intersection(
+    source?.franchiseFamilies,
+    candidate?.franchiseFamilies,
+  );
+  const collections = intersection(source?.collections, candidate?.collections);
+  const archetypes = intersection(
+    source?.specificArchetypes,
+    candidate?.specificArchetypes,
+  );
+  const franchiseConflict = hasV11FranchiseConflict(
+    source,
+    candidate,
+    collections,
+    archetypes,
+  );
+  if (entity.length > 0) {
+    return { tier: "canonical_entity", matchedFacets: entity, franchiseConflict };
+  }
+  if (franchises.length > 0) {
+    return { tier: "franchise", matchedFacets: franchises, franchiseConflict };
+  }
+  if (families.length > 0 || collections.length > 0) {
+    return {
+      tier: "franchise_family_collection",
+      matchedFacets: [...families, ...collections],
+      franchiseConflict,
+    };
+  }
+  if (archetypes.length > 0 && passesText && passesAnnotation) {
+    return { tier: "specific_archetype", matchedFacets: archetypes, franchiseConflict };
+  }
+  if (passesText && passesAnnotation && !franchiseConflict) {
+    return { tier: "semantic_safe", matchedFacets: [], franchiseConflict };
+  }
+  return {
+    tier: franchiseConflict ? "conflict_fallback" : "controlled_fallback",
+    matchedFacets: [],
+    franchiseConflict,
+  };
+}
+
+function hasV11FranchiseConflict(
+  source: ResolvedRelatedPetAnnotation | null,
+  candidate: ResolvedRelatedPetAnnotation | null,
+  sharedCollections: readonly string[],
+  sharedArchetypes: readonly string[],
+): boolean {
+  if (!source || !candidate || sharedCollections.length > 0 || sharedArchetypes.length > 0) {
+    return false;
+  }
+  const sourceKeys = [...source.franchises, ...source.franchiseFamilies];
+  const candidateKeys = [...candidate.franchises, ...candidate.franchiseFamilies];
+  return sourceKeys.length > 0 &&
+    candidateKeys.length > 0 &&
+    intersection(sourceKeys, candidateKeys).length === 0;
+}
+
+function intersection(
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): string[] {
+  const rightSet = new Set(right ?? []);
+  return (left ?? []).filter((value) => rightSet.has(value)).toSorted();
+}
+
+function compareV11Diagnostics(
+  left: RelatedPetRankingDiagnostic,
+  right: RelatedPetRankingDiagnostic,
+): number {
+  const tierDelta = V11_TIER_ORDER[left.tier as V11Tier] -
+    V11_TIER_ORDER[right.tier as V11Tier];
+  if (tierDelta !== 0) return tierDelta;
+  if (left.tier === "controlled_fallback" || left.tier === "conflict_fallback") {
+    return (right.annotationSimilarity ?? -2) -
+        (left.annotationSimilarity ?? -2) ||
+      (right.textSimilarity ?? -2) - (left.textSimilarity ?? -2) ||
+      left.slug.localeCompare(right.slug);
+  }
+  return right.score - left.score ||
+    (right.matchedFacets?.length ?? 0) - (left.matchedFacets?.length ?? 0) ||
+    (right.annotationSimilarity ?? -2) - (left.annotationSimilarity ?? -2) ||
+    (right.textSimilarity ?? -2) - (left.textSimilarity ?? -2) ||
+    left.slug.localeCompare(right.slug);
 }
 
 function knownMatches(
@@ -681,7 +979,7 @@ function rankSharedTagCounts(
 }
 
 function assertCosineThreshold(
-  modality: "text" | "topic" | "visual",
+  modality: "text" | "topic" | "annotation" | "visual",
   value: number,
 ): void {
   if (!Number.isFinite(value) || value < -1 || value > 1) {

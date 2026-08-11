@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
+import { enqueueApprovalPreparation } from "@/lib/pets/approval-preparations-repository";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
 import {
   invalidateRelatedPetsBestEffort,
@@ -13,7 +14,11 @@ import {
   refreshApprovedPetRelatedQueryEmbedding,
   refreshApprovedPetRelatedV10Embeddings,
 } from "@/lib/pets/related-pets-query-runtime";
-import { moderatePet } from "@/lib/pets/repository";
+import {
+  getPetForApprovalPreparationById,
+  moderatePet,
+} from "@/lib/pets/repository";
+import { getRelatedPetsState } from "@/lib/pets/related-pets-repository";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { petSearchRuntimeConfig } from "@/lib/pets/search-provider-runtime";
 import { refreshApprovedPetSearchEmbedding } from "@/lib/pets/search-runtime";
@@ -33,6 +38,51 @@ export async function POST(
   }
 
   const { id } = await params;
+  if (process.env.PET_RELATED_PREAPPROVAL_ENABLED === "true") {
+    if (!isV11Strategy(CURRENT_RELATED_PETS_RANKING_PROFILE.strategy)) {
+      return NextResponse.json(
+        { error: "preapproval_profile_incompatible" },
+        { status: 503 },
+      );
+    }
+    const pendingPet = await getPetForApprovalPreparationById(id);
+    if (!pendingPet || pendingPet.status !== "pending") {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    const relatedState = await getRelatedPetsState();
+    if (
+      relatedState?.status !== "ready" ||
+      !relatedState.activeGenerationId
+    ) {
+      return NextResponse.json(
+        { error: "related_generation_unavailable" },
+        { status: 503 },
+      );
+    }
+    const preparation = await enqueueApprovalPreparation({
+      petId: pendingPet.id,
+      petSlug: pendingPet.slug,
+      petUpdatedAt: pendingPet.updatedAt,
+      reviewerId: principal.userId,
+      rankingRevision: CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
+      expectedActiveGenerationId: relatedState.activeGenerationId,
+      now: new Date().toISOString(),
+    });
+    if (!preparation) {
+      return NextResponse.json(
+        { error: "preparation_storage_unavailable" },
+        { status: 503 },
+      );
+    }
+    return NextResponse.json(
+      {
+        ok: true,
+        status: "preparing",
+        preparationId: preparation.preparationId,
+      },
+      { status: 202 },
+    );
+  }
   const pet = await moderatePet({
     petId: id,
     reviewerId: principal.userId,
@@ -183,4 +233,8 @@ function isReadyRefreshStatus(
 
 function isV10Strategy(strategy: string): boolean {
   return strategy === "description-theme-v10";
+}
+
+function isV11Strategy(strategy: string): boolean {
+  return strategy === "entity-controlled-v11";
 }

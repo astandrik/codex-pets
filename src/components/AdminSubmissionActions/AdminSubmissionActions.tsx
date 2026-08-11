@@ -61,12 +61,49 @@ export function AdminSubmissionActions({ petId }: AdminSubmissionActionsProps) {
         notifyFailure("Approve", response.status);
         return;
       }
+      if (response.status === 202) {
+        const payload = await response.json() as { preparationId?: unknown };
+        if (typeof payload.preparationId !== "string") {
+          notifyFailure("Approve", 500);
+          return;
+        }
+        const status = await waitForApprovalPreparation(payload.preparationId);
+        if (status !== "succeeded") {
+          add({
+            name: `pet-mod-${petId}-preparation`,
+            theme: "danger",
+            title: status === "manual_review"
+              ? "Approval needs attention"
+              : "Approval preparation timed out",
+          });
+          return;
+        }
+      }
       trackGoal("pet_review_approve");
       notifySuccess("Pet approved");
       router.refresh();
     } finally {
       setBusy(false);
     }
+  }
+
+  async function waitForApprovalPreparation(
+    preparationId: string,
+  ): Promise<"succeeded" | "manual_review" | "timeout"> {
+    for (let attempt = 0; attempt < 150; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      const url = new URL(
+        withBasePath(`/api/admin/submissions/${petId}/approval-preparation`),
+        window.location.origin,
+      );
+      url.searchParams.set("preparationId", preparationId);
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) continue;
+      const payload = await response.json() as { status?: unknown };
+      if (payload.status === "succeeded") return "succeeded";
+      if (payload.status === "manual_review") return "manual_review";
+    }
+    return "timeout";
   }
 
   async function reject() {

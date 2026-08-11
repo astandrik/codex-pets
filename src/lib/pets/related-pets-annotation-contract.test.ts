@@ -1,0 +1,236 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+  buildRelatedPetAnnotationInput,
+  buildRelatedPetAnnotationText,
+  createRelatedPetAnnotationEmbeddingSourceHash,
+  createRelatedPetAnnotationSourceHash,
+  parseRelatedPetAnnotationProposal,
+  resolveRelatedPetAnnotation,
+  listUnresolvedStrongRelations,
+} from "@/lib/pets/related-pets-annotation-contract.mjs";
+
+const pet = {
+  slug: "vi",
+  displayName: "Vi",
+  description: "An Arcane fighter from Piltover.",
+  kind: "character" as const,
+  tags: ["Arcane", "anime", "public-domain"],
+};
+
+const proposal = {
+  entity: {
+    key: "Vi",
+    aliases: ["Violet"],
+    confidence: "high",
+    evidence: ["name", "description"],
+  },
+  franchises: [relation("Arcane", "high", ["description"])],
+  franchise_families: [
+    relation("League of Legends", "high", ["world_knowledge"]),
+  ],
+  collections: [],
+  specific_archetypes: [
+    relation("Girl", "high", ["description"]),
+    relation("Blue", "high", ["tag"]),
+    relation("Cartoon", "high", ["description"]),
+    relation("Punk Fighter", "high", ["description"]),
+  ],
+  themes: [relation("Rebellious Hero", "medium", ["description"])],
+  media_origins: [relation("Animated Series", "medium", ["description"])],
+};
+
+describe("related pet V11 annotation contract", () => {
+  it("accepts only card-supported strong facets and blocks broad labels", () => {
+    const resolved = resolveRelatedPetAnnotation({ slug: pet.slug, proposal });
+
+    expect(resolved).toEqual({
+      schemaVersion: 1,
+      entity: "vi",
+      aliases: ["Violet"],
+      franchises: ["arcane"],
+      franchiseFamilies: [],
+      collections: [],
+      specificArchetypes: ["punk-fighter"],
+      themes: ["rebellious-hero"],
+      mediaOrigins: ["animated-series"],
+    });
+  });
+
+  it("blocks broad entity proposals and strong override values", () => {
+    const broadEntity = {
+      ...proposal,
+      entity: {
+        key: "Girl",
+        aliases: [],
+        confidence: "high",
+        evidence: ["description"],
+      },
+      franchise_families: [],
+    };
+    expect(resolveRelatedPetAnnotation({ slug: pet.slug, proposal: broadEntity }))
+      .toMatchObject({ entity: null, aliases: [] });
+    expect(() => resolveRelatedPetAnnotation({
+      slug: pet.slug,
+      proposal,
+      overrides: {
+        [pet.slug]: {
+          reason: "Invalid generic override used by the regression test.",
+          collections: ["anime"],
+        },
+      },
+    })).toThrow(/collections contains a disallowed broad label/i);
+  });
+
+  it("applies field-replacement overrides and the frozen Soviet collection", () => {
+    const empty = {
+      ...proposal,
+      entity: { key: null, aliases: [], confidence: "none", evidence: [] },
+      franchises: [],
+      franchise_families: [],
+      specific_archetypes: [],
+      themes: [],
+      media_origins: [],
+    };
+    const resolved = resolveRelatedPetAnnotation({
+      slug: "cheburashka",
+      proposal: empty,
+    });
+    expect(resolved.collections).toEqual(["soviet-animation"]);
+
+    const replaced = resolveRelatedPetAnnotation({
+      slug: "vi",
+      proposal,
+      overrides: {
+        vi: {
+          reason: "Verified from the card source.",
+          entity: null,
+          franchises: ["arcane-series"],
+        },
+      },
+    });
+    expect(replaced.entity).toBeNull();
+    expect(replaced.franchises).toEqual(["arcane-series"]);
+    expect(replaced.specificArchetypes).toEqual(["punk-fighter"]);
+  });
+
+  it("builds deterministic controlled text without raw description or tags", () => {
+    const resolved = resolveRelatedPetAnnotation({ slug: pet.slug, proposal });
+    const text = buildRelatedPetAnnotationText(resolved);
+    expect(text).toContain("entity: vi");
+    expect(text).toContain("franchises: arcane");
+    expect(text).not.toContain(pet.description);
+    expect(text).not.toContain("public-domain");
+    expect(buildRelatedPetAnnotationInput(pet)).toBe(
+      [
+        "name: Vi",
+        "kind: character",
+        "description: An Arcane fighter from Piltover.",
+        "tags: anime, arcane, public-domain",
+      ].join("\n"),
+    );
+  });
+
+  it("changes hashes only when their controlled inputs change", () => {
+    const first = createRelatedPetAnnotationSourceHash({
+      pet,
+      modelUri: "gpt://folder/qwen3.6-35b-a3b",
+    });
+    const same = createRelatedPetAnnotationSourceHash({
+      pet: { ...pet, tags: pet.tags.toReversed() },
+      modelUri: "gpt://folder/qwen3.6-35b-a3b",
+    });
+    const changed = createRelatedPetAnnotationSourceHash({
+      pet: { ...pet, description: `${pet.description} Updated.` },
+      modelUri: "gpt://folder/qwen3.6-35b-a3b",
+    });
+    expect(same).toBe(first);
+    expect(changed).not.toBe(first);
+
+    const vectorHash = createRelatedPetAnnotationEmbeddingSourceHash({
+      modelRevision: RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+      role: "document",
+      annotationSourceHash: first,
+      annotationText: "entity: vi",
+    });
+    expect(vectorHash).not.toBe(
+      createRelatedPetAnnotationEmbeddingSourceHash({
+        modelRevision: RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+        role: "query",
+        annotationSourceHash: first,
+        annotationText: "entity: vi",
+      }),
+    );
+  });
+
+  it("rejects schema drift and invalid confidence combinations", () => {
+    expect(() => parseRelatedPetAnnotationProposal({ ...proposal, extra: [] }))
+      .toThrow(/unknown field/i);
+    expect(() => parseRelatedPetAnnotationProposal({
+      ...proposal,
+      entity: { key: null, aliases: [], confidence: "high", evidence: [] },
+    })).toThrow(/confidence must be none/i);
+  });
+
+  it("requires an explicit override for world-knowledge-only strong facets", () => {
+    expect(listUnresolvedStrongRelations({ slug: pet.slug, proposal }))
+      .toEqual(["franchiseFamilies"]);
+    expect(listUnresolvedStrongRelations({
+      slug: pet.slug,
+      proposal,
+      overrides: {
+        [pet.slug]: {
+          reason: "Verified against the source card before calibration.",
+          franchiseFamilies: ["league-of-legends"],
+        },
+      },
+    })).toEqual([]);
+  });
+
+  it("does not copy aliases from an unverified entity into controlled text", () => {
+    const worldOnly = {
+      ...proposal,
+      entity: {
+        key: "Vi",
+        aliases: ["Violet"],
+        confidence: "medium",
+        evidence: ["world_knowledge"],
+      },
+      franchise_families: [],
+      themes: [],
+    };
+    const resolved = resolveRelatedPetAnnotation({
+      slug: pet.slug,
+      proposal: worldOnly,
+      overrides: {
+        [pet.slug]: {
+          reason: "The proposal is intentionally not promoted.",
+          entity: null,
+        },
+      },
+    });
+    expect(resolved.entity).toBeNull();
+    expect(resolved.aliases).toEqual([]);
+  });
+
+  it("requires overrides for weak world-knowledge-only values too", () => {
+    const worldOnlyTheme = {
+      ...proposal,
+      franchise_families: [],
+      themes: [relation("Action", "medium", ["world_knowledge"])],
+    };
+    expect(listUnresolvedStrongRelations({
+      slug: pet.slug,
+      proposal: worldOnlyTheme,
+    })).toEqual(["themes"]);
+  });
+});
+
+function relation(
+  key: string,
+  confidence: "high" | "medium" | "none",
+  evidence: Array<"name" | "description" | "tag" | "world_knowledge">,
+) {
+  return { key, confidence, evidence };
+}

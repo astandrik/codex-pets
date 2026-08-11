@@ -15,9 +15,16 @@ import {
 } from "@/lib/pets/search-vision-contract";
 import {
   createRelatedPetsRebuildService,
+  prepareRelatedPetsRankingInputs,
   RelatedPetsRebuildError,
   type RelatedPetsRebuildProfile,
 } from "@/lib/pets/related-pets-rebuild";
+import {
+  buildRelatedPetAnnotationText,
+  createRelatedPetAnnotationEmbeddingSourceHash,
+  createRelatedPetAnnotationSourceHash,
+  resolveRelatedPetAnnotation,
+} from "@/lib/pets/related-pets-annotation-contract.mjs";
 import type {
   RelatedPetsSnapshot,
   RelatedPetsState,
@@ -574,6 +581,129 @@ function createHarness(options: {
 }
 
 describe("related pets rebuild service", () => {
+  it("accepts only source-current V11 annotations and both vector roles", () => {
+    const pets = [pet("source"), pet("peer-a")];
+    const annotationRevision = "annotation-v11";
+    const annotationQueryRevision = "annotation-query-v11";
+    const annotationDocumentRevision = "annotation-document-v11";
+    const modelUri = "gpt://folder/qwen";
+    const annotations = pets.map((item) => {
+      const proposal = {
+        entity: {
+          key: item.slug,
+          aliases: [],
+          confidence: "high" as const,
+          evidence: ["name" as const],
+        },
+        franchises: [],
+        franchiseFamilies: [],
+        collections: [],
+        specificArchetypes: [],
+        themes: [],
+        mediaOrigins: [],
+      };
+      const annotation = resolveRelatedPetAnnotation({ slug: item.slug, proposal });
+      return {
+        slug: item.slug,
+        sourceHash: createRelatedPetAnnotationSourceHash({
+          pet: item,
+          modelUri,
+          annotationRevision,
+        }),
+        proposalJson: JSON.stringify(proposal),
+        annotationJson: JSON.stringify(annotation),
+        annotationText: buildRelatedPetAnnotationText(annotation),
+        updatedAt: "2026-08-11T00:00:00.000Z",
+      };
+    });
+    const annotationVectors = (
+      revision: string,
+      role: "query" | "document",
+    ) => annotations.map((annotation) => rawVector({
+      slug: annotation.slug,
+      modelRevision: revision,
+      sourceHash: createRelatedPetAnnotationEmbeddingSourceHash({
+        modelRevision: revision,
+        role,
+        annotationRevision,
+        annotationSourceHash: annotation.sourceHash,
+        annotationText: annotation.annotationText,
+      }),
+    }));
+    const prepared = prepareRelatedPetsRankingInputs({
+      pets,
+      textQueryRows: pets.map((item) => rawVector({
+        slug: item.slug,
+        modelRevision: "description-query",
+        sourceHash: createRelatedPetQuerySourceHash(item, "description-query"),
+      })),
+      textRows: pets.map((item) => rawVector({
+        slug: item.slug,
+        modelRevision: "description-document",
+        sourceHash: createRelatedPetDocumentSourceHash(item, "description-document"),
+      })),
+      annotationQueryRows: annotationVectors(annotationQueryRevision, "query"),
+      annotationRows: annotationVectors(annotationDocumentRevision, "document"),
+      annotations,
+      annotationModelUri: modelUri,
+      visualRows: [],
+      captions: [],
+      profile: {
+        strategy: "entity-controlled-v11",
+        rankingRevision: "v11",
+        textRevision: "description-document",
+        textQueryRevision: "description-query",
+        textDimensions: 2,
+        textMinSimilarity: 0,
+        annotationRevision,
+        annotationQueryRevision,
+        annotationDocumentRevision,
+        annotationDimensions: 2,
+        annotationMinSimilarity: 0,
+        annotationWeight: 0.25,
+        visualRevision: "visual-v1",
+        visualCaptionRevision: "caption-v1",
+        visualDimensions: 2,
+        visualMinSimilarity: null,
+        visualWeight: 0,
+      },
+      visualContext: null,
+    });
+
+    expect(prepared.annotations.size).toBe(2);
+    expect(prepared.annotationQueryVectors.size).toBe(2);
+    expect(prepared.annotationDocumentVectors.size).toBe(2);
+  });
+
+  it("writes an inactive preparation generation without touching active state", async () => {
+    const initialState: RelatedPetsState = {
+      requestedGenerationId: "generation-v7",
+      activeGenerationId: "generation-v7",
+      previousGenerationId: "generation-v6",
+      status: "ready",
+      rankingRevision: profile.rankingRevision,
+      failureReason: null,
+      updatedAt: "2026-08-03T09:00:00.000Z",
+    };
+    const harness = createHarness({ initialState });
+
+    await expect(harness.service.prepareGeneration({
+      generationId: "generation-prepared",
+      candidatePets: [pet("source"), pet("peer-a"), pet("peer-b")],
+      includeVisual: true,
+    })).resolves.toMatchObject({
+      generationId: "generation-prepared",
+      coverage: { approvedPetCount: 3, snapshotCount: 3 },
+    });
+
+    expect(harness.mutations).toEqual([
+      "write:source",
+      "write:peer-a",
+      "write:peer-b",
+    ]);
+    expect(harness.state).toEqual(initialState);
+  });
+
   it("publishes every approved source with validated text and visual vectors", async () => {
     const harness = createHarness();
 

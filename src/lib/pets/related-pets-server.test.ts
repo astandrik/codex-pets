@@ -102,6 +102,9 @@ describe("createRelatedPetsResolver", () => {
       "9f87654d-1234-4abc-8def-1234567890ab",
       "source",
     );
+    expect(deps.getCandidates).toHaveBeenCalledWith(
+      "9f87654d-1234-4abc-8def-1234567890ab",
+    );
     expect(deps.log).toHaveBeenCalledTimes(1);
     expect(deps.log).toHaveBeenCalledWith("info", {
       operation: "snapshot-read",

@@ -7,6 +7,15 @@ vi.mock("@/lib/auth/session", () => ({
 
 vi.mock("@/lib/pets/repository", () => ({
   moderatePet: vi.fn(),
+  getPetForApprovalPreparationById: vi.fn(),
+}));
+
+vi.mock("@/lib/pets/approval-preparations-repository", () => ({
+  enqueueApprovalPreparation: vi.fn(),
+}));
+
+vi.mock("@/lib/pets/related-pets-repository", () => ({
+  getRelatedPetsState: vi.fn(),
 }));
 
 vi.mock("@/lib/pets/search-runtime", () => ({
@@ -49,7 +58,12 @@ vi.mock("@/lib/pets/related-pets-server", () => ({
 import { POST } from "@/app/api/admin/submissions/[id]/approve/route";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
-import { moderatePet } from "@/lib/pets/repository";
+import { enqueueApprovalPreparation } from "@/lib/pets/approval-preparations-repository";
+import {
+  getPetForApprovalPreparationById,
+  moderatePet,
+} from "@/lib/pets/repository";
+import { getRelatedPetsState } from "@/lib/pets/related-pets-repository";
 import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
 import {
   refreshApprovedPetRelatedDocumentEmbedding,
@@ -115,6 +129,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("PET_RELATED_PREAPPROVAL_ENABLED", "false");
     petSearchRuntimeConfig.semantic = currentRelatedPetsSemanticConfig();
     vi.mocked(refreshApprovedPetSearchEmbedding).mockResolvedValue("updated");
     vi.mocked(refreshApprovedPetRelatedDocumentEmbedding).mockResolvedValue(
@@ -157,6 +172,89 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
       rankings: [{ sourceSlug: "boba", relatedSlugs: [] }],
       durationMs: 1,
     });
+  });
+
+  it("queues V11 preparation without approving the pet immediately", async () => {
+    vi.stubEnv("PET_RELATED_PREAPPROVAL_ENABLED", "true");
+    (
+      CURRENT_RELATED_PETS_RANKING_PROFILE as {
+        strategy: string;
+      }
+    ).strategy = "entity-controlled-v11";
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: null,
+      name: null,
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(getPetForApprovalPreparationById).mockResolvedValueOnce({
+      id: "pet_1",
+      slug: "tallulah",
+      displayName: "Tallulah",
+      description: "desc",
+      spritesheetUrl: "/api/assets/asset-123/spritesheet.webp",
+      petJsonUrl: "/api/assets/asset-123/pet.json",
+      zipUrl: "/api/assets/asset-123/pet.zip",
+      spritesheetExt: "webp",
+      kind: "character",
+      tags: [],
+      status: "pending",
+      ownerName: "user",
+      contactEmail: null,
+      createdAt: "2026-08-11T00:00:00.000Z",
+      updatedAt: "2026-08-11T00:00:00.000Z",
+      approvedAt: null,
+      downloadCount: 0,
+      installCount: 0,
+      likeCount: 0,
+    });
+    vi.mocked(getRelatedPetsState).mockResolvedValueOnce({
+      requestedGenerationId: "generation-v7",
+      activeGenerationId: "generation-v7",
+      previousGenerationId: "generation-v6",
+      status: "ready",
+      rankingRevision: "related-v7",
+      failureReason: null,
+      updatedAt: "2026-08-11T00:00:00.000Z",
+    });
+    vi.mocked(enqueueApprovalPreparation).mockResolvedValueOnce({
+      preparationId: "approval-1",
+      petId: "pet_1",
+      petSlug: "tallulah",
+      petUpdatedAt: "2026-08-11T00:00:00.000Z",
+      reviewerId: "admin_1",
+      rankingRevision: CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
+      expectedActiveGenerationId: "generation-v7",
+      preparedGenerationId: "",
+      status: "queued",
+      attempts: 0,
+      nextAttemptAt: "2026-08-11T00:00:00.000Z",
+      leaseOwner: "",
+      leaseUntil: "",
+      failureCode: "",
+      createdAt: "2026-08-11T00:00:00.000Z",
+      updatedAt: "2026-08-11T00:00:00.000Z",
+    });
+
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ id: "pet_1" }),
+    });
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toMatchObject({
+      status: "preparing",
+      preparationId: "approval-1",
+    });
+    expect(moderatePet).not.toHaveBeenCalled();
+    expect(enqueueApprovalPreparation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        petId: "pet_1",
+        petSlug: "tallulah",
+        reviewerId: "admin_1",
+        expectedActiveGenerationId: "generation-v7",
+      }),
+    );
   });
 
   it("rejects non-admin requests", async () => {
