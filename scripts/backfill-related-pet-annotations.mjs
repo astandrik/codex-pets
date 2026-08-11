@@ -18,6 +18,7 @@ import {
   createResponsesStructuredRequester,
 } from "../src/lib/pets/responses-structured-provider.mjs";
 import {
+  createStoredRelatedPetAnnotationProposalLoader,
   parseRelatedPetAnnotationBackfillArgs,
   runRelatedPetAnnotationBackfill,
 } from "./lib/related-pets-annotation-backfill.mjs";
@@ -37,7 +38,13 @@ const DEFAULT_TIMEOUT_MS = 180_000;
 
 export async function main(argv = process.argv.slice(2)) {
   const options = parseRelatedPetAnnotationBackfillArgs(argv);
-  const providerConfig = readProviderConfig(options.mode);
+  if (options.reuseProposalsFrom === RELATED_PETS_ANNOTATION_REVISION) {
+    throw new Error("Source and target annotation revisions must differ.");
+  }
+  const providerConfig = readProviderConfig(
+    options.mode,
+    !options.reuseProposalsFrom,
+  );
   const modelUri =
     `gpt://${providerConfig.folderId}/${RELATED_PETS_ANNOTATION_MODEL_NAME}`;
   const endpoint =
@@ -53,32 +60,40 @@ export async function main(argv = process.argv.slice(2)) {
     if (!(await driver.ready(15_000))) {
       throw new Error(`YDB driver is not ready for ${endpoint} ${database}.`);
     }
-    const createProposal = options.mode === "apply"
-      ? createResponsesStructuredRequester({
-          folderId: providerConfig.folderId,
-          apiKey: providerConfig.apiKey,
-          modelUri,
-          timeoutMs: providerConfig.timeoutMs,
-          systemPrompt: RELATED_PETS_ANNOTATION_SYSTEM_PROMPT,
-          responseSchemaName: RELATED_PETS_ANNOTATION_SCHEMA_NAME,
-          responseJsonSchema: RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
-          buildContent: (pet) => [{
-            type: "input_text",
-            text: [
-              RELATED_PETS_ANNOTATION_USER_PROMPT,
-              buildRelatedPetAnnotationInput(pet),
-            ].join("\n\n"),
-          }],
-          parseValue: parseRelatedPetAnnotationProposal,
-          onDiagnostic: (entry) =>
-            console.log(JSON.stringify({
-              action: "provider-diagnostic",
-              ...entry,
-            })),
-        })
-      : async () => {
-          throw new Error("Dry-run must not call the annotation provider.");
-        };
+    let createProposal;
+    if (options.mode !== "apply") {
+      createProposal = async () => {
+        throw new Error("Dry-run must not load an annotation proposal.");
+      };
+    } else if (options.reuseProposalsFrom) {
+      createProposal = createStoredRelatedPetAnnotationProposalLoader({
+        sourceRevision: options.reuseProposalsFrom,
+        getAnnotation: (revision, slug) => getAnnotation(driver, revision, slug),
+      });
+    } else {
+      createProposal = createResponsesStructuredRequester({
+        folderId: providerConfig.folderId,
+        apiKey: providerConfig.apiKey,
+        modelUri,
+        timeoutMs: providerConfig.timeoutMs,
+        systemPrompt: RELATED_PETS_ANNOTATION_SYSTEM_PROMPT,
+        responseSchemaName: RELATED_PETS_ANNOTATION_SCHEMA_NAME,
+        responseJsonSchema: RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
+        buildContent: (pet) => [{
+          type: "input_text",
+          text: [
+            RELATED_PETS_ANNOTATION_USER_PROMPT,
+            buildRelatedPetAnnotationInput(pet),
+          ].join("\n\n"),
+        }],
+        parseValue: parseRelatedPetAnnotationProposal,
+        onDiagnostic: (entry) =>
+          console.log(JSON.stringify({
+            action: "provider-diagnostic",
+            ...entry,
+          })),
+      });
+    }
     const summary = await runRelatedPetAnnotationBackfill({
       options,
       annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
@@ -97,13 +112,13 @@ export async function main(argv = process.argv.slice(2)) {
   }
 }
 
-function readProviderConfig(mode) {
+function readProviderConfig(mode, needsApiKey) {
   const folderId = process.env.YANDEX_AI_STUDIO_FOLDER_ID?.trim();
   if (!folderId) {
     throw new Error("YANDEX_AI_STUDIO_FOLDER_ID is required.");
   }
   let apiKey = "";
-  if (mode === "apply") {
+  if (mode === "apply" && needsApiKey) {
     const file = process.env.YANDEX_AI_STUDIO_API_KEY_FILE?.trim();
     if (!file) {
       throw new Error("--apply requires YANDEX_AI_STUDIO_API_KEY_FILE.");
@@ -170,7 +185,7 @@ async function getAnnotation(driver, revision, slug) {
   const result = await execute(driver, `
 DECLARE $revision AS Utf8;
 DECLARE $slug AS Utf8;
-SELECT source_hash
+SELECT source_hash, proposal_json
 FROM ${ANNOTATIONS_TABLE}
 WHERE annotation_revision = $revision AND pet_slug = $slug
 LIMIT 1;
@@ -179,7 +194,9 @@ LIMIT 1;
     $slug: TypedValues.utf8(slug),
   });
   const row = rows(result)[0];
-  return row ? { sourceHash: text(row, 0) } : null;
+  return row
+    ? { sourceHash: text(row, 0), proposalJson: text(row, 1) }
+    : null;
 }
 
 async function upsertAnnotation(driver, input) {

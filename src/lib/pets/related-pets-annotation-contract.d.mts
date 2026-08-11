@@ -52,6 +52,9 @@ export const RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA: object;
 export function parseRelatedPetAnnotationProposal(
   input: unknown,
 ): RelatedPetAnnotationProposal;
+export function parseStoredRelatedPetAnnotationProposal(
+  input: unknown,
+): RelatedPetAnnotationProposal;
 export function resolveRelatedPetAnnotation(input: {
   slug: string;
   proposal: unknown;

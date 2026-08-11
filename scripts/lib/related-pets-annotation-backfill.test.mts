@@ -9,6 +9,7 @@ import {
   buildRelatedPetAnnotationText,
 } from "../../src/lib/pets/related-pets-annotation-contract.mjs";
 import {
+  createStoredRelatedPetAnnotationProposalLoader,
   parseRelatedPetAnnotationBackfillArgs,
   runRelatedPetAnnotationBackfill,
   runRelatedPetAnnotationEmbeddingBackfill,
@@ -54,6 +55,7 @@ describe("related pet annotation backfill", () => {
       force: false,
       continueOnError: true,
       concurrency: 1,
+      reuseProposalsFrom: null,
     });
     expect(() => parseRelatedPetAnnotationBackfillArgs([
       "--apply",
@@ -61,6 +63,56 @@ describe("related pet annotation backfill", () => {
       "vi",
       "--continue-on-error",
     ])).toThrow(/cannot be combined/i);
+  });
+
+  it("parses a safe proposal source revision", () => {
+    expect(parseRelatedPetAnnotationBackfillArgs([
+      "--apply",
+      "--reuse-proposals-from",
+      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r3",
+    ])).toMatchObject({
+      reuseProposalsFrom:
+        "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r3",
+    });
+    expect(() => parseRelatedPetAnnotationBackfillArgs([
+      "--apply",
+      "--reuse-proposals-from=../../unsafe",
+    ])).toThrow(/valid revision/i);
+  });
+
+  it("loads and validates a stored provider proposal without calling AI", async () => {
+    const getAnnotation = vi.fn(async () => ({
+      proposalJson: JSON.stringify(proposal),
+    }));
+    const loadProposal = createStoredRelatedPetAnnotationProposalLoader({
+      sourceRevision:
+        "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r3",
+      getAnnotation,
+    });
+
+    await expect(loadProposal(pet)).resolves.toEqual(proposal);
+    expect(getAnnotation).toHaveBeenCalledWith(
+      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r3",
+      "vi",
+    );
+  });
+
+  it("fails safely when a stored provider proposal is missing or invalid", async () => {
+    const missing = createStoredRelatedPetAnnotationProposalLoader({
+      sourceRevision: "annotation-r3",
+      getAnnotation: async () => null,
+    });
+    const invalid = createStoredRelatedPetAnnotationProposalLoader({
+      sourceRevision: "annotation-r3",
+      getAnnotation: async () => ({ proposalJson: "SECRET_INVALID_JSON" }),
+    });
+
+    await expect(missing(pet)).rejects.toMatchObject({
+      reason: "source_annotation_missing",
+    });
+    await expect(invalid(pet)).rejects.toMatchObject({
+      reason: "source_annotation_invalid",
+    });
   });
 
   it("parses bounded concurrency and requires continue-on-error for parallel apply", () => {
@@ -264,5 +316,6 @@ function options(mode: "dry-run" | "apply") {
     force: false,
     continueOnError: false,
     concurrency: 1,
+    reuseProposalsFrom: null,
   };
 }

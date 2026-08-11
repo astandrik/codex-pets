@@ -5,10 +5,12 @@ import {
   createRelatedPetAnnotationEmbeddingSourceHash,
   listUnresolvedStrongRelations,
   parseResolvedRelatedPetAnnotation,
+  parseStoredRelatedPetAnnotationProposal,
   resolveRelatedPetAnnotation,
 } from "../../src/lib/pets/related-pets-annotation-contract.mjs";
 
 const SAFE_SLUG = /^[a-z0-9][a-z0-9-]{0,47}$/;
+const SAFE_REVISION = /^[a-z0-9][a-z0-9.-]{0,191}$/;
 const MAX_CONCURRENCY = 10;
 
 export function parseRelatedPetAnnotationBackfillArgs(argv) {
@@ -17,6 +19,7 @@ export function parseRelatedPetAnnotationBackfillArgs(argv) {
   let force = false;
   let continueOnError = false;
   let concurrency = 1;
+  let reuseProposalsFrom = null;
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -34,6 +37,19 @@ export function parseRelatedPetAnnotationBackfillArgs(argv) {
     }
     if (argument === "--continue-on-error") {
       continueOnError = true;
+      continue;
+    }
+    if (
+      argument === "--reuse-proposals-from" ||
+      argument?.startsWith("--reuse-proposals-from=")
+    ) {
+      const value = argument === "--reuse-proposals-from"
+        ? argv[index += 1]
+        : argument.slice("--reuse-proposals-from=".length);
+      if (!value || !SAFE_REVISION.test(value)) {
+        throw new Error("--reuse-proposals-from must be a valid revision.");
+      }
+      reuseProposalsFrom = value;
       continue;
     }
     if (argument === "--concurrency" || argument?.startsWith("--concurrency=")) {
@@ -73,7 +89,40 @@ export function parseRelatedPetAnnotationBackfillArgs(argv) {
   if (mode === "apply" && concurrency > 1 && !continueOnError) {
     throw new Error("Parallel --apply requires --continue-on-error.");
   }
-  return { mode, slug, force, continueOnError, concurrency };
+  return {
+    mode,
+    slug,
+    force,
+    continueOnError,
+    concurrency,
+    reuseProposalsFrom,
+  };
+}
+
+export function createStoredRelatedPetAnnotationProposalLoader({
+  sourceRevision,
+  getAnnotation,
+}) {
+  if (!SAFE_REVISION.test(sourceRevision)) {
+    throw new Error("Source annotation revision is invalid.");
+  }
+  return async (pet) => {
+    const stored = await getAnnotation(sourceRevision, pet.slug);
+    if (!stored?.proposalJson) {
+      throw Object.assign(new Error("source_annotation_missing"), {
+        reason: "source_annotation_missing",
+      });
+    }
+    try {
+      return parseStoredRelatedPetAnnotationProposal(
+        JSON.parse(stored.proposalJson),
+      );
+    } catch {
+      throw Object.assign(new Error("source_annotation_invalid"), {
+        reason: "source_annotation_invalid",
+      });
+    }
+  };
 }
 
 export async function runRelatedPetAnnotationBackfill({

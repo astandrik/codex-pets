@@ -1,9 +1,11 @@
 export const RELATED_PETS_ANNOTATION_CONTROL_REVISION =
-  "related-pets-annotation-control-2026-08-v11-r3";
+  "related-pets-annotation-control-2026-08-v11-r4";
 
 export const RELATED_PETS_ANNOTATION_ALIASES = Object.freeze({
   entities: Object.freeze({}),
   franchises: Object.freeze({
+    "kono-suba": "konosuba",
+    "neon-genesis-evangelion": "evangelion",
     ffxii: "final-fantasy-xii",
     "final-fantasy-12": "final-fantasy-xii",
     wh40k: "warhammer-40000",
@@ -32,6 +34,18 @@ export const RELATED_PETS_ANNOTATION_OVERRIDES = Object.freeze({
     themes: Object.freeze([]),
     mediaOrigins: Object.freeze([]),
   }),
+  ashe: Object.freeze({
+    reason: "The card's codex label is operational metadata, not a thematic collection.",
+    collections: Object.freeze([]),
+  }),
+  "ashe-detailed": Object.freeze({
+    reason: "The card's codex-pet label is operational metadata, not a thematic collection.",
+    collections: Object.freeze([]),
+  }),
+  aurelia: Object.freeze({
+    reason: "The card's codex label is operational metadata, not a thematic collection.",
+    collections: Object.freeze([]),
+  }),
   cheburashka: Object.freeze({
     reason: "The card confirms the named character and the Soviet animation collection; no broader franchise family is stated.",
     franchiseFamilies: Object.freeze([]),
@@ -45,9 +59,19 @@ export const RELATED_PETS_ANNOTATION_OVERRIDES = Object.freeze({
     reason: "The description explicitly identifies Final Fantasy X.",
     franchiseFamilies: Object.freeze(["final-fantasy"]),
   }),
+  "fischl-detailed": Object.freeze({
+    reason: "The card explicitly identifies Fischl from Genshin Impact.",
+    entity: "fischl",
+    aliases: Object.freeze([]),
+    franchises: Object.freeze(["genshin-impact"]),
+  }),
   "frieren-2": Object.freeze({
     reason: "The card says only that the pet is inspired by Frieren; no exact franchise identifier is stated.",
     franchises: Object.freeze([]),
+  }),
+  "gordon-freeman": Object.freeze({
+    reason: "The card's codex label is operational metadata, not a thematic collection.",
+    collections: Object.freeze([]),
   }),
   jinx: Object.freeze({
     reason: "The card has an Arcane tag but does not state a media-origin category.",
@@ -72,15 +96,31 @@ export const RELATED_PETS_ANNOTATION_OVERRIDES = Object.freeze({
     reason: "The card identifies Karlson but does not state an exact franchise identifier.",
     franchises: Object.freeze([]),
   }),
+  "lady-d-2": Object.freeze({
+    reason: "The card explicitly labels Lady D as a vampire.",
+    specificArchetypes: Object.freeze(["vampire"]),
+  }),
   "mai-shiranui": Object.freeze({
     reason: "The fighting-game tag directly confirms a video-game origin.",
     mediaOrigins: Object.freeze(["video-game"]),
+  }),
+  "master-of-terra": Object.freeze({
+    reason: "The card's codex label is operational metadata, not a thematic collection.",
+    collections: Object.freeze([]),
+  }),
+  "maybe-baby-2-2": Object.freeze({
+    reason: "The card's codex label is operational metadata, not a thematic collection.",
+    collections: Object.freeze([]),
   }),
   "megumin-3": Object.freeze({
     reason: "The description explicitly names KonoSuba but does not state a collection or media-origin category.",
     franchiseFamilies: Object.freeze(["konosuba"]),
     collections: Object.freeze([]),
     mediaOrigins: Object.freeze([]),
+  }),
+  "minty-codex-pet": Object.freeze({
+    reason: "The card's codex-pet label is operational metadata, not a thematic collection.",
+    collections: Object.freeze([]),
   }),
   "paprika-2": Object.freeze({
     reason: "The card describes the character and appearance but does not state a specific archetype.",
@@ -94,6 +134,14 @@ export const RELATED_PETS_ANNOTATION_OVERRIDES = Object.freeze({
     reason: "The description confirms a kunoichi archetype but no exact franchise.",
     franchises: Object.freeze([]),
     specificArchetypes: Object.freeze(["kunoichi"]),
+  }),
+  "sage-anime-girl": Object.freeze({
+    reason: "The card's codex label is operational metadata, not a thematic collection.",
+    collections: Object.freeze([]),
+  }),
+  slaanesh: Object.freeze({
+    reason: "The card's codex label is operational metadata, not a thematic collection.",
+    collections: Object.freeze([]),
   }),
   "sunny-sprout": Object.freeze({
     reason: "The card identifies Neznayka but does not state an exact franchise identifier.",

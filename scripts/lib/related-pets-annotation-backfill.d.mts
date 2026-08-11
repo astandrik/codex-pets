@@ -12,6 +12,7 @@ type RelatedPetAnnotationSourceHashInput = {
 type StoredRelatedPetAnnotation = {
   slug: string;
   sourceHash: string;
+  proposalJson?: string;
   annotationJson: string;
   annotationText: string;
 };
@@ -22,6 +23,7 @@ export type RelatedPetAnnotationBackfillOptions = {
   force: boolean;
   continueOnError: boolean;
   concurrency: number;
+  reuseProposalsFrom: string | null;
 };
 export type RelatedPetAnnotationBackfillSummary = {
   scanned: number;
@@ -34,6 +36,15 @@ export type RelatedPetAnnotationBackfillSummary = {
 export function parseRelatedPetAnnotationBackfillArgs(
   argv: readonly string[],
 ): RelatedPetAnnotationBackfillOptions;
+export function createStoredRelatedPetAnnotationProposalLoader(input: {
+  sourceRevision: string;
+  getAnnotation: (
+    revision: string,
+    slug: string,
+  ) => Promise<{ proposalJson?: string } | null>;
+}): (
+  pet: RelatedPetAnnotationInput,
+) => Promise<RelatedPetAnnotationProposal>;
 export function runRelatedPetAnnotationBackfill(input: {
   options: RelatedPetAnnotationBackfillOptions;
   annotationRevision: string;

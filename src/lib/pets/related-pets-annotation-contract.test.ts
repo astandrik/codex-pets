@@ -9,10 +9,14 @@ import {
   createRelatedPetAnnotationEmbeddingSourceHash,
   createRelatedPetAnnotationSourceHash,
   parseRelatedPetAnnotationProposal,
+  parseStoredRelatedPetAnnotationProposal,
   resolveRelatedPetAnnotation,
   listUnresolvedStrongRelations,
 } from "@/lib/pets/related-pets-annotation-contract.mjs";
-import { RELATED_PETS_ANNOTATION_OVERRIDES } from "@/lib/pets/related-pets-annotation-control.mjs";
+import {
+  RELATED_PETS_ANNOTATION_ALIASES,
+  RELATED_PETS_ANNOTATION_OVERRIDES,
+} from "@/lib/pets/related-pets-annotation-control.mjs";
 
 const pet = {
   slug: "vi",
@@ -51,29 +55,129 @@ describe("related pet V11 annotation contract", () => {
       RELATED_PETS_ANNOTATION_QUERY_REVISION,
       RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
     ]).toEqual([
-      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r3",
-      "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r3",
-      "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r3",
+      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r4",
+      "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r4",
+      "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r4",
     ]);
     expect(Object.keys(RELATED_PETS_ANNOTATION_OVERRIDES).toSorted()).toEqual([
       "2b-2",
+      "ashe",
+      "ashe-detailed",
+      "aurelia",
       "cheburashka",
       "chibi-wolf",
       "ffx-yuna",
+      "fischl-detailed",
       "foggy-hedgehog",
       "frieren-2",
+      "gordon-freeman",
       "jinx",
       "johnny",
       "karlson-2",
+      "lady-d-2",
       "lain",
       "mai-shiranui",
+      "master-of-terra",
+      "maybe-baby-2-2",
       "megumin-3",
+      "minty-codex-pet",
       "paprika-2",
       "round-bear",
       "ryuk-2",
+      "sage-anime-girl",
       "sakura",
+      "slaanesh",
       "sunny-sprout",
     ]);
+  });
+
+  it("canonicalizes the KonoSuba and Evangelion franchise IDs", () => {
+    expect(RELATED_PETS_ANNOTATION_ALIASES.franchises).toMatchObject({
+      "kono-suba": "konosuba",
+      "neon-genesis-evangelion": "evangelion",
+    });
+
+    const annotationFor = (slug: string, franchise: string) =>
+      resolveRelatedPetAnnotation({
+        slug,
+        proposal: {
+          ...proposal,
+          entity: {
+            key: slug,
+            aliases: [],
+            confidence: "high",
+            evidence: ["name"],
+          },
+          franchises: [relation(franchise, "high", ["description"])],
+          franchise_families: [],
+          specific_archetypes: [],
+          themes: [],
+          media_origins: [],
+        },
+      });
+
+    expect(annotationFor("aqua", "Kono Suba").franchises).toEqual([
+      "konosuba",
+    ]);
+    expect(annotationFor("aqua-2", "Konosuba").franchises).toEqual([
+      "konosuba",
+    ]);
+    expect(annotationFor("asuka", "Evangelion").franchises).toEqual([
+      "evangelion",
+    ]);
+    expect(
+      annotationFor("rei-ayanami", "Neon Genesis Evangelion").franchises,
+    ).toEqual(["evangelion"]);
+  });
+
+  it("removes operational collections from the nine audited cards", () => {
+    for (const slug of [
+      "ashe",
+      "ashe-detailed",
+      "aurelia",
+      "gordon-freeman",
+      "master-of-terra",
+      "maybe-baby-2-2",
+      "minty-codex-pet",
+      "sage-anime-girl",
+      "slaanesh",
+    ]) {
+      const resolved = resolveRelatedPetAnnotation({
+        slug,
+        proposal: {
+          ...proposal,
+          franchise_families: [],
+          collections: [relation("codex", "high", ["tag"])],
+        },
+      });
+      expect(resolved.collections, slug).toEqual([]);
+    }
+  });
+
+  it("adds the two card-supported frozen-case facets", () => {
+    const emptyProposal = {
+      ...proposal,
+      entity: { key: null, aliases: [], confidence: "none", evidence: [] },
+      franchises: [],
+      franchise_families: [],
+      collections: [],
+      specific_archetypes: [],
+      themes: [],
+      media_origins: [],
+    };
+
+    expect(resolveRelatedPetAnnotation({
+      slug: "fischl-detailed",
+      proposal: emptyProposal,
+    })).toMatchObject({
+      entity: "fischl",
+      aliases: [],
+      franchises: ["genshin-impact"],
+    });
+    expect(resolveRelatedPetAnnotation({
+      slug: "lady-d-2",
+      proposal: emptyProposal,
+    }).specificArchetypes).toEqual(["vampire"]);
   });
 
   it("keeps ambiguous 2B and Lain relations card-supported", () => {
@@ -241,6 +345,13 @@ describe("related pet V11 annotation contract", () => {
       ...proposal,
       entity: { key: null, aliases: [], confidence: "high", evidence: [] },
     })).toThrow(/confidence must be none/i);
+  });
+
+  it("parses the normalized proposal format stored in YDB", () => {
+    const normalized = parseRelatedPetAnnotationProposal(proposal);
+    expect(parseStoredRelatedPetAnnotationProposal(
+      JSON.parse(JSON.stringify(normalized)),
+    )).toEqual(normalized);
   });
 
   it("requires an explicit override for world-knowledge-only strong facets", () => {
