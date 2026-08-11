@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+  RELATED_PETS_ANNOTATION_QUERY_REVISION,
+  RELATED_PETS_ANNOTATION_REVISION,
   buildRelatedPetAnnotationInput,
   buildRelatedPetAnnotationText,
   createRelatedPetAnnotationEmbeddingSourceHash,
@@ -10,6 +12,7 @@ import {
   resolveRelatedPetAnnotation,
   listUnresolvedStrongRelations,
 } from "@/lib/pets/related-pets-annotation-contract.mjs";
+import { RELATED_PETS_ANNOTATION_OVERRIDES } from "@/lib/pets/related-pets-annotation-control.mjs";
 
 const pet = {
   slug: "vi",
@@ -42,6 +45,35 @@ const proposal = {
 };
 
 describe("related pet V11 annotation contract", () => {
+  it("keeps the corrected annotation family and audited overrides immutable", () => {
+    expect([
+      RELATED_PETS_ANNOTATION_REVISION,
+      RELATED_PETS_ANNOTATION_QUERY_REVISION,
+      RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+    ]).toEqual([
+      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r2",
+      "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r2",
+      "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r2",
+    ]);
+    expect(Object.keys(RELATED_PETS_ANNOTATION_OVERRIDES).toSorted()).toEqual([
+      "cheburashka",
+      "chibi-wolf",
+      "ffx-yuna",
+      "foggy-hedgehog",
+      "frieren-2",
+      "jinx",
+      "johnny",
+      "karlson-2",
+      "mai-shiranui",
+      "megumin-3",
+      "paprika-2",
+      "round-bear",
+      "ryuk-2",
+      "sakura",
+      "sunny-sprout",
+    ]);
+  });
+
   it("accepts only card-supported strong facets and blocks broad labels", () => {
     const resolved = resolveRelatedPetAnnotation({ slug: pet.slug, proposal });
 
@@ -98,6 +130,7 @@ describe("related pet V11 annotation contract", () => {
       proposal: empty,
     });
     expect(resolved.collections).toEqual(["soviet-animation"]);
+    expect(resolved.franchiseFamilies).toEqual([]);
 
     const replaced = resolveRelatedPetAnnotation({
       slug: "vi",

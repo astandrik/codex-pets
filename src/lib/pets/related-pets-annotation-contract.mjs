@@ -7,17 +7,19 @@ import {
 } from "./related-pets-annotation-control.mjs";
 
 export const RELATED_PETS_ANNOTATION_REVISION =
-  "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11";
+  "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r2";
 export const RELATED_PETS_ANNOTATION_QUERY_REVISION =
-  "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11";
+  "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r2";
 export const RELATED_PETS_ANNOTATION_DOCUMENT_REVISION =
-  "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11";
+  "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r2";
 export const RELATED_PETS_ANNOTATION_MODEL_NAME = "qwen3.6-35b-a3b";
+export const RELATED_PETS_ANNOTATION_SCHEMA_NAME =
+  "related_pet_annotation_v11_r2";
 const RELATED_PETS_ANNOTATION_RESOLVER_REVISION =
-  "related-pets-annotation-resolver-2026-08-v11";
+  "related-pets-annotation-resolver-2026-08-v11-r2";
 
 export const RELATED_PETS_ANNOTATION_SYSTEM_PROMPT =
-  "You create internal relationship metadata for one animated software companion. Use only the supplied name, kind, description, and tags. Return canonical English lowercase kebab-case identifiers. Mark evidence precisely: name, description, tag, or world_knowledge. A strong identity, franchise, family, collection, or specific archetype should be high confidence only when the supplied card itself supports it. World knowledge may be proposed but must not be presented as card evidence. Broad visual or demographic labels such as girl, anime, chibi, colors, clothing, or art style are not identities, franchises, collections, or specific archetypes. Output only JSON matching the supplied schema.";
+  "You create internal relationship metadata for one animated software companion. Use only the supplied name, kind, description, and tags. Return canonical English lowercase kebab-case identifiers. Mark evidence precisely: name, description, tag, or world_knowledge. A strong identity, franchise, family, collection, or specific archetype should be high confidence only when the supplied card itself supports it. World knowledge may be proposed but must not be presented as card evidence. Broad visual or demographic labels such as girl, anime, chibi, colors, clothing, or art style are not identities, franchises, collections, or specific archetypes. Keep the response compact: include no more than four values in each relation array and use an empty array when the card provides no useful candidate. Output only JSON matching the supplied schema.";
 
 export const RELATED_PETS_ANNOTATION_USER_PROMPT =
   "Annotate this pet for deterministic related-item ranking. Do not rank or compare it with other pets.";

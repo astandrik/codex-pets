@@ -1,5 +1,6 @@
 import {
   RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
+  RELATED_PETS_ANNOTATION_SCHEMA_NAME,
   RELATED_PETS_ANNOTATION_SYSTEM_PROMPT,
   RELATED_PETS_ANNOTATION_USER_PROMPT,
   buildRelatedPetAnnotationInput,
@@ -61,7 +62,7 @@ export function createYandexRelatedPetAnnotationClient(
   >({
     ...options,
     systemPrompt: RELATED_PETS_ANNOTATION_SYSTEM_PROMPT,
-    responseSchemaName: "related_pet_annotation_v11",
+    responseSchemaName: RELATED_PETS_ANNOTATION_SCHEMA_NAME,
     responseJsonSchema: RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
     buildContent: (pet) => [
       {

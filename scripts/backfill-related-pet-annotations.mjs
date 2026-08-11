@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import {
   RELATED_PETS_ANNOTATION_MODEL_NAME,
   RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
+  RELATED_PETS_ANNOTATION_SCHEMA_NAME,
   RELATED_PETS_ANNOTATION_REVISION,
   RELATED_PETS_ANNOTATION_SYSTEM_PROMPT,
   RELATED_PETS_ANNOTATION_USER_PROMPT,
@@ -59,7 +60,7 @@ export async function main(argv = process.argv.slice(2)) {
           modelUri,
           timeoutMs: providerConfig.timeoutMs,
           systemPrompt: RELATED_PETS_ANNOTATION_SYSTEM_PROMPT,
-          responseSchemaName: "related_pet_annotation_v11",
+          responseSchemaName: RELATED_PETS_ANNOTATION_SCHEMA_NAME,
           responseJsonSchema: RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
           buildContent: (pet) => [{
             type: "input_text",
