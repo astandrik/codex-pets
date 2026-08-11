@@ -41,7 +41,7 @@ const V7_CALIBRATION_REVISION = "related-pets-eval-groups-v2";
 const V8_CALIBRATION_REVISION = "related-pets-eval-v3";
 const V9_CALIBRATION_REVISION = "related-pets-eval-v4";
 const V10_CALIBRATION_REVISION = "related-pets-eval-v5";
-const V11_CALIBRATION_REVISION = "related-pets-eval-v6";
+const V11_CALIBRATION_REVISION = "related-pets-eval-v7";
 const textDefinition = PET_SEARCH_MODEL_REVISIONS[TEXT_REVISION];
 const visualDefinition = PET_VISUAL_MODEL_REVISIONS[VISUAL_REVISION];
 const PINNED_CALIBRATED_PROFILE = {
@@ -139,7 +139,7 @@ export const RELATED_PETS_V10_PROFILE =
 export const RELATED_PETS_V11_CALIBRATION_PROFILE = {
   ...LEGACY_RELATED_PETS_V7_PROFILE,
   strategy: "entity-controlled-v11",
-  rankingRevision: `related-pets-entity-controlled-v11-r2:depth=8:tail=description-first:cal=${V11_CALIBRATION_REVISION}:description=${RELATED_PETS_V9_TEXT_DOCUMENT_REVISION}:description-query=${RELATED_PETS_V9_TEXT_QUERY_REVISION}:annotation=${RELATED_PETS_ANNOTATION_REVISION}:annotation-document=${RELATED_PETS_ANNOTATION_DOCUMENT_REVISION}:annotation-query=${RELATED_PETS_ANNOTATION_QUERY_REVISION}:visual=${VISUAL_REVISION}:candidate`,
+  rankingRevision: `related-pets-entity-controlled-v11-r3:depth=8:tail=description-first:gate=qualified-negatives:cal=${V11_CALIBRATION_REVISION}:description=${RELATED_PETS_V9_TEXT_DOCUMENT_REVISION}:description-query=${RELATED_PETS_V9_TEXT_QUERY_REVISION}:annotation=${RELATED_PETS_ANNOTATION_REVISION}:annotation-document=${RELATED_PETS_ANNOTATION_DOCUMENT_REVISION}:annotation-query=${RELATED_PETS_ANNOTATION_QUERY_REVISION}:visual=${VISUAL_REVISION}:candidate`,
   textRevision: RELATED_PETS_V9_TEXT_DOCUMENT_REVISION,
   textQueryRevision: RELATED_PETS_V9_TEXT_QUERY_REVISION,
   textMinSimilarity: 0,

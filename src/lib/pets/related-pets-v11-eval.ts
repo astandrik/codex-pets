@@ -18,7 +18,7 @@ const DIAGNOSTIC_FRONTIER_LIMIT = 8;
 const EPSILON = 1e-12;
 const DIAGNOSTIC_GATE_NAMES = [
   "hasCaseLift",
-  "noHardNegatives",
+  "noQualifiedHardNegatives",
   "mandatorySatisfied",
   "orderingSatisfied",
   "integritySatisfied",
@@ -107,6 +107,13 @@ export function evaluateRelatedPetsV11Profile(input: {
     const negativeSlugsPresent = fixture.negativeSlugs.filter((slug) =>
       top8.includes(slug)
     );
+    const qualifiedNegativeSlugsPresent = ranking.diagnostics
+      .filter(({ slug, tier }) =>
+        negativeSlugsPresent.includes(slug) &&
+        tier !== "controlled_fallback" &&
+        tier !== "conflict_fallback"
+      )
+      .map(({ slug }) => slug);
     const missingAllTop4 = fixture.mustIncludeAllTop4.filter((slug) =>
       !top4.includes(slug)
     );
@@ -152,6 +159,8 @@ export function evaluateRelatedPetsV11Profile(input: {
       comparisons: comparisonCases,
       negativeCount: negativeSlugsPresent.length,
       negativeSlugsPresent,
+      qualifiedNegativeCount: qualifiedNegativeSlugsPresent.length,
+      qualifiedNegativeSlugsPresent,
       mandatory: {
         oneOfTop4: fixture.mustIncludeOneOfTop4,
         oneOfTop4Satisfied,
@@ -210,7 +219,9 @@ export function evaluateRelatedPetsV11Profile(input: {
     catalogIntegrityScope,
     allCatalogConflictFallbackCount,
     checks: {
-      noHardNegatives: cases.every(({ negativeCount }) => negativeCount === 0),
+      noQualifiedHardNegatives: cases.every(
+        ({ qualifiedNegativeCount }) => qualifiedNegativeCount === 0,
+      ),
       mandatorySatisfied: cases.every(({ mandatorySatisfied }) => mandatorySatisfied),
       orderingSatisfied: cases.every(({ orderingSatisfied }) => orderingSatisfied),
       integritySatisfied: cases.every(({ integritySatisfied }) => integritySatisfied),

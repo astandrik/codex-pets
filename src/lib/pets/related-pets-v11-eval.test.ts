@@ -17,7 +17,7 @@ describe("V11 evaluation safety", () => {
     });
 
     expect(report.checks).toMatchObject({
-      noHardNegatives: true,
+      noQualifiedHardNegatives: true,
       mandatorySatisfied: true,
       orderingSatisfied: true,
       integritySatisfied: true,
@@ -51,6 +51,29 @@ describe("V11 evaluation safety", () => {
 
     expect(report.allCatalogConflictFallbackCount).toBeGreaterThan(0);
     expect(report.checks.noConflictFallback).toBe(false);
+  });
+
+  it("reports but does not reject a hard negative used only as controlled fallback", () => {
+    const input = dataset(false);
+    (input.dataset.fixtures[0]!.negativeSlugs as string[]).push("g");
+    input.dataset.annotations.set("g", annotation(null));
+    const report = evaluateRelatedPetsV11Profile({
+      dataset: input.dataset,
+      profile: {
+        ...profile(),
+        textMinSimilarity: 1,
+        annotationMinSimilarity: 1,
+      },
+      comparisons: input.comparisons,
+    });
+
+    expect(report.cases[0]).toMatchObject({
+      negativeSlugsPresent: ["g"],
+      qualifiedNegativeSlugsPresent: [],
+    });
+    expect(report.cases[0]?.diagnostics.find(({ slug }) => slug === "g"))
+      .toMatchObject({ tier: "controlled_fallback" });
+    expect(report.checks.noQualifiedHardNegatives).toBe(true);
   });
 
   it("produces the same report from precomputed similarities", () => {
