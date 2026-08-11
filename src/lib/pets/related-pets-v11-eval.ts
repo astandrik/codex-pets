@@ -450,6 +450,22 @@ function createDiagnosticDigest(
       ndcgAt4: item.ndcgAt4,
       ndcgAt8: item.ndcgAt8,
       negativeSlugsPresent: item.negativeSlugsPresent,
+      negativeDiagnostics: item.diagnostics
+        .filter(({ slug }) => item.negativeSlugsPresent.includes(slug))
+        .map((diagnostic) => ({
+          slug: diagnostic.slug,
+          tier: diagnostic.tier,
+          textRank: diagnostic.textRank,
+          annotationRank: diagnostic.annotationRank,
+          textSimilarity: diagnostic.textSimilarity,
+          annotationSimilarity: diagnostic.annotationSimilarity,
+          passesTextThreshold: diagnostic.passesTextThreshold,
+          passesAnnotationThreshold: diagnostic.passesAnnotationThreshold,
+          matchedFacets: diagnostic.matchedFacets,
+          franchiseConflict: diagnostic.franchiseConflict,
+          fallbackProvenance: diagnostic.fallbackProvenance,
+          contributions: diagnostic.contributions,
+        })),
       mandatorySatisfied: item.mandatorySatisfied,
       orderingSatisfied: item.orderingSatisfied,
       conflictFallbackCount: item.diagnostics.filter(

@@ -117,6 +117,20 @@ describe("V11 evaluation safety", () => {
       descriptionThresholds,
       annotationThresholds,
     })).toEqual(unsafeReport);
+
+    (safe.dataset.fixtures[0]!.negativeSlugs as string[]).push("g");
+    const hardNegativeReport = diagnoseRelatedPetsV11AnnotationProfiles({
+      ...safe,
+      descriptionThresholds,
+      annotationThresholds,
+    });
+    expect(hardNegativeReport.frontier[0]?.cases[0]?.negativeDiagnostics)
+      .toEqual([expect.objectContaining({
+        slug: "g",
+        tier: "franchise",
+        franchiseConflict: false,
+        matchedFacets: ["main-franchise"],
+      })]);
   });
 });
 
