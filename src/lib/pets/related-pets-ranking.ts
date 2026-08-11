@@ -91,7 +91,7 @@ export type RelatedPetRankingDiagnostic = {
   annotationSimilarity?: number | null;
   annotationMinSimilarity?: number;
   passesAnnotationThreshold?: boolean;
-  fallbackProvenance?: "annotation_then_description" | "conflict_contract" | null;
+  fallbackProvenance?: "description_then_annotation" | "conflict_contract" | null;
 };
 
 export type RelatedPetsRankingResult = {
@@ -645,7 +645,7 @@ function rankEntityControlledRelatedPets(input: {
       matchedFacets: relation.matchedFacets,
       franchiseConflict: relation.franchiseConflict,
       fallbackProvenance: relation.tier === "controlled_fallback"
-        ? "annotation_then_description" as const
+        ? "description_then_annotation" as const
         : relation.tier === "conflict_fallback"
           ? "conflict_contract" as const
           : null,
@@ -753,9 +753,9 @@ function compareV11Diagnostics(
     V11_TIER_ORDER[right.tier as V11Tier];
   if (tierDelta !== 0) return tierDelta;
   if (left.tier === "controlled_fallback" || left.tier === "conflict_fallback") {
-    return (right.annotationSimilarity ?? -2) -
+    return (right.textSimilarity ?? -2) - (left.textSimilarity ?? -2) ||
+      (right.annotationSimilarity ?? -2) -
         (left.annotationSimilarity ?? -2) ||
-      (right.textSimilarity ?? -2) - (left.textSimilarity ?? -2) ||
       left.slug.localeCompare(right.slug);
   }
   return right.score - left.score ||

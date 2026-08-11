@@ -374,6 +374,47 @@ describe("related pet ranking", () => {
     )).toBe(true);
   });
 
+  it("orders V11 fallback by description before annotation similarity", () => {
+    const source = candidate("source");
+    const result = rankRelatedPetsWithDiagnostics({
+      source,
+      candidates: [
+        source,
+        candidate("description-first"),
+        candidate("annotation-first"),
+      ],
+      textQueryVectors: vectors({ source: [1, 0] }),
+      textDocumentVectors: vectors({
+        "description-first": [0.8, 0.6],
+        "annotation-first": [0.6, 0.8],
+      }),
+      annotationQueryVectors: vectors({ source: [1, 0] }),
+      annotationDocumentVectors: vectors({
+        "description-first": [0.6, 0.8],
+        "annotation-first": [0.8, 0.6],
+      }),
+      annotations: new Map([
+        ["source", annotation()],
+        ["description-first", annotation()],
+        ["annotation-first", annotation()],
+      ]),
+      profile: {
+        ...v11Profile(),
+        textMinSimilarity: 0.9,
+        annotationMinSimilarity: 0.9,
+      },
+    });
+
+    expect(result.slugs).toEqual(["description-first", "annotation-first"]);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        slug: "description-first",
+        tier: "controlled_fallback",
+        fallbackProvenance: "description_then_annotation",
+      }),
+    ]));
+  });
+
   it("lets only text similarity qualify v9 candidates", () => {
     const input = {
       sourceSlug: "source",
