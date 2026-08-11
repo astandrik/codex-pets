@@ -51,11 +51,12 @@ describe("related pet V11 annotation contract", () => {
       RELATED_PETS_ANNOTATION_QUERY_REVISION,
       RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
     ]).toEqual([
-      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r2",
-      "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r2",
-      "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r2",
+      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r3",
+      "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r3",
+      "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r3",
     ]);
     expect(Object.keys(RELATED_PETS_ANNOTATION_OVERRIDES).toSorted()).toEqual([
+      "2b-2",
       "cheburashka",
       "chibi-wolf",
       "ffx-yuna",
@@ -64,6 +65,7 @@ describe("related pet V11 annotation contract", () => {
       "jinx",
       "johnny",
       "karlson-2",
+      "lain",
       "mai-shiranui",
       "megumin-3",
       "paprika-2",
@@ -72,6 +74,41 @@ describe("related pet V11 annotation contract", () => {
       "sakura",
       "sunny-sprout",
     ]);
+  });
+
+  it("keeps ambiguous 2B and Lain relations card-supported", () => {
+    const worldOnly = {
+      ...proposal,
+      franchises: [relation("hidden-franchise", "high", ["world_knowledge"])],
+      franchise_families: [
+        relation("hidden-family", "high", ["world_knowledge"]),
+      ],
+    };
+
+    expect(listUnresolvedStrongRelations({
+      slug: "2b-2",
+      proposal: worldOnly,
+    })).toEqual([]);
+    expect(resolveRelatedPetAnnotation({
+      slug: "2b-2",
+      proposal: worldOnly,
+    })).toMatchObject({
+      entity: "2b",
+      aliases: [],
+      franchises: [],
+      franchiseFamilies: [],
+      specificArchetypes: ["android"],
+    });
+    expect(resolveRelatedPetAnnotation({
+      slug: "lain",
+      proposal: worldOnly,
+    })).toMatchObject({
+      entity: "lain",
+      aliases: [],
+      franchises: [],
+      franchiseFamilies: [],
+      themes: ["wired"],
+    });
   });
 
   it("accepts only card-supported strong facets and blocks broad labels", () => {

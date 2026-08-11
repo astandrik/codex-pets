@@ -1,5 +1,5 @@
 export const RELATED_PETS_ANNOTATION_CONTROL_REVISION =
-  "related-pets-annotation-control-2026-08-v11-r2";
+  "related-pets-annotation-control-2026-08-v11-r3";
 
 export const RELATED_PETS_ANNOTATION_ALIASES = Object.freeze({
   entities: Object.freeze({}),
@@ -21,6 +21,17 @@ export const RELATED_PETS_ANNOTATION_ALIASES = Object.freeze({
 });
 
 export const RELATED_PETS_ANNOTATION_OVERRIDES = Object.freeze({
+  "2b-2": Object.freeze({
+    reason: "The card confirms the 2B name and an android archetype, but the Nier-inspired tag is not an exact franchise identifier.",
+    entity: "2b",
+    aliases: Object.freeze([]),
+    franchises: Object.freeze([]),
+    franchiseFamilies: Object.freeze([]),
+    collections: Object.freeze([]),
+    specificArchetypes: Object.freeze(["android"]),
+    themes: Object.freeze([]),
+    mediaOrigins: Object.freeze([]),
+  }),
   cheburashka: Object.freeze({
     reason: "The card confirms the named character and the Soviet animation collection; no broader franchise family is stated.",
     franchiseFamilies: Object.freeze([]),
@@ -40,6 +51,17 @@ export const RELATED_PETS_ANNOTATION_OVERRIDES = Object.freeze({
   }),
   jinx: Object.freeze({
     reason: "The card has an Arcane tag but does not state a media-origin category.",
+    mediaOrigins: Object.freeze([]),
+  }),
+  lain: Object.freeze({
+    reason: "The card confirms the Lain name and wired theme but does not state an exact franchise or media origin.",
+    entity: "lain",
+    aliases: Object.freeze([]),
+    franchises: Object.freeze([]),
+    franchiseFamilies: Object.freeze([]),
+    collections: Object.freeze([]),
+    specificArchetypes: Object.freeze([]),
+    themes: Object.freeze(["wired"]),
     mediaOrigins: Object.freeze([]),
   }),
   johnny: Object.freeze({
