@@ -20,6 +20,8 @@ import {
   RELATED_PETS_V8_PROFILE,
   RELATED_PETS_V9_CALIBRATION_PROFILE,
   RELATED_PETS_V10_CALIBRATION_PROFILE,
+  RELATED_PETS_V11_CALIBRATION_PROFILE,
+  RELATED_PETS_V11_PROFILE,
   isCurrentRelatedPetsRankingRevision,
 } from "@/lib/pets/related-pets-profile";
 
@@ -1101,6 +1103,26 @@ describe("related pet ranking profile", () => {
       visualMinSimilarity: null,
       visualWeight: 0,
     });
+    expect(RELATED_PETS_V11_CALIBRATION_PROFILE).toMatchObject({
+      strategy: "entity-controlled-v11",
+      textMinSimilarity: 0,
+      annotationMinSimilarity: 0,
+      annotationWeight: 0.25,
+      visualMinSimilarity: null,
+      visualWeight: 0,
+      rankingRevision: expect.stringContaining(":candidate"),
+    });
+    expect(RELATED_PETS_V11_PROFILE).toMatchObject({
+      strategy: "entity-controlled-v11",
+      textMinSimilarity: 0.6167421023517932,
+      annotationMinSimilarity: 0.4133420129086638,
+      annotationWeight: 1,
+      visualMinSimilarity: 0.8178749331551675,
+      visualWeight: 0.25,
+    });
+    expect(RELATED_PETS_V11_PROFILE.rankingRevision).not.toContain(
+      ":candidate",
+    );
     expect(CURRENT_RELATED_PETS_RANKING_PROFILE.strategy).toBe("legacy-v7");
   });
 });
