@@ -22,7 +22,7 @@
     "related:backfill-annotations": "node scripts/backfill-related-pet-annotations.mjs",
     "related:backfill-annotation-query": "PET_SEARCH_MODEL_REVISION=yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11 node scripts/backfill-related-pet-annotation-embeddings.mjs",
     "related:backfill-annotation-document": "PET_SEARCH_MODEL_REVISION=yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11 node scripts/backfill-related-pet-annotation-embeddings.mjs",
-    "related:approval-worker": "node --import ./scripts/related-pets-typescript-loader.mjs ./scripts/related-pet-approval-worker.mjs",
+    "related:approval-worker": "node ./scripts/related-pet-approval-worker.mjs",
     "related:rebuild": "node --disable-warning=ExperimentalWarning scripts/rebuild-related-pets.mjs",
     "related:eval:select": "PET_RELATED_LIVE_EVAL=select vitest run src/lib/pets/related-pets-live-eval.test.ts",
     "related:eval:calibrate": "PET_RELATED_LIVE_EVAL=calibrate vitest run src/lib/pets/related-pets-live-eval.test.ts",

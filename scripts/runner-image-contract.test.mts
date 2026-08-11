@@ -3,6 +3,31 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("runner image maintenance contract", () => {
+  it("uses the packaged TypeScript loader for the approval worker", () => {
+    const packageJson = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { scripts: Record<string, string> };
+    const workerCommand = packageJson.scripts["related:approval-worker"];
+
+    expect(workerCommand).toBe(
+      "node ./scripts/related-pet-approval-worker.mjs",
+    );
+    expect(
+      readFileSync(
+        new URL("./related-pet-approval-worker.mjs", import.meta.url),
+        "utf8",
+      ),
+    ).toContain(
+      'register(new URL("./lib/related-pets-typescript-loader.mjs", import.meta.url)',
+    );
+    expect(
+      readFileSync(
+        new URL("./lib/related-pets-typescript-loader.mjs", import.meta.url),
+        "utf8",
+      ),
+    ).toContain("export function initialize");
+  });
+
   it("copies YDB migrations required by the packaged db:migrate script", () => {
     const dockerfile = readFileSync(
       new URL("../Dockerfile", import.meta.url),
