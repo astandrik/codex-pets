@@ -18,4 +18,5 @@ src/**/*.test.tsx
 !src/lib/pets/related-pets-acceptance-live-eval.test.ts
 !src/lib/pets/related-pets-v10-live-eval.test.ts
 !src/lib/pets/related-pets-v11-live-eval.test.ts
+!src/lib/pets/related-pets-v23-live-eval.test.ts
 !src/lib/pets/search-live-eval.test.ts
