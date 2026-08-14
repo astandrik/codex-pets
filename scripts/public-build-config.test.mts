@@ -78,6 +78,31 @@ describe("public build configuration", () => {
   });
 
   it.each([
+    "http://224.0.0.0",
+    "http://224.0.0.1",
+    "http://239.255.255.255",
+    "http://255.255.255.255",
+    "http://[ff00::]",
+    "http://[ff02::1]",
+    "http://[ffff::1]",
+    "http://[::ffff:224.0.0.1]",
+    "http://[::ffff:255.255.255.255]",
+  ])("rejects multicast or broadcast URL %s", (appUrl) => {
+    expect(() =>
+      validatePublicBuildConfig({ NEXT_PUBLIC_APP_URL: appUrl }),
+    ).toThrow("must not use a multicast or broadcast address");
+  });
+
+  it.each(["http://223.255.255.255", "http://[feff::1]"])(
+    "accepts address outside the multicast ranges: %s",
+    (appUrl) => {
+      expect(() =>
+        validatePublicBuildConfig({ NEXT_PUBLIC_APP_URL: appUrl }),
+      ).not.toThrow();
+    },
+  );
+
+  it.each([
     {
       appUrl: "https://user:password@pets.example",
       message: "must not contain credentials",

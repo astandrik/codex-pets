@@ -39,27 +39,39 @@ function getMappedIpv4Bytes(hostname) {
   ];
 }
 
+function getIpv4Bytes(hostname) {
+  const ipVersion = isIP(hostname);
+  if (ipVersion === 4) {
+    return hostname.split(".").map(Number);
+  }
+
+  return ipVersion === 6 ? getMappedIpv4Bytes(hostname) : undefined;
+}
+
 function isLoopbackHostname(hostname) {
   if (hostname === "localhost" || hostname.endsWith(".localhost")) {
     return true;
   }
 
-  const ipVersion = isIP(hostname);
-  const mappedIpv4 = ipVersion === 6 ? getMappedIpv4Bytes(hostname) : undefined;
-  return (
-    (ipVersion === 4 && hostname.startsWith("127.")) ||
-    (ipVersion === 6 && hostname === "::1") ||
-    mappedIpv4?.[0] === 127
-  );
+  const ipv4 = getIpv4Bytes(hostname);
+  return ipv4?.[0] === 127 || hostname === "::1";
 }
 
 function isUnspecifiedHostname(hostname) {
-  if (hostname === "0.0.0.0" || hostname === "::") {
-    return true;
+  const ipv4 = getIpv4Bytes(hostname);
+  return hostname === "::" || (ipv4?.every((byte) => byte === 0) ?? false);
+}
+
+function isMulticastOrBroadcastHostname(hostname) {
+  const ipv4 = getIpv4Bytes(hostname);
+  if (ipv4) {
+    return (
+      (ipv4[0] >= 224 && ipv4[0] <= 239) ||
+      ipv4.every((byte) => byte === 255)
+    );
   }
 
-  const mappedIpv4 = getMappedIpv4Bytes(hostname);
-  return mappedIpv4?.every((byte) => byte === 0) ?? false;
+  return isIP(hostname) === 6 && hostname.startsWith("ff");
 }
 
 function parsePublicBuildConfig(configuredAppUrlValue, configuredBasePath) {
@@ -109,6 +121,12 @@ function parsePublicBuildConfig(configuredAppUrlValue, configuredBasePath) {
   if (isUnspecifiedHostname(hostname)) {
     throw invalidConfig(
       "NEXT_PUBLIC_APP_URL must not use an unspecified address.",
+    );
+  }
+
+  if (isMulticastOrBroadcastHostname(hostname)) {
+    throw invalidConfig(
+      "NEXT_PUBLIC_APP_URL must not use a multicast or broadcast address.",
     );
   }
 
