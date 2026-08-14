@@ -49,6 +49,9 @@ describe("runner image maintenance contract", () => {
   });
 
   it("keeps the packaged live eval suites in the Docker build context", () => {
+    const packageJson = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { scripts: Record<string, string> };
     const dockerignore = readFileSync(
       new URL("../.dockerignore", import.meta.url),
       "utf8",
@@ -71,6 +74,9 @@ describe("runner image maintenance contract", () => {
     );
     expect(dockerignore).toContain(
       "!src/lib/pets/related-pets-v24-live-eval.test.ts",
+    );
+    expect(packageJson.scripts["related:eval:v24:acceptance"]).toContain(
+      "related-pets-v24-live-eval.test.ts",
     );
     expect(dockerignore).toContain("!src/lib/pets/search-live-eval.test.ts");
   });

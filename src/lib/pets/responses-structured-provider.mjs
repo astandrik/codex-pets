@@ -30,6 +30,7 @@ export function createResponsesStructuredRequest(input) {
     temperature: 0,
     max_output_tokens: input.maxOutputTokens,
     store: false,
+    ...(input.reasoning ? { reasoning: input.reasoning } : {}),
     text: {
       format: {
         type: "json_schema",
@@ -214,6 +215,7 @@ async function requestOnce(input) {
           createResponsesStructuredRequest({
             ...input,
             maxOutputTokens: input.maxOutputTokens,
+            reasoning: input.reasoning,
           }),
         ),
         signal: controller.signal,

@@ -45,6 +45,7 @@ export function createResponsesStructuredRequest(input: {
   responseSchemaName: string;
   responseJsonSchema: object;
   maxOutputTokens: number;
+  reasoning?: { effort: "low" | "medium" | "high" };
 }): object;
 
 export function classifyResponsesPayload<T>(
@@ -70,6 +71,7 @@ export function createResponsesStructuredRequester<Input, Output>(options: {
   systemPrompt: string;
   responseSchemaName: string;
   responseJsonSchema: object;
+  reasoning?: { effort: "low" | "medium" | "high" };
   buildContent: (input: Input) => readonly object[];
   validateInput?: (input: Input) => void;
   parseValue: (value: unknown) => Output;
