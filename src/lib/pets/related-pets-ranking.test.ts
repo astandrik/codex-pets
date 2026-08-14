@@ -1566,7 +1566,7 @@ describe("related pet ranking profile", () => {
       RELATED_PETS_V23_PROFILE.rankingRevision,
     );
     expect(CURRENT_RELATED_PETS_RANKING_PROFILE).toBe(
-      RELATED_PETS_V23_PROFILE,
+      RELATED_PETS_V24_PROFILE,
     );
     expect(
       isCurrentRelatedPetsRankingRevision(
