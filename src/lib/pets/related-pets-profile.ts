@@ -171,7 +171,7 @@ export const RELATED_PETS_V11_PROFILE = {
 
 export const RELATED_PETS_V23_PROFILE = {
   ...RELATED_PETS_V11_PROFILE,
-  rankingRevision: `related-pets-franchise-coverage-v23:depth=8:base=${RELATED_PETS_V11_PROFILE.rankingRevision}:relation-policy=${RELATED_PETS_V23_RELATION_POLICY_REVISION}:candidate`,
+  rankingRevision: `related-pets-franchise-coverage-v23:depth=8:base=${RELATED_PETS_V11_PROFILE.rankingRevision}:relation-policy=${RELATED_PETS_V23_RELATION_POLICY_REVISION}`,
   relationPolicyRevision: RELATED_PETS_V23_RELATION_POLICY_REVISION,
 } as const satisfies RelatedPetsRuntimeProfile;
 
@@ -194,7 +194,7 @@ export const RELATED_PETS_V8_PROFILE = {
 } as const satisfies RelatedPetsRuntimeProfile;
 
 export const CURRENT_RELATED_PETS_RANKING_PROFILE =
-  RELATED_PETS_V11_PROFILE;
+  RELATED_PETS_V23_PROFILE;
 
 export function isCurrentRelatedPetsRankingRevision(
   value: string,

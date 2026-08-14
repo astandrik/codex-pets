@@ -1139,7 +1139,7 @@ function v11Profile() {
 }
 
 describe("related pet ranking profile", () => {
-  it("activates the pinned v11 profile while retaining v7 and v8", () => {
+  it("activates v23 while retaining the pinned v7, v8, and v11 profiles", () => {
     expect(LEGACY_RELATED_PETS_V7_PROFILE).toMatchObject({
       rankingRevision:
         "related-pets-rrf60-v7:depth=8:tail=semantic:cal=related-pets-eval-groups-v2:text=yandex-text-embeddings-v2-768-2026-07:text-query=yandex-text-embeddings-v2-768-related-tags-query-2026-08:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
@@ -1233,13 +1233,15 @@ describe("related pet ranking profile", () => {
     expect(RELATED_PETS_V23_PROFILE).toMatchObject({
       strategy: "entity-controlled-v11",
       relationPolicyRevision: RELATED_PETS_V23_RELATION_POLICY_REVISION,
-      rankingRevision: expect.stringContaining(":candidate"),
     });
+    expect(RELATED_PETS_V23_PROFILE.rankingRevision).not.toContain(
+      ":candidate",
+    );
     expect(RELATED_PETS_V23_PROFILE.rankingRevision).toContain(
       RELATED_PETS_V11_PROFILE.rankingRevision,
     );
     expect(CURRENT_RELATED_PETS_RANKING_PROFILE).toBe(
-      RELATED_PETS_V11_PROFILE,
+      RELATED_PETS_V23_PROFILE,
     );
     expect(
       isCurrentRelatedPetsRankingRevision(
