@@ -10,6 +10,7 @@ import type { ResolvedRelatedPetAnnotation } from "@/lib/pets/related-pets-annot
 import {
   countSharedRelatedPetTopics,
   createRelatedPetTopicSet,
+  RELATED_PETS_V24_FALLBACK_GUARD_DEPTH,
   RELATED_PETS_V24_FALLBACK_POLICY_REVISION,
 } from "@/lib/pets/related-pets-fallback-policy";
 import { applyRelatedPetsRelationPolicy } from "@/lib/pets/related-pets-relation-policy";
@@ -711,7 +712,13 @@ function rankEntityControlledRelatedPets(input: {
   const hasQualifiedCandidate = diagnostics.some(({ tier }) =>
     V11_TIER_ORDER[tier as V11Tier] <= 5
   );
-  const useSparseFallback = sparseFallbackEnabled && !hasQualifiedCandidate;
+  const baselineHasSharedTopicAt4 = diagnostics
+    .toSorted(compareV11Diagnostics)
+    .slice(0, RELATED_PETS_V24_FALLBACK_GUARD_DEPTH)
+    .some(isV24SparseFallbackCandidate);
+  const useSparseFallback = sparseFallbackEnabled &&
+    !hasQualifiedCandidate &&
+    !baselineHasSharedTopicAt4;
   const sparseFallbackRanks = useSparseFallback
     ? new Map(
         diagnostics

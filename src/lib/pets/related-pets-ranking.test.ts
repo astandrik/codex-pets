@@ -555,8 +555,10 @@ describe("related pet ranking", () => {
     });
     const candidates = [
       source,
-      candidate("text-only", { kind: "character" }),
-      candidate("visual-only", { kind: "character" }),
+      candidate("text-one", { kind: "character" }),
+      candidate("text-two", { kind: "character" }),
+      candidate("text-three", { kind: "character" }),
+      candidate("text-four", { kind: "character" }),
       candidate("same-kind-low-visual", {
         kind: "character",
         tags: ["man"],
@@ -576,19 +578,23 @@ describe("related pet ranking", () => {
       annotations: new Map(candidates.map(({ slug }) => [slug, annotation()])),
       precomputedMatches: {
         text: [
-          { slug: "text-only", score: 0.79 },
-          { slug: "visual-only", score: 0.78 },
+          { slug: "text-one", score: 0.79 },
+          { slug: "text-two", score: 0.78 },
+          { slug: "text-three", score: 0.77 },
+          { slug: "text-four", score: 0.76 },
           { slug: "same-kind-low-visual", score: 0.3 },
           { slug: "same-kind-high-visual", score: 0.2 },
           { slug: "other-kind-high-visual", score: 0.1 },
         ],
         annotation: candidates.slice(1).map(({ slug }) => ({ slug, score: 0.2 })),
         visual: [
-          { slug: "visual-only", score: 0.99 },
           { slug: "other-kind-high-visual", score: 0.98 },
           { slug: "same-kind-high-visual", score: 0.9 },
           { slug: "same-kind-low-visual", score: 0.4 },
-          { slug: "text-only", score: 0.1 },
+          { slug: "text-one", score: 0.13 },
+          { slug: "text-two", score: 0.12 },
+          { slug: "text-three", score: 0.11 },
+          { slug: "text-four", score: 0.1 },
         ],
       },
     };
@@ -606,8 +612,10 @@ describe("related pet ranking", () => {
     });
 
     expect(v23.slugs).toEqual([
-      "text-only",
-      "visual-only",
+      "text-one",
+      "text-two",
+      "text-three",
+      "text-four",
       "same-kind-low-visual",
       "same-kind-high-visual",
       "other-kind-high-visual",
@@ -616,8 +624,10 @@ describe("related pet ranking", () => {
       "same-kind-high-visual",
       "same-kind-low-visual",
       "other-kind-high-visual",
-      "text-only",
-      "visual-only",
+      "text-one",
+      "text-two",
+      "text-three",
+      "text-four",
     ]);
     expect(v24.diagnostics.slice(0, 3)).toEqual([
       expect.objectContaining({
@@ -636,6 +646,54 @@ describe("related pet ranking", () => {
         fallbackProvenance: "shared_topics_kind_visual_description",
       }),
     ]);
+  });
+
+  it("preserves the V23 fallback when its top four already share a topic", () => {
+    const source = candidate("source", { tags: ["man"] });
+    const candidates = [
+      source,
+      candidate("shared-topic", { tags: ["man"] }),
+      candidate("text-two"),
+      candidate("text-three"),
+      candidate("text-four"),
+      candidate("visual-shared-topic", { tags: ["man"] }),
+    ];
+    const shared = {
+      source,
+      candidates,
+      annotations: new Map(candidates.map(({ slug }) => [slug, annotation()])),
+      precomputedMatches: {
+        text: [
+          { slug: "shared-topic", score: 0.79 },
+          { slug: "text-two", score: 0.78 },
+          { slug: "text-three", score: 0.77 },
+          { slug: "text-four", score: 0.76 },
+          { slug: "visual-shared-topic", score: 0.1 },
+        ],
+        annotation: candidates.slice(1).map(({ slug }) => ({ slug, score: 0.2 })),
+        visual: [
+          { slug: "visual-shared-topic", score: 0.99 },
+          { slug: "shared-topic", score: 0.1 },
+        ],
+      },
+    };
+    const v23 = rankRelatedPetsWithDiagnostics({
+      ...shared,
+      profile: v11Profile(),
+    });
+    const v24 = rankRelatedPetsWithDiagnostics({
+      ...shared,
+      profile: {
+        ...v11Profile(),
+        fallbackPolicyRevision: RELATED_PETS_V24_FALLBACK_POLICY_REVISION,
+      },
+    });
+
+    expect(v24.slugs).toEqual(v23.slugs);
+    expect(v24.diagnostics.every(({ sharedTagRank, fallbackProvenance }) =>
+      sharedTagRank === null &&
+      fallbackProvenance === "description_then_annotation"
+    )).toBe(true);
   });
 
   it("fails closed for an unknown sparse fallback revision", () => {
