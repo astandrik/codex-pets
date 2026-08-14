@@ -7,6 +7,7 @@ import {
 } from "@/lib/pets/related-pets";
 import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
 import type { ResolvedRelatedPetAnnotation } from "@/lib/pets/related-pets-annotation-contract.mjs";
+import { applyRelatedPetsRelationPolicy } from "@/lib/pets/related-pets-relation-policy";
 
 export const RELATED_PETS_RRF_K = 60;
 export const RELATED_PETS_TEXT_WEIGHT = 1;
@@ -30,6 +31,7 @@ export type RelatedPetSimilarity = {
 
 export type RelatedPetsRankingProfile = {
   strategy?: RelatedPetsRankingStrategy;
+  relationPolicyRevision?: string;
   textMinSimilarity: number;
   topicMinSimilarity?: number;
   topicWeight?: number;
@@ -445,6 +447,14 @@ export function rankRelatedPetsWithDiagnostics(input: {
     }
   }
   const strategy = input.profile.strategy ?? "legacy-v7";
+  if (
+    input.profile.relationPolicyRevision &&
+    strategy !== "entity-controlled-v11"
+  ) {
+    throw new Error(
+      "Related-pets relation policies require the entity-controlled strategy.",
+    );
+  }
   if (strategy === "entity-controlled-v11") {
     return rankEntityControlledRelatedPets({
       ...input,
@@ -584,9 +594,17 @@ function rankEntityControlledRelatedPets(input: {
   const visualScores = new Map(
     visualMatches.map(({ slug, score }) => [slug, score]),
   );
-  const sourceAnnotation = input.annotations?.get(input.source.slug) ?? null;
+  const sourceAnnotation = applyRelatedPetsRelationPolicy({
+    slug: input.source.slug,
+    annotation: input.annotations?.get(input.source.slug) ?? null,
+    revision: input.profile.relationPolicyRevision,
+  });
   const diagnostics = candidateSlugs.map((slug, metadataIndex) => {
-    const candidateAnnotation = input.annotations?.get(slug) ?? null;
+    const candidateAnnotation = applyRelatedPetsRelationPolicy({
+      slug,
+      annotation: input.annotations?.get(slug) ?? null,
+      revision: input.profile.relationPolicyRevision,
+    });
     const textSimilarity = textScores.get(slug) ?? null;
     const annotationSimilarity = annotationScores.get(slug) ?? null;
     const visualSimilarity = visualScores.get(slug) ?? null;

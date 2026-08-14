@@ -23,8 +23,10 @@ import {
   RELATED_PETS_V10_CALIBRATION_PROFILE,
   RELATED_PETS_V11_CALIBRATION_PROFILE,
   RELATED_PETS_V11_PROFILE,
+  RELATED_PETS_V23_PROFILE,
   isCurrentRelatedPetsRankingRevision,
 } from "@/lib/pets/related-pets-profile";
+import { RELATED_PETS_V23_RELATION_POLICY_REVISION } from "@/lib/pets/related-pets-relation-policy";
 
 const EXPECTED_VECTOR = {
   modelRevision: "text-v2",
@@ -285,6 +287,115 @@ describe("related pet weighted RRF", () => {
 });
 
 describe("related pet ranking", () => {
+  it("rejects a relation policy on a non-controlled strategy", () => {
+    const source = candidate("source");
+    expect(() => rankRelatedPetsWithDiagnostics({
+      source,
+      candidates: [source, candidate("peer")],
+      profile: {
+        strategy: "legacy-v7",
+        relationPolicyRevision: RELATED_PETS_V23_RELATION_POLICY_REVISION,
+        textMinSimilarity: 0.5,
+        visualMinSimilarity: null,
+        visualWeight: 0,
+      },
+    })).toThrow(
+      "Related-pets relation policies require the entity-controlled strategy.",
+    );
+  });
+
+  it("promotes Primaris into the Warhammer franchise tier only under V23", () => {
+    const source = candidate("master-of-terra");
+    const candidates = [source, candidate("primaris")];
+    const annotations = new Map([
+      ["master-of-terra", annotation({ franchises: ["warhammer-40000"] })],
+      ["primaris", annotation()],
+    ]);
+    const shared = {
+      source,
+      candidates,
+      annotations,
+      textQueryVectors: vectors({ "master-of-terra": [1, 0] }),
+      textDocumentVectors: vectors({ primaris: [0, 1] }),
+      annotationQueryVectors: vectors({ "master-of-terra": [1, 0] }),
+      annotationDocumentVectors: vectors({ primaris: [0, 1] }),
+      visualVectors: vectors({ "master-of-terra": [1, 0], primaris: [0, 1] }),
+    };
+
+    const v11 = rankRelatedPetsWithDiagnostics({
+      ...shared,
+      profile: v11Profile(),
+    });
+    const v23 = rankRelatedPetsWithDiagnostics({
+      ...shared,
+      profile: {
+        ...v11Profile(),
+        relationPolicyRevision: RELATED_PETS_V23_RELATION_POLICY_REVISION,
+      },
+    });
+
+    expect(v11.diagnostics[0]).toMatchObject({
+      slug: "primaris",
+      tier: "controlled_fallback",
+      matchedFacets: [],
+    });
+    expect(v23.diagnostics[0]).toMatchObject({
+      slug: "primaris",
+      tier: "franchise",
+      matchedFacets: ["warhammer-40000"],
+    });
+  });
+
+  it("applies the V23 franchise correction in both directions", () => {
+    const source = candidate("primaris");
+    const annotations = new Map([
+      ["primaris", annotation()],
+      ["master-of-terra", annotation({ franchises: ["warhammer-40000"] })],
+      ["guardian", annotation({ franchises: ["destiny"] })],
+    ]);
+    const result = rankRelatedPetsWithDiagnostics({
+      source,
+      candidates: [
+        source,
+        candidate("master-of-terra"),
+        candidate("guardian"),
+      ],
+      textQueryVectors: vectors({ primaris: [1, 0] }),
+      textDocumentVectors: vectors({
+        "master-of-terra": [0, 1],
+        guardian: [1, 0],
+      }),
+      annotationQueryVectors: vectors({ primaris: [1, 0] }),
+      annotationDocumentVectors: vectors({
+        "master-of-terra": [0, 1],
+        guardian: [1, 0],
+      }),
+      visualVectors: vectors({
+        primaris: [1, 0],
+        "master-of-terra": [0, 1],
+        guardian: [1, 0],
+      }),
+      annotations,
+      profile: {
+        ...v11Profile(),
+        relationPolicyRevision: RELATED_PETS_V23_RELATION_POLICY_REVISION,
+      },
+    });
+
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        slug: "master-of-terra",
+        tier: "franchise",
+        matchedFacets: ["warhammer-40000"],
+      }),
+      expect.objectContaining({
+        slug: "guardian",
+        tier: "conflict_fallback",
+        franchiseConflict: true,
+      }),
+    ]);
+  });
+
   it("orders V11 relation tiers before semantic and visual signals", () => {
     const source = candidate("vi");
     const peers = [
@@ -1118,6 +1229,14 @@ describe("related pet ranking profile", () => {
     });
     expect(RELATED_PETS_V11_PROFILE.rankingRevision).not.toContain(
       ":candidate",
+    );
+    expect(RELATED_PETS_V23_PROFILE).toMatchObject({
+      strategy: "entity-controlled-v11",
+      relationPolicyRevision: RELATED_PETS_V23_RELATION_POLICY_REVISION,
+      rankingRevision: expect.stringContaining(":candidate"),
+    });
+    expect(RELATED_PETS_V23_PROFILE.rankingRevision).toContain(
+      RELATED_PETS_V11_PROFILE.rankingRevision,
     );
     expect(CURRENT_RELATED_PETS_RANKING_PROFILE).toBe(
       RELATED_PETS_V11_PROFILE,

@@ -21,6 +21,7 @@ import {
   RELATED_PETS_TEXT_WEIGHT,
   type RelatedPetsRankingProfile,
 } from "@/lib/pets/related-pets-ranking";
+import { RELATED_PETS_V23_RELATION_POLICY_REVISION } from "@/lib/pets/related-pets-relation-policy";
 
 const TEXT_REVISION = "yandex-text-embeddings-v2-768-2026-07";
 export const RELATED_PETS_V7_TEXT_QUERY_REVISION =
@@ -166,6 +167,12 @@ export const RELATED_PETS_V11_PROFILE = {
   ...RELATED_PETS_V11_CALIBRATION_PROFILE,
   rankingRevision: `related-pets-entity-controlled-v11-r3:depth=8:tail=description-first:gate=qualified-negatives:cal=${V11_CALIBRATION_REVISION}:text-min=${PINNED_V11_PROFILE.textMinSimilarity}:annotation-min=${PINNED_V11_PROFILE.annotationMinSimilarity}:annotation-weight=${PINNED_V11_PROFILE.annotationWeight}:visual-min=${PINNED_V11_PROFILE.visualMinSimilarity}:visual-weight=${PINNED_V11_PROFILE.visualWeight}:description=${RELATED_PETS_V9_TEXT_DOCUMENT_REVISION}:description-query=${RELATED_PETS_V9_TEXT_QUERY_REVISION}:annotation=${RELATED_PETS_ANNOTATION_REVISION}:annotation-document=${RELATED_PETS_ANNOTATION_DOCUMENT_REVISION}:annotation-query=${RELATED_PETS_ANNOTATION_QUERY_REVISION}:visual=${VISUAL_REVISION}`,
   ...PINNED_V11_PROFILE,
+} as const satisfies RelatedPetsRuntimeProfile;
+
+export const RELATED_PETS_V23_PROFILE = {
+  ...RELATED_PETS_V11_PROFILE,
+  rankingRevision: `related-pets-franchise-coverage-v23:depth=8:base=${RELATED_PETS_V11_PROFILE.rankingRevision}:relation-policy=${RELATED_PETS_V23_RELATION_POLICY_REVISION}:candidate`,
+  relationPolicyRevision: RELATED_PETS_V23_RELATION_POLICY_REVISION,
 } as const satisfies RelatedPetsRuntimeProfile;
 
 export const RELATED_PETS_V8_CALIBRATION_PROFILE = {
