@@ -39,6 +39,7 @@
     "related:eval:v11:compare": "PET_RELATED_V11_EVAL=compare vitest run src/lib/pets/related-pets-v11-live-eval.test.ts",
     "related:eval:v11:holdout": "PET_RELATED_V11_EVAL=holdout vitest run src/lib/pets/related-pets-v11-live-eval.test.ts",
     "related:eval:v23:compare": "PET_RELATED_V23_EVAL=compare vitest run src/lib/pets/related-pets-v23-live-eval.test.ts",
+    "related:eval:v24:compare": "PET_RELATED_V24_EVAL=compare vitest run src/lib/pets/related-pets-v24-live-eval.test.ts",
     "search:eval:calibrate": "PET_SEARCH_LIVE_EVAL=calibrate vitest run src/lib/pets/search-live-eval.test.ts",
     "search:eval:holdout": "PET_SEARCH_LIVE_EVAL=holdout vitest run src/lib/pets/search-live-eval.test.ts",
     "seed:dev": "node scripts/seed-dev-data.mjs",

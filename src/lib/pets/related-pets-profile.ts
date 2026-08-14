@@ -21,6 +21,7 @@ import {
   RELATED_PETS_TEXT_WEIGHT,
   type RelatedPetsRankingProfile,
 } from "@/lib/pets/related-pets-ranking";
+import { RELATED_PETS_V24_FALLBACK_POLICY_REVISION } from "@/lib/pets/related-pets-fallback-policy";
 import { RELATED_PETS_V23_RELATION_POLICY_REVISION } from "@/lib/pets/related-pets-relation-policy";
 
 const TEXT_REVISION = "yandex-text-embeddings-v2-768-2026-07";
@@ -173,6 +174,12 @@ export const RELATED_PETS_V23_PROFILE = {
   ...RELATED_PETS_V11_PROFILE,
   rankingRevision: `related-pets-franchise-coverage-v23:depth=8:base=${RELATED_PETS_V11_PROFILE.rankingRevision}:relation-policy=${RELATED_PETS_V23_RELATION_POLICY_REVISION}`,
   relationPolicyRevision: RELATED_PETS_V23_RELATION_POLICY_REVISION,
+} as const satisfies RelatedPetsRuntimeProfile;
+
+export const RELATED_PETS_V24_PROFILE = {
+  ...RELATED_PETS_V23_PROFILE,
+  rankingRevision: `related-pets-sparse-fallback-v24:depth=8:base=${RELATED_PETS_V23_PROFILE.rankingRevision}:fallback-policy=${RELATED_PETS_V24_FALLBACK_POLICY_REVISION}`,
+  fallbackPolicyRevision: RELATED_PETS_V24_FALLBACK_POLICY_REVISION,
 } as const satisfies RelatedPetsRuntimeProfile;
 
 export const RELATED_PETS_V8_CALIBRATION_PROFILE = {

@@ -13,6 +13,7 @@ import {
   RELATED_PETS_SEMANTIC_FALLBACK_VISUAL_WEIGHT,
   type StoredRelatedPetVector,
 } from "@/lib/pets/related-pets-ranking";
+import { RELATED_PETS_V24_FALLBACK_POLICY_REVISION } from "@/lib/pets/related-pets-fallback-policy";
 import type { RelatedPetCandidate } from "@/lib/pets/related-pets";
 import {
   CURRENT_RELATED_PETS_RANKING_PROFILE,
@@ -24,6 +25,7 @@ import {
   RELATED_PETS_V11_CALIBRATION_PROFILE,
   RELATED_PETS_V11_PROFILE,
   RELATED_PETS_V23_PROFILE,
+  RELATED_PETS_V24_PROFILE,
   isCurrentRelatedPetsRankingRevision,
 } from "@/lib/pets/related-pets-profile";
 import { RELATED_PETS_V23_RELATION_POLICY_REVISION } from "@/lib/pets/related-pets-relation-policy";
@@ -304,6 +306,23 @@ describe("related pet ranking", () => {
     );
   });
 
+  it("rejects a fallback policy on a non-controlled strategy", () => {
+    const source = candidate("source");
+    expect(() => rankRelatedPetsWithDiagnostics({
+      source,
+      candidates: [source, candidate("peer")],
+      profile: {
+        strategy: "legacy-v7",
+        fallbackPolicyRevision: RELATED_PETS_V24_FALLBACK_POLICY_REVISION,
+        textMinSimilarity: 0.5,
+        visualMinSimilarity: null,
+        visualWeight: 0,
+      },
+    })).toThrow(
+      "Related-pets fallback policies require the entity-controlled strategy.",
+    );
+  });
+
   it("promotes Primaris into the Warhammer franchise tier only under V23", () => {
     const source = candidate("master-of-terra");
     const candidates = [source, candidate("primaris")];
@@ -527,6 +546,246 @@ describe("related pet ranking", () => {
         fallbackProvenance: "description_then_annotation",
       }),
     ]));
+  });
+
+  it("rescues a zero-qualified source by shared topic, kind, and visual order", () => {
+    const source = candidate("source", {
+      kind: "character",
+      tags: ["man", "office", "chibi"],
+    });
+    const candidates = [
+      source,
+      candidate("text-only", { kind: "character" }),
+      candidate("visual-only", { kind: "character" }),
+      candidate("same-kind-low-visual", {
+        kind: "character",
+        tags: ["man"],
+      }),
+      candidate("same-kind-high-visual", {
+        kind: "character",
+        tags: ["man"],
+      }),
+      candidate("other-kind-high-visual", {
+        kind: "creature",
+        tags: ["man"],
+      }),
+    ];
+    const shared = {
+      source,
+      candidates,
+      annotations: new Map(candidates.map(({ slug }) => [slug, annotation()])),
+      precomputedMatches: {
+        text: [
+          { slug: "text-only", score: 0.79 },
+          { slug: "visual-only", score: 0.78 },
+          { slug: "same-kind-low-visual", score: 0.3 },
+          { slug: "same-kind-high-visual", score: 0.2 },
+          { slug: "other-kind-high-visual", score: 0.1 },
+        ],
+        annotation: candidates.slice(1).map(({ slug }) => ({ slug, score: 0.2 })),
+        visual: [
+          { slug: "visual-only", score: 0.99 },
+          { slug: "other-kind-high-visual", score: 0.98 },
+          { slug: "same-kind-high-visual", score: 0.9 },
+          { slug: "same-kind-low-visual", score: 0.4 },
+          { slug: "text-only", score: 0.1 },
+        ],
+      },
+    };
+
+    const v23 = rankRelatedPetsWithDiagnostics({
+      ...shared,
+      profile: v11Profile(),
+    });
+    const v24 = rankRelatedPetsWithDiagnostics({
+      ...shared,
+      profile: {
+        ...v11Profile(),
+        fallbackPolicyRevision: RELATED_PETS_V24_FALLBACK_POLICY_REVISION,
+      },
+    });
+
+    expect(v23.slugs).toEqual([
+      "text-only",
+      "visual-only",
+      "same-kind-low-visual",
+      "same-kind-high-visual",
+      "other-kind-high-visual",
+    ]);
+    expect(v24.slugs).toEqual([
+      "same-kind-high-visual",
+      "same-kind-low-visual",
+      "other-kind-high-visual",
+      "text-only",
+      "visual-only",
+    ]);
+    expect(v24.diagnostics.slice(0, 3)).toEqual([
+      expect.objectContaining({
+        slug: "same-kind-high-visual",
+        sharedTagCount: 1,
+        fallbackProvenance: "shared_topics_kind_visual_description",
+      }),
+      expect.objectContaining({
+        slug: "same-kind-low-visual",
+        sharedTagCount: 1,
+        fallbackProvenance: "shared_topics_kind_visual_description",
+      }),
+      expect.objectContaining({
+        slug: "other-kind-high-visual",
+        sharedTagCount: 1,
+        fallbackProvenance: "shared_topics_kind_visual_description",
+      }),
+    ]);
+  });
+
+  it("fails closed for an unknown sparse fallback revision", () => {
+    const source = candidate("source");
+    expect(() => rankRelatedPetsWithDiagnostics({
+      source,
+      candidates: [source, candidate("peer")],
+      annotations: new Map([
+        ["source", annotation()],
+        ["peer", annotation()],
+      ]),
+      profile: {
+        ...v11Profile(),
+        fallbackPolicyRevision: "related-pets-sparse-fallback-unknown",
+      },
+    })).toThrow("Unsupported related-pets fallback policy revision.");
+  });
+
+  it("does not rescue a zero-qualified source by generic topic tags", () => {
+    const source = candidate("source", {
+      tags: ["girl", "anime", "chibi", "detailed"],
+    });
+    const candidates = [
+      source,
+      candidate("text-first"),
+      candidate("generic-tag", { tags: ["girl", "anime", "chibi"] }),
+    ];
+    const shared = {
+      source,
+      candidates,
+      annotations: new Map(candidates.map(({ slug }) => [slug, annotation()])),
+      precomputedMatches: {
+        text: [
+          { slug: "text-first", score: 0.79 },
+          { slug: "generic-tag", score: 0.1 },
+        ],
+        annotation: [
+          { slug: "text-first", score: 0.2 },
+          { slug: "generic-tag", score: 0.2 },
+        ],
+        visual: [
+          { slug: "generic-tag", score: 0.99 },
+          { slug: "text-first", score: 0.1 },
+        ],
+      },
+    };
+
+    const v23 = rankRelatedPetsWithDiagnostics({
+      ...shared,
+      profile: v11Profile(),
+    });
+    const v24 = rankRelatedPetsWithDiagnostics({
+      ...shared,
+      profile: {
+        ...v11Profile(),
+        fallbackPolicyRevision: RELATED_PETS_V24_FALLBACK_POLICY_REVISION,
+      },
+    });
+
+    expect(v24).toEqual(v23);
+    expect(v24.diagnostics.find(({ slug }) => slug === "generic-tag"))
+      .toMatchObject({ sharedTagCount: 0 });
+  });
+
+  it("does not activate sparse rescue when any candidate qualifies", () => {
+    const source = candidate("source", { tags: ["man"] });
+    const candidates = [
+      source,
+      candidate("qualified"),
+      candidate("shared-tag", { tags: ["man"] }),
+    ];
+    const shared = {
+      source,
+      candidates,
+      annotations: new Map(candidates.map(({ slug }) => [slug, annotation()])),
+      precomputedMatches: {
+        text: [
+          { slug: "qualified", score: 0.9 },
+          { slug: "shared-tag", score: 0.2 },
+        ],
+        annotation: [
+          { slug: "qualified", score: 0.9 },
+          { slug: "shared-tag", score: 0.2 },
+        ],
+        visual: [
+          { slug: "shared-tag", score: 0.99 },
+          { slug: "qualified", score: 0.1 },
+        ],
+      },
+    };
+    const v23 = rankRelatedPetsWithDiagnostics({
+      ...shared,
+      profile: v11Profile(),
+    });
+    const v24 = rankRelatedPetsWithDiagnostics({
+      ...shared,
+      profile: {
+        ...v11Profile(),
+        fallbackPolicyRevision: RELATED_PETS_V24_FALLBACK_POLICY_REVISION,
+      },
+    });
+
+    expect(v24.slugs).toEqual(v23.slugs);
+    expect(v24.diagnostics.find(({ slug }) => slug === "shared-tag"))
+      .toMatchObject({
+        sharedTagCount: 1,
+        sharedTagRank: null,
+        fallbackProvenance: "description_then_annotation",
+      });
+  });
+
+  it("does not rescue a franchise-conflicting tag match", () => {
+    const source = candidate("source", { tags: ["man"] });
+    const candidates = [
+      source,
+      candidate("controlled-tail"),
+      candidate("conflicting-tag", { tags: ["man"] }),
+    ];
+    const result = rankRelatedPetsWithDiagnostics({
+      source,
+      candidates,
+      annotations: new Map([
+        ["source", annotation({ franchises: ["source-world"] })],
+        ["controlled-tail", annotation()],
+        ["conflicting-tag", annotation({ franchises: ["other-world"] })],
+      ]),
+      precomputedMatches: {
+        text: [
+          { slug: "conflicting-tag", score: 0.79 },
+          { slug: "controlled-tail", score: 0.2 },
+        ],
+        annotation: candidates.slice(1).map(({ slug }) => ({ slug, score: 0.2 })),
+        visual: [
+          { slug: "conflicting-tag", score: 0.99 },
+          { slug: "controlled-tail", score: 0.1 },
+        ],
+      },
+      profile: {
+        ...v11Profile(),
+        fallbackPolicyRevision: RELATED_PETS_V24_FALLBACK_POLICY_REVISION,
+      },
+    });
+
+    expect(result.slugs).toEqual(["controlled-tail", "conflicting-tag"]);
+    expect(result.diagnostics[1]).toMatchObject({
+      tier: "conflict_fallback",
+      sharedTagCount: 1,
+      sharedTagRank: null,
+      fallbackProvenance: "conflict_contract",
+    });
   });
 
   it("lets only text similarity qualify v9 candidates", () => {
@@ -1239,6 +1498,14 @@ describe("related pet ranking profile", () => {
     );
     expect(RELATED_PETS_V23_PROFILE.rankingRevision).toContain(
       RELATED_PETS_V11_PROFILE.rankingRevision,
+    );
+    expect(RELATED_PETS_V24_PROFILE).toMatchObject({
+      strategy: "entity-controlled-v11",
+      relationPolicyRevision: RELATED_PETS_V23_RELATION_POLICY_REVISION,
+      fallbackPolicyRevision: RELATED_PETS_V24_FALLBACK_POLICY_REVISION,
+    });
+    expect(RELATED_PETS_V24_PROFILE.rankingRevision).toContain(
+      RELATED_PETS_V23_PROFILE.rankingRevision,
     );
     expect(CURRENT_RELATED_PETS_RANKING_PROFILE).toBe(
       RELATED_PETS_V23_PROFILE,

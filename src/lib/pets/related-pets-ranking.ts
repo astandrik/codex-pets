@@ -7,6 +7,11 @@ import {
 } from "@/lib/pets/related-pets";
 import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
 import type { ResolvedRelatedPetAnnotation } from "@/lib/pets/related-pets-annotation-contract.mjs";
+import {
+  countSharedRelatedPetTopics,
+  createRelatedPetTopicSet,
+  RELATED_PETS_V24_FALLBACK_POLICY_REVISION,
+} from "@/lib/pets/related-pets-fallback-policy";
 import { applyRelatedPetsRelationPolicy } from "@/lib/pets/related-pets-relation-policy";
 
 export const RELATED_PETS_RRF_K = 60;
@@ -32,6 +37,7 @@ export type RelatedPetSimilarity = {
 export type RelatedPetsRankingProfile = {
   strategy?: RelatedPetsRankingStrategy;
   relationPolicyRevision?: string;
+  fallbackPolicyRevision?: string;
   textMinSimilarity: number;
   topicMinSimilarity?: number;
   topicWeight?: number;
@@ -93,7 +99,11 @@ export type RelatedPetRankingDiagnostic = {
   annotationSimilarity?: number | null;
   annotationMinSimilarity?: number;
   passesAnnotationThreshold?: boolean;
-  fallbackProvenance?: "description_then_annotation" | "conflict_contract" | null;
+  fallbackProvenance?:
+    | "description_then_annotation"
+    | "shared_topics_kind_visual_description"
+    | "conflict_contract"
+    | null;
 };
 
 export type RelatedPetsRankingResult = {
@@ -455,6 +465,14 @@ export function rankRelatedPetsWithDiagnostics(input: {
       "Related-pets relation policies require the entity-controlled strategy.",
     );
   }
+  if (
+    input.profile.fallbackPolicyRevision &&
+    strategy !== "entity-controlled-v11"
+  ) {
+    throw new Error(
+      "Related-pets fallback policies require the entity-controlled strategy.",
+    );
+  }
   if (strategy === "entity-controlled-v11") {
     return rankEntityControlledRelatedPets({
       ...input,
@@ -559,6 +577,15 @@ function rankEntityControlledRelatedPets(input: {
   if (input.profile.visualMinSimilarity !== null) {
     assertCosineThreshold("visual", input.profile.visualMinSimilarity);
   }
+  const sparseFallbackEnabled = input.profile.fallbackPolicyRevision !==
+      undefined;
+  if (
+    sparseFallbackEnabled &&
+    input.profile.fallbackPolicyRevision !==
+      RELATED_PETS_V24_FALLBACK_POLICY_REVISION
+  ) {
+    throw new Error("Unsupported related-pets fallback policy revision.");
+  }
 
   const candidateSlugs = uniqueKnownSlugs(
     input.candidates.map(({ slug }) => slug),
@@ -599,7 +626,14 @@ function rankEntityControlledRelatedPets(input: {
     annotation: input.annotations?.get(input.source.slug) ?? null,
     revision: input.profile.relationPolicyRevision,
   });
+  const candidatesBySlug = new Map(
+    input.candidates.map((candidate) => [candidate.slug, candidate]),
+  );
+  const sourceTopics = sparseFallbackEnabled
+    ? createRelatedPetTopicSet(input.source.tags)
+    : new Set<string>();
   const diagnostics = candidateSlugs.map((slug, metadataIndex) => {
+    const candidate = candidatesBySlug.get(slug);
     const candidateAnnotation = applyRelatedPetsRelationPolicy({
       slug,
       annotation: input.annotations?.get(slug) ?? null,
@@ -650,7 +684,9 @@ function rankEntityControlledRelatedPets(input: {
       topicSimilarity: null,
       annotationSimilarity,
       visualSimilarity,
-      sharedTagCount: 0,
+      sharedTagCount: sparseFallbackEnabled && candidate
+        ? countSharedRelatedPetTopics(sourceTopics, candidate.tags)
+        : 0,
       sharedTagRank: null,
       textMinSimilarity: input.profile.textMinSimilarity,
       topicMinSimilarity: null,
@@ -672,7 +708,43 @@ function rankEntityControlledRelatedPets(input: {
         contributions.text + contributions.annotation + contributions.visual,
     } satisfies RelatedPetRankingDiagnostic;
   });
-  const selected = diagnostics.toSorted(compareV11Diagnostics).slice(
+  const hasQualifiedCandidate = diagnostics.some(({ tier }) =>
+    V11_TIER_ORDER[tier as V11Tier] <= 5
+  );
+  const useSparseFallback = sparseFallbackEnabled && !hasQualifiedCandidate;
+  const sparseFallbackRanks = useSparseFallback
+    ? new Map(
+        diagnostics
+          .filter(isV24SparseFallbackCandidate)
+          .toSorted((left, right) => compareV24SparseFallbackCandidates(
+            left,
+            right,
+            input.source.kind,
+            candidatesBySlug,
+          ))
+          .map(({ slug }, index) => [slug, index + 1]),
+      )
+    : new Map<string, number>();
+  const rankedDiagnostics = diagnostics.map((diagnostic) => {
+    const sharedTagRank = sparseFallbackRanks.get(diagnostic.slug) ?? null;
+    if (sharedTagRank === null) return diagnostic;
+    return {
+      ...diagnostic,
+      sharedTagRank,
+      fallbackProvenance:
+        "shared_topics_kind_visual_description" as const,
+    };
+  });
+  const selected = rankedDiagnostics.toSorted((left, right) =>
+    useSparseFallback
+      ? compareV24SparseFallbackCandidates(
+          left,
+          right,
+          input.source.kind,
+          candidatesBySlug,
+        )
+      : compareV11Diagnostics(left, right)
+  ).slice(
     0,
     normalizedLimit(input.limit),
   );
@@ -686,6 +758,35 @@ function rankEntityControlledRelatedPets(input: {
       tier === "controlled_fallback" || tier === "conflict_fallback"
     ).length,
   };
+}
+
+function isV24SparseFallbackCandidate(
+  diagnostic: RelatedPetRankingDiagnostic,
+): boolean {
+  return diagnostic.tier === "controlled_fallback" &&
+    diagnostic.sharedTagCount > 0;
+}
+
+function compareV24SparseFallbackCandidates(
+  left: RelatedPetRankingDiagnostic,
+  right: RelatedPetRankingDiagnostic,
+  sourceKind: RelatedPetCandidate["kind"],
+  candidatesBySlug: ReadonlyMap<string, RelatedPetCandidate>,
+): number {
+  const leftRescued = isV24SparseFallbackCandidate(left);
+  const rightRescued = isV24SparseFallbackCandidate(right);
+  if (leftRescued !== rightRescued) return leftRescued ? -1 : 1;
+  if (!leftRescued) return compareV11Diagnostics(left, right);
+
+  const leftSameKind = candidatesBySlug.get(left.slug)?.kind === sourceKind;
+  const rightSameKind = candidatesBySlug.get(right.slug)?.kind === sourceKind;
+  return right.sharedTagCount - left.sharedTagCount ||
+    Number(rightSameKind) - Number(leftSameKind) ||
+    (right.visualSimilarity ?? -2) - (left.visualSimilarity ?? -2) ||
+    (right.textSimilarity ?? -2) - (left.textSimilarity ?? -2) ||
+    (right.annotationSimilarity ?? -2) -
+      (left.annotationSimilarity ?? -2) ||
+    left.slug.localeCompare(right.slug);
 }
 
 function classifyV11Relation(
