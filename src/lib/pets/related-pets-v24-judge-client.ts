@@ -46,8 +46,8 @@ export function createRelatedPetsV24JudgeClient(options: {
   const request = createResponsesStructuredRequester<JudgeInput, RelatedPetsV24JudgeResult>({
     ...options,
     reasoning: { effort: "medium" },
-    initialMaxOutputTokens: 16_000,
-    retryMaxOutputTokens: 32_000,
+    initialMaxOutputTokens: 32_000,
+    retryMaxOutputTokens: 64_000,
     systemPrompt: RELATED_PETS_V24_JUDGE_SYSTEM_PROMPT,
     responseSchemaName: RELATED_PETS_V24_JUDGE_SCHEMA_NAME,
     responseJsonSchema: RELATED_PETS_V24_JUDGE_RESPONSE_JSON_SCHEMA,

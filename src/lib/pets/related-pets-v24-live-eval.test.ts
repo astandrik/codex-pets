@@ -60,9 +60,9 @@ import { destroyYdbDriver } from "@/lib/ydb/client";
 const ENABLED = process.env.PET_RELATED_V24_EVAL === "compare";
 const ACCEPTANCE_ENABLED = process.env.PET_RELATED_V24_EVAL === "acceptance";
 const COMPATIBLE_V24_JUDGE_REVISION =
-  "gpt-oss-120b-related-slate-judge-2026-08-v24";
+  "gpt-oss-120b-related-slate-judge-2026-08-v24-r2";
 const COMPATIBLE_V24_SUPPORT_COMMIT =
-  "ebd769ffb5e5b85907dcefd27aa6a68092763323";
+  "96891b4ecbd7fc9cc088cc53a7a03c7ab8447f5f";
 const TIGRAN_EXPECTED_RESCUE = [
   "leon",
   "johnny",

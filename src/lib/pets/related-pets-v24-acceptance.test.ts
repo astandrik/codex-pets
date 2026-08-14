@@ -41,7 +41,7 @@ describe("related pets V24 acceptance", () => {
       model: "gpt://folder-1/gpt-oss-120b",
       store: false,
       temperature: 0,
-      max_output_tokens: 16_000,
+      max_output_tokens: 32_000,
       reasoning: { effort: "medium" },
     });
     const userContent = JSON.stringify(bodies[0]?.input);
@@ -49,7 +49,7 @@ describe("related pets V24 acceptance", () => {
     expect(JSON.stringify(bodies[0])).not.toContain("SECRET_KEY");
   });
 
-  it("retries judge output limits with 32000 tokens", async () => {
+  it("retries judge output limits with 64000 tokens", async () => {
     const bodies: Array<Record<string, unknown>> = [];
     const responses = [
       Response.json({
@@ -77,9 +77,9 @@ describe("related pets V24 acceptance", () => {
       orderConsistent: true,
     });
     expect(bodies.map((body) => body.max_output_tokens)).toEqual([
-      16_000,
       32_000,
-      16_000,
+      64_000,
+      32_000,
     ]);
   });
 
