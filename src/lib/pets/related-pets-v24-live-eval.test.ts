@@ -194,16 +194,6 @@ describe.skipIf(!ENABLED)("live related-pets V24 comparison", () => {
       baseline: aggregateFixtures(fixtureCases, "baseline"),
       candidate: aggregateFixtures(fixtureCases, "candidate"),
     };
-    expect(aggregate.candidate.ndcgAt4).toBeGreaterThanOrEqual(
-      aggregate.baseline.ndcgAt4,
-    );
-    expect(aggregate.candidate.ndcgAt8).toBeGreaterThanOrEqual(
-      aggregate.baseline.ndcgAt8,
-    );
-    expect(aggregate.candidate.negativeCount).toBeLessThanOrEqual(
-      aggregate.baseline.negativeCount,
-    );
-
     const integritySatisfied = prepared.approvedPets.every(({ slug }) => {
       const slugs = candidate.get(slug)?.slugs ?? [];
       return slugs.length === 8 && new Set(slugs).size === 8 &&
@@ -211,8 +201,6 @@ describe.skipIf(!ENABLED)("live related-pets V24 comparison", () => {
           candidate.has(candidateSlug)
         );
     });
-    expect(integritySatisfied).toBe(true);
-
     const overlap = prepared.approvedPets.map(({ slug }) => ({
       sourceSlug: slug,
       at4: overlapAtK(
@@ -289,6 +277,16 @@ describe.skipIf(!ENABLED)("live related-pets V24 comparison", () => {
         },
       ])),
     }));
+    expect(aggregate.candidate.ndcgAt4).toBeGreaterThanOrEqual(
+      aggregate.baseline.ndcgAt4,
+    );
+    expect(aggregate.candidate.ndcgAt8).toBeGreaterThanOrEqual(
+      aggregate.baseline.ndcgAt8,
+    );
+    expect(aggregate.candidate.negativeCount).toBeLessThanOrEqual(
+      aggregate.baseline.negativeCount,
+    );
+    expect(integritySatisfied).toBe(true);
   }, 300_000);
 });
 
