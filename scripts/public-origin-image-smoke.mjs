@@ -232,8 +232,42 @@ try {
     await verifyEndpoint(localOrigin, endpoint);
   }
 
+  await run("docker", ["rm", "--force", container]);
+  containerCreated = false;
+
+  const runtimeMismatch = await run(
+    "docker",
+    [
+      "run",
+      "--rm",
+      "--name",
+      container,
+      "--env",
+      "NEXT_PUBLIC_APP_URL=https://runtime.example/codex-pets",
+      "--env",
+      `NEXT_PUBLIC_BASE_PATH=${basePath}`,
+      image,
+    ],
+    { allowFailure: true },
+  );
+  failureOutput = keepTail(failureOutput, runtimeMismatch.output);
+  assert(
+    runtimeMismatch.exitCode !== 0,
+    "Docker runner accepted public configuration that differs from the build.",
+  );
+  assert(
+    runtimeMismatch.output.includes(
+      "must match the Docker image build configuration",
+    ),
+    "Docker runner did not report the build/runtime configuration mismatch.",
+  );
+  assert(
+    !runtimeMismatch.output.includes("▲ Next.js"),
+    "Docker runner started Next.js after a public configuration mismatch.",
+  );
+
   console.log(
-    `Verified ${endpoints.length} canonical-origin surfaces in ${container}.`,
+    `Verified ${endpoints.length} canonical-origin surfaces and runtime override rejection in ${container}.`,
   );
 } catch (error) {
   if (error instanceof CommandError) {

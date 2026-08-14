@@ -31,12 +31,13 @@ not runtime configuration. Next.js embeds both values in the production bundle,
 so changing the canonical origin or base path requires rebuilding the image.
 Do not include either variable in the runtime env file and do not override them
 with `docker run --env`; the image copies its validated build arguments into the
-runner environment and validates them again before `next start`.
+runner environment and rejects values that differ from the build configuration
+before `next start`.
 
 `NEXT_PUBLIC_APP_URL` must be an absolute public HTTP(S) URL without
-credentials, query, fragment, localhost, or a loopback address. Its normalized
-pathname must equal `NEXT_PUBLIC_BASE_PATH`. The current production contour is
-built with:
+credentials, query, fragment, localhost, a loopback address, or an unspecified
+bind address. Its normalized pathname must equal `NEXT_PUBLIC_BASE_PATH`. The
+current production contour is built with:
 
 ```bash
 docker build \

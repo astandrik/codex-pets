@@ -162,7 +162,8 @@ docker build \
 
 These values are validated and embedded at image build time. Do not override
 them through the runtime env file; changing either value requires rebuilding
-the image. Local `npm run dev` keeps its `http://localhost:3000` fallback.
+the image. Docker startup rejects runtime values that differ from the build
+configuration. Local `npm run dev` keeps its `http://localhost:3000` fallback.
 
 If the app container talks to YDB by Docker hostname, for example
 `grpc://ydb-local:2136`, run the app on the same Docker network as the YDB

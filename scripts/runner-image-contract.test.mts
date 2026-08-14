@@ -27,6 +27,12 @@ describe("runner image maintenance contract", () => {
     expect(runnerStage).toContain(
       "ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH",
     );
+    expect(runnerStage).toContain(
+      "ENV CODEX_PETS_BUILT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL",
+    );
+    expect(runnerStage).toContain(
+      "ENV CODEX_PETS_BUILT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH",
+    );
     expect(runnerStage).toContain('CMD ["npm", "run", "start:docker"]');
     expect(packageJson.scripts["start:docker"]).toBe(
       "npm run validate:public-build && next start",
