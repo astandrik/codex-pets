@@ -32,11 +32,18 @@ class CommandError extends Error {
   }
 }
 
+class CommandTimeoutError extends Error {
+  constructor(command, timeoutMs, output) {
+    super(`${command} timed out after ${timeoutMs} ms.`);
+    this.output = output;
+  }
+}
+
 function keepTail(current, chunk) {
   return `${current}${chunk}`.split("\n").slice(-maxCapturedLines).join("\n");
 }
 
-function run(command, args, { allowFailure = false } = {}) {
+function run(command, args, { allowFailure = false, timeoutMs } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: repositoryRoot,
@@ -45,6 +52,21 @@ function run(command, args, { allowFailure = false } = {}) {
     });
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    const timeout = timeoutMs
+      ? setTimeout(() => {
+          if (child.exitCode === null && child.signalCode === null) {
+            timedOut = true;
+            child.kill("SIGKILL");
+          }
+        }, timeoutMs)
+      : undefined;
+
+    const clearCommandTimeout = () => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    };
 
     child.stdout.on("data", (chunk) => {
       stdout = keepTail(stdout, chunk.toString());
@@ -53,10 +75,16 @@ function run(command, args, { allowFailure = false } = {}) {
       stderr = keepTail(stderr, chunk.toString());
     });
     child.on("error", (error) => {
+      clearCommandTimeout();
       reject(error);
     });
     child.on("close", (exitCode) => {
+      clearCommandTimeout();
       const output = keepTail(stdout, stderr);
+      if (timedOut) {
+        reject(new CommandTimeoutError(command, timeoutMs, output));
+        return;
+      }
       if (exitCode === 0 || allowFailure) {
         resolve({ exitCode, stdout, stderr, output });
         return;
@@ -235,11 +263,11 @@ try {
   await run("docker", ["rm", "--force", container]);
   containerCreated = false;
 
-  const runtimeMismatch = await run(
+  const runtimeMismatchStart = await run(
     "docker",
     [
       "run",
-      "--rm",
+      "--detach",
       "--name",
       container,
       "--env",
@@ -248,8 +276,34 @@ try {
       `NEXT_PUBLIC_BASE_PATH=${basePath}`,
       image,
     ],
+  );
+  assert(
+    runtimeMismatchStart.stdout.trim(),
+    "Docker did not start the runtime-mismatch negative control.",
+  );
+  containerCreated = true;
+
+  const runtimeMismatchWait = await run("docker", ["wait", container], {
+    timeoutMs: 15_000,
+  });
+  const runtimeMismatchLogs = await run(
+    "docker",
+    ["logs", "--tail", "40", container],
     { allowFailure: true },
   );
+  const runtimeMismatchExitCode = Number.parseInt(
+    runtimeMismatchWait.stdout.trim(),
+    10,
+  );
+  assert(
+    Number.isInteger(runtimeMismatchExitCode),
+    "Docker wait did not report the runtime-mismatch exit code.",
+  );
+
+  const runtimeMismatch = {
+    exitCode: runtimeMismatchExitCode,
+    output: runtimeMismatchLogs.output,
+  };
   failureOutput = keepTail(failureOutput, runtimeMismatch.output);
   assert(
     runtimeMismatch.exitCode !== 0,
@@ -266,11 +320,14 @@ try {
     "Docker runner started Next.js after a public configuration mismatch.",
   );
 
+  await run("docker", ["rm", "--force", container]);
+  containerCreated = false;
+
   console.log(
     `Verified ${endpoints.length} canonical-origin surfaces and runtime override rejection in ${container}.`,
   );
 } catch (error) {
-  if (error instanceof CommandError) {
+  if (error instanceof CommandError || error instanceof CommandTimeoutError) {
     failureOutput = error.output;
   }
   if (containerCreated) {

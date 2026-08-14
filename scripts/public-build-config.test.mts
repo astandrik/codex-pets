@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const { validatePublicBuildConfig } = await import(
   "./validate-public-build-config.mjs"
@@ -39,6 +39,15 @@ describe("public build configuration", () => {
       expect(() =>
         validatePublicBuildConfig({ NEXT_PUBLIC_APP_URL: appUrl }),
       ).toThrow("must be an absolute HTTP(S) URL");
+    },
+  );
+
+  it.each(["http://pets.example:0", "https://pets.example:0"])(
+    "rejects explicit port zero in URL %s",
+    (appUrl) => {
+      expect(() =>
+        validatePublicBuildConfig({ NEXT_PUBLIC_APP_URL: appUrl }),
+      ).toThrow("must not use port zero");
     },
   );
 
@@ -131,6 +140,27 @@ describe("public build configuration", () => {
         CODEX_PETS_BUILT_PUBLIC_BASE_PATH: "/codex-pets/",
       }),
     ).not.toThrow();
+  });
+
+  it("normalizes slash-only Docker metadata to an empty base path", () => {
+    expect(() =>
+      validatePublicBuildConfig({
+        NEXT_PUBLIC_APP_URL: "https://pets.example",
+        NEXT_PUBLIC_BASE_PATH: "",
+        CODEX_PETS_BUILT_PUBLIC_APP_URL: "https://pets.example//",
+        CODEX_PETS_BUILT_PUBLIC_BASE_PATH: "//",
+      }),
+    ).not.toThrow();
+  });
+
+  it("does not pass a slash-only base path to Next.js", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "//");
+
+    const { default: nextConfig } = await import("../next.config");
+    expect(nextConfig.basePath).toBeUndefined();
+
+    vi.unstubAllEnvs();
   });
 
   it.each([

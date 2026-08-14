@@ -47,6 +47,33 @@ describe("runner image maintenance contract", () => {
     });
   });
 
+  it("bounds the runtime-mismatch negative control", () => {
+    const smokeScript = readFileSync(
+      new URL("./public-origin-image-smoke.mjs", import.meta.url),
+      "utf8",
+    );
+    const negativeControlStart = smokeScript.indexOf(
+      "const runtimeMismatchStart",
+    );
+    const negativeControlEnd = smokeScript.indexOf(
+      "Verified ${endpoints.length}",
+      negativeControlStart,
+    );
+
+    expect(negativeControlStart).toBeGreaterThan(0);
+    expect(negativeControlEnd).toBeGreaterThan(negativeControlStart);
+
+    const negativeControl = smokeScript.slice(
+      negativeControlStart,
+      negativeControlEnd,
+    );
+    expect(negativeControl).toContain('"--detach"');
+    expect(negativeControl).not.toContain('"--rm"');
+    expect(negativeControl).toContain('["wait", container]');
+    expect(negativeControl).toContain("timeoutMs: 15_000");
+    expect(negativeControl).toContain('["logs", "--tail", "40", container]');
+  });
+
   it("copies YDB migrations required by the packaged db:migrate script", () => {
     const dockerfile = readFileSync(
       new URL("../Dockerfile", import.meta.url),

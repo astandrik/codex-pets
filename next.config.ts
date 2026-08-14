@@ -3,11 +3,19 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
-const configuredBasePath = process.env.NEXT_PUBLIC_BASE_PATH?.trim() ?? "";
+
+function normalizeBasePath(value: string | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed || trimmed === "/") {
+    return "";
+  }
+
+  const normalized = `/${trimmed.replace(/^\/+|\/+$/g, "")}`;
+  return normalized === "/" ? "" : normalized;
+}
+
 const basePath =
-  configuredBasePath && configuredBasePath !== "/"
-    ? `/${configuredBasePath.replace(/^\/+|\/+$/g, "")}`
-    : undefined;
+  normalizeBasePath(process.env.NEXT_PUBLIC_BASE_PATH) || undefined;
 
 const htmlLimitedBotUserAgents = [
   "TelegramBot",

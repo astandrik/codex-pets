@@ -8,7 +8,8 @@ function normalizeBasePath(value) {
     return "";
   }
 
-  return `/${trimmed.replace(/^\/+|\/+$/g, "")}`;
+  const normalized = `/${trimmed.replace(/^\/+|\/+$/g, "")}`;
+  return normalized === "/" ? "" : normalized;
 }
 
 function invalidConfig(reason) {
@@ -80,6 +81,10 @@ function parsePublicBuildConfig(configuredAppUrlValue, configuredBasePath) {
     throw invalidConfig(
       "NEXT_PUBLIC_APP_URL must be an absolute HTTP(S) URL.",
     );
+  }
+
+  if (appUrl.port === "0") {
+    throw invalidConfig("NEXT_PUBLIC_APP_URL must not use port zero.");
   }
 
   if (appUrl.username || appUrl.password) {
