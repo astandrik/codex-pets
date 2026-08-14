@@ -137,9 +137,17 @@ export function createResponsesStructuredRequester(options) {
   const reserveStart = options.reserveStart ?? (() => Promise.resolve());
   const onDiagnostic = options.onDiagnostic ?? (() => undefined);
 
+  const initialMaxOutputTokens = options.initialMaxOutputTokens ??
+    INITIAL_MAX_OUTPUT_TOKENS;
+  const retryMaxOutputTokens = options.retryMaxOutputTokens ??
+    RETRY_MAX_OUTPUT_TOKENS;
+  if (initialMaxOutputTokens <= 0 || retryMaxOutputTokens < initialMaxOutputTokens) {
+    throw new Error("Structured response token limits are invalid.");
+  }
+
   return async function requestStructured(input) {
     options.validateInput?.(input);
-    let maxOutputTokens = INITIAL_MAX_OUTPUT_TOKENS;
+    let maxOutputTokens = initialMaxOutputTokens;
     let structuredOutputRetryUsed = false;
     let lastError = null;
 
@@ -181,8 +189,8 @@ export function createResponsesStructuredRequester(options) {
       if (!outcome.retryable || attempt >= MAX_ATTEMPTS) throw lastError;
 
       if (outcome.reason === "output_limit") {
-        if (maxOutputTokens >= RETRY_MAX_OUTPUT_TOKENS) throw lastError;
-        maxOutputTokens = RETRY_MAX_OUTPUT_TOKENS;
+        if (maxOutputTokens >= retryMaxOutputTokens) throw lastError;
+        maxOutputTokens = retryMaxOutputTokens;
       } else if (
         outcome.reason === "malformed_json" ||
         outcome.reason === "schema_invalid"

@@ -41,11 +41,46 @@ describe("related pets V24 acceptance", () => {
       model: "gpt://folder-1/gpt-oss-120b",
       store: false,
       temperature: 0,
+      max_output_tokens: 16_000,
       reasoning: { effort: "medium" },
     });
     const userContent = JSON.stringify(bodies[0]?.input);
     expect(userContent).not.toMatch(/slug|annotation|similarity|v23|v24/i);
     expect(JSON.stringify(bodies[0])).not.toContain("SECRET_KEY");
+  });
+
+  it("retries judge output limits with 32000 tokens", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const responses = [
+      Response.json({
+        status: "incomplete",
+        incomplete_details: { reason: "max_output_tokens" },
+        output: [],
+      }),
+      completedResponse(judgment("B", 1, 2, "high")),
+      completedResponse(judgment("A", 2, 1, "high")),
+    ];
+    const client = createRelatedPetsV24JudgeClient({
+      folderId: "folder-1",
+      apiKey: "key",
+      modelUri: "gpt://folder-1/gpt-oss-120b",
+      timeoutMs: 30_000,
+      sleep: async () => undefined,
+      fetchImpl: async (_url, init) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return responses.shift() ?? completedResponse(judgment("A", 2, 1, "high"));
+      },
+    });
+
+    await expect(client.judgeBlindedPair(input())).resolves.toMatchObject({
+      requests: 2,
+      orderConsistent: true,
+    });
+    expect(bodies.map((body) => body.max_output_tokens)).toEqual([
+      16_000,
+      32_000,
+      16_000,
+    ]);
   });
 
   it("marks swapped disagreement and low confidence for manual review", async () => {

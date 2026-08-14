@@ -72,6 +72,8 @@ export function createResponsesStructuredRequester<Input, Output>(options: {
   responseSchemaName: string;
   responseJsonSchema: object;
   reasoning?: { effort: "low" | "medium" | "high" };
+  initialMaxOutputTokens?: number;
+  retryMaxOutputTokens?: number;
   buildContent: (input: Input) => readonly object[];
   validateInput?: (input: Input) => void;
   parseValue: (value: unknown) => Output;

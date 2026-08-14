@@ -1,5 +1,5 @@
 export const RELATED_PETS_V24_JUDGE_REVISION =
-  "gpt-oss-120b-related-slate-judge-2026-08-v24";
+  "gpt-oss-120b-related-slate-judge-2026-08-v24-r2";
 export const RELATED_PETS_V24_JUDGE_MODEL_NAME = "gpt-oss-120b";
 export const RELATED_PETS_V24_JUDGE_SCHEMA_NAME =
   "related_pets_v24_changed_slate_judge";
