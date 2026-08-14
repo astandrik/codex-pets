@@ -26,3 +26,16 @@ describe("withBasePath", () => {
     vi.unstubAllEnvs();
   });
 });
+
+describe("getPublicOrigin", () => {
+  it("keeps the localhost fallback for development without configuration", async () => {
+    vi.resetModules();
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", undefined);
+
+    const { getPublicOrigin } = await import("@/lib/base-path");
+    expect(getPublicOrigin()).toBe("http://localhost:3000");
+
+    vi.unstubAllEnvs();
+  });
+});

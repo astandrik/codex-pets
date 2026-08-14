@@ -105,11 +105,14 @@ metadata object; requests without them retain the legacy response shape.
 In paginated responses, top-level `total` is the number of returned pets and
 `pagination.totalItems` is the full filtered count.
 
-If you deploy under a subpath such as `/codex-pets`, set:
+If you deploy under a subpath such as `/codex-pets`, pass the canonical URL and
+the same normalized base path when building the Docker image:
 
 ```bash
-NEXT_PUBLIC_BASE_PATH=/codex-pets
-NEXT_PUBLIC_APP_URL=https://example.com/codex-pets
+docker build \
+  --build-arg NEXT_PUBLIC_APP_URL=https://example.com/codex-pets \
+  --build-arg NEXT_PUBLIC_BASE_PATH=/codex-pets \
+  -t codex-pets:latest .
 ```
 
 The public gallery renders without secrets. For account login, submit, moderation,
@@ -148,12 +151,18 @@ CODEX_PETS_DATA_SOURCE=mock AUTH_MODE=single-user \
 
 ## Production notes
 
-For a dedicated public subdomain such as `https://pets.example.com`, prefer:
+For a dedicated public subdomain such as `https://pets.example.com`, build with:
 
 ```bash
-NEXT_PUBLIC_APP_URL=https://pets.example.com
-NEXT_PUBLIC_BASE_PATH=
+docker build \
+  --build-arg NEXT_PUBLIC_APP_URL=https://pets.example.com \
+  --build-arg NEXT_PUBLIC_BASE_PATH= \
+  -t codex-pets:latest .
 ```
+
+These values are validated and embedded at image build time. Do not override
+them through the runtime env file; changing either value requires rebuilding
+the image. Local `npm run dev` keeps its `http://localhost:3000` fallback.
 
 If the app container talks to YDB by Docker hostname, for example
 `grpc://ydb-local:2136`, run the app on the same Docker network as the YDB

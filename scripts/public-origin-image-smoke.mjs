@@ -1,0 +1,260 @@
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+const expectedOrigin = "https://pets.example/codex-pets";
+const expectedOriginUrl = new URL(expectedOrigin);
+const basePath = "/codex-pets";
+const suffix = `${Date.now()}-${process.pid}`;
+const image = `codex-pets-public-origin-smoke:${suffix}`;
+const container = `codex-pets-public-origin-smoke-${suffix}`;
+const maxCapturedLines = 80;
+
+const endpoints = [
+  { label: "pet Markdown", path: "/pets/orbit-otter/markdown" },
+  { label: "generic Markdown", path: "/about.md" },
+  { label: "llms.txt", path: "/llms.txt" },
+  { label: "manifest", path: "/api/manifest" },
+  { label: "OpenAPI", path: "/openapi.json" },
+  {
+    label: "MCP server card",
+    path: "/.well-known/mcp/server-card.json",
+  },
+  { label: "robots", path: "/robots.txt" },
+  { label: "sitemap", path: "/sitemap.xml" },
+  { label: "HTML metadata", path: "/pets/orbit-otter", html: true },
+];
+
+class CommandError extends Error {
+  constructor(command, exitCode, output) {
+    super(`${command} failed with exit code ${exitCode}.`);
+    this.output = output;
+  }
+}
+
+function keepTail(current, chunk) {
+  return `${current}${chunk}`.split("\n").slice(-maxCapturedLines).join("\n");
+}
+
+function run(command, args, { allowFailure = false } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: repositoryRoot,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk) => {
+      stdout = keepTail(stdout, chunk.toString());
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr = keepTail(stderr, chunk.toString());
+    });
+    child.on("error", (error) => {
+      reject(error);
+    });
+    child.on("close", (exitCode) => {
+      const output = keepTail(stdout, stderr);
+      if (exitCode === 0 || allowFailure) {
+        resolve({ exitCode, stdout, stderr, output });
+        return;
+      }
+      reject(new CommandError(command, exitCode, output));
+    });
+  });
+}
+
+function sanitizeLog(output) {
+  return output
+    .split("\n")
+    .slice(-40)
+    .map((line) =>
+      /(?:PASSWORD|SECRET|TOKEN|API_KEY)=/i.test(line)
+        ? "[redacted environment line]"
+        : line.replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/g, "$1[redacted]@"),
+    )
+    .join("\n")
+    .trim();
+}
+
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+function isExpectedPublicUrl(value, pathname) {
+  try {
+    const url = new URL(value);
+    if (url.origin !== expectedOriginUrl.origin) {
+      return false;
+    }
+
+    if (pathname) {
+      return url.pathname === pathname;
+    }
+
+    return url.pathname === basePath || url.pathname.startsWith(`${basePath}/`);
+  } catch {
+    return false;
+  }
+}
+
+function containsExpectedPublicUrl(value, pathname) {
+  return Array.from(value.matchAll(/https?:\/\/[^\s"'<>()[\]{}]+/g)).some(
+    (match) =>
+      isExpectedPublicUrl(match[0].replace(/[.,;:!?]+$/g, ""), pathname),
+  );
+}
+
+function verifyLinkHeader(linkHeader, label) {
+  for (const match of linkHeader.matchAll(/<([^>]+)>/g)) {
+    const target = match[1];
+    if (target.startsWith("http://") || target.startsWith("https://")) {
+      assert(
+        isExpectedPublicUrl(target),
+        `${label} Link header contains an unexpected absolute origin.`,
+      );
+      continue;
+    }
+
+    if (target.startsWith("/")) {
+      assert(
+        target === basePath || target.startsWith(`${basePath}/`),
+        `${label} Link header contains a URL outside the expected base path.`,
+      );
+    }
+  }
+}
+
+async function waitForServer(localOrigin) {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${localOrigin}${basePath}/robots.txt`, {
+        signal: AbortSignal.timeout(2_000),
+      });
+      if (response.ok) {
+        return;
+      }
+    } catch {
+      // The container may still be starting.
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 500));
+  }
+
+  throw new Error("Docker smoke server did not become ready within 60 seconds.");
+}
+
+async function verifyEndpoint(localOrigin, endpoint) {
+  const response = await fetch(`${localOrigin}${basePath}${endpoint.path}`, {
+    redirect: "error",
+    signal: AbortSignal.timeout(10_000),
+  });
+  const body = await response.text();
+  const linkHeader = response.headers.get("link") ?? "";
+  const responseText = `${body}\n${linkHeader}`;
+
+  assert(response.status === 200, `${endpoint.label} returned ${response.status}.`);
+  assert(
+    !responseText.includes("localhost:3000"),
+    `${endpoint.label} contains the forbidden localhost origin.`,
+  );
+  assert(
+    !responseText.includes(localOrigin),
+    `${endpoint.label} contains the temporary container origin.`,
+  );
+  assert(
+    containsExpectedPublicUrl(body),
+    `${endpoint.label} body does not contain the expected canonical origin.`,
+  );
+  if (linkHeader) {
+    verifyLinkHeader(linkHeader, endpoint.label);
+  }
+
+  if (endpoint.html) {
+    assert(body.includes('rel="canonical"'), "HTML canonical metadata is missing.");
+    assert(body.includes('property="og:url"'), "HTML OpenGraph URL is missing.");
+    assert(
+      body.includes('type="application/ld+json"'),
+      "HTML JSON-LD metadata is missing.",
+    );
+    assert(
+      containsExpectedPublicUrl(body, `${basePath}/pets/orbit-otter`),
+      "HTML metadata does not use the expected pet URL.",
+    );
+  }
+}
+
+let failureOutput = "";
+let containerCreated = false;
+
+try {
+  console.log(`Building isolated image ${image}...`);
+  await run("docker", [
+    "build",
+    "--build-arg",
+    `NEXT_PUBLIC_APP_URL=${expectedOrigin}`,
+    "--build-arg",
+    `NEXT_PUBLIC_BASE_PATH=${basePath}`,
+    "--tag",
+    image,
+    ".",
+  ]);
+
+  await run("docker", [
+    "run",
+    "--detach",
+    "--rm",
+    "--name",
+    container,
+    "--publish",
+    "127.0.0.1::3000",
+    "--env",
+    "CODEX_PETS_DATA_SOURCE=mock",
+    "--env",
+    "AUTH_MODE=single-user",
+    "--env",
+    "AUTH_SINGLE_USER_EMAIL=local-admin@example.com",
+    image,
+  ]);
+  containerCreated = true;
+
+  const portResult = await run("docker", ["port", container, "3000/tcp"]);
+  const portMatch = portResult.stdout.trim().match(/127\.0\.0\.1:(\d+)$/);
+  assert(portMatch, "Docker did not publish the app on a loopback port.");
+  const localOrigin = `http://127.0.0.1:${portMatch[1]}`;
+
+  await waitForServer(localOrigin);
+  for (const endpoint of endpoints) {
+    await verifyEndpoint(localOrigin, endpoint);
+  }
+
+  console.log(
+    `Verified ${endpoints.length} canonical-origin surfaces in ${container}.`,
+  );
+} catch (error) {
+  if (error instanceof CommandError) {
+    failureOutput = error.output;
+  }
+  if (containerCreated) {
+    const logs = await run("docker", ["logs", "--tail", "40", container], {
+      allowFailure: true,
+    });
+    failureOutput = keepTail(failureOutput, logs.output);
+  }
+
+  console.error(error instanceof Error ? error.message : "Docker smoke failed.");
+  const sanitizedLog = sanitizeLog(failureOutput);
+  if (sanitizedLog) {
+    console.error("Sanitized failure log:\n" + sanitizedLog);
+  }
+  process.exitCode = 1;
+} finally {
+  await run("docker", ["rm", "--force", container], { allowFailure: true });
+  await run("docker", ["image", "rm", "--force", image], {
+    allowFailure: true,
+  });
+}
