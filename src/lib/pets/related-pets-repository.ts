@@ -28,6 +28,7 @@ export type RelatedPetsSnapshot = {
 export type RelatedPetsRankingInputScope = {
   embeddingModelRevisions: readonly string[];
   captionRevision: string | null;
+  annotationRevision?: string | null;
 };
 
 export type RecoverPreviousRelatedPetsGenerationInput = {

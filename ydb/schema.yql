@@ -99,6 +99,26 @@ CREATE TABLE codex_pet_related_pair_scores (
   PRIMARY KEY (scoring_revision, left_slug, right_slug)
 );
 
+CREATE TABLE codex_pet_approval_preparations (
+  preparation_id Utf8 NOT NULL,
+  pet_id Utf8 NOT NULL,
+  pet_slug Utf8 NOT NULL,
+  pet_updated_at Utf8 NOT NULL,
+  reviewer_id Utf8 NOT NULL,
+  ranking_revision Utf8 NOT NULL,
+  expected_active_generation_id Utf8 NOT NULL,
+  prepared_generation_id Utf8 NOT NULL,
+  status Utf8 NOT NULL,
+  attempts Uint32 NOT NULL,
+  next_attempt_at Utf8 NOT NULL,
+  lease_owner Utf8 NOT NULL,
+  lease_until Utf8 NOT NULL,
+  failure_code Utf8 NOT NULL,
+  created_at Utf8 NOT NULL,
+  updated_at Utf8 NOT NULL,
+  PRIMARY KEY (preparation_id)
+);
+
 CREATE TABLE codex_users (
   user_id Utf8 NOT NULL,
   email Utf8 NOT NULL,

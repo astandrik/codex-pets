@@ -14,6 +14,7 @@ import { Check, EllipsisVertical, TrashBin, Xmark } from "@gravity-ui/icons";
 
 import { withBasePath } from "@/lib/base-path";
 import { trackGoal } from "@/lib/metrics/yandex";
+import { pollApprovalPreparation } from "./approval-preparation-client";
 import "./AdminSubmissionActions.scss";
 
 type AdminSubmissionActionsProps = {
@@ -60,6 +61,31 @@ export function AdminSubmissionActions({ petId }: AdminSubmissionActionsProps) {
       if (!response.ok) {
         notifyFailure("Approve", response.status);
         return;
+      }
+      if (response.status === 202) {
+        const payload = await response.json() as { preparationId?: unknown };
+        if (typeof payload.preparationId !== "string") {
+          notifyFailure("Approve", 500);
+          return;
+        }
+        const url = new URL(
+          withBasePath(`/api/admin/submissions/${petId}/approval-preparation`),
+          window.location.origin,
+        );
+        url.searchParams.set("preparationId", payload.preparationId);
+        const status = await pollApprovalPreparation(url.href);
+        if (status !== "succeeded") {
+          add({
+            name: `pet-mod-${petId}-preparation`,
+            theme: "danger",
+            title: status === "manual_review"
+              ? "Approval needs attention"
+              : status === "timeout"
+                ? "Approval preparation timed out"
+                : "Approval status check failed",
+          });
+          return;
+        }
       }
       trackGoal("pet_review_approve");
       notifySuccess("Pet approved");
