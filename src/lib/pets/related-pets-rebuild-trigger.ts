@@ -2,7 +2,7 @@ import {
   invalidateRelatedPets,
   rebuildRelatedPets,
 } from "@/lib/pets/related-pets-rebuild";
-import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
+import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-v24-profile";
 import type { PetSearchSemanticConfig } from "@/lib/pets/search-config";
 import { petSearchRuntimeConfig } from "@/lib/pets/search-provider-runtime";
 
@@ -21,9 +21,9 @@ export function isRelatedPetsTextRefreshCompatible(
 ): boolean {
   return (
     semanticConfig?.revision ===
-      CURRENT_RELATED_PETS_RANKING_PROFILE.textRevision &&
+      RELATED_PETS_V24_PROFILE.embeddingRevision &&
     semanticConfig.dimensions ===
-      CURRENT_RELATED_PETS_RANKING_PROFILE.textDimensions
+      RELATED_PETS_V24_PROFILE.textDimensions
   );
 }
 

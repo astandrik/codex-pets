@@ -115,6 +115,8 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
         approvedPetCount: 1,
         snapshotCount: 1,
         textVectorCount: 1,
+        annotationCount: 1,
+        annotationVectorCount: 1,
         visualVectorCount: 0,
       },
       rankings: [{ sourceSlug: "boba", relatedSlugs: [] }],

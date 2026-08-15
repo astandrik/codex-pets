@@ -5,6 +5,7 @@ const runtimeMocks = vi.hoisted(() => ({
   listApprovedPetsForSearch: vi.fn(),
   listPetSearchCaptions: vi.fn(),
   listRawPetSearchEmbeddings: vi.fn(),
+  listRelatedPetAnnotations: vi.fn(),
 }));
 
 vi.mock("@/lib/pets/repository", () => ({
@@ -15,6 +16,9 @@ vi.mock("@/lib/pets/search-captions-repository", () => ({
 }));
 vi.mock("@/lib/pets/search-embeddings-repository", () => ({
   listRawPetSearchEmbeddings: runtimeMocks.listRawPetSearchEmbeddings,
+}));
+vi.mock("@/lib/pets/related-pets-annotations-repository", () => ({
+  listRelatedPetAnnotations: runtimeMocks.listRelatedPetAnnotations,
 }));
 vi.mock("@/lib/pets/related-pets-repository", () => ({
   activateRelatedPetsGeneration: vi.fn(),
@@ -31,9 +35,16 @@ vi.mock("@/lib/ydb/client", () => ({
   isYdbConfigured: runtimeMocks.isYdbConfigured,
 }));
 
-const TEXT_REVISION = "yandex-text-embeddings-v2-768-2026-07";
+const TEXT_REVISION =
+  "yandex-text-embeddings-v2-768-related-description-document-2026-08-v1";
 const TEXT_QUERY_REVISION =
-  "yandex-text-embeddings-v2-768-related-tags-query-2026-08";
+  "yandex-text-embeddings-v2-768-related-description-query-2026-08-v3";
+const ANNOTATION_REVISION =
+  "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r5";
+const ANNOTATION_DOCUMENT_REVISION =
+  "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r5";
+const ANNOTATION_QUERY_REVISION =
+  "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r5";
 const VISUAL_REVISION =
   "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1";
 const CAPTION_REVISION =
@@ -47,6 +58,7 @@ describe("related pets production visual source compatibility", () => {
     runtimeMocks.listApprovedPetsForSearch.mockResolvedValue([]);
     runtimeMocks.listPetSearchCaptions.mockResolvedValue([]);
     runtimeMocks.listRawPetSearchEmbeddings.mockResolvedValue([]);
+    runtimeMocks.listRelatedPetAnnotations.mockResolvedValue([]);
   });
 
   it("does not read 768-dimensional visual rows when unset config resolves to the legacy revision", async () => {
@@ -63,7 +75,15 @@ describe("related pets production visual source compatibility", () => {
       runtimeMocks.listRawPetSearchEmbeddings.mock.calls.map(
         ([revision]) => revision,
       ),
-    ).toEqual([TEXT_QUERY_REVISION, TEXT_REVISION]);
+    ).toEqual([
+      TEXT_QUERY_REVISION,
+      TEXT_REVISION,
+      ANNOTATION_QUERY_REVISION,
+      ANNOTATION_DOCUMENT_REVISION,
+    ]);
+    expect(runtimeMocks.listRelatedPetAnnotations).toHaveBeenCalledWith(
+      ANNOTATION_REVISION,
+    );
     expect(runtimeMocks.listPetSearchCaptions).not.toHaveBeenCalled();
   });
 
@@ -81,13 +101,23 @@ describe("related pets production visual source compatibility", () => {
       runtimeMocks.listRawPetSearchEmbeddings.mock.calls.map(
         ([revision]) => revision,
       ),
-    ).toEqual([TEXT_QUERY_REVISION, TEXT_REVISION, VISUAL_REVISION]);
+    ).toEqual([
+      TEXT_QUERY_REVISION,
+      TEXT_REVISION,
+      ANNOTATION_QUERY_REVISION,
+      ANNOTATION_DOCUMENT_REVISION,
+      VISUAL_REVISION,
+    ]);
+    expect(runtimeMocks.listRelatedPetAnnotations).toHaveBeenCalledWith(
+      ANNOTATION_REVISION,
+    );
     expect(runtimeMocks.listPetSearchCaptions).toHaveBeenCalledWith(
       CAPTION_REVISION,
     );
   });
 
   it("keeps production rebuild diagnostics off stdout", async () => {
+    vi.stubEnv("YANDEX_AI_STUDIO_FOLDER_ID", "folder-1");
     const stdoutDiagnostic = vi
       .spyOn(console, "info")
       .mockImplementation(() => undefined);

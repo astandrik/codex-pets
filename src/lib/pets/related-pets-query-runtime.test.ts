@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildRelatedPetDocument,
   buildRelatedPetQuery,
+  createRelatedPetDocumentSourceHash,
   createRelatedPetQuerySourceHash,
 } from "@/lib/pets/search-embeddings";
 import { createRelatedPetQueryRuntime } from "@/lib/pets/related-pets-query-runtime";
 import type { PublicPet } from "@/lib/pets/types";
 
 const profile = {
+  embeddingRevision: "embedding-v1",
   textRevision: "document-v1",
   textQueryRevision: "related-query-v1",
   textDimensions: 3,
@@ -41,9 +44,10 @@ function dependencies(overrides = {}) {
   return {
     profile,
     embeddingClient: {
-      revision: profile.textRevision,
+      revision: profile.embeddingRevision,
       dimensions: 3,
       embedPreparedQuery: vi.fn(async () => [0.1, 0.2, 0.3]),
+      embedDocument: vi.fn(async () => [0.3, 0.2, 0.1]),
     },
     getMetadata: vi.fn(async () => null),
     upsert: vi.fn(async () => undefined),
@@ -75,6 +79,23 @@ describe("related pet query runtime", () => {
       embedding: [0.1, 0.2, 0.3],
       updatedAt: "2026-08-04T12:00:00.000Z",
     });
+  });
+
+  it("stores the canonical related document under its own revision", async () => {
+    const input = pet();
+    const deps = dependencies();
+    const runtime = createRelatedPetQueryRuntime(deps);
+
+    await expect(runtime.refreshApprovedPetRelatedDocumentEmbedding(input))
+      .resolves.toBe("updated");
+    expect(deps.embeddingClient.embedDocument).toHaveBeenCalledWith(
+      buildRelatedPetDocument(input, profile.textRevision),
+    );
+    expect(deps.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      modelRevision: profile.textRevision,
+      sourceHash: createRelatedPetDocumentSourceHash(input, profile.textRevision),
+      embedding: [0.3, 0.2, 0.1],
+    }));
   });
 
   it("uses the description fallback without search truncation", async () => {
@@ -128,9 +149,10 @@ describe("related pet query runtime", () => {
       createRelatedPetQueryRuntime(
         dependencies({
           embeddingClient: {
-            revision: profile.textRevision,
+            revision: profile.embeddingRevision,
             dimensions: 2,
             embedPreparedQuery: vi.fn(async () => [0.1, 0.2]),
+            embedDocument: vi.fn(async () => [0.1, 0.2]),
           },
         }),
       ).refreshApprovedPetRelatedQueryEmbedding(pet()),
@@ -142,6 +164,7 @@ describe("related pet query runtime", () => {
             revision: "document-v2",
             dimensions: 3,
             embedPreparedQuery: vi.fn(async () => [0.1, 0.2, 0.3]),
+            embedDocument: vi.fn(async () => [0.1, 0.2, 0.3]),
           },
         }),
       ).refreshApprovedPetRelatedQueryEmbedding(pet()),
@@ -152,11 +175,12 @@ describe("related pet query runtime", () => {
     const providerRuntime = createRelatedPetQueryRuntime(
       dependencies({
         embeddingClient: {
-          revision: profile.textRevision,
+          revision: profile.embeddingRevision,
           dimensions: 3,
           embedPreparedQuery: vi.fn(async () => {
             throw new Error("provider secret");
           }),
+          embedDocument: vi.fn(async () => [0.1, 0.2, 0.3]),
         },
       }),
     );

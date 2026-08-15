@@ -10,8 +10,8 @@ import {
   evaluateRelatedPetsCalibration,
   evaluateRelatedPetsHoldout,
 } from "@/lib/pets/related-pets-calibration";
-import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
-import { rankRelatedPetsWithDiagnostics } from "@/lib/pets/related-pets-ranking";
+import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-v24-profile";
+import { rankRelatedPetsV24WithDiagnostics } from "@/lib/pets/related-pets-v24-ranking";
 import {
   getCurrentRelatedPetsVisualSourceContext,
   prepareRelatedPetsRankingInputs,
@@ -35,10 +35,10 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
         throw new Error("Related-pet live eval mode is invalid.");
       }
       const profile: RelatedPetsRebuildProfile = {
-        ...CURRENT_RELATED_PETS_RANKING_PROFILE,
+        ...RELATED_PETS_V24_PROFILE,
         visualCaptionRevision:
           PET_VISUAL_MODEL_REVISIONS[
-            CURRENT_RELATED_PETS_RANKING_PROFILE.visualRevision
+            RELATED_PETS_V24_PROFILE.visualRevision
           ].captionRevision,
       };
       const visualContext = getCurrentRelatedPetsVisualSourceContext();
@@ -121,11 +121,14 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
       if (!tallulah) {
         throw new Error("Tallulah live regression source is required.");
       }
-      const tallulahRanking = rankRelatedPetsWithDiagnostics({
+      const tallulahRanking = rankRelatedPetsV24WithDiagnostics({
         source: tallulah,
         candidates: prepared.approvedPets,
         textQueryVectors: prepared.textQueryVectors,
         textDocumentVectors: prepared.textDocumentVectors,
+        annotationQueryVectors: prepared.annotationQueryVectors,
+        annotationDocumentVectors: prepared.annotationDocumentVectors,
+        annotations: prepared.annotations,
         visualVectors: prepared.visualVectors,
         profile,
       });
