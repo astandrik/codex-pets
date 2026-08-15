@@ -73,6 +73,52 @@ CREATE TABLE codex_pet_related_snapshots (
   PRIMARY KEY (generation_id, source_slug)
 );
 
+CREATE TABLE codex_pet_related_annotations (
+  annotation_revision Utf8 NOT NULL,
+  pet_slug Utf8 NOT NULL,
+  source_hash Utf8 NOT NULL,
+  proposal_json Utf8 NOT NULL,
+  annotation_json Utf8 NOT NULL,
+  annotation_text Utf8 NOT NULL,
+  updated_at Utf8 NOT NULL,
+  PRIMARY KEY (annotation_revision, pet_slug)
+);
+
+-- Historical additive table already present in production. Current V24 does
+-- not read or write pair scores, but the canonical schema retains the table.
+CREATE TABLE codex_pet_related_pair_scores (
+  scoring_revision Utf8 NOT NULL,
+  left_slug Utf8 NOT NULL,
+  right_slug Utf8 NOT NULL,
+  source_hash Utf8 NOT NULL,
+  relevance_grade Uint32 NOT NULL,
+  confidence Utf8 NOT NULL,
+  relation_types_json Json NOT NULL,
+  reason_codes_json Json NOT NULL,
+  updated_at Utf8 NOT NULL,
+  PRIMARY KEY (scoring_revision, left_slug, right_slug)
+);
+
+CREATE TABLE codex_pet_approval_preparations (
+  preparation_id Utf8 NOT NULL,
+  pet_id Utf8 NOT NULL,
+  pet_slug Utf8 NOT NULL,
+  pet_updated_at Utf8 NOT NULL,
+  reviewer_id Utf8 NOT NULL,
+  ranking_revision Utf8 NOT NULL,
+  expected_active_generation_id Utf8 NOT NULL,
+  prepared_generation_id Utf8 NOT NULL,
+  status Utf8 NOT NULL,
+  attempts Uint32 NOT NULL,
+  next_attempt_at Utf8 NOT NULL,
+  lease_owner Utf8 NOT NULL,
+  lease_until Utf8 NOT NULL,
+  failure_code Utf8 NOT NULL,
+  created_at Utf8 NOT NULL,
+  updated_at Utf8 NOT NULL,
+  PRIMARY KEY (preparation_id)
+);
+
 CREATE TABLE codex_users (
   user_id Utf8 NOT NULL,
   email Utf8 NOT NULL,

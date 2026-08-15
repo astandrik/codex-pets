@@ -2,13 +2,19 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   EmbeddingProviderError,
+  buildRelatedPetDocument,
   buildRelatedPetQuery,
   buildPetSearchDocument,
+  createRelatedPetDocumentSourceHash,
   createRelatedPetQuerySourceHash,
   createPetSearchSourceHash,
   createYandexEmbeddingClient,
   embeddingToBuffer,
 } from "@/lib/pets/search-embeddings";
+import {
+  RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+  RELATED_PETS_DESCRIPTION_QUERY_REVISION,
+} from "@/lib/pets/related-pets-semantics.mjs";
 
 const pet = {
   slug: "velvet-byte",
@@ -31,24 +37,80 @@ describe("pet search embeddings", () => {
     );
   });
 
-  it("builds a stable related query from tags with a description fallback", () => {
-    expect(
-      buildRelatedPetQuery({
-        ...pet,
-        tags: [" Night ", "gothic", "night", "ＰＩＸＥＬ"],
-      }),
-    ).toBe("night gothic pixel");
-    expect(buildRelatedPetQuery({ ...pet, tags: [] })).toBe(
-      pet.description,
+  it("hashes current query and document inputs independently of tags", () => {
+    const query = buildRelatedPetQuery(
+      pet,
+      RELATED_PETS_DESCRIPTION_QUERY_REVISION,
     );
-    expect(createRelatedPetQuerySourceHash(pet, "query-v1")).not.toBe(
+    const document = buildRelatedPetDocument(
+      pet,
+      RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+    );
+    expect(query).toBe(document);
+    expect(query).not.toContain("tags:");
+
+    const tagOnlyChange = { ...pet, tags: ["anime", "detailed"] };
+    expect(
       createRelatedPetQuerySourceHash(
-        { ...pet, tags: ["gothic", "night"] },
-        "query-v1",
+        tagOnlyChange,
+        RELATED_PETS_DESCRIPTION_QUERY_REVISION,
+      ),
+    ).toBe(
+      createRelatedPetQuerySourceHash(
+        pet,
+        RELATED_PETS_DESCRIPTION_QUERY_REVISION,
       ),
     );
-    expect(createRelatedPetQuerySourceHash(pet, "query-v2")).not.toBe(
-      createRelatedPetQuerySourceHash(pet, "query-v1"),
+    expect(
+      createRelatedPetDocumentSourceHash(
+        tagOnlyChange,
+        RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+      ),
+    ).toBe(
+      createRelatedPetDocumentSourceHash(
+        pet,
+        RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+      ),
+    );
+
+    for (const changed of [
+      { ...pet, displayName: "Velvet Byte II" },
+      { ...pet, kind: "creature" as const },
+      { ...pet, description: "A different description" },
+    ]) {
+      expect(
+        createRelatedPetQuerySourceHash(
+          changed,
+          RELATED_PETS_DESCRIPTION_QUERY_REVISION,
+        ),
+      ).not.toBe(
+        createRelatedPetQuerySourceHash(
+          pet,
+          RELATED_PETS_DESCRIPTION_QUERY_REVISION,
+        ),
+      );
+    }
+    expect(
+      createRelatedPetQuerySourceHash(
+        pet,
+        `${RELATED_PETS_DESCRIPTION_QUERY_REVISION}-next`,
+      ),
+    ).not.toBe(
+      createRelatedPetQuerySourceHash(
+        pet,
+        RELATED_PETS_DESCRIPTION_QUERY_REVISION,
+      ),
+    );
+    expect(
+      createRelatedPetDocumentSourceHash(
+        pet,
+        `${RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION}-next`,
+      ),
+    ).not.toBe(
+      createRelatedPetDocumentSourceHash(
+        pet,
+        RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+      ),
     );
   });
 

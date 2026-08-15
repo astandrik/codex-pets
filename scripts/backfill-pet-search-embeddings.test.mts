@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildRelatedPetDocument as buildRuntimeRelatedDocument,
   buildRelatedPetQuery as buildRuntimeRelatedQuery,
   buildPetSearchDocument as buildRuntimeDocument,
+  createRelatedPetDocumentSourceHash as createRuntimeRelatedDocumentHash,
   createRelatedPetQuerySourceHash as createRuntimeRelatedQueryHash,
   createPetSearchSourceHash as createRuntimeHash,
   embeddingToBuffer as runtimeEmbeddingToBuffer,
@@ -11,11 +13,16 @@ import {
   PET_SEARCH_EMBEDDING_MODELS,
   PET_SEARCH_MODEL_REVISIONS,
 } from "../src/lib/pets/search-config";
-import { RELATED_PETS_TEXT_QUERY_REVISION } from "../src/lib/pets/related-pets-profile";
+import {
+  RELATED_PETS_V24_DESCRIPTION_DOCUMENT_REVISION,
+  RELATED_PETS_V24_DESCRIPTION_QUERY_REVISION,
+} from "../src/lib/pets/related-pets-profile";
 
 const {
+  buildRelatedPetDocument,
   buildRelatedPetQuery,
   buildPetSearchDocument,
+  createRelatedPetDocumentSourceHash,
   createRelatedPetQuerySourceHash,
   createPetSearchSourceHash,
   createRequestStartLimiter,
@@ -67,27 +74,74 @@ describe("pet search embeddings backfill", () => {
       dim: "768",
     });
     expect(
-      PET_SEARCH_BACKFILL_REVISIONS[RELATED_PETS_TEXT_QUERY_REVISION],
-    ).toEqual({
-      dimensions: 768,
+      PET_SEARCH_BACKFILL_REVISIONS[
+        RELATED_PETS_V24_DESCRIPTION_QUERY_REVISION
+      ],
+    ).toMatchObject({
       modelPath: "text-embeddings-v2-query",
-      requestDimensions: 768,
       inputKind: "related-query",
+    });
+    expect(
+      PET_SEARCH_BACKFILL_REVISIONS[
+        RELATED_PETS_V24_DESCRIPTION_DOCUMENT_REVISION
+      ],
+    ).toMatchObject({
+      documentModelPath: "text-embeddings-v2-doc",
+      inputKind: "related-document",
     });
     expect(
       createEmbeddingRequest({
         folderId: "folder-1",
         definition:
           PET_SEARCH_BACKFILL_REVISIONS[
-            RELATED_PETS_TEXT_QUERY_REVISION
+            RELATED_PETS_V24_DESCRIPTION_QUERY_REVISION
           ],
-        text: "skeleton pixel art",
-      }),
-    ).toEqual({
-      modelUri: "emb://folder-1/text-embeddings-v2-query",
-      text: "skeleton pixel art",
-      dim: "768",
-    });
+        text: "related input",
+      }).modelUri,
+    ).toBe("emb://folder-1/text-embeddings-v2-query");
+    expect(
+      createEmbeddingRequest({
+        folderId: "folder-1",
+        definition:
+          PET_SEARCH_BACKFILL_REVISIONS[
+            RELATED_PETS_V24_DESCRIPTION_DOCUMENT_REVISION
+          ],
+        text: "related input",
+      }).modelUri,
+    ).toBe("emb://folder-1/text-embeddings-v2-doc");
+  });
+
+  it("keeps current app and CLI description inputs byte-identical", () => {
+    expect(
+      buildRelatedPetQuery(pet, RELATED_PETS_V24_DESCRIPTION_QUERY_REVISION),
+    ).toBe(
+      buildRuntimeRelatedQuery(
+        pet,
+        RELATED_PETS_V24_DESCRIPTION_QUERY_REVISION,
+      ),
+    );
+    expect(
+      buildRelatedPetDocument(
+        pet,
+        RELATED_PETS_V24_DESCRIPTION_DOCUMENT_REVISION,
+      ),
+    ).toBe(
+      buildRuntimeRelatedDocument(
+        pet,
+        RELATED_PETS_V24_DESCRIPTION_DOCUMENT_REVISION,
+      ),
+    );
+    expect(
+      createRelatedPetDocumentSourceHash(
+        pet,
+        RELATED_PETS_V24_DESCRIPTION_DOCUMENT_REVISION,
+      ),
+    ).toBe(
+      createRuntimeRelatedDocumentHash(
+        pet,
+        RELATED_PETS_V24_DESCRIPTION_DOCUMENT_REVISION,
+      ),
+    );
   });
 
   it("parses explicit dry-run/apply modes and optional flags", () => {
@@ -129,7 +183,17 @@ describe("pet search embeddings backfill", () => {
   });
 
   it("keeps the related query and source hash in runtime parity", () => {
-    expect(buildRelatedPetQuery(pet)).toBe(buildRuntimeRelatedQuery(pet));
+    expect(
+      buildRelatedPetQuery(
+        pet,
+        RELATED_PETS_V24_DESCRIPTION_QUERY_REVISION,
+      ),
+    ).toBe(
+      buildRuntimeRelatedQuery(
+        pet,
+        RELATED_PETS_V24_DESCRIPTION_QUERY_REVISION,
+      ),
+    );
     expect(createRelatedPetQuerySourceHash(pet, "query-v1")).toBe(
       createRuntimeRelatedQueryHash(pet, "query-v1"),
     );
@@ -191,24 +255,30 @@ describe("pet search embeddings backfill", () => {
 
     await runPetSearchBackfill({
       options: { mode: "apply", slug: null, force: false },
-      revision: RELATED_PETS_TEXT_QUERY_REVISION,
+      revision: RELATED_PETS_V24_DESCRIPTION_QUERY_REVISION,
       dimensions: 768,
       pets: [pet],
       getMetadata: async () => null,
       embedDocument,
       upsert,
-      buildInput: buildRelatedPetQuery,
+      buildInput: (input) =>
+        buildRelatedPetQuery(
+          input,
+          RELATED_PETS_V24_DESCRIPTION_QUERY_REVISION,
+        ),
       createSourceHash: createRelatedPetQuerySourceHash,
       log: () => undefined,
     });
 
-    expect(embedDocument).toHaveBeenCalledWith("night gothic");
+    expect(embedDocument).toHaveBeenCalledWith(
+      "name: Velvet Byte\nkind: character\ndescription: A confident gothic coding character",
+    );
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        modelRevision: RELATED_PETS_TEXT_QUERY_REVISION,
+        modelRevision: RELATED_PETS_V24_DESCRIPTION_QUERY_REVISION,
         sourceHash: createRelatedPetQuerySourceHash(
           pet,
-          RELATED_PETS_TEXT_QUERY_REVISION,
+          RELATED_PETS_V24_DESCRIPTION_QUERY_REVISION,
         ),
       }),
     );

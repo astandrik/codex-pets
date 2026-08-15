@@ -1,15 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createRelatedPetQueryRuntime } from "@/lib/pets/related-pets-query-runtime";
 import {
+  RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+  RELATED_PETS_DESCRIPTION_QUERY_REVISION,
+} from "@/lib/pets/related-pets-semantics.mjs";
+import {
+  buildRelatedPetDocument,
   buildRelatedPetQuery,
+  createRelatedPetDocumentSourceHash,
   createRelatedPetQuerySourceHash,
 } from "@/lib/pets/search-embeddings";
-import { createRelatedPetQueryRuntime } from "@/lib/pets/related-pets-query-runtime";
 import type { PublicPet } from "@/lib/pets/types";
 
 const profile = {
-  textRevision: "document-v1",
-  textQueryRevision: "related-query-v1",
+  embeddingRevision: "document-v1",
+  textRevision: RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+  textQueryRevision: RELATED_PETS_DESCRIPTION_QUERY_REVISION,
   textDimensions: 3,
 } as const;
 
@@ -41,9 +48,10 @@ function dependencies(overrides = {}) {
   return {
     profile,
     embeddingClient: {
-      revision: profile.textRevision,
-      dimensions: 3,
+      revision: profile.embeddingRevision,
+      dimensions: profile.textDimensions,
       embedPreparedQuery: vi.fn(async () => [0.1, 0.2, 0.3]),
+      embedDocument: vi.fn(async () => [0.3, 0.2, 0.1]),
     },
     getMetadata: vi.fn(async () => null),
     upsert: vi.fn(async () => undefined),
@@ -52,47 +60,57 @@ function dependencies(overrides = {}) {
   };
 }
 
-describe("related pet query runtime", () => {
-  it("stores the canonical related query with the pinned query revision", async () => {
-    const input = pet();
+describe("current related pet embedding runtime", () => {
+  it("stores independent description query and document vectors", async () => {
+    const input = pet({ tags: ["anime", "source-github"] });
     const deps = dependencies();
     const runtime = createRelatedPetQueryRuntime(deps);
 
-    await expect(runtime.refreshApprovedPetRelatedQueryEmbedding(input)).resolves.toBe(
-      "updated",
-    );
+    await expect(runtime.refreshApprovedPetRelatedQueryEmbedding(input))
+      .resolves.toBe("updated");
+    await expect(runtime.refreshApprovedPetRelatedDocumentEmbedding(input))
+      .resolves.toBe("updated");
+
+    const expectedText =
+      "name: Velvet Byte\nkind: character\ndescription: A gothic coding character";
     expect(deps.embeddingClient.embedPreparedQuery).toHaveBeenCalledWith(
-      buildRelatedPetQuery(input),
+      expectedText,
+    );
+    expect(deps.embeddingClient.embedDocument).toHaveBeenCalledWith(
+      expectedText,
     );
     expect(deps.upsert).toHaveBeenCalledWith({
-      modelRevision: profile.textQueryRevision,
+      modelRevision: RELATED_PETS_DESCRIPTION_QUERY_REVISION,
       slug: input.slug,
       sourceHash: createRelatedPetQuerySourceHash(
         input,
-        profile.textQueryRevision,
+        RELATED_PETS_DESCRIPTION_QUERY_REVISION,
       ),
       dimensions: profile.textDimensions,
       embedding: [0.1, 0.2, 0.3],
       updatedAt: "2026-08-04T12:00:00.000Z",
     });
-  });
-
-  it("uses the description fallback without search truncation", async () => {
-    const input = pet({
-      tags: [],
-      description: "Mixed CASE " + "description ".repeat(20),
+    expect(deps.upsert).toHaveBeenCalledWith({
+      modelRevision: RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+      slug: input.slug,
+      sourceHash: createRelatedPetDocumentSourceHash(
+        input,
+        RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+      ),
+      dimensions: profile.textDimensions,
+      embedding: [0.3, 0.2, 0.1],
+      updatedAt: "2026-08-04T12:00:00.000Z",
     });
-    const deps = dependencies();
-    const runtime = createRelatedPetQueryRuntime(deps);
-
-    await runtime.refreshApprovedPetRelatedQueryEmbedding(input);
-
-    expect(deps.embeddingClient.embedPreparedQuery).toHaveBeenCalledWith(
-      buildRelatedPetQuery(input),
-    );
+    expect(buildRelatedPetDocument(
+      input,
+      RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+    )).toBe(buildRelatedPetQuery(
+      input,
+      RELATED_PETS_DESCRIPTION_QUERY_REVISION,
+    ));
   });
 
-  it("does not rewrite a current query vector", async () => {
+  it("does not rewrite a current vector", async () => {
     const input = pet();
     const deps = dependencies({
       getMetadata: vi.fn(async () => ({
@@ -105,74 +123,44 @@ describe("related pet query runtime", () => {
     });
     const runtime = createRelatedPetQueryRuntime(deps);
 
-    await expect(runtime.refreshApprovedPetRelatedQueryEmbedding(input)).resolves.toBe(
-      "unchanged",
-    );
+    await expect(runtime.refreshApprovedPetRelatedQueryEmbedding(input))
+      .resolves.toBe("unchanged");
     expect(deps.embeddingClient.embedPreparedQuery).not.toHaveBeenCalled();
     expect(deps.upsert).not.toHaveBeenCalled();
   });
 
-  it("skips rejected pets and unavailable or incompatible clients", async () => {
-    const rejected = pet({ status: "rejected" });
+  it("skips non-approved pets and incompatible clients", async () => {
+    await expect(createRelatedPetQueryRuntime(dependencies())
+      .refreshApprovedPetRelatedQueryEmbedding(pet({ status: "rejected" })))
+      .resolves.toBe("skipped");
 
-    await expect(
-      createRelatedPetQueryRuntime(dependencies())
-        .refreshApprovedPetRelatedQueryEmbedding(rejected),
-    ).resolves.toBe("skipped");
-    await expect(
-      createRelatedPetQueryRuntime(
-        dependencies({ embeddingClient: null }),
-      ).refreshApprovedPetRelatedQueryEmbedding(pet()),
-    ).resolves.toBe("skipped");
-    await expect(
-      createRelatedPetQueryRuntime(
-        dependencies({
-          embeddingClient: {
-            revision: profile.textRevision,
-            dimensions: 2,
-            embedPreparedQuery: vi.fn(async () => [0.1, 0.2]),
-          },
-        }),
-      ).refreshApprovedPetRelatedQueryEmbedding(pet()),
-    ).resolves.toBe("skipped");
-    await expect(
-      createRelatedPetQueryRuntime(
-        dependencies({
-          embeddingClient: {
-            revision: "document-v2",
-            dimensions: 3,
-            embedPreparedQuery: vi.fn(async () => [0.1, 0.2, 0.3]),
-          },
-        }),
-      ).refreshApprovedPetRelatedQueryEmbedding(pet()),
-    ).resolves.toBe("skipped");
+    const unavailable = createRelatedPetQueryRuntime(
+      dependencies({ embeddingClient: null }),
+    );
+    await expect(unavailable.refreshApprovedPetRelatedQueryEmbedding(pet()))
+      .resolves.toBe("skipped");
+
+    const incompatible = createRelatedPetQueryRuntime(dependencies({
+      embeddingClient: {
+        revision: "other",
+        dimensions: 3,
+        embedPreparedQuery: vi.fn(),
+        embedDocument: vi.fn(),
+      },
+    }));
+    await expect(incompatible.refreshApprovedPetRelatedQueryEmbedding(pet()))
+      .resolves.toBe("skipped");
   });
 
-  it("propagates provider and storage failures to the sanitized route boundary", async () => {
-    const providerRuntime = createRelatedPetQueryRuntime(
-      dependencies({
-        embeddingClient: {
-          revision: profile.textRevision,
-          dimensions: 3,
-          embedPreparedQuery: vi.fn(async () => {
-            throw new Error("provider secret");
-          }),
-        },
-      }),
+  it("does not write when embedding fails", async () => {
+    const deps = dependencies();
+    deps.embeddingClient.embedDocument.mockRejectedValueOnce(
+      new Error("provider failed"),
     );
-    await expect(
-      providerRuntime.refreshApprovedPetRelatedQueryEmbedding(pet()),
-    ).rejects.toThrow("provider secret");
+    const runtime = createRelatedPetQueryRuntime(deps);
 
-    const storageRuntime = createRelatedPetQueryRuntime(
-      dependencies({
-        upsert: vi.fn(async () => {
-          throw new Error("storage secret");
-        }),
-      }),
-    );
-    await expect(
-      storageRuntime.refreshApprovedPetRelatedQueryEmbedding(pet()),
-    ).rejects.toThrow("storage secret");
+    await expect(runtime.refreshApprovedPetRelatedDocumentEmbedding(pet()))
+      .rejects.toThrow("provider failed");
+    expect(deps.upsert).not.toHaveBeenCalled();
   });
 });

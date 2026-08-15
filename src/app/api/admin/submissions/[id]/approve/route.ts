@@ -1,15 +1,21 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
+import { enqueueApprovalPreparation } from "@/lib/pets/approval-preparations-repository";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
 import {
   invalidateRelatedPetsBestEffort,
   isRelatedPetsTextRefreshCompatible,
   rebuildRelatedPetsBestEffort,
 } from "@/lib/pets/related-pets-rebuild-trigger";
-import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
-import { refreshApprovedPetRelatedQueryEmbedding } from "@/lib/pets/related-pets-query-runtime";
-import { moderatePet } from "@/lib/pets/repository";
+import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
+import { refreshPetRelatedAnnotation } from "@/lib/pets/related-pets-annotation-runtime";
+import { refreshApprovedPetRelatedDescriptionEmbeddings } from "@/lib/pets/related-pets-query-runtime";
+import {
+  getPetForApprovalPreparationById,
+  moderatePet,
+} from "@/lib/pets/repository";
+import { getRelatedPetsState } from "@/lib/pets/related-pets-repository";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { petSearchRuntimeConfig } from "@/lib/pets/search-provider-runtime";
 import { refreshApprovedPetSearchEmbedding } from "@/lib/pets/search-runtime";
@@ -29,6 +35,45 @@ export async function POST(
   }
 
   const { id } = await params;
+  if (process.env.PET_RELATED_PREAPPROVAL_ENABLED === "true") {
+    const pendingPet = await getPetForApprovalPreparationById(id);
+    if (!pendingPet || pendingPet.status !== "pending") {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    const relatedState = await getRelatedPetsState();
+    if (
+      relatedState?.status !== "ready" ||
+      !relatedState.activeGenerationId
+    ) {
+      return NextResponse.json(
+        { error: "related_generation_unavailable" },
+        { status: 503 },
+      );
+    }
+    const preparation = await enqueueApprovalPreparation({
+      petId: pendingPet.id,
+      petSlug: pendingPet.slug,
+      petUpdatedAt: pendingPet.updatedAt,
+      reviewerId: principal.userId,
+      rankingRevision: RELATED_PETS_V24_PROFILE.rankingRevision,
+      expectedActiveGenerationId: relatedState.activeGenerationId,
+      now: new Date().toISOString(),
+    });
+    if (!preparation) {
+      return NextResponse.json(
+        { error: "preparation_storage_unavailable" },
+        { status: 503 },
+      );
+    }
+    return NextResponse.json(
+      {
+        ok: true,
+        status: "preparing",
+        preparationId: preparation.preparationId,
+      },
+      { status: 202 },
+    );
+  }
   const pet = await moderatePet({
     petId: id,
     reviewerId: principal.userId,
@@ -43,29 +88,46 @@ export async function POST(
   const canPublishRelatedPets = isRelatedPetsTextRefreshCompatible(
     petSearchRuntimeConfig.semantic,
   );
-  const [documentRefresh, queryRefresh] = await Promise.allSettled([
-    refreshApprovedPetSearchEmbedding(pet),
-    refreshApprovedPetRelatedQueryEmbedding(pet),
-  ]);
-  const documentStatus = refreshStatus(documentRefresh);
-  const queryStatus = refreshStatus(queryRefresh);
-  const textReady =
-    isReadyRefreshStatus(documentStatus) &&
-    isReadyRefreshStatus(queryStatus);
+  const searchDocumentRefresh = refreshApprovedPetSearchEmbedding(pet);
+  const [searchDocumentResult, relatedResult, annotationResult] =
+    await Promise.allSettled([
+      searchDocumentRefresh,
+      refreshApprovedPetRelatedDescriptionEmbeddings(pet),
+      refreshPetRelatedAnnotation(pet),
+    ]);
+  const searchDocumentStatus = refreshStatus(searchDocumentResult);
+  const relatedStatuses = relatedResult.status === "fulfilled"
+    ? relatedResult.value
+    : {
+        descriptionQuery: "failed" as const,
+        descriptionDocument: "failed" as const,
+      };
+  const relatedReady = Object.values(relatedStatuses).every(
+    isReadyRefreshStatus,
+  );
+  const annotationReady = annotationResult.status === "fulfilled";
+  const inputsReady = relatedReady && annotationReady;
   const requiresVisual =
-    CURRENT_RELATED_PETS_RANKING_PROFILE.visualMinSimilarity !== null;
+    RELATED_PETS_V24_PROFILE.visualMinSimilarity !== null;
 
-  if (!textReady) {
-    console.warn("[codex-pets][related-pets-text-refresh]", {
+  if (!inputsReady) {
+    console.warn("[codex-pets][related-pets-v24-refresh]", {
       operation: "refresh",
       status: "incomplete",
-      document: documentStatus,
-      query: queryStatus,
+      ...relatedStatuses,
+      annotation: annotationReady ? "ready" : "failed",
+    });
+  }
+
+  if (!isReadyRefreshStatus(searchDocumentStatus)) {
+    console.warn("[codex-pets][search-document-refresh]", {
+      operation: "refresh",
+      status: searchDocumentStatus,
     });
   }
 
   if (canPublishRelatedPets) {
-    if (textReady && !requiresVisual) {
+    if (inputsReady && !requiresVisual) {
       await rebuildRelatedPetsBestEffort({
         trigger: "approve-text",
         includeVisual: false,
@@ -80,7 +142,7 @@ export async function POST(
 
   void refreshApprovedPetVisionSearchBestEffort(pet, {
     onSuccessfulRefresh: async () => {
-      if (!canPublishRelatedPets || !textReady || !requiresVisual) return;
+      if (!canPublishRelatedPets || !inputsReady || !requiresVisual) return;
       await rebuildRelatedPetsBestEffort({
         trigger: "approve-visual",
         includeVisual: true,

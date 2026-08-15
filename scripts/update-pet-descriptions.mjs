@@ -12,7 +12,7 @@ import {
 } from "./lib/pet-description-update.mjs";
 import {
   RELATED_PETS_REBUILD_COMMANDS,
-  buildRelatedPetsQueryBackfillCommands,
+  buildRelatedPetsTextBackfillCommands,
 } from "./lib/related-pets-maintenance.mjs";
 
 const require = createRequire(import.meta.url);
@@ -88,9 +88,9 @@ export async function main(argv = process.argv.slice(2)) {
       console.log(command);
     }
     console.log(
-      "refresh the related-query embeddings for the rewritten description(s):",
+      "refresh both related embedding roles for the rewritten description(s):",
     );
-    for (const command of buildRelatedPetsQueryBackfillCommands(
+    for (const command of buildRelatedPetsTextBackfillCommands(
       updates.map((update) => update.slug),
     )) {
       console.log(command);
