@@ -1,49 +1,19 @@
 import { createHash } from "node:crypto";
 
+import {
+  RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+  RELATED_PETS_DESCRIPTION_QUERY_REVISION,
+  buildRelatedPetDescriptionText,
+} from "../../src/lib/pets/related-pets-semantics.mjs";
 import { createRelatedPetsRebuildRequiredLog } from "./related-pets-maintenance.mjs";
-
-const SAFE_SLUG = /^[a-z0-9][a-z0-9-]{0,47}$/;
+import {
+  parseResumableBackfillArgs,
+  runResumableBackfill,
+  selectApprovedItems,
+} from "./resumable-backfill.mjs";
 
 export function parseBackfillArgs(argv) {
-  let mode = null;
-  let slug = null;
-  let force = false;
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const argument = argv[index];
-    if (argument === "--dry-run" || argument === "--apply") {
-      const nextMode = argument === "--dry-run" ? "dry-run" : "apply";
-      if (mode && mode !== nextMode) {
-        throw new Error("Pass exactly one of --dry-run or --apply.");
-      }
-      mode = nextMode;
-      continue;
-    }
-    if (argument === "--force") {
-      force = true;
-      continue;
-    }
-    if (argument === "--slug" || argument?.startsWith("--slug=")) {
-      const value = argument === "--slug"
-        ? argv[index += 1]
-        : argument.slice("--slug=".length);
-      if (!value || !SAFE_SLUG.test(value)) {
-        throw new Error("--slug must be a valid public pet slug.");
-      }
-      slug = value;
-      continue;
-    }
-    throw new Error(`Unknown argument: ${argument ?? ""}`);
-  }
-
-  if (!mode) {
-    throw new Error("Pass exactly one of --dry-run or --apply.");
-  }
-  if (force && mode !== "apply") {
-    throw new Error("--force requires --apply.");
-  }
-
-  return { mode, slug, force };
+  return parseResumableBackfillArgs(argv);
 }
 
 export function buildPetSearchDocument(pet) {
@@ -57,11 +27,21 @@ export function buildPetSearchDocument(pet) {
   ].join("\n");
 }
 
-export function buildRelatedPetQuery(pet) {
+export function buildRelatedPetQuery(pet, modelRevision) {
+  if (modelRevision === RELATED_PETS_DESCRIPTION_QUERY_REVISION) {
+    return buildRelatedPetDescriptionText(pet);
+  }
   const tags = normalizedPetTags(pet.tags);
-  if (tags.length > 0) return tags.join(" ");
+  return tags.length > 0
+    ? tags.join(" ")
+    : pet.description.normalize("NFKC").trim();
+}
 
-  return pet.description.normalize("NFKC").trim();
+export function buildRelatedPetDocument(pet, modelRevision) {
+  if (modelRevision === RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION) {
+    return buildRelatedPetDescriptionText(pet);
+  }
+  return buildPetSearchDocument(pet);
 }
 
 export function createPetSearchSourceHash(pet, modelRevision) {
@@ -76,7 +56,15 @@ export function createRelatedPetQuerySourceHash(pet, modelRevision) {
   return createHash("sha256")
     .update(modelRevision)
     .update("\n")
-    .update(buildRelatedPetQuery(pet))
+    .update(buildRelatedPetQuery(pet, modelRevision))
+    .digest("hex");
+}
+
+export function createRelatedPetDocumentSourceHash(pet, modelRevision) {
+  return createHash("sha256")
+    .update(modelRevision)
+    .update("\n")
+    .update(buildRelatedPetDocument(pet, modelRevision))
     .digest("hex");
 }
 
@@ -125,69 +113,53 @@ export async function runPetSearchBackfill({
   now = () => new Date(),
   log = console.log,
 }) {
-  const approvedPets = pets.filter(
-    (candidate) => !candidate.status || candidate.status === "approved",
-  );
-  const selectedPets = options.slug
-    ? approvedPets.filter((candidate) => candidate.slug === options.slug)
-    : approvedPets;
-  if (options.slug && selectedPets.length === 0) {
-    throw new Error(`Approved pet slug not found: ${options.slug}`);
-  }
-
-  const summary = {
-    scanned: selectedPets.length,
-    unchanged: 0,
-    planned: 0,
-    updated: 0,
-  };
-
+  const selectedPets = selectApprovedItems(pets, options.slug);
+  let updated = 0;
   try {
-    for (const pet of selectedPets) {
-      const sourceHash = createSourceHash(pet, revision);
-      const metadata = options.force
-        ? null
-        : await getMetadata(revision, pet.slug);
-      if (
-        metadata?.sourceHash === sourceHash &&
-        metadata.dimensions === dimensions
-      ) {
-        summary.unchanged += 1;
-        continue;
-      }
+    return await runResumableBackfill({
+      items: selectedPets,
+      options,
+      log,
+      processItem: async (pet) => {
+        const sourceHash = createSourceHash(pet, revision);
+        const metadata = options.force
+          ? null
+          : await getMetadata(revision, pet.slug);
+        if (
+          metadata?.sourceHash === sourceHash &&
+          metadata.dimensions === dimensions
+        ) {
+          return "unchanged";
+        }
 
-      summary.planned += 1;
-      if (options.mode === "dry-run") {
-        log({ action: "would-update", slug: pet.slug });
-        continue;
-      }
+        if (options.mode === "dry-run") {
+          return "planned";
+        }
 
-      const embedding = await embedDocument(buildInput(pet));
-      if (
-        !Array.isArray(embedding) ||
-        embedding.length !== dimensions ||
-        embedding.some((value) => !Number.isFinite(value))
-      ) {
-        throw new Error(
-          `Embedding provider returned ${embedding?.length ?? 0} values; expected ${dimensions}.`,
-        );
-      }
-      await upsert({
-        modelRevision: revision,
-        slug: pet.slug,
-        sourceHash,
-        dimensions,
-        embedding,
-        updatedAt: now().toISOString(),
-      });
-      summary.updated += 1;
-      log({ action: "updated", slug: pet.slug });
-    }
-
-    log({ action: "summary", ...summary });
-    return summary;
+        const embedding = await embedDocument(buildInput(pet));
+        if (
+          !Array.isArray(embedding) ||
+          embedding.length !== dimensions ||
+          embedding.some((value) => !Number.isFinite(value))
+        ) {
+          throw new Error(
+            `Embedding provider returned ${embedding?.length ?? 0} values; expected ${dimensions}.`,
+          );
+        }
+        await upsert({
+          modelRevision: revision,
+          slug: pet.slug,
+          sourceHash,
+          dimensions,
+          embedding,
+          updatedAt: now().toISOString(),
+        });
+        updated += 1;
+        return "updated";
+      },
+    });
   } finally {
-    if (options.mode === "apply" && summary.updated > 0) {
+    if (options.mode === "apply" && updated > 0) {
       log(createRelatedPetsRebuildRequiredLog());
     }
   }
