@@ -19,7 +19,6 @@ import {
   RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
   RELATED_PETS_DESCRIPTION_QUERY_REVISION,
 } from "../src/lib/pets/related-pets-semantics.mjs";
-import { RELATED_PETS_TEXT_QUERY_REVISION } from "../src/lib/pets/related-pets-profile";
 
 const packageScripts = (JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
@@ -88,7 +87,7 @@ describe("pet search embeddings backfill", () => {
       requestDimensions: 768,
       inputKind: "related-query",
     });
-    expect(PET_SEARCH_BACKFILL_REVISIONS[RELATED_PETS_TEXT_QUERY_REVISION])
+    expect(PET_SEARCH_BACKFILL_REVISIONS[RELATED_PETS_DESCRIPTION_QUERY_REVISION])
       .toEqual({
         dimensions: 768,
         modelPath: "text-embeddings-v2-query",
@@ -232,7 +231,7 @@ describe("pet search embeddings backfill", () => {
 
   it("keeps the active query command separate from V24 preparation", () => {
     expect(packageScripts["related:backfill-query"]).toContain(
-      RELATED_PETS_TEXT_QUERY_REVISION,
+      RELATED_PETS_DESCRIPTION_QUERY_REVISION,
     );
     expect(packageScripts["related:backfill-description-query"]).toContain(
       RELATED_PETS_DESCRIPTION_QUERY_REVISION,

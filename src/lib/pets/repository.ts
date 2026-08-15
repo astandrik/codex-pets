@@ -974,6 +974,18 @@ LIMIT 1;
   return rowsFromResult(result).map(parsePetRow)[0] ?? null;
 }
 
+export async function getPetForApprovalPreparationById(
+  id: string,
+): Promise<(PublicPet & { updatedAt: string }) | null> {
+  const pet = await getPetById(id);
+  return pet
+    ? {
+        ...toPublicPet(pet, EMPTY_METRICS, await getOwnerProfileByRow(pet)),
+        updatedAt: pet.updatedAt,
+      }
+    : null;
+}
+
 async function resolveUniqueSlug(base: string): Promise<string> {
   if (!(await getPetBySlug(base))) return base;
 

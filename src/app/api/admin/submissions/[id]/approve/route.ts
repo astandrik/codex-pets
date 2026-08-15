@@ -2,8 +2,14 @@ import { NextResponse } from "next/server";
 
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
+import { enqueueApprovalPreparation } from "@/lib/pets/approval-preparations-repository";
+import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
 import { refreshApprovedPetRelatedDescriptionEmbeddings } from "@/lib/pets/related-pets-query-runtime";
-import { moderatePet } from "@/lib/pets/repository";
+import { getRelatedPetsState } from "@/lib/pets/related-pets-repository";
+import {
+  getPetForApprovalPreparationById,
+  moderatePet,
+} from "@/lib/pets/repository";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { refreshApprovedPetSearchEmbedding } from "@/lib/pets/search-runtime";
 import { refreshApprovedPetVisionSearchBestEffort } from "@/lib/pets/search-vision-runtime";
@@ -22,6 +28,10 @@ export async function POST(
   }
 
   const { id } = await params;
+  if (process.env.PET_RELATED_PREAPPROVAL_ENABLED === "true") {
+    return enqueuePreparation(id, principal.userId);
+  }
+
   const pet = await moderatePet({
     petId: id,
     reviewerId: principal.userId,
@@ -89,6 +99,46 @@ export async function POST(
   }
 
   return NextResponse.json({ ok: true, pet });
+}
+
+async function enqueuePreparation(
+  petId: string,
+  reviewerId: string,
+): Promise<Response> {
+  const pendingPet = await getPetForApprovalPreparationById(petId);
+  if (!pendingPet || pendingPet.status !== "pending") {
+    return NextResponse.json({ error: "not_found" }, { status: 404 });
+  }
+  const relatedState = await getRelatedPetsState();
+  if (relatedState?.status !== "ready" || !relatedState.activeGenerationId) {
+    return NextResponse.json(
+      { error: "related_generation_unavailable" },
+      { status: 503 },
+    );
+  }
+  const preparation = await enqueueApprovalPreparation({
+    petId: pendingPet.id,
+    petSlug: pendingPet.slug,
+    petUpdatedAt: pendingPet.updatedAt,
+    reviewerId,
+    rankingRevision: RELATED_PETS_V24_PROFILE.rankingRevision,
+    expectedActiveGenerationId: relatedState.activeGenerationId,
+    now: new Date().toISOString(),
+  });
+  if (!preparation) {
+    return NextResponse.json(
+      { error: "preparation_storage_unavailable" },
+      { status: 503 },
+    );
+  }
+  return NextResponse.json(
+    {
+      ok: true,
+      status: "preparing",
+      preparationId: preparation.preparationId,
+    },
+    { status: 202 },
+  );
 }
 
 type RefreshStatus = "updated" | "unchanged" | "skipped" | "failed";
