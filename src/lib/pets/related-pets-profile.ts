@@ -4,56 +4,69 @@ import {
   PET_VISUAL_MODEL_REVISIONS,
 } from "@/lib/pets/search-config";
 import {
-  RELATED_PETS_METADATA_WEIGHT,
-  RELATED_PETS_RRF_K,
-  RELATED_PETS_TEXT_WEIGHT,
-  type RelatedPetsRankingProfile,
-} from "@/lib/pets/related-pets-ranking";
+  RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+  RELATED_PETS_DESCRIPTION_QUERY_REVISION,
+} from "@/lib/pets/related-pets-semantics.mjs";
+import {
+  RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+  RELATED_PETS_ANNOTATION_QUERY_REVISION,
+  RELATED_PETS_ANNOTATION_REVISION,
+} from "@/lib/pets/related-pets-annotation-contract.mjs";
+import type { RelatedPetsRankingProfile } from "@/lib/pets/related-pets-ranking";
+import { RELATED_PETS_V24_FALLBACK_POLICY_REVISION } from "@/lib/pets/related-pets-fallback-policy";
+import { RELATED_PETS_V24_RELATION_POLICY_REVISION } from "@/lib/pets/related-pets-relation-policy";
 
-const TEXT_REVISION = "yandex-text-embeddings-v2-768-2026-07";
-export const RELATED_PETS_TEXT_QUERY_REVISION =
-  "yandex-text-embeddings-v2-768-related-tags-query-2026-08";
+const EMBEDDING_REVISION = "yandex-text-embeddings-v2-768-2026-07";
 const VISUAL_REVISION =
   "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1";
-const CALIBRATION_REVISION = "related-pets-eval-groups-v2";
-const textDefinition = PET_SEARCH_MODEL_REVISIONS[TEXT_REVISION];
+const embeddingDefinition = PET_SEARCH_MODEL_REVISIONS[EMBEDDING_REVISION];
 const visualDefinition = PET_VISUAL_MODEL_REVISIONS[VISUAL_REVISION];
-const PINNED_CALIBRATED_PROFILE = {
-  textMinSimilarity: 0.4523258982119597,
-  visualMinSimilarity: 0.7573239783550058,
-  visualWeight: 0.5,
-} as const;
 
-export const CURRENT_RELATED_PETS_RANKING_PROFILE = {
-  rankingRevision: `related-pets-rrf60-v7:depth=8:tail=semantic:cal=${CALIBRATION_REVISION}:text=${TEXT_REVISION}:text-query=${RELATED_PETS_TEXT_QUERY_REVISION}:visual=${VISUAL_REVISION}`,
-  textRevision: TEXT_REVISION,
-  textQueryRevision: RELATED_PETS_TEXT_QUERY_REVISION,
-  textDimensions:
-    PET_SEARCH_EMBEDDING_MODELS[textDefinition.embeddingModelId].dimensions,
-  textMinSimilarity: PINNED_CALIBRATED_PROFILE.textMinSimilarity,
-  textWeight: RELATED_PETS_TEXT_WEIGHT,
-  metadataWeight: RELATED_PETS_METADATA_WEIGHT,
-  visualRevision: VISUAL_REVISION,
-  visualDimensions:
-    PET_SEARCH_EMBEDDING_MODELS[visualDefinition.embeddingModelId].dimensions,
-  visualMinSimilarity:
-    PINNED_CALIBRATED_PROFILE.visualMinSimilarity,
-  visualWeight: PINNED_CALIBRATED_PROFILE.visualWeight,
-  rrfK: RELATED_PETS_RRF_K,
-} as const satisfies RelatedPetsRankingProfile & {
+export const RELATED_PETS_V24_DESCRIPTION_QUERY_REVISION =
+  RELATED_PETS_DESCRIPTION_QUERY_REVISION;
+export const RELATED_PETS_V24_DESCRIPTION_DOCUMENT_REVISION =
+  RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION;
+
+// This value is persisted with the active generation. Keep it byte-for-byte
+// compatible while the generation remains readable by the current service.
+export const RELATED_PETS_V24_RANKING_REVISION =
+  "related-pets-sparse-fallback-v24:depth=8:base=related-pets-franchise-coverage-v23:depth=8:base=related-pets-entity-controlled-v11-r3:depth=8:tail=description-first:gate=qualified-negatives:cal=related-pets-eval-v7:text-min=0.6167421023517932:annotation-min=0.4133420129086638:annotation-weight=1:visual-min=0.8178749331551675:visual-weight=0.25:description=yandex-text-embeddings-v2-768-related-description-document-2026-08-v1:description-query=yandex-text-embeddings-v2-768-related-description-query-2026-08-v3:annotation=yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r4:annotation-document=yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r4:annotation-query=yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r4:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1:relation-policy=related-pets-relation-policy-2026-08-v23-r1:fallback-policy=related-pets-zero-qualified-empty-top4-shared-topic-visual-v24-r2";
+
+type RelatedPetsV24RuntimeProfile = RelatedPetsRankingProfile & {
   rankingRevision: string;
+  embeddingRevision: string;
   textRevision: string;
   textQueryRevision: string;
   textDimensions: number;
-  textWeight: number;
-  metadataWeight: number;
+  annotationRevision: string;
+  annotationDocumentRevision: string;
+  annotationQueryRevision: string;
+  annotationDimensions: number;
   visualRevision: string;
   visualDimensions: number;
-  rrfK: number;
 };
 
-export function isCurrentRelatedPetsRankingRevision(
-  value: string,
-): boolean {
-  return value === CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision;
-}
+export const RELATED_PETS_V24_PROFILE = {
+  strategy: "sparse-fallback-v24",
+  rankingRevision: RELATED_PETS_V24_RANKING_REVISION,
+  embeddingRevision: EMBEDDING_REVISION,
+  textRevision: RELATED_PETS_V24_DESCRIPTION_DOCUMENT_REVISION,
+  textQueryRevision: RELATED_PETS_V24_DESCRIPTION_QUERY_REVISION,
+  textDimensions:
+    PET_SEARCH_EMBEDDING_MODELS[embeddingDefinition.embeddingModelId].dimensions,
+  textMinSimilarity: 0.6167421023517932,
+  annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+  annotationDocumentRevision: RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+  annotationQueryRevision: RELATED_PETS_ANNOTATION_QUERY_REVISION,
+  annotationDimensions:
+    PET_SEARCH_EMBEDDING_MODELS[embeddingDefinition.embeddingModelId].dimensions,
+  annotationMinSimilarity: 0.4133420129086638,
+  annotationWeight: 1,
+  visualRevision: VISUAL_REVISION,
+  visualDimensions:
+    PET_SEARCH_EMBEDDING_MODELS[visualDefinition.embeddingModelId].dimensions,
+  visualMinSimilarity: 0.8178749331551675,
+  visualWeight: 0.25,
+  relationPolicyRevision: RELATED_PETS_V24_RELATION_POLICY_REVISION,
+  fallbackPolicyRevision: RELATED_PETS_V24_FALLBACK_POLICY_REVISION,
+} as const satisfies RelatedPetsV24RuntimeProfile;

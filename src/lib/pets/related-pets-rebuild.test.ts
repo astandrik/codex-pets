@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  createPetSearchSourceHash,
+  createRelatedPetDocumentSourceHash,
   createRelatedPetQuerySourceHash,
   embeddingToBuffer,
 } from "@/lib/pets/search-embeddings";
@@ -15,31 +15,53 @@ import {
 } from "@/lib/pets/search-vision-contract";
 import {
   createRelatedPetsRebuildService,
+  prepareRelatedPetsRankingInputs,
   RelatedPetsRebuildError,
+  type RelatedPetsRebuildProfile,
 } from "@/lib/pets/related-pets-rebuild";
+import {
+  buildRelatedPetAnnotationText,
+  createRelatedPetAnnotationEmbeddingSourceHash,
+  createRelatedPetAnnotationSourceHash,
+  resolveRelatedPetAnnotation,
+} from "@/lib/pets/related-pets-annotation-contract.mjs";
+import type { StoredRelatedPetAnnotation } from "@/lib/pets/related-pets-annotations-repository";
 import type {
   RelatedPetsSnapshot,
   RelatedPetsState,
 } from "@/lib/pets/related-pets-repository";
 import type { PublicPet } from "@/lib/pets/types";
+import { RELATED_PETS_V24_FALLBACK_POLICY_REVISION } from "@/lib/pets/related-pets-fallback-policy";
+import { RELATED_PETS_V24_RELATION_POLICY_REVISION } from "@/lib/pets/related-pets-relation-policy";
 
-const profile = {
+const profile: RelatedPetsRebuildProfile = {
+  strategy: "sparse-fallback-v24",
+  relationPolicyRevision: RELATED_PETS_V24_RELATION_POLICY_REVISION,
+  fallbackPolicyRevision: RELATED_PETS_V24_FALLBACK_POLICY_REVISION,
   rankingRevision: "ranking-v1",
   textRevision: "text-v1",
   textQueryRevision: "text-query-v1",
   textDimensions: 2,
   textMinSimilarity: 0.1,
+  annotationRevision: "annotation-current",
+  annotationQueryRevision: "annotation-query-current",
+  annotationDocumentRevision: "annotation-document-current",
+  annotationDimensions: 2,
+  annotationMinSimilarity: 0.1,
+  annotationWeight: 0.5,
   visualRevision: "visual-v1",
   visualCaptionRevision: "caption-v1",
   visualDimensions: 2,
   visualMinSimilarity: 0.1,
   visualWeight: 0.5,
-} as const;
+};
 
 const visualContext = {
   captionRevision: "caption-v1",
   modelUri: "gpt://folder/model",
 } as const;
+
+const annotationModelUri = "gpt://folder/qwen";
 
 const captionValue: PetVisionCaption = {
   subject: { en: "robot", ru: "робот" },
@@ -132,10 +154,71 @@ function visualVectorFor(item: PublicPet, vector: readonly number[] = [1, 0]) {
   });
 }
 
+function annotationFor(
+  item: PublicPet,
+  rebuildProfile: RelatedPetsRebuildProfile,
+): StoredRelatedPetAnnotation {
+  const proposal = {
+    entity: {
+      key: null,
+      aliases: [],
+      confidence: "none",
+      evidence: [],
+    },
+    franchises: [],
+    franchise_families: [],
+    collections: [],
+    specific_archetypes: [],
+    themes: [],
+    media_origins: [],
+  };
+  const annotation = resolveRelatedPetAnnotation({
+    slug: item.slug,
+    proposal,
+  });
+  return {
+    slug: item.slug,
+    sourceHash: createRelatedPetAnnotationSourceHash({
+      pet: item,
+      modelUri: annotationModelUri,
+      annotationRevision: rebuildProfile.annotationRevision,
+    }),
+    proposalJson: JSON.stringify(proposal),
+    annotationJson: JSON.stringify(annotation),
+    annotationText: buildRelatedPetAnnotationText(annotation),
+    updatedAt: "2026-08-03T10:00:00.000Z",
+  };
+}
+
+function annotationVectorFor(
+  annotation: StoredRelatedPetAnnotation,
+  rebuildProfile: RelatedPetsRebuildProfile,
+  role: "query" | "document",
+): StoredRawPetSearchEmbedding {
+  const revision = role === "query"
+    ? rebuildProfile.annotationQueryRevision
+    : rebuildProfile.annotationDocumentRevision;
+  return rawVector({
+    slug: annotation.slug,
+    modelRevision: revision,
+    sourceHash: createRelatedPetAnnotationEmbeddingSourceHash({
+      modelRevision: revision,
+      role,
+      annotationRevision: rebuildProfile.annotationRevision,
+      annotationSourceHash: annotation.sourceHash,
+      annotationText: annotation.annotationText,
+    }),
+  });
+}
+
 function createHarness(options: {
+  rebuildProfile?: RelatedPetsRebuildProfile;
   pets?: PublicPet[];
   textQueryRows?: StoredRawPetSearchEmbedding[];
   textRows?: StoredRawPetSearchEmbedding[];
+  annotationRows?: StoredRelatedPetAnnotation[];
+  annotationQueryRows?: StoredRawPetSearchEmbedding[];
+  annotationDocumentRows?: StoredRawPetSearchEmbedding[];
   visualRows?: StoredRawPetSearchEmbedding[];
   captions?: ReturnType<typeof captionFor>[];
   superseded?: boolean;
@@ -156,14 +239,18 @@ function createHarness(options: {
   supersedeInvalidationBeforeFailure?: boolean;
   visualSourceContext?: { captionRevision: string; modelUri: string } | null;
 } = {}) {
+  const rebuildProfile = options.rebuildProfile ?? profile;
   const pets = options.pets ?? [pet("source"), pet("peer-a"), pet("peer-b")];
   const textRows =
     options.textRows ??
     pets.map((item, index) =>
       rawVector({
         slug: item.slug,
-        modelRevision: profile.textRevision,
-        sourceHash: createPetSearchSourceHash(item, profile.textRevision),
+        modelRevision: rebuildProfile.textRevision,
+        sourceHash: createRelatedPetDocumentSourceHash(
+          item,
+          rebuildProfile.textRevision,
+        ),
         vector: index === 2 ? [0, 1] : [1, 0],
       }),
     );
@@ -172,12 +259,22 @@ function createHarness(options: {
     pets.map((item) =>
       rawVector({
         slug: item.slug,
-        modelRevision: profile.textQueryRevision,
+        modelRevision: rebuildProfile.textQueryRevision,
         sourceHash: createRelatedPetQuerySourceHash(
           item,
-          profile.textQueryRevision,
+          rebuildProfile.textQueryRevision,
         ),
       }),
+    );
+  const annotationRows = options.annotationRows ??
+    pets.map((item) => annotationFor(item, rebuildProfile));
+  const annotationQueryRows = options.annotationQueryRows ??
+    annotationRows.map((annotation) =>
+      annotationVectorFor(annotation, rebuildProfile, "query")
+    );
+  const annotationDocumentRows = options.annotationDocumentRows ??
+    annotationRows.map((annotation) =>
+      annotationVectorFor(annotation, rebuildProfile, "document")
     );
   const visualRows = options.visualRows ?? pets.map((item) => visualVectorFor(item));
   const captions = options.captions ?? pets.map((item) => captionFor(item));
@@ -230,7 +327,7 @@ function createHarness(options: {
           activeGenerationId: "generation-old",
           previousGenerationId: "generation-older",
           status: "building",
-          rankingRevision: profile.rankingRevision,
+          rankingRevision: rebuildProfile.rankingRevision,
           failureReason: null,
           updatedAt: "2026-08-03T10:01:00.000Z",
         };
@@ -291,14 +388,14 @@ function createHarness(options: {
           activeGenerationId: "generation-old",
           previousGenerationId: "generation-older",
           status: "building",
-          rankingRevision: profile.rankingRevision,
+          rankingRevision: rebuildProfile.rankingRevision,
           failureReason: null,
           updatedAt: "2026-08-03T10:01:00.000Z",
         };
         snapshots.push({
           generationId: "generation-newer",
           sourceSlug: "source",
-          rankingRevision: profile.rankingRevision,
+          rankingRevision: rebuildProfile.rankingRevision,
           relatedSlugs: ["peer-a"],
           createdAt: "2026-08-03T10:01:00.000Z",
         });
@@ -331,7 +428,7 @@ function createHarness(options: {
           activeGenerationId: "generation-old",
           previousGenerationId: "generation-older",
           status: "building",
-          rankingRevision: profile.rankingRevision,
+          rankingRevision: rebuildProfile.rankingRevision,
           failureReason: null,
           updatedAt: "2026-08-03T10:01:00.000Z",
         };
@@ -366,14 +463,14 @@ function createHarness(options: {
           activeGenerationId: "generation-new",
           previousGenerationId: "generation-old",
           status: "building",
-          rankingRevision: profile.rankingRevision,
+          rankingRevision: rebuildProfile.rankingRevision,
           failureReason: null,
           updatedAt: "2026-08-03T10:01:00.000Z",
         };
         snapshots.push({
           generationId: "generation-newer",
           sourceSlug: "source",
-          rankingRevision: profile.rankingRevision,
+          rankingRevision: rebuildProfile.rankingRevision,
           relatedSlugs: ["peer-a"],
           createdAt: "2026-08-03T10:01:00.000Z",
         });
@@ -451,7 +548,7 @@ function createHarness(options: {
         state.activeGenerationId !== input.expectedActiveGenerationId ||
         state.previousGenerationId !== input.targetPreviousGenerationId ||
         input.expectedRankingRevision !==
-          (options.retainedRankingRevision ?? profile.rankingRevision)
+          (options.retainedRankingRevision ?? rebuildProfile.rankingRevision)
       ) {
         return null;
       }
@@ -461,7 +558,7 @@ function createHarness(options: {
         previousGenerationId: input.expectedActiveGenerationId,
         status: "ready",
         rankingRevision:
-          options.retainedRankingRevision ?? profile.rankingRevision,
+          options.retainedRankingRevision ?? rebuildProfile.rankingRevision,
         failureReason: null,
         updatedAt: input.updatedAt,
       };
@@ -469,13 +566,13 @@ function createHarness(options: {
         activeGenerationId: input.targetPreviousGenerationId,
         previousGenerationId: input.expectedActiveGenerationId,
         rankingRevision:
-          options.retainedRankingRevision ?? profile.rankingRevision,
+          options.retainedRankingRevision ?? rebuildProfile.rankingRevision,
       };
     },
   };
 
   const service = createRelatedPetsRebuildService({
-    profile,
+    profile: rebuildProfile,
     repository,
     isStorageAvailable: () => options.storageAvailable ?? true,
     listApprovedPets: async () => {
@@ -486,7 +583,7 @@ function createHarness(options: {
           activeGenerationId: "generation-newer",
           previousGenerationId: "generation-old",
           status: "ready",
-          rankingRevision: profile.rankingRevision,
+          rankingRevision: rebuildProfile.rankingRevision,
           failureReason: null,
           updatedAt: "2026-08-03T10:01:00.000Z",
         };
@@ -499,10 +596,19 @@ function createHarness(options: {
     },
     listRawVectors: async (revision) => {
       vectorRevisionReads.push(revision);
-      if (revision === profile.textQueryRevision) return textQueryRows;
-      return revision === profile.textRevision ? textRows : visualRows;
+      if (revision === rebuildProfile.textQueryRevision) return textQueryRows;
+      if (revision === rebuildProfile.textRevision) return textRows;
+      if (revision === rebuildProfile.annotationQueryRevision) {
+        return annotationQueryRows;
+      }
+      if (revision === rebuildProfile.annotationDocumentRevision) {
+        return annotationDocumentRows;
+      }
+      return visualRows;
     },
     listCaptions: async () => captions,
+    listAnnotations: async () => annotationRows,
+    getAnnotationModelUri: () => annotationModelUri,
     getVisualSourceContext: () =>
       options.visualSourceContext === undefined
         ? visualContext
@@ -537,6 +643,131 @@ function createHarness(options: {
 }
 
 describe("related pets rebuild service", () => {
+  it("accepts only source-current annotations and both vector roles", () => {
+    const pets = [pet("source"), pet("peer-a")];
+    const annotationRevision = "annotation-current";
+    const annotationQueryRevision = "annotation-query-current";
+    const annotationDocumentRevision = "annotation-document-current";
+    const modelUri = "gpt://folder/qwen";
+    const annotations = pets.map((item) => {
+      const proposal = {
+        entity: {
+          key: item.slug,
+          aliases: [],
+          confidence: "high" as const,
+          evidence: ["name" as const],
+        },
+        franchises: [],
+        franchiseFamilies: [],
+        collections: [],
+        specificArchetypes: [],
+        themes: [],
+        mediaOrigins: [],
+      };
+      const annotation = resolveRelatedPetAnnotation({ slug: item.slug, proposal });
+      return {
+        slug: item.slug,
+        sourceHash: createRelatedPetAnnotationSourceHash({
+          pet: item,
+          modelUri,
+          annotationRevision,
+        }),
+        proposalJson: JSON.stringify(proposal),
+        annotationJson: JSON.stringify(annotation),
+        annotationText: buildRelatedPetAnnotationText(annotation),
+        updatedAt: "2026-08-11T00:00:00.000Z",
+      };
+    });
+    const annotationVectors = (
+      revision: string,
+      role: "query" | "document",
+    ) => annotations.map((annotation) => rawVector({
+      slug: annotation.slug,
+      modelRevision: revision,
+      sourceHash: createRelatedPetAnnotationEmbeddingSourceHash({
+        modelRevision: revision,
+        role,
+        annotationRevision,
+        annotationSourceHash: annotation.sourceHash,
+        annotationText: annotation.annotationText,
+      }),
+    }));
+    const prepared = prepareRelatedPetsRankingInputs({
+      pets,
+      textQueryRows: pets.map((item) => rawVector({
+        slug: item.slug,
+        modelRevision: "description-query",
+        sourceHash: createRelatedPetQuerySourceHash(item, "description-query"),
+      })),
+      textRows: pets.map((item) => rawVector({
+        slug: item.slug,
+        modelRevision: "description-document",
+        sourceHash: createRelatedPetDocumentSourceHash(item, "description-document"),
+      })),
+      annotationQueryRows: annotationVectors(annotationQueryRevision, "query"),
+      annotationRows: annotationVectors(annotationDocumentRevision, "document"),
+      annotations,
+      annotationModelUri: modelUri,
+      visualRows: [],
+      captions: [],
+      profile: {
+        strategy: "sparse-fallback-v24",
+        relationPolicyRevision: RELATED_PETS_V24_RELATION_POLICY_REVISION,
+        fallbackPolicyRevision: RELATED_PETS_V24_FALLBACK_POLICY_REVISION,
+        rankingRevision: "current",
+        textRevision: "description-document",
+        textQueryRevision: "description-query",
+        textDimensions: 2,
+        textMinSimilarity: 0,
+        annotationRevision,
+        annotationQueryRevision,
+        annotationDocumentRevision,
+        annotationDimensions: 2,
+        annotationMinSimilarity: 0,
+        annotationWeight: 0.25,
+        visualRevision: "visual-v1",
+        visualCaptionRevision: "caption-v1",
+        visualDimensions: 2,
+        visualMinSimilarity: null,
+        visualWeight: 0,
+      },
+      visualContext: null,
+    });
+
+    expect(prepared.annotations.size).toBe(2);
+    expect(prepared.annotationQueryVectors.size).toBe(2);
+    expect(prepared.annotationDocumentVectors.size).toBe(2);
+  });
+
+  it("writes an inactive preparation generation without touching active state", async () => {
+    const initialState: RelatedPetsState = {
+      requestedGenerationId: "generation-active",
+      activeGenerationId: "generation-active",
+      previousGenerationId: "generation-v6",
+      status: "ready",
+      rankingRevision: profile.rankingRevision,
+      failureReason: null,
+      updatedAt: "2026-08-03T09:00:00.000Z",
+    };
+    const harness = createHarness({ initialState });
+
+    await expect(harness.service.prepareGeneration({
+      generationId: "generation-prepared",
+      candidatePets: [pet("source"), pet("peer-a"), pet("peer-b")],
+      includeVisual: true,
+    })).resolves.toMatchObject({
+      generationId: "generation-prepared",
+      coverage: { approvedPetCount: 3, snapshotCount: 3 },
+    });
+
+    expect(harness.mutations).toEqual([
+      "write:source",
+      "write:peer-a",
+      "write:peer-b",
+    ]);
+    expect(harness.state).toEqual(initialState);
+  });
+
   it("publishes every approved source with validated text and visual vectors", async () => {
     const harness = createHarness();
 
@@ -550,6 +781,8 @@ describe("related pets rebuild service", () => {
       approvedPetCount: 3,
       snapshotCount: 3,
       textVectorCount: 3,
+      annotationCount: 3,
+      annotationVectorCount: 3,
       visualVectorCount: 3,
     });
     expect(harness.snapshots.map(({ sourceSlug }) => sourceSlug)).toEqual([
@@ -571,9 +804,12 @@ describe("related pets rebuild service", () => {
         embeddingModelRevisions: [
           profile.textQueryRevision,
           profile.textRevision,
+          profile.annotationQueryRevision,
+          profile.annotationDocumentRevision,
           profile.visualRevision,
         ],
         captionRevision: profile.visualCaptionRevision,
+        annotationRevision: profile.annotationRevision,
       },
     ]);
     expect(harness.state).toMatchObject({
@@ -619,14 +855,19 @@ describe("related pets rebuild service", () => {
     expect(harness.vectorRevisionReads).toEqual([
       profile.textQueryRevision,
       profile.textRevision,
+      profile.annotationQueryRevision,
+      profile.annotationDocumentRevision,
     ]);
     expect(harness.rankingInputScopes).toEqual([
       {
         embeddingModelRevisions: [
           profile.textQueryRevision,
           profile.textRevision,
+          profile.annotationQueryRevision,
+          profile.annotationDocumentRevision,
         ],
         captionRevision: null,
+        annotationRevision: profile.annotationRevision,
       },
     ]);
   });
@@ -1185,6 +1426,8 @@ describe("related pets rebuild service", () => {
         approvedPetCount: 0,
         snapshotCount: 0,
         textVectorCount: 0,
+        annotationCount: 0,
+        annotationVectorCount: 0,
         visualVectorCount: 0,
       },
       durationMs: expect.any(Number),
@@ -1359,6 +1602,8 @@ describe("related pets rebuild service", () => {
     expect(harness.vectorRevisionReads).toEqual([
       profile.textQueryRevision,
       profile.textRevision,
+      profile.annotationQueryRevision,
+      profile.annotationDocumentRevision,
     ]);
   });
 
