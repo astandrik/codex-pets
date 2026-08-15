@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
+import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
 import {
   createRelatedPetsResolver,
   logRelatedPetsResolverDiagnostic,
@@ -32,7 +32,7 @@ const readyState: RelatedPetsState = {
   activeGenerationId: "9f87654d-1234-4abc-8def-1234567890ab",
   previousGenerationId: "87654321-4321-4abc-8def-1234567890ab",
   status: "ready",
-  rankingRevision: CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
+  rankingRevision: RELATED_PETS_V24_PROFILE.rankingRevision,
   failureReason: null,
   updatedAt: "2026-08-03T10:00:00.000Z",
 };
@@ -40,7 +40,7 @@ const readyState: RelatedPetsState = {
 const readySnapshot: RelatedPetsSnapshot = {
   generationId: "9f87654d-1234-4abc-8def-1234567890ab",
   sourceSlug: "source",
-  rankingRevision: CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
+  rankingRevision: RELATED_PETS_V24_PROFILE.rankingRevision,
   relatedSlugs: ["b", "missing", "b", "source", "d"],
   createdAt: "2026-08-03T10:00:00.000Z",
 };
@@ -101,6 +101,9 @@ describe("createRelatedPetsResolver", () => {
     expect(deps.getSnapshot).toHaveBeenCalledWith(
       "9f87654d-1234-4abc-8def-1234567890ab",
       "source",
+    );
+    expect(deps.getCandidates).toHaveBeenCalledWith(
+      "9f87654d-1234-4abc-8def-1234567890ab",
     );
     expect(deps.log).toHaveBeenCalledTimes(1);
     expect(deps.log).toHaveBeenCalledWith("info", {

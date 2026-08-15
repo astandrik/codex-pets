@@ -82,7 +82,7 @@ export function buildPetSearchDocument(pet: PetSearchDocumentInput): string {
 
 export function buildRelatedPetQuery(
   pet: PetSearchDocumentInput,
-  modelRevision?: string,
+  modelRevision: string,
 ): string {
   if (modelRevision === RELATED_PETS_DESCRIPTION_QUERY_REVISION) {
     return buildRelatedPetDescriptionText(pet);

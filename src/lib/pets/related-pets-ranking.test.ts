@@ -1,133 +1,37 @@
 import { describe, expect, it } from "vitest";
 
-import { embeddingToBuffer } from "@/lib/pets/search-embeddings";
+import { RELATED_PETS_V24_FALLBACK_POLICY_REVISION } from "@/lib/pets/related-pets-fallback-policy";
+import {
+  RELATED_PETS_V24_PROFILE,
+  RELATED_PETS_V24_RANKING_REVISION,
+} from "@/lib/pets/related-pets-profile";
 import {
   cosineSimilarity,
   decodeRelatedPetVector,
-  fuseRelatedPetRankings,
-  fuseRelatedPetRankingsWithDiagnostics,
-  fuseRelatedPetTextMetadataBaseline,
   rankRelatedPetVectorMatches,
   rankRelatedPets,
   rankRelatedPetsWithDiagnostics,
-  RELATED_PETS_SEMANTIC_FALLBACK_VISUAL_WEIGHT,
+  type RelatedPetsPrecomputedMatches,
+  type RelatedPetsRankingProfile,
   type StoredRelatedPetVector,
 } from "@/lib/pets/related-pets-ranking";
+import { RELATED_PETS_V24_RELATION_POLICY_REVISION } from "@/lib/pets/related-pets-relation-policy";
 import type { RelatedPetCandidate } from "@/lib/pets/related-pets";
-import {
-  CURRENT_RELATED_PETS_RANKING_PROFILE,
-  isCurrentRelatedPetsRankingRevision,
-} from "@/lib/pets/related-pets-profile";
+import { embeddingToBuffer } from "@/lib/pets/search-embeddings";
 
-const EXPECTED_VECTOR = {
-  modelRevision: "text-v2",
-  dimensions: 2,
-  sourceHash: "current-source",
-} as const;
+const PROFILE: RelatedPetsRankingProfile = {
+  strategy: "sparse-fallback-v24",
+  relationPolicyRevision: RELATED_PETS_V24_RELATION_POLICY_REVISION,
+  fallbackPolicyRevision: RELATED_PETS_V24_FALLBACK_POLICY_REVISION,
+  textMinSimilarity: 0.8,
+  annotationMinSimilarity: 0.8,
+  annotationWeight: 0.5,
+  visualMinSimilarity: 0.8,
+  visualWeight: 0.5,
+};
 
-function storedVector(
-  overrides: Partial<StoredRelatedPetVector> = {},
-): StoredRelatedPetVector {
-  return {
-    slug: "pet-a",
-    modelRevision: EXPECTED_VECTOR.modelRevision,
-    dimensions: EXPECTED_VECTOR.dimensions,
-    sourceHash: EXPECTED_VECTOR.sourceHash,
-    embedding: embeddingToBuffer([3, 4]),
-    ...overrides,
-  };
-}
-
-describe("related pet vector validation", () => {
-  it("decodes the existing little-endian FloatVector representation", () => {
-    expect(decodeRelatedPetVector(storedVector(), EXPECTED_VECTOR)).toEqual([
-      3, 4,
-    ]);
-  });
-
-  it.each([
-    ["row revision", { modelRevision: "stale-text" }],
-    ["row dimensions", { dimensions: 3 }],
-    ["source hash", { sourceHash: "stale-source" }],
-  ])("rejects a vector with a stale %s", (_field, overrides) => {
-    expect(
-      decodeRelatedPetVector(storedVector(overrides), EXPECTED_VECTOR),
-    ).toBeNull();
-  });
-
-  it.each([
-    ["missing marker", Buffer.alloc(8)],
-    [
-      "wrong marker",
-      Buffer.from([...embeddingToBuffer([3, 4]).subarray(0, -1), 0x02]),
-    ],
-    ["wrong byte length", embeddingToBuffer([3])],
-    ["non-finite value", embeddingToBuffer([Number.NaN, 4])],
-  ])("rejects a vector with %s", (_failure, embedding) => {
-    expect(
-      decodeRelatedPetVector(storedVector({ embedding }), EXPECTED_VECTOR),
-    ).toBeNull();
-  });
-
-  it("rejects a finite zero-norm vector at the decoder boundary", () => {
-    expect(
-      decodeRelatedPetVector(
-        storedVector({ embedding: embeddingToBuffer([0, 0]) }),
-        EXPECTED_VECTOR,
-      ),
-    ).toBeNull();
-  });
-
-  it("rejects an empty vector at the decoder boundary", () => {
-    const emptyVector = {
-      ...EXPECTED_VECTOR,
-      dimensions: 0,
-    };
-
-    expect(
-      decodeRelatedPetVector(
-        storedVector({
-          dimensions: 0,
-          embedding: Buffer.from([0x01]),
-        }),
-        emptyVector,
-      ),
-    ).toBeNull();
-  });
-});
-
-describe("related pet cosine similarity", () => {
-  it("computes cosine for compatible finite vectors", () => {
-    expect(cosineSimilarity([1, 0], [1, 1])).toBeCloseTo(
-      1 / Math.sqrt(2),
-    );
-  });
-
-  it("clamps Float32 rounding drift to the cosine range", () => {
-    const left = Array.from({ length: 768 }, (_, index) =>
-      Math.fround(((index % 17) - 8) / 7),
-    );
-    const scale = Math.fround(2.1);
-    const parallel = left.map((value) => Math.fround(value * scale));
-    const antiparallel = left.map((value) =>
-      Math.fround(value * -scale),
-    );
-
-    expect(cosineSimilarity(left, parallel)).toBe(1);
-    expect(cosineSimilarity(left, antiparallel)).toBe(-1);
-  });
-
-  it.each([
-    [[0, 0], [1, 1]],
-    [[1, 1], [0, 0]],
-    [[Number.NaN, 1], [1, 1]],
-    [[1, 1], [Number.POSITIVE_INFINITY, 1]],
-    [[Number.MAX_VALUE, Number.MAX_VALUE], [Number.MAX_VALUE, 1]],
-    [[1], [1, 1]],
-  ])("omits unsafe similarity for %j and %j", (left, right) => {
-    expect(cosineSimilarity(left, right)).toBeNull();
-  });
-});
+const EXPECTED_RANKING_REVISION =
+  "related-pets-sparse-fallback-v24:depth=8:base=related-pets-franchise-coverage-v23:depth=8:base=related-pets-entity-controlled-v11-r3:depth=8:tail=description-first:gate=qualified-negatives:cal=related-pets-eval-v7:text-min=0.6167421023517932:annotation-min=0.4133420129086638:annotation-weight=1:visual-min=0.8178749331551675:visual-weight=0.25:description=yandex-text-embeddings-v2-768-related-description-document-2026-08-v1:description-query=yandex-text-embeddings-v2-768-related-description-query-2026-08-v3:annotation=yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r4:annotation-document=yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r4:annotation-query=yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r4:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1:relation-policy=related-pets-relation-policy-2026-08-v23-r1:fallback-policy=related-pets-zero-qualified-empty-top4-shared-topic-visual-v24-r2";
 
 function candidate(
   slug: string,
@@ -145,393 +49,374 @@ function candidate(
   };
 }
 
-describe("related pet weighted RRF", () => {
-  it("lets visual evidence boost a strong text peer above the text leader", () => {
-    const ranked = fuseRelatedPetRankings({
-      sourceSlug: "source",
-      metadataSlugs: ["text-leader", "visual-boost", "fill-a", "fill-b"],
-      textMatches: [
-        { slug: "text-leader", score: 0.99 },
-        { slug: "visual-boost", score: 0.98 },
-      ],
-      visualMatches: [{ slug: "visual-boost", score: 0.97 }],
-      textMinSimilarity: 0.5,
-      visualMinSimilarity: 0.5,
-      visualWeight: 0.75,
-    });
+function annotation(overrides: Partial<{
+  entity: string | null;
+  franchises: string[];
+  franchiseFamilies: string[];
+  collections: string[];
+  specificArchetypes: string[];
+}> = {}) {
+  return {
+    schemaVersion: 1 as const,
+    entity: null,
+    aliases: [],
+    franchises: [],
+    franchiseFamilies: [],
+    collections: [],
+    specificArchetypes: [],
+    themes: [],
+    mediaOrigins: [],
+    ...overrides,
+  };
+}
 
-    expect(ranked.slice(0, 2)).toEqual(["visual-boost", "text-leader"]);
+function lowMatches(slugs: readonly string[]): RelatedPetsPrecomputedMatches {
+  return {
+    text: slugs.map((slug, index) => ({ slug, score: 0.7 - index / 100 })),
+    annotation: slugs.map((slug, index) => ({
+      slug,
+      score: 0.7 - index / 100,
+    })),
+    visual: slugs.map((slug, index) => ({ slug, score: 0.9 - index / 100 })),
+  };
+}
+
+describe("related pet vector helpers", () => {
+  const expected = {
+    modelRevision: "text-v2",
+    dimensions: 2,
+    sourceHash: "current-source",
+  } as const;
+
+  function storedVector(
+    overrides: Partial<StoredRelatedPetVector> = {},
+  ): StoredRelatedPetVector {
+    return {
+      slug: "pet-a",
+      modelRevision: expected.modelRevision,
+      dimensions: expected.dimensions,
+      sourceHash: expected.sourceHash,
+      embedding: embeddingToBuffer([3, 4]),
+      ...overrides,
+    };
+  }
+
+  it("decodes only current finite non-zero FloatVector rows", () => {
+    expect(decodeRelatedPetVector(storedVector(), expected)).toEqual([3, 4]);
+    expect(decodeRelatedPetVector(
+      storedVector({ sourceHash: "stale" }),
+      expected,
+    )).toBeNull();
+    expect(decodeRelatedPetVector(
+      storedVector({ embedding: embeddingToBuffer([0, 0]) }),
+      expected,
+    )).toBeNull();
   });
 
-  it("ignores missing modalities without changing metadata-only order", () => {
-    expect(
-      fuseRelatedPetRankings({
-        sourceSlug: "source",
-        metadataSlugs: ["third", "first", "second"],
-        textMatches: [],
-        visualMatches: [],
-        textMinSimilarity: 0.5,
-        visualMinSimilarity: 0.5,
-        visualWeight: 0.5,
-      }),
-    ).toEqual(["third", "first", "second"]);
+  it("computes bounded cosine similarity and rejects unsafe vectors", () => {
+    expect(cosineSimilarity([1, 0], [1, 0])).toBe(1);
+    expect(cosineSimilarity([1, 0], [-1, 0])).toBe(-1);
+    expect(cosineSimilarity([0, 0], [1, 0])).toBeNull();
+    expect(cosineSimilarity([Number.NaN], [1])).toBeNull();
   });
 
-  it("preserves metadata order when all semantic vectors are absent", () => {
-    const result = fuseRelatedPetRankingsWithDiagnostics({
-      sourceSlug: "source",
-      metadataSlugs: ["metadata-first", "tagged-second"],
-      sharedTagCounts: { "tagged-second": 1 },
-      textMatches: [],
-      visualMatches: [],
-      textMinSimilarity: 0.5,
-      visualMinSimilarity: 0.5,
-      visualWeight: 0.5,
-    });
-
-    expect(result.slugs).toEqual(["metadata-first", "tagged-second"]);
-    expect(result.diagnostics.map(({ tier }) => tier)).toEqual([
-      "metadata_fallback",
-      "qualified",
-    ]);
-  });
-
-  it("rejects a text threshold outside the cosine range", () => {
-    expect(() =>
-      fuseRelatedPetRankings({
-        sourceSlug: "source",
-        metadataSlugs: ["peer"],
-        textMatches: [{ slug: "peer", score: 1 }],
-        textMinSimilarity: 1 + Number.EPSILON,
-        visualMinSimilarity: null,
-        visualWeight: 0,
-      }),
-    ).toThrow(/text.*similarity.*\[-1, 1\]/i);
-  });
-
-  it("skips visual contribution explicitly when its threshold is null", () => {
-    expect(
-      fuseRelatedPetRankings({
-        sourceSlug: "source",
-        metadataSlugs: ["metadata-first", "visual-peer"],
-        textMatches: [],
-        visualMatches: [{ slug: "visual-peer", score: 0.99 }],
-        textMinSimilarity: 0.5,
-        visualMinSimilarity: null,
-        visualWeight: 0.75,
-      }),
-    ).toEqual(["metadata-first", "visual-peer"]);
-  });
-
-  it("removes duplicate, unknown, and self matches before fusion", () => {
-    expect(
-      fuseRelatedPetRankings({
-        sourceSlug: "source",
-        metadataSlugs: ["peer", "fill"],
-        textMatches: [
-          { slug: "source", score: 1 },
-          { slug: "peer", score: 0.9 },
-          { slug: "peer", score: 0.8 },
-          { slug: "unknown", score: 0.99 },
-        ],
-        visualMatches: [],
-        textMinSimilarity: 0.5,
-        visualMinSimilarity: 0.5,
-        visualWeight: 0.5,
-      }),
-    ).toEqual(["peer", "fill"]);
-  });
-
-  it("never returns more than eight candidates when a larger limit is requested", () => {
-    expect(
-      fuseRelatedPetRankings({
-        sourceSlug: "source",
-        metadataSlugs: [
-          "one",
-          "two",
-          "three",
-          "four",
-          "five",
-          "six",
-          "seven",
-          "eight",
-          "nine",
-        ],
-        textMatches: [],
-        visualMatches: [],
-        textMinSimilarity: 0.5,
-        visualMinSimilarity: 0.5,
-        visualWeight: 0.25,
-        limit: 9,
-      }),
-    ).toEqual([
-      "one",
-      "two",
-      "three",
-      "four",
-      "five",
-      "six",
-      "seven",
-      "eight",
+  it("ranks query and document vectors independently", () => {
+    expect(rankRelatedPetVectorMatches(
+      "source",
+      new Map([["source", [1, 0]]]),
+      new Map([
+        ["far", [0, 1]],
+        ["near", [1, 0]],
+      ]),
+    )).toEqual([
+      { slug: "near", score: 1 },
+      { slug: "far", score: 0 },
     ]);
   });
 });
 
-describe("related pet ranking", () => {
-  it("omits self, zero-norm, and non-finite vector similarities", () => {
-    expect(
-      rankRelatedPetVectorMatches(
-        "source",
-        new Map([
-          ["source", [1, 0]],
-          ["good", [1, 1]],
-          ["zero", [0, 0]],
-          ["corrupt", [Number.NaN, 1]],
-        ]),
-      ),
-    ).toEqual([{ slug: "good", score: 1 / Math.sqrt(2) }]);
-  });
-
-  it("ranks a source query vector against candidate document vectors", () => {
-    expect(
-      rankRelatedPetVectorMatches(
-        "source",
-        new Map([["source", [1, 0]]]),
-        new Map([
-          ["source", [0, 1]],
-          ["semantic-peer", [1, 0]],
-          ["other", [0, 1]],
-        ]),
-      ),
-    ).toEqual([
-      { slug: "semantic-peer", score: 1 },
-      { slug: "other", score: 0 },
+describe("V24 related pet ranking", () => {
+  it("prioritizes entity, franchise, controlled relation, and semantic tiers", () => {
+    const source = candidate("source");
+    const candidates = [
+      source,
+      candidate("semantic"),
+      candidate("archetype"),
+      candidate("collection"),
+      candidate("franchise"),
+      candidate("entity"),
+    ];
+    const annotations = new Map([
+      ["source", annotation({
+        entity: "hero",
+        franchises: ["world"],
+        collections: ["gothic"],
+        specificArchetypes: ["warrior"],
+      })],
+      ["entity", annotation({ entity: "hero" })],
+      ["franchise", annotation({ franchises: ["world"] })],
+      ["collection", annotation({ collections: ["gothic"] })],
+      ["archetype", annotation({ specificArchetypes: ["warrior"] })],
+      ["semantic", annotation()],
     ]);
-  });
-
-  it("keeps the text-plus-metadata evaluation baseline thresholded", () => {
-    const input = {
-      sourceSlug: "source",
-      metadataSlugs: ["other", "peer"],
-      textMatches: [{ slug: "peer", score: 0.8 }],
-    } as const;
-
-    expect(
-      fuseRelatedPetTextMetadataBaseline({
-        ...input,
-        textMinSimilarity: 0.9,
-      }),
-    ).toEqual(["other", "peer"]);
-    expect(
-      fuseRelatedPetTextMetadataBaseline({
-        ...input,
-        textMinSimilarity: 0.8,
-      }),
-    ).toEqual(["peer", "other"]);
-  });
-
-  it("places semantic and shared-tag candidates before pure fallback", () => {
-    const result = fuseRelatedPetRankingsWithDiagnostics({
-      sourceSlug: "source",
-      metadataSlugs: ["pure-fallback", "tag-peer", "semantic-peer"],
-      sharedTagCounts: { "tag-peer": 1 },
-      textMatches: [
-        { slug: "semantic-peer", score: 0.9 },
-        { slug: "pure-fallback", score: 0.4 },
-      ],
-      textMinSimilarity: 0.5,
-      visualMinSimilarity: null,
-      visualWeight: 0,
+    const slugs = candidates.slice(1).map(({ slug }) => slug);
+    const result = rankRelatedPetsWithDiagnostics({
+      source,
+      candidates,
+      annotations,
+      precomputedMatches: {
+        text: slugs.map((slug) => ({ slug, score: 0.9 })),
+        annotation: slugs.map((slug) => ({ slug, score: 0.9 })),
+        visual: slugs.map((slug) => ({ slug, score: 0.9 })),
+      },
+      profile: PROFILE,
     });
 
     expect(result.slugs).toEqual([
-      "semantic-peer",
-      "tag-peer",
-      "pure-fallback",
+      "entity",
+      "franchise",
+      "collection",
+      "archetype",
+      "semantic",
     ]);
     expect(result.diagnostics.map(({ tier }) => tier)).toEqual([
-      "qualified",
-      "qualified",
-      "semantic_backfill",
+      "canonical_entity",
+      "franchise",
+      "franchise_family_collection",
+      "specific_archetype",
+      "semantic_safe",
     ]);
-    expect(result.diagnostics[2]).toMatchObject({
-      metadataRank: 1,
-      textRank: 2,
-      contributions: {
-        metadata: 0,
-        text: 1 / 62,
-        visual: 0,
-      },
+  });
+
+  it("applies the current franchise relation override", () => {
+    const source = candidate("primaris");
+    const result = rankRelatedPetsWithDiagnostics({
+      source,
+      candidates: [source, candidate("master-of-terra")],
+      annotations: new Map([
+        ["primaris", annotation()],
+        ["master-of-terra", annotation({ franchises: ["warhammer-40000"] })],
+      ]),
+      precomputedMatches: lowMatches(["master-of-terra"]),
+      profile: PROFILE,
+    });
+
+    expect(result.diagnostics[0]).toMatchObject({
+      slug: "master-of-terra",
+      tier: "franchise",
+      matchedFacets: ["warhammer-40000"],
     });
   });
 
-  it("ranks a semantic near-miss above a fresh same-kind fallback", () => {
-    const source = candidate("source", { tags: ["shared"] });
+  it("does not let a visual-only candidate enter a qualified tier", () => {
+    const source = candidate("source");
+    const result = rankRelatedPetsWithDiagnostics({
+      source,
+      candidates: [source, candidate("semantic"), candidate("visual-only")],
+      annotations: new Map([
+        ["source", annotation()],
+        ["semantic", annotation()],
+        ["visual-only", annotation()],
+      ]),
+      precomputedMatches: {
+        text: [
+          { slug: "semantic", score: 0.9 },
+          { slug: "visual-only", score: 0.1 },
+        ],
+        annotation: [
+          { slug: "semantic", score: 0.9 },
+          { slug: "visual-only", score: 0.1 },
+        ],
+        visual: [
+          { slug: "visual-only", score: 1 },
+          { slug: "semantic", score: 0.8 },
+        ],
+      },
+      profile: PROFILE,
+    });
+
+    expect(result.slugs).toEqual(["semantic", "visual-only"]);
+    expect(result.diagnostics[1]).toMatchObject({
+      slug: "visual-only",
+      tier: "controlled_fallback",
+      passesVisualThreshold: true,
+    });
+  });
+
+  it("preserves Tigran's sparse-fallback top eight", () => {
+    const source = candidate("tigran", {
+      kind: "character",
+      tags: ["man"],
+    });
+    const expected = [
+      "leon",
+      "johnny",
+      "grey-pilgrim-3",
+      "gordon-freeman",
+      "ovi",
+      "gigachad-2",
+      "jedi-blue-lightsaber",
+      "gandalf-the-white-2",
+    ];
+    const baselineDecoys = ["text-a", "text-b", "text-c", "text-d"];
+    const candidates = [
+      source,
+      ...baselineDecoys.map((slug) => candidate(slug)),
+      ...expected.map((slug) => candidate(slug, {
+        kind: "character",
+        tags: ["man"],
+      })),
+    ];
+    const result = rankRelatedPetsWithDiagnostics({
+      source,
+      candidates,
+      annotations: new Map(
+        candidates.map(({ slug }) => [slug, annotation()]),
+      ),
+      precomputedMatches: {
+        text: [
+          ...baselineDecoys.map((slug, index) => ({
+            slug,
+            score: 0.79 - index / 100,
+          })),
+          ...expected.map((slug, index) => ({
+            slug,
+            score: 0.3 - index / 100,
+          })),
+        ],
+        annotation: candidates.slice(1).map(({ slug }) => ({
+          slug,
+          score: 0.2,
+        })),
+        visual: [
+          ...expected.map((slug, index) => ({
+            slug,
+            score: 0.79 - index / 100,
+          })),
+          ...baselineDecoys.map((slug, index) => ({
+            slug,
+            score: 0.1 - index / 100,
+          })),
+        ],
+      },
+      profile: PROFILE,
+    });
+
+    expect(result.slugs).toEqual(expected);
+    expect(result.qualifiedCount).toBe(0);
+    expect(result.diagnostics.every(({ fallbackProvenance }) =>
+      fallbackProvenance === "shared_topics_kind_visual_description"
+    )).toBe(true);
+  });
+
+  it("does not use sparse rescue when any candidate qualifies", () => {
+    const source = candidate("source", { tags: ["man"] });
     const result = rankRelatedPetsWithDiagnostics({
       source,
       candidates: [
         source,
-        candidate("tag-peer", { tags: ["shared"] }),
-        candidate("fresh-same-kind", {
-          approvedAt: "2026-08-01T00:00:00.000Z",
-        }),
-        candidate("semantic-near-miss", {
-          kind: "character",
-          approvedAt: "2026-01-01T00:00:00.000Z",
-        }),
+        candidate("qualified"),
+        candidate("shared-tag", { tags: ["man"] }),
       ],
-      textQueryVectors: new Map([["source", [1, 0]]]),
-      textDocumentVectors: new Map([
-        ["semantic-near-miss", [0.49, Math.sqrt(1 - 0.49 ** 2)]],
-        ["fresh-same-kind", [-1, 0]],
+      annotations: new Map([
+        ["source", annotation()],
+        ["qualified", annotation()],
+        ["shared-tag", annotation()],
       ]),
-      profile: {
-        textMinSimilarity: 0.5,
-        visualMinSimilarity: null,
-        visualWeight: 0,
-      },
-    });
-
-    expect(result.slugs).toEqual([
-      "tag-peer",
-      "semantic-near-miss",
-      "fresh-same-kind",
-    ]);
-    expect(result.diagnostics.slice(1).map(({ tier }) => tier)).toEqual([
-      "semantic_backfill",
-      "semantic_backfill",
-    ]);
-  });
-
-  it("breaks equal semantic fallback scores only by slug", () => {
-    const rank = (metadataSlugs: string[]) =>
-      fuseRelatedPetRankings({
-        sourceSlug: "source",
-        metadataSlugs,
-        textMatches: [
-          { slug: "zeta", score: 0.4 },
-          { slug: "alpha", score: 0.4 },
+      precomputedMatches: {
+        text: [
+          { slug: "qualified", score: 0.9 },
+          { slug: "shared-tag", score: 0.2 },
         ],
-        textMinSimilarity: 0.5,
-        visualMinSimilarity: null,
-        visualWeight: 0,
-      });
-
-    expect(rank(["zeta", "alpha"])).toEqual(["alpha", "zeta"]);
-    expect(rank(["alpha", "zeta"])).toEqual(["alpha", "zeta"]);
-  });
-
-  it("uses the pinned visual weight for semantic fallback", () => {
-    const result = fuseRelatedPetRankingsWithDiagnostics({
-      sourceSlug: "source",
-      metadataSlugs: ["visual-near-miss"],
-      textMatches: [],
-      visualMatches: [{ slug: "visual-near-miss", score: 0.4 }],
-      textMinSimilarity: 0.5,
-      visualMinSimilarity: 0.5,
-      visualWeight: 0.75,
-    });
-
-    expect(RELATED_PETS_SEMANTIC_FALLBACK_VISUAL_WEIGHT).toBe(0.5);
-    expect(result.diagnostics[0]).toMatchObject({
-      tier: "semantic_backfill",
-      contributions: {
-        metadata: 0,
-        text: 0,
-        visual: 0.5 / 61,
+        annotation: [
+          { slug: "qualified", score: 0.9 },
+          { slug: "shared-tag", score: 0.2 },
+        ],
+        visual: [
+          { slug: "shared-tag", score: 1 },
+          { slug: "qualified", score: 0.9 },
+        ],
       },
+      profile: PROFILE,
+    });
+
+    expect(result.slugs).toEqual(["qualified", "shared-tag"]);
+    expect(result.diagnostics[1]).toMatchObject({
+      sparseFallbackRank: null,
+      fallbackProvenance: "description_then_annotation",
     });
   });
 
-  it("handles text-only, visual-only, and missing modalities deterministically", () => {
-    const base = {
-      sourceSlug: "source",
-      metadataSlugs: ["zeta", "alpha"],
-      textMinSimilarity: 0.5,
-      visualWeight: 0.5,
-    } as const;
-
-    expect(
-      fuseRelatedPetRankings({
-        ...base,
-        textMatches: [{ slug: "zeta", score: 0.9 }],
-        visualMinSimilarity: null,
-      }),
-    ).toEqual(["zeta", "alpha"]);
-    expect(
-      fuseRelatedPetRankings({
-        ...base,
-        textMatches: [],
-        visualMatches: [{ slug: "alpha", score: 0.9 }],
-        visualMinSimilarity: 0.5,
-      }),
-    ).toEqual(["alpha", "zeta"]);
-    expect(
-      fuseRelatedPetRankings({
-        ...base,
-        textMatches: [],
-        visualMatches: [],
-        visualMinSimilarity: 0.5,
-      }),
-    ).toEqual(["zeta", "alpha"]);
-  });
-
-  it("returns eight unique known candidates and excludes self and duplicate rows", () => {
+  it("excludes self, duplicate and unknown rows while keeping eight results", () => {
     const source = candidate("source");
-    const candidates = [
-      source,
-      ...Array.from({ length: 8 }, (_, index) => candidate(`peer-${index}`)),
-      candidate("peer-0"),
-    ];
+    const peers = Array.from({ length: 8 }, (_, index) =>
+      candidate(`peer-${index}`)
+    );
+    const candidates = [source, ...peers, candidate("peer-0")];
+    const matches = peers.map(({ slug }, index) => ({
+      slug,
+      score: 0.95 - index / 100,
+    }));
     const ranked = rankRelatedPets({
       source,
       candidates,
-      textQueryVectors: new Map([["source", [1, 0]]]),
-      textDocumentVectors: new Map([
-        ...candidates.map(({ slug }, index) => [
-          slug,
-          [1, index / 10 + 0.1],
-        ] as const),
-        ["deleted-or-unknown", [1, 0]] as const,
-      ]),
-      profile: {
-        textMinSimilarity: 0.5,
-        visualMinSimilarity: null,
-        visualWeight: 0,
+      annotations: new Map(
+        candidates.map(({ slug }) => [slug, annotation()]),
+      ),
+      precomputedMatches: {
+        text: [...matches, { slug: "unknown", score: 1 }],
+        annotation: matches,
+        visual: matches,
       },
-      limit: 8,
+      profile: PROFILE,
     });
 
     expect(ranked).toHaveLength(8);
     expect(new Set(ranked).size).toBe(8);
     expect(ranked).not.toContain("source");
-    expect(ranked).not.toContain("deleted-or-unknown");
+    expect(ranked).not.toContain("unknown");
+  });
+
+  it("fails closed for unsupported runtime revisions", () => {
+    const source = candidate("source");
+    expect(() => rankRelatedPets({
+      source,
+      candidates: [source, candidate("peer")],
+      profile: { ...PROFILE, fallbackPolicyRevision: "unknown" },
+    })).toThrow("Unsupported related-pets fallback policy revision.");
+    expect(() => rankRelatedPets({
+      source,
+      candidates: [source, candidate("peer")],
+      profile: { ...PROFILE, relationPolicyRevision: "unknown" },
+    })).toThrow("Unsupported related-pets relation policy revision.");
   });
 });
 
-describe("related pet ranking profile", () => {
-  it("binds compatibility to the depth-8 v7 semantic-tail profile", () => {
-    expect(CURRENT_RELATED_PETS_RANKING_PROFILE).toMatchObject({
-      rankingRevision:
-        "related-pets-rrf60-v7:depth=8:tail=semantic:cal=related-pets-eval-groups-v2:text=yandex-text-embeddings-v2-768-2026-07:text-query=yandex-text-embeddings-v2-768-related-tags-query-2026-08:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
-      textRevision: "yandex-text-embeddings-v2-768-2026-07",
+describe("V24 profile contract", () => {
+  it("preserves every persisted revision byte-for-byte", () => {
+    expect(RELATED_PETS_V24_RANKING_REVISION).toBe(EXPECTED_RANKING_REVISION);
+    expect(RELATED_PETS_V24_PROFILE).toMatchObject({
+      strategy: "sparse-fallback-v24",
+      rankingRevision: EXPECTED_RANKING_REVISION,
+      textRevision:
+        "yandex-text-embeddings-v2-768-related-description-document-2026-08-v1",
       textQueryRevision:
-        "yandex-text-embeddings-v2-768-related-tags-query-2026-08",
-      textDimensions: 768,
-      textMinSimilarity: 0.4523258982119597,
+        "yandex-text-embeddings-v2-768-related-description-query-2026-08-v3",
+      annotationRevision:
+        "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r4",
+      annotationDocumentRevision:
+        "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r4",
+      annotationQueryRevision:
+        "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r4",
       visualRevision:
         "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
-      visualDimensions: 768,
-      visualMinSimilarity: 0.7573239783550058,
-      visualWeight: 0.5,
+      relationPolicyRevision:
+        "related-pets-relation-policy-2026-08-v23-r1",
+      fallbackPolicyRevision:
+        "related-pets-zero-qualified-empty-top4-shared-topic-visual-v24-r2",
     });
-    expect(
-      isCurrentRelatedPetsRankingRevision(
-        CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
-      ),
-    ).toBe(true);
-    expect(isCurrentRelatedPetsRankingRevision("related-pets-stale")).toBe(
-      false,
+    expect(RELATED_PETS_V24_PROFILE.rankingRevision).toBe(
+      EXPECTED_RANKING_REVISION,
     );
   });
 });

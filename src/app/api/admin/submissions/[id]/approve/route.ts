@@ -8,11 +8,9 @@ import {
   isRelatedPetsTextRefreshCompatible,
   rebuildRelatedPetsBestEffort,
 } from "@/lib/pets/related-pets-rebuild-trigger";
-import {
-  CURRENT_RELATED_PETS_RANKING_PROFILE,
-  RELATED_PETS_V24_RANKING_REVISION,
-} from "@/lib/pets/related-pets-profile";
-import { refreshApprovedPetRelatedQueryEmbedding } from "@/lib/pets/related-pets-query-runtime";
+import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
+import { refreshPetRelatedAnnotation } from "@/lib/pets/related-pets-annotation-runtime";
+import { refreshApprovedPetRelatedDescriptionEmbeddings } from "@/lib/pets/related-pets-query-runtime";
 import {
   getPetForApprovalPreparationById,
   moderatePet,
@@ -57,7 +55,7 @@ export async function POST(
       petSlug: pendingPet.slug,
       petUpdatedAt: pendingPet.updatedAt,
       reviewerId: principal.userId,
-      rankingRevision: RELATED_PETS_V24_RANKING_REVISION,
+      rankingRevision: RELATED_PETS_V24_PROFILE.rankingRevision,
       expectedActiveGenerationId: relatedState.activeGenerationId,
       now: new Date().toISOString(),
     });
@@ -90,29 +88,46 @@ export async function POST(
   const canPublishRelatedPets = isRelatedPetsTextRefreshCompatible(
     petSearchRuntimeConfig.semantic,
   );
-  const [documentRefresh, queryRefresh] = await Promise.allSettled([
-    refreshApprovedPetSearchEmbedding(pet),
-    refreshApprovedPetRelatedQueryEmbedding(pet),
-  ]);
-  const documentStatus = refreshStatus(documentRefresh);
-  const queryStatus = refreshStatus(queryRefresh);
-  const textReady =
-    isReadyRefreshStatus(documentStatus) &&
-    isReadyRefreshStatus(queryStatus);
+  const searchDocumentRefresh = refreshApprovedPetSearchEmbedding(pet);
+  const [searchDocumentResult, relatedResult, annotationResult] =
+    await Promise.allSettled([
+      searchDocumentRefresh,
+      refreshApprovedPetRelatedDescriptionEmbeddings(pet),
+      refreshPetRelatedAnnotation(pet),
+    ]);
+  const searchDocumentStatus = refreshStatus(searchDocumentResult);
+  const relatedStatuses = relatedResult.status === "fulfilled"
+    ? relatedResult.value
+    : {
+        descriptionQuery: "failed" as const,
+        descriptionDocument: "failed" as const,
+      };
+  const relatedReady = Object.values(relatedStatuses).every(
+    isReadyRefreshStatus,
+  );
+  const annotationReady = annotationResult.status === "fulfilled";
+  const inputsReady = relatedReady && annotationReady;
   const requiresVisual =
-    CURRENT_RELATED_PETS_RANKING_PROFILE.visualMinSimilarity !== null;
+    RELATED_PETS_V24_PROFILE.visualMinSimilarity !== null;
 
-  if (!textReady) {
-    console.warn("[codex-pets][related-pets-text-refresh]", {
+  if (!inputsReady) {
+    console.warn("[codex-pets][related-pets-v24-refresh]", {
       operation: "refresh",
       status: "incomplete",
-      document: documentStatus,
-      query: queryStatus,
+      ...relatedStatuses,
+      annotation: annotationReady ? "ready" : "failed",
+    });
+  }
+
+  if (!isReadyRefreshStatus(searchDocumentStatus)) {
+    console.warn("[codex-pets][search-document-refresh]", {
+      operation: "refresh",
+      status: searchDocumentStatus,
     });
   }
 
   if (canPublishRelatedPets) {
-    if (textReady && !requiresVisual) {
+    if (inputsReady && !requiresVisual) {
       await rebuildRelatedPetsBestEffort({
         trigger: "approve-text",
         includeVisual: false,
@@ -127,7 +142,7 @@ export async function POST(
 
   void refreshApprovedPetVisionSearchBestEffort(pet, {
     onSuccessfulRefresh: async () => {
-      if (!canPublishRelatedPets || !textReady || !requiresVisual) return;
+      if (!canPublishRelatedPets || !inputsReady || !requiresVisual) return;
       await rebuildRelatedPetsBestEffort({
         trigger: "approve-visual",
         includeVisual: true,

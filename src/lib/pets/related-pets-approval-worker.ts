@@ -1,7 +1,21 @@
+import { randomUUID } from "node:crypto";
+
 import {
+  claimNextApprovalPreparation,
+  createApprovalReviewId,
+  finalizeApprovalPreparation,
   markApprovalPreparationFailure,
   type ApprovalPreparation,
 } from "@/lib/pets/approval-preparations-repository";
+import { refreshPetRelatedAnnotation } from "@/lib/pets/related-pets-annotation-runtime";
+import { prepareRelatedPetsGeneration } from "@/lib/pets/related-pets-rebuild";
+import { refreshApprovedPetRelatedDescriptionEmbeddingsStrict } from "@/lib/pets/related-pets-query-runtime";
+import { refreshApprovedPetSearchEmbedding } from "@/lib/pets/search-runtime";
+import { refreshApprovedPetVisionSearch } from "@/lib/pets/search-vision-runtime";
+import {
+  getPetForApprovalPreparationById,
+  listApprovedPetsForSearch,
+} from "@/lib/pets/repository";
 import type { PublicPet } from "@/lib/pets/types";
 import type { RelatedPetsRankingInputScope } from "@/lib/pets/related-pets-repository";
 
@@ -120,3 +134,47 @@ function failureCodeFrom(error: unknown): string {
     ? reason
     : "preparation_failed";
 }
+
+async function prepareProductionSignals(pet: PublicPet): Promise<void> {
+  const searchStatus = await refreshApprovedPetSearchEmbedding(pet);
+  if (searchStatus === "skipped") {
+    throw failure("embedding_configuration_missing");
+  }
+  const related = await refreshApprovedPetRelatedDescriptionEmbeddingsStrict(
+    pet,
+  );
+  if (
+    Object.values(related).some((status) => status === "skipped")
+  ) {
+    throw failure("embedding_configuration_missing");
+  }
+  await refreshPetRelatedAnnotation(pet);
+  const visual = await refreshApprovedPetVisionSearch(pet);
+  if (visual === "skipped") throw failure("visual_configuration_missing");
+}
+
+const productionWorker = createRelatedPetApprovalWorker({
+  claim: claimNextApprovalPreparation,
+  getPet: getPetForApprovalPreparationById,
+  prepareSignals: prepareProductionSignals,
+  buildGeneration: async ({ generationId, pet }) => {
+    const approvedPets = await listApprovedPetsForSearch();
+    const prepared = await prepareRelatedPetsGeneration({
+      generationId,
+      candidatePets: [...approvedPets, pet],
+      includeVisual: true,
+    });
+    return {
+      inputScope: prepared.inputScope,
+      expectedInputRevision: prepared.expectedInputRevision,
+      expectedSnapshotCount: prepared.coverage.snapshotCount,
+    };
+  },
+  finalize: finalizeApprovalPreparation,
+  markFailure: markApprovalPreparationFailure,
+  createGenerationId: randomUUID,
+  createReviewId: createApprovalReviewId,
+  now: () => new Date(),
+});
+
+export const runRelatedPetApprovalWorkerOnce = productionWorker.runOnce;

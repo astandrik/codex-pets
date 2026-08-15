@@ -308,31 +308,47 @@ completes so snapshot rankings do not remain stale:
 ```bash
 npm run related:backfill-query -- --dry-run
 npm run related:backfill-query -- --apply
+npm run related:backfill-document -- --dry-run
+npm run related:backfill-document -- --apply
+npm run related:backfill-annotations -- --dry-run
+npm run related:backfill-annotations -- --apply
+npm run related:backfill-annotation-query -- --dry-run
+npm run related:backfill-annotation-query -- --apply
+npm run related:backfill-annotation-document -- --dry-run
+npm run related:backfill-annotation-document -- --apply
 npm run related:rebuild -- --dry-run
 npm run related:rebuild -- --apply
+npm run related:verify:v24
 ```
 
-Related pets use the existing search document vectors as candidates and an
-additive query-vector revision built from normalized tags, with description as
-the fallback for pets without tags. Query vectors use the query side of the
-managed embedding model; document-to-document similarity is not used as a
-silent substitute. The dedicated related relevance groups live in
-`src/lib/pets/related-pets-eval-fixtures.json` and do not affect search eval.
+Related-pets description similarity uses separate query and document revisions
+built from the same normalized `name + kind + description` text. Tags are
+excluded from both embedding inputs. The query revision uses the query role and
+the document revision uses the document role of the same 768-dimensional model.
+Run all model backfills sequentially so they share the AI Studio rate budget.
+The active V24 profile combines description similarity with controlled entity,
+franchise, collection, and archetype annotations. For sources with no qualified
+candidate, V24 may rerank the fallback only when the existing top four have no
+shared semantic topic; candidates with shared topics then use kind, visual,
+description, and annotation signals as tie-breakers.
 The current ranking revision stores eight ordered slugs per approved pet. Pet
 detail pages render all eight immediately (four columns on desktop, three on
 tablet, and two on mobile); the private Markdown twin intentionally keeps the
-first four. Calibration and holdout reports include both nDCG@4 and nDCG@8,
-while profile selection remains pinned to nDCG@4.
+first four. The persisted V24 revision is immutable so an active generation can
+be checked against the exact current implementation.
 
 Text and visual backfills resolve their embedding provider independently from
 their active revision. Visual ranking is disabled safely when the text and
 visual revisions use incompatible embedding models.
 
-Admin approval refreshes both the search document vector and the related-query
-vector. For the current visual-enabled related profile, a new snapshot
-generation is published only after the visual refresh also succeeds. Missing
-required vectors leave the previous ready generation active; operators can use
-the existing backfill and rebuild commands to retry without a separate queue.
+Admin approval refreshes the ordinary search document, description query and
+document vectors, the controlled annotation and both annotation-vector roles,
+and the visual input. Related rebuild requires complete current coverage;
+failure in any required role leaves the previous ready generation active.
+Successfully written partial rows remain available for a later scoped backfill.
+`npm run related:verify:v24` is read-only: it recomputes V24 from stored inputs
+and checks coverage, integrity, the active revision, and exact ordered snapshot
+parity without calling AI Studio.
 
 The first rollback is `PET_SEARCH_VISUAL_MODE=off`; use
 `PET_SEARCH_MODE=lexical` to disable the text-semantic contour too. The additive

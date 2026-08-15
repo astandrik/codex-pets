@@ -42,14 +42,22 @@ export function rankRelatedPetsByMetadata(
   candidates: readonly RelatedPetCandidate[],
   current: Pick<RelatedPetCandidate, "slug" | "kind" | "tags">,
 ): RelatedPetMetadataRanking[] {
-  const currentTags = normalizeTagSet(current.tags);
+  return rankRelatedPetsByTags(candidates, current, normalizeTagSet);
+}
+
+function rankRelatedPetsByTags(
+  candidates: readonly RelatedPetCandidate[],
+  current: Pick<RelatedPetCandidate, "slug" | "kind" | "tags">,
+  normalizeTags: (tags: string[]) => Set<string>,
+): RelatedPetMetadataRanking[] {
+  const currentTags = normalizeTags(current.tags);
 
   return candidates
     .filter((candidate) => candidate.slug !== current.slug)
     .map((candidate) => ({
       candidate,
       sharedTagCount: intersectionSize(
-        normalizeTagSet(candidate.tags),
+        normalizeTags(candidate.tags),
         currentTags,
       ),
     }))

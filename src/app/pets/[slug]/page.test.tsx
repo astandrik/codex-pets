@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
+import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
 
 const repositoryMocks = vi.hoisted(() => ({
   getApprovedPetBySlug: vi.fn(),
@@ -238,7 +238,7 @@ describe("/pets/[slug] related pets section", () => {
       previousGenerationId: null,
       status: "ready",
       rankingRevision:
-        CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
+        RELATED_PETS_V24_PROFILE.rankingRevision,
       failureReason: null,
       updatedAt: "2026-08-03T10:00:00.000Z",
     });
@@ -246,7 +246,7 @@ describe("/pets/[slug] related pets section", () => {
       generationId: "generation-ready",
       sourceSlug: approvedPetRow.slug,
       rankingRevision:
-        CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision,
+        RELATED_PETS_V24_PROFILE.rankingRevision,
       relatedSlugs: snapshotOrder,
       createdAt: "2026-08-03T10:00:00.000Z",
     });
