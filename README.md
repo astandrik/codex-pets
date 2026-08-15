@@ -314,16 +314,18 @@ npm run related:rebuild -- --dry-run
 npm run related:rebuild -- --apply
 ```
 
-The V9 related-pets candidate uses separate query and document revisions built
+Related-pets description similarity uses separate query and document revisions built
 from the same normalized `name + kind + description` text. Tags are excluded
 from both embedding inputs. The query revision uses the query role and the
 document revision uses the document role of the same 768-dimensional model.
 Run the two backfills sequentially so they share the AI Studio rate budget.
 The dedicated related relevance groups live in
 `src/lib/pets/related-pets-eval-fixtures.json` and do not affect search eval.
-The active profile remains V7 until V9 is calibrated, pinned, and passes the
-frozen acceptance and one-time holdout gates. Every ranking revision stores
-eight ordered slugs per approved pet. Pet
+The active V24 profile keeps V11's controlled entity and franchise tiers. For
+sources with no qualified candidate, V24 may rerank the fallback only when the
+existing top four have no shared semantic topic; candidates with shared topics
+then use kind, visual, description, and annotation signals as tie-breakers.
+Every ranking revision stores eight ordered slugs per approved pet. Pet
 detail pages render all eight immediately (four columns on desktop, three on
 tablet, and two on mobile); the private Markdown twin intentionally keeps the
 first four. Calibration and holdout reports include both nDCG@4 and nDCG@8,

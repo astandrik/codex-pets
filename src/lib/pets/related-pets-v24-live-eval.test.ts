@@ -59,10 +59,6 @@ import { destroyYdbDriver } from "@/lib/ydb/client";
 
 const ENABLED = process.env.PET_RELATED_V24_EVAL === "compare";
 const ACCEPTANCE_ENABLED = process.env.PET_RELATED_V24_EVAL === "acceptance";
-const COMPATIBLE_V24_JUDGE_REVISION =
-  "gpt-oss-120b-related-slate-judge-2026-08-v24-r2";
-const COMPATIBLE_V24_SUPPORT_COMMIT =
-  "96891b4ecbd7fc9cc088cc53a7a03c7ab8447f5f";
 const TIGRAN_EXPECTED_RESCUE = [
   "leon",
   "johnny",
@@ -341,8 +337,6 @@ describe.skipIf(!ACCEPTANCE_ENABLED)("live related-pets V24 acceptance", () => {
       "PET_RELATED_V24_MANUAL_DECISIONS",
     );
     const reviewDirectory = requiredEnvironment("PET_RELATED_V24_REVIEW_DIRECTORY");
-    const compatibleCachePath = process.env
-      .PET_RELATED_V24_ACCEPTANCE_COMPATIBLE_CACHE?.trim();
     const folderId = requiredEnvironment("YANDEX_AI_STUDIO_FOLDER_ID");
     const v23 = withCaption(RELATED_PETS_V23_PROFILE);
     const v24 = withCaption(RELATED_PETS_V24_PROFILE);
@@ -449,18 +443,6 @@ describe.skipIf(!ACCEPTANCE_ENABLED)("live related-pets V24 acceptance", () => {
       candidateRankingRevision: v24.rankingRevision,
       supportCommit: expectedCommit,
     });
-    const cacheImport = compatibleCachePath
-      ? await importCompatibleAcceptanceCache({
-          path: compatibleCachePath,
-          cache,
-          cards,
-          baseline,
-          candidate,
-        })
-      : { sourceSlugs: [] as string[] };
-    if (cacheImport.sourceSlugs.length > 0) {
-      await persistAcceptanceCache(cachePath, cache);
-    }
     const reports: RelatedPetsV24AcceptanceReport[] = [];
     for (const sourceSlug of RELATED_PETS_V24_ACCEPTANCE_SOURCE_SLUGS) {
       const baselineTop8 = required(baseline, sourceSlug, "baseline ranking").slugs;
@@ -539,7 +521,6 @@ describe.skipIf(!ACCEPTANCE_ENABLED)("live related-pets V24 acceptance", () => {
         fallbackPolicyRevision: v24.fallbackPolicyRevision,
       },
       coverage,
-      cacheImport,
       changedSourceSlugs,
       reports,
       acceptance,
@@ -753,44 +734,6 @@ async function loadAcceptanceCache(
 async function persistAcceptanceCache(path: string, cache: AcceptanceCache) {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(cache, null, 2)}\n`, { mode: 0o600 });
-}
-
-async function importCompatibleAcceptanceCache(input: {
-  path: string;
-  cache: AcceptanceCache;
-  cards: ReadonlyMap<string, RelatedPetsV24JudgeCard>;
-  baseline: ReadonlyMap<string, RelatedPetsRankingResult>;
-  candidate: ReadonlyMap<string, RelatedPetsRankingResult>;
-}) {
-  const parsed = JSON.parse((await readFile(input.path)).toString("utf8"));
-  if (!isRecord(parsed) || parsed.revision !== COMPATIBLE_V24_JUDGE_REVISION ||
-      parsed.catalogFingerprint !== input.cache.catalogFingerprint ||
-      parsed.generationId !== input.cache.generationId ||
-      parsed.candidateRankingRevision !== input.cache.candidateRankingRevision ||
-      parsed.supportCommit !== COMPATIBLE_V24_SUPPORT_COMMIT ||
-      !isRecord(parsed.entries)) {
-    throw new Error("V24 compatible acceptance cache provenance is invalid.");
-  }
-  const sourceSlugs: string[] = [];
-  for (const sourceSlug of RELATED_PETS_V24_ACCEPTANCE_SOURCE_SLUGS) {
-    const baselineTop8 = required(input.baseline, sourceSlug, "baseline ranking").slugs;
-    const candidateTop8 = required(input.candidate, sourceSlug, "candidate ranking").slugs;
-    const report = Object.values(parsed.entries).map((entry) =>
-      parseCachedAcceptanceReport(entry, {
-        sourceSlug,
-        baselineTop8,
-        candidateTop8,
-      })).find((entry) => entry !== null);
-    if (!report) continue;
-    input.cache.entries[acceptanceCacheKey({
-      sourceSlug,
-      baselineTop8,
-      candidateTop8,
-      cards: input.cards,
-    })] = report;
-    sourceSlugs.push(sourceSlug);
-  }
-  return { sourceSlugs };
 }
 
 function acceptanceCacheKey(input: {

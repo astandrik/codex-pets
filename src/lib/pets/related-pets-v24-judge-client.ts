@@ -70,9 +70,7 @@ export function createRelatedPetsV24JudgeClient(options: {
       const orderConsistent = sameRelatedPetsV24JudgeDecision(first, swapped);
       const confidence = minimumConfidence(first.confidence, swapped.confidence);
       return {
-        samples: [first, swapped],
         requests: 2 as const,
-        initialOrderConsistent: orderConsistent,
         orderConsistent,
         decision: {
           preference: agreed(first.preference, swapped.preference),
@@ -112,5 +110,11 @@ function averageGrades(
   left: Array<{ position: number; grade: 0 | 1 | 2 | 3 }>,
   right: Array<{ position: number; grade: 0 | 1 | 2 | 3 }>,
 ) {
-  return left.map(({ grade }, index) => (grade + (right[index]?.grade ?? 0)) / 2);
+  return left.map(({ position, grade }, index) => {
+    const counterpart = right[index];
+    if (!counterpart || counterpart.position !== position) {
+      throw new Error("Related pets V24 judge grade positions do not match.");
+    }
+    return (grade + counterpart.grade) / 2;
+  });
 }

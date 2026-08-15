@@ -656,7 +656,7 @@ function rankEntityControlledRelatedPets(input: {
       passesText,
       passesAnnotation,
     );
-    const qualified = V11_TIER_ORDER[relation.tier] <= 5;
+    const qualified = isQualifiedV11Tier(relation.tier);
     const contributions = qualified
       ? {
           metadata: 0,
@@ -709,62 +709,71 @@ function rankEntityControlledRelatedPets(input: {
         contributions.text + contributions.annotation + contributions.visual,
     } satisfies RelatedPetRankingDiagnostic;
   });
-  const hasQualifiedCandidate = diagnostics.some(({ tier }) =>
-    V11_TIER_ORDER[tier as V11Tier] <= 5
-  );
-  const baselineHasSharedTopicAt4 = diagnostics
-    .toSorted(compareV11Diagnostics)
-    .slice(0, RELATED_PETS_V24_FALLBACK_GUARD_DEPTH)
-    .some(isV24SparseFallbackCandidate);
-  const useSparseFallback = sparseFallbackEnabled &&
-    !hasQualifiedCandidate &&
-    !baselineHasSharedTopicAt4;
-  const sparseFallbackRanks = useSparseFallback
-    ? new Map(
-        diagnostics
-          .filter(isV24SparseFallbackCandidate)
-          .toSorted((left, right) => compareV24SparseFallbackCandidates(
-            left,
-            right,
-            input.source.kind,
-            candidatesBySlug,
-          ))
-          .map(({ slug }, index) => [slug, index + 1]),
-      )
-    : new Map<string, number>();
-  const rankedDiagnostics = diagnostics.map((diagnostic) => {
-    const sharedTagRank = sparseFallbackRanks.get(diagnostic.slug) ?? null;
-    if (sharedTagRank === null) return diagnostic;
-    return {
-      ...diagnostic,
-      sharedTagRank,
-      fallbackProvenance:
-        "shared_topics_kind_visual_description" as const,
-    };
+  const rankedDiagnostics = applyV24SparseFallback({
+    diagnostics,
+    enabled: sparseFallbackEnabled,
+    sourceKind: input.source.kind,
+    candidatesBySlug,
   });
-  const selected = rankedDiagnostics.toSorted((left, right) =>
-    useSparseFallback
-      ? compareV24SparseFallbackCandidates(
-          left,
-          right,
-          input.source.kind,
-          candidatesBySlug,
-        )
-      : compareV11Diagnostics(left, right)
-  ).slice(
-    0,
-    normalizedLimit(input.limit),
-  );
+  const selected = rankedDiagnostics.slice(0, normalizedLimit(input.limit));
   return {
     slugs: selected.map(({ slug }) => slug),
     diagnostics: selected,
-    qualifiedCount: selected.filter(({ tier }) =>
-      V11_TIER_ORDER[tier as V11Tier] <= 5
-    ).length,
+    qualifiedCount: selected.filter(({ tier }) => isQualifiedV11Tier(tier)).length,
     semanticBackfillCount: selected.filter(({ tier }) =>
       tier === "controlled_fallback" || tier === "conflict_fallback"
     ).length,
   };
+}
+
+function isQualifiedV11Tier(tier: RelatedPetRankingTier): boolean {
+  return tier === "canonical_entity" ||
+    tier === "franchise" ||
+    tier === "franchise_family_collection" ||
+    tier === "specific_archetype" ||
+    tier === "semantic_safe";
+}
+
+function applyV24SparseFallback(input: {
+  diagnostics: readonly RelatedPetRankingDiagnostic[];
+  enabled: boolean;
+  sourceKind: RelatedPetCandidate["kind"];
+  candidatesBySlug: ReadonlyMap<string, RelatedPetCandidate>;
+}): RelatedPetRankingDiagnostic[] {
+  const baseline = input.diagnostics.toSorted(compareV11Diagnostics);
+  const useSparseFallback = input.enabled &&
+    !input.diagnostics.some(({ tier }) => isQualifiedV11Tier(tier)) &&
+    !baseline
+      .slice(0, RELATED_PETS_V24_FALLBACK_GUARD_DEPTH)
+      .some(isV24SparseFallbackCandidate);
+  if (!useSparseFallback) return baseline;
+
+  const compareFallback = (
+    left: RelatedPetRankingDiagnostic,
+    right: RelatedPetRankingDiagnostic,
+  ) => compareV24SparseFallbackCandidates(
+    left,
+    right,
+    input.sourceKind,
+    input.candidatesBySlug,
+  );
+  const sparseFallbackRanks = new Map(
+    input.diagnostics
+      .filter(isV24SparseFallbackCandidate)
+      .toSorted(compareFallback)
+      .map(({ slug }, index) => [slug, index + 1]),
+  );
+  return input.diagnostics.map((diagnostic) => {
+    const sharedTagRank = sparseFallbackRanks.get(diagnostic.slug) ?? null;
+    return sharedTagRank === null
+      ? diagnostic
+      : {
+          ...diagnostic,
+          sharedTagRank,
+          fallbackProvenance:
+            "shared_topics_kind_visual_description" as const,
+        };
+  }).toSorted(compareFallback);
 }
 
 function isV24SparseFallbackCandidate(
