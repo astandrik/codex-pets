@@ -62,7 +62,7 @@ describe("related pet query runtime", () => {
       "updated",
     );
     expect(deps.embeddingClient.embedPreparedQuery).toHaveBeenCalledWith(
-      buildRelatedPetQuery(input),
+      buildRelatedPetQuery(input, profile.textQueryRevision),
     );
     expect(deps.upsert).toHaveBeenCalledWith({
       modelRevision: profile.textQueryRevision,
@@ -88,7 +88,7 @@ describe("related pet query runtime", () => {
     await runtime.refreshApprovedPetRelatedQueryEmbedding(input);
 
     expect(deps.embeddingClient.embedPreparedQuery).toHaveBeenCalledWith(
-      buildRelatedPetQuery(input),
+      buildRelatedPetQuery(input, profile.textQueryRevision),
     );
   });
 

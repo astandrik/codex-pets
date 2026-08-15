@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   EmbeddingProviderError,
+  buildRelatedPetDocument,
   buildRelatedPetQuery,
   buildPetSearchDocument,
   createRelatedPetQuerySourceHash,
@@ -9,6 +10,10 @@ import {
   createYandexEmbeddingClient,
   embeddingToBuffer,
 } from "@/lib/pets/search-embeddings";
+import {
+  RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+  RELATED_PETS_DESCRIPTION_QUERY_REVISION,
+} from "@/lib/pets/related-pets-semantics.mjs";
 
 const pet = {
   slug: "velvet-byte",
@@ -36,9 +41,9 @@ describe("pet search embeddings", () => {
       buildRelatedPetQuery({
         ...pet,
         tags: [" Night ", "gothic", "night", "ＰＩＸＥＬ"],
-      }),
+      }, "query-v1"),
     ).toBe("night gothic pixel");
-    expect(buildRelatedPetQuery({ ...pet, tags: [] })).toBe(
+    expect(buildRelatedPetQuery({ ...pet, tags: [] }, "query-v1")).toBe(
       pet.description,
     );
     expect(createRelatedPetQuerySourceHash(pet, "query-v1")).not.toBe(
@@ -50,6 +55,22 @@ describe("pet search embeddings", () => {
     expect(createRelatedPetQuerySourceHash(pet, "query-v2")).not.toBe(
       createRelatedPetQuerySourceHash(pet, "query-v1"),
     );
+  });
+
+  it("builds identical description text for current related roles", () => {
+    const expected = [
+      "name: Velvet Byte",
+      "kind: character",
+      "description: A gothic coding character",
+    ].join("\n");
+    expect(buildRelatedPetQuery(
+      pet,
+      RELATED_PETS_DESCRIPTION_QUERY_REVISION,
+    )).toBe(expected);
+    expect(buildRelatedPetDocument(
+      pet,
+      RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+    )).toBe(expected);
   });
 
   it("encodes float vectors as little-endian YDB bytes", () => {
