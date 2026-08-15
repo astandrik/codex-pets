@@ -9,10 +9,18 @@ import {
   RELATED_PETS_TEXT_WEIGHT,
   type RelatedPetsRankingProfile,
 } from "@/lib/pets/related-pets-ranking";
+import {
+  RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+  RELATED_PETS_DESCRIPTION_QUERY_REVISION,
+} from "@/lib/pets/related-pets-semantics.mjs";
 
 const TEXT_REVISION = "yandex-text-embeddings-v2-768-2026-07";
 export const RELATED_PETS_TEXT_QUERY_REVISION =
   "yandex-text-embeddings-v2-768-related-tags-query-2026-08";
+export const RELATED_PETS_V24_DESCRIPTION_QUERY_REVISION =
+  RELATED_PETS_DESCRIPTION_QUERY_REVISION;
+export const RELATED_PETS_V24_DESCRIPTION_DOCUMENT_REVISION =
+  RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION;
 const VISUAL_REVISION =
   "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1";
 const CALIBRATION_REVISION = "related-pets-eval-groups-v2";

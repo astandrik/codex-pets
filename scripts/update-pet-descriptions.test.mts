@@ -13,7 +13,7 @@ const {
 } = await import("./lib/pet-description-update.mjs");
 const {
   RELATED_PETS_REBUILD_COMMANDS,
-  buildRelatedPetsQueryBackfillCommands,
+  buildRelatedPetsTextBackfillCommands,
 } = await import(
   "./lib/related-pets-maintenance.mjs"
 );
@@ -229,15 +229,17 @@ describe("buildEmbeddingBackfillCommands", () => {
     ]);
   });
 
-  it("refreshes related queries before rebuilding snapshots", () => {
+  it("refreshes both related embedding roles before rebuilding snapshots", () => {
     const commands = [
-      ...buildRelatedPetsQueryBackfillCommands(["kesha", "wild-boar"]),
+      ...buildRelatedPetsTextBackfillCommands(["kesha", "wild-boar"]),
       ...RELATED_PETS_REBUILD_COMMANDS,
     ];
 
     expect(commands).toEqual([
       "npm run related:backfill-query -- --apply --slug kesha",
+      "npm run related:backfill-document -- --apply --slug kesha",
       "npm run related:backfill-query -- --apply --slug wild-boar",
+      "npm run related:backfill-document -- --apply --slug wild-boar",
       "npm run related:rebuild -- --dry-run",
       "npm run related:rebuild -- --apply",
     ]);

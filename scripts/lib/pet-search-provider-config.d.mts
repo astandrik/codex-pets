@@ -3,7 +3,7 @@ export type BackfillEmbeddingDefinition = {
   documentModelPath?: string;
   modelPath?: string;
   requestDimensions: number | null;
-  inputKind?: "related-query";
+  inputKind?: "related-query" | "related-document";
 };
 
 export type VisionBackfillCaptionDefinition = {
