@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import {
   PET_VISION_CAPTION_REVISION,
+  PET_VISION_RESPONSE_JSON_SCHEMA,
   PET_VISUAL_MODEL_REVISION,
   buildPetVisionCaptionText,
   createPetVisionCaptionEnvelope,
@@ -110,6 +113,11 @@ describe("pet vision caption contract", () => {
   });
 
   it("uses revision-bound unambiguous caption and visual hashes", () => {
+    expect(
+      createHash("sha256")
+        .update(JSON.stringify(PET_VISION_RESPONSE_JSON_SCHEMA))
+        .digest("hex"),
+    ).toBe("bc6d80f76c62f1775c905f07bbc77bba6096c4aa9e66039ce77a0c3b54ff26ae");
     const caption = parsePetVisionCaption(rawCaption);
     const captionText = buildPetVisionCaptionText(caption);
     const captionHash = createPetVisionCaptionSourceHash({

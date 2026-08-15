@@ -47,23 +47,10 @@ export function createResponsesVisionRequest(input: {
   userPrompt: string;
   responseSchemaName: string;
   responseJsonSchema: object;
+  parseCaption?: (value: unknown) => unknown;
   frames: readonly PetVisionFrame[];
   maxOutputTokens: number;
 }): object;
-
-export function classifyResponsesPayload<T>(
-  payload: unknown,
-  parseCaption: (value: unknown) => T,
-):
-  | { kind: "success"; caption: T; usage: object }
-  | {
-      kind: "failure";
-      reason: VisionCaptionFailureReason;
-      retryable: boolean;
-      stage: string;
-      incompleteReason?: string;
-      usage?: object;
-    };
 
 export function createResponsesVisionCaptionRequester<
   T = PetVisionCaption,

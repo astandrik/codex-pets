@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { z } from "zod";
+
 import { PET_VISION_FRAME_POLICY } from "@/lib/pets/search-vision-frames";
 
 export const PET_VISION_CAPTION_REVISION =
@@ -78,21 +80,31 @@ export const PET_VISION_RESPONSE_JSON_SCHEMA = {
   },
 } as const;
 
-export type BilingualText = {
-  en: string;
-  ru: string;
-};
+const requiredBilingualTextSchema = bilingualTextSchema(320, true);
+const optionalBilingualTextSchema = bilingualTextSchema(240, false);
+const colorListSchema = stringListSchema(1, 8, 40);
+const searchTermListSchema = stringListSchema(3, 20, 60);
 
-export type PetVisionCaption = {
-  subject: BilingualText;
-  appearance: BilingualText;
-  clothing: BilingualText;
-  style: BilingualText;
-  mood: BilingualText;
-  colors: { en: string[]; ru: string[] };
-  search_terms_en: string[];
-  search_terms_ru: string[];
-};
+export const PET_VISION_CAPTION_SCHEMA = z
+  .object({
+    subject: requiredBilingualTextSchema,
+    appearance: requiredBilingualTextSchema,
+    clothing: optionalBilingualTextSchema,
+    style: requiredBilingualTextSchema,
+    mood: requiredBilingualTextSchema,
+    colors: z
+      .object({
+        en: colorListSchema,
+        ru: colorListSchema,
+      })
+      .strict(),
+    search_terms_en: searchTermListSchema,
+    search_terms_ru: searchTermListSchema,
+  })
+  .strict();
+
+export type BilingualText = z.infer<typeof requiredBilingualTextSchema>;
+export type PetVisionCaption = z.infer<typeof PET_VISION_CAPTION_SCHEMA>;
 
 export type PetVisionCaptionEnvelope = {
   schemaVersion: 1;
@@ -103,56 +115,10 @@ export type PetVisionCaptionEnvelope = {
   caption: PetVisionCaption;
 };
 
-const CAPTION_FIELDS = [
-  "subject",
-  "appearance",
-  "clothing",
-  "style",
-  "mood",
-  "colors",
-  "search_terms_en",
-  "search_terms_ru",
-] as const;
-
 export function parsePetVisionCaption(input: unknown): PetVisionCaption {
-  const value = strictObject(input, "caption", CAPTION_FIELDS);
-  return {
-    subject: bilingualText(value.subject, "subject", 320, true),
-    appearance: bilingualText(value.appearance, "appearance", 320, true),
-    clothing: bilingualText(value.clothing, "clothing", 240, false),
-    style: bilingualText(value.style, "style", 320, true),
-    mood: bilingualText(value.mood, "mood", 320, true),
-    colors: {
-      en: stringList(
-        strictObject(value.colors, "colors", ["en", "ru"]).en,
-        "colors.en",
-        1,
-        8,
-        40,
-      ),
-      ru: stringList(
-        strictObject(value.colors, "colors", ["en", "ru"]).ru,
-        "colors.ru",
-        1,
-        8,
-        40,
-      ),
-    },
-    search_terms_en: stringList(
-      value.search_terms_en,
-      "search_terms_en",
-      3,
-      20,
-      60,
-    ),
-    search_terms_ru: stringList(
-      value.search_terms_ru,
-      "search_terms_ru",
-      3,
-      20,
-      60,
-    ),
-  };
+  const result = PET_VISION_CAPTION_SCHEMA.safeParse(input);
+  if (result.success) return result.data;
+  throw new Error(formatCaptionIssue(result.error.issues[0], input));
 }
 
 export function createPetVisionCaptionEnvelope(input: {
@@ -267,51 +233,80 @@ function parseEnvelopeValue(input: unknown): PetVisionCaptionEnvelope {
   };
 }
 
-function bilingualText(
-  input: unknown,
-  path: string,
-  maxLength: number,
-  required: boolean,
-): BilingualText {
-  const value = strictObject(input, path, ["en", "ru"]);
-  return {
-    en: normalizedString(value.en, `${path}.en`, required ? 1 : 0, maxLength),
-    ru: normalizedString(value.ru, `${path}.ru`, required ? 1 : 0, maxLength),
-  };
+function bilingualTextSchema(maxLength: number, required: boolean) {
+  return z
+    .object({
+      en: normalizedStringSchema(required ? 1 : 0, maxLength),
+      ru: normalizedStringSchema(required ? 1 : 0, maxLength),
+    })
+    .strict();
 }
 
-function stringList(
-  input: unknown,
-  path: string,
+function stringListSchema(
   minItems: number,
   maxItems: number,
   maxLength: number,
-): string[] {
-  if (!Array.isArray(input)) {
-    throw new Error(`${path} must be an array.`);
-  }
-  if (input.length > maxItems) {
-    throw new Error(`${path} must contain at most ${maxItems} items.`);
-  }
+) {
+  return z
+    .array(normalizedStringSchema(1, maxLength))
+    .max(maxItems)
+    .transform((items) => {
+      const seen = new Set<string>();
+      return items.filter((item) => {
+        const key = item.toLocaleLowerCase("und");
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    })
+    .pipe(z.array(z.string()).min(minItems));
+}
 
-  const seen = new Set<string>();
-  const values: string[] = [];
-  for (const [index, item] of input.entries()) {
-    const normalized = normalizedString(
-      item,
-      `${path}[${index}]`,
-      1,
-      maxLength,
-    );
-    const key = normalized.toLocaleLowerCase("und");
-    if (seen.has(key)) continue;
-    seen.add(key);
-    values.push(normalized);
+function normalizedStringSchema(minLength: number, maxLength: number) {
+  return z
+    .string()
+    .transform((value) => value.normalize("NFKC").replace(/\s+/g, " ").trim())
+    .pipe(z.string().min(minLength).max(maxLength));
+}
+
+function formatCaptionIssue(
+  issue: z.core.$ZodIssue | undefined,
+  input: unknown,
+): string {
+  if (!issue) return "Caption does not match the expected schema.";
+  const path = issue.path.map(String).join(".") || "caption";
+  if (issue.code === "unrecognized_keys") {
+    return `${path} contains unknown field ${issue.keys[0] ?? "unknown"}.`;
   }
-  if (values.length < minItems) {
-    throw new Error(`${path} must contain at least ${minItems} unique items.`);
+  if (issue.code === "invalid_type") {
+    if (!hasPath(input, issue.path)) {
+      const field = String(issue.path.at(-1) ?? "value");
+      const parent = issue.path.slice(0, -1).map(String).join(".") || "caption";
+      return `${parent} is missing field ${field}.`;
+    }
+    return `${path} must be ${articleFor(issue.expected)} ${issue.expected}.`;
   }
-  return values;
+  if (issue.code === "too_big") {
+    return `${path} must contain at most ${issue.maximum} ${issue.origin}.`;
+  }
+  if (issue.code === "too_small") {
+    return `${path} must contain at least ${issue.minimum} ${issue.origin}.`;
+  }
+  return `${path} does not match the expected schema.`;
+}
+
+function hasPath(input: unknown, path: readonly PropertyKey[]): boolean {
+  let value = input;
+  for (const segment of path) {
+    if (!value || typeof value !== "object") return false;
+    if (!Object.prototype.hasOwnProperty.call(value, segment)) return false;
+    value = (value as Record<PropertyKey, unknown>)[segment];
+  }
+  return true;
+}
+
+function articleFor(value: string): "a" | "an" {
+  return /^[aeiou]/i.test(value) ? "an" : "a";
 }
 
 function normalizedString(
