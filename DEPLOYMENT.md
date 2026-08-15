@@ -164,58 +164,33 @@ place it directly in the environment file. Captions, images, prompts, and
 embeddings must not be copied into deployment logs.
 
 For hybrid related pets, keep `PET_RELATED_HYBRID_ENABLED=false` while applying
-the additive migrations and calibrating the revision-bound ranking profile.
-Backfill the additive related query-vector revision before calibration; its
-dry-run reads YDB only, while apply calls the query embedding model and writes
-revision-scoped rows to the existing embeddings table:
+additive migrations or preparing a replacement generation. V24 uses persisted
+description, controlled-annotation, and visual inputs. Backfill each role
+sequentially so the jobs share the AI Studio rate budget:
 
 ```bash
 npm run related:backfill-query -- --dry-run
 npm run related:backfill-query -- --apply
+npm run related:backfill-document -- --dry-run
+npm run related:backfill-document -- --apply
+npm run related:backfill-annotations -- --dry-run
+npm run related:backfill-annotations -- --apply
+npm run related:backfill-annotation-query -- --dry-run
+npm run related:backfill-annotation-query -- --apply
+npm run related:backfill-annotation-document -- --dry-run
+npm run related:backfill-annotation-document -- --apply
 ```
 
-The query source is normalized pet tags, with description only as the fallback
-for pets without tags. Candidate vectors remain the existing search document
-revision, so related ranking uses query-to-document cosine rather than the
-unsupported document-to-document shortcut. The depth-eight ranking first orders
-candidates that pass either semantic threshold or share a normalized tag using
-weighted RRF. Remaining slots use only full text and visual ranks, with no kind,
-date, freshness, or metadata-rank contribution. When both semantic modalities
-are absent, the existing metadata-only order is preserved. The text-plus-
-metadata evaluation control stays on its thresholded weighted RRF policy;
-semantic backfill applies only to the evaluated full hybrid ranking. Both
-evaluation commands below read only the approved catalog and existing text-
-query/text-document/visual/caption rows; they do not call an embedding provider:
+Description query and document inputs contain normalized name, kind, and
+description; tags are excluded. Controlled annotations provide canonical
+entity, franchise, family, collection, and archetype facets. Visual similarity
+only orders already qualified candidates. A visual-only match cannot enter a
+qualified tier. If no candidate qualifies and the first four fallback results
+share no meaningful topic with the source, V24 uses shared topics, kind, visual,
+description, and annotation signals to improve that sparse fallback.
 
-```bash
-npm run related:eval:calibrate
-npm run related:eval:holdout
-```
-
-The dedicated related fixtures live in
-`src/lib/pets/related-pets-eval-fixtures.json`; they do not change search eval.
-Calibration uses exactly 12 frozen source cases, including both directions of
-Sans and Fire Skull. A text profile is eligible only when text-plus-metadata
-nDCG@4 is no worse than metadata, at least one case strictly improves, and text
-changes at least one final top four. Sans must include Fire Skull in both the
-text-plus-metadata and final hybrid top four; metadata-only output does not
-satisfy this gate. If no eligible text profile exists, calibration exits
-nonzero and rollout stops. Reports also include nDCG@8 for the stored depth;
-the profile selection rules remain based on nDCG@4.
-
-Visual-off is represented only as `visualMinSimilarity: null`. Calibration
-prefers an enabled visual profile with the smallest tied weight and disables
-visual only when every enabled profile degrades the text-plus-metadata
-baseline. The command exits nonzero unless the exact selected thresholds and
-weight match `CURRENT_RELATED_PETS_RANKING_PROFILE`. When it reports a
-different `selectedProfile`, stop the rollout; thresholds must not be changed
-automatically. A new pinned profile requires a separate calibrated code change.
-The holdout command uses four untouched source cases exactly once
-and must report `passed: true`; full hybrid nDCG@4 and nDCG@8 must each be no
-worse than both metadata-only and text-plus-metadata. Missing approved fixture
-pets or missing current query, document, or visual vectors fail either command.
-
-Only after both evaluation commands pass, build the initial snapshots:
+Only after every backfill reports complete current coverage, build the
+replacement snapshots:
 
 ```bash
 npm run related:rebuild -- --dry-run
@@ -226,24 +201,25 @@ Inspect the structured output before enabling the feature. The apply result must
 have `status: "ready"`, and `coverage.snapshotCount` must equal
 `coverage.approvedPetCount`; `coverage.textVectorCount` counts only pets with
 both current query and document vectors and must also equal the approved count.
-The rebuild validates all required vector coverage and computes every ranking
-before it requests a new generation. A `text_vectors_incomplete` or
-`visual_vectors_incomplete` preflight failure therefore leaves the last ready
+Annotation, annotation-vector, and visual counts must match it too. The rebuild
+validates all required coverage and computes every ranking before it requests a
+new generation. Any incomplete-input failure therefore leaves the last ready
 generation unchanged and does not create or clean up a failed generation.
 Then set `PET_RELATED_HYBRID_ENABLED=true` and restart the app. Unset and exact
 `true` enable snapshot reads; exact `false` is the rollout and rollback kill
 switch. Invalid values fail safely to the heuristic resolver.
 
-For the depth-8 v7 rollout, preserve the exact v6 image, runtime environment,
-and active generation before deployment. Deploy v7 with
-`PET_RELATED_HYBRID_ENABLED=false`, rerun calibration and holdout, and stop if
-the pinned profile or any nDCG@4/nDCG@8 gate changes. After a successful dry-run
-and one apply, verify `status: "ready"`, the v7 `depth=8:tail=semantic` ranking
-revision, snapshot coverage equal to the approved catalog, and eight unique
-approved non-self slugs where the catalog permits. Review top eight plus tier
-provenance for all 16 evaluation sources and Tallulah; Tallulah must not include
-T-Rex, and its eighth result must be a semantic backfill. Pet pages render eight
-recommendations; their private Markdown representation remains capped at four.
+After apply, run the read-only parity check:
+
+```bash
+npm run related:verify:v24
+```
+
+It fails unless the active generation uses the exact persisted V24 ranking
+revision, all required inputs cover the approved catalog, every snapshot has
+eight unique approved non-self slugs where possible, and every ordered snapshot
+matches a fresh V24 recomputation. The command does not call AI Studio or write
+YDB.
 
 Create exact-match JavaScript goals named `related_pet_impression` and
 `related_pet_click` in Yandex Metrika counter `104844437` only as a separately
@@ -252,19 +228,15 @@ approved external step. Existing `pet_install_command_copy` and
 need replacement goals. Compare positions 1-4 with 5-8 after 7 and 14 days,
 separating direct card conversions from conversions after detail navigation.
 
-Approval refreshes the search document vector and the related query vector in
-parallel. `updated` and `unchanged` are the only ready outcomes. With an enabled
-visual profile, approval publishes no generation until the visual refresh also
-succeeds; its callback then rebuilds with complete document, query, and visual
-coverage. With a compatible text profile, a skipped or failed text refresh, or
-a failed visual refresh, keeps the previous generation ready while approval
-itself remains successful. A missing or incompatible text profile explicitly
-invalidates related-pet state, so hybrid reads fall back to heuristics until the
-configuration, embedding backfill, and rebuild are complete. Retry the ordinary
-embedding refresh/backfill and rebuild operationally; there is no separate
-approval retry queue. If a future pinned profile explicitly sets
-`visualMinSimilarity: null`, successful text refresh publishes a text-only
-generation immediately and does not wait for the visual callback.
+With `PET_RELATED_PREAPPROVAL_ENABLED=true`, admin approval queues a preparation
+instead of publishing immediately. The worker refreshes the ordinary search
+document, description query/document vectors, the controlled annotation and
+its query/document vectors, and visual input. It builds an inactive generation,
+then atomically publishes the pet, review, and generation only if the card,
+catalog, source hashes, and active generation are unchanged. Transient failures
+remain queued for retry; permanent or incomplete inputs leave the pet pending
+and keep the current generation active. Keep the worker disabled during a V24
+rollback.
 
 To roll back ordering without discarding derived rows, first disable the
 feature and read the exact `active_generation_id` and
