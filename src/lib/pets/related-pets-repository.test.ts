@@ -240,6 +240,27 @@ describe("related pets repository", () => {
     ).rejects.toThrow("Invalid related pets snapshot slugs.");
   });
 
+  it("lists one generation of snapshots in a single ordered query", async () => {
+    const harness = createHarness(async () => ({
+      resultSets: [{
+        rows: ["source-a", "source-b"].map((sourceSlug) => ({
+          items: [
+            { textValue: "generation-1" },
+            { textValue: sourceSlug },
+            { textValue: "ranking-v1" },
+            { textValue: '["peer-a","peer-b"]' },
+            { textValue: "2026-08-03T10:00:00.000Z" },
+          ],
+        })),
+      }],
+    }));
+
+    await expect(harness.repository.listSnapshots("generation-1"))
+      .resolves.toHaveLength(2);
+    expect(harness.statements).toHaveLength(1);
+    expect(harness.statements[0]?.statement).toContain("ORDER BY source_slug");
+  });
+
   it("accepts eight snapshot slugs and rejects nine", async () => {
     const harness = createHarness();
     const baseSnapshot = {

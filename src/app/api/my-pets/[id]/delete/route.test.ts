@@ -49,6 +49,8 @@ describe("POST /api/my-pets/[id]/delete", () => {
         approvedPetCount: 1,
         snapshotCount: 1,
         textVectorCount: 1,
+        annotationCount: 1,
+        annotationVectorCount: 1,
         visualVectorCount: 1,
       },
       rankings: [],

@@ -9,7 +9,7 @@ import {
   RELATED_PETS_PAGE_LIMIT,
   RELATED_PETS_SNAPSHOT_DEPTH,
 } from "@/lib/pets/related-pets-limits";
-import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
+import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-v24-profile";
 import {
   getRelatedPetsSnapshot,
   getRelatedPetsState,
@@ -27,13 +27,19 @@ export const RELATED_PETS_CANDIDATES_CACHE_TAG =
   "codex-pets:related-pets-candidates";
 
 const getCachedRelatedPetCandidates = unstable_cache(
-  async () => listRelatedPetCandidates(),
+  async (catalogRevision: string) => {
+    // Function arguments are part of the unstable_cache key.
+    void catalogRevision;
+    return listRelatedPetCandidates();
+  },
   ["pet-related-candidates"],
   { revalidate: 60, tags: [RELATED_PETS_CANDIDATES_CACHE_TAG] },
 );
 
-export function getRelatedPetCandidates(): Promise<RelatedPetCandidate[]> {
-  return getCachedRelatedPetCandidates();
+export function getRelatedPetCandidates(
+  catalogRevision = "heuristic",
+): Promise<RelatedPetCandidate[]> {
+  return getCachedRelatedPetCandidates(catalogRevision);
 }
 
 type RelatedPetSource = Pick<
@@ -75,7 +81,9 @@ export type RelatedPetsResolverDiagnostic =
 export type RelatedPetsResolverLogLevel = "info" | "warn";
 
 export type RelatedPetsResolverDependencies = {
-  getCandidates: () => Promise<RelatedPetCandidate[]>;
+  getCandidates: (
+    catalogRevision?: string,
+  ) => Promise<RelatedPetCandidate[]>;
   getState: () => Promise<RelatedPetsState | null>;
   getSnapshot: (
     generationId: string,
@@ -93,24 +101,15 @@ export function createRelatedPetsResolver(
   dependencies: RelatedPetsResolverDependencies,
 ): (current: RelatedPetSource) => Promise<RelatedPetCandidate[]> {
   return async (current) => {
-    const candidates = uniqueApprovedCandidates(
-      await dependencies.getCandidates(),
-      current.slug,
-    );
-    const heuristic = selectRelatedPets(
-      candidates,
-      current,
-      RELATED_PETS_SNAPSHOT_DEPTH,
-    );
     const enabledValue = dependencies.getHybridEnabledValue();
-    if (enabledValue === "false") return heuristic;
+    if (enabledValue === "false") return loadHeuristic("disabled");
     if (enabledValue !== undefined && enabledValue !== "true") {
       dependencies.log("warn", {
         operation: "resolve",
         status: "heuristic",
         reason: "invalid-enabled-flag",
       });
-      return heuristic;
+      return loadHeuristic("invalid-enabled-flag");
     }
 
     let state: RelatedPetsState | null;
@@ -122,8 +121,16 @@ export function createRelatedPetsResolver(
         status: "heuristic",
         reason: "state-read-failed",
       });
-      return heuristic;
+      return loadHeuristic("state-read-failed");
     }
+    const candidates = await loadCandidates(
+      state?.activeGenerationId ?? state?.updatedAt ?? "state-missing",
+    );
+    const heuristic = selectRelatedPets(
+      candidates,
+      current,
+      RELATED_PETS_SNAPSHOT_DEPTH,
+    );
     if (!state) {
       dependencies.log("warn", {
         operation: "state-fallback",
@@ -157,7 +164,7 @@ export function createRelatedPetsResolver(
     }
     if (
       state.rankingRevision !==
-      CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision
+      RELATED_PETS_V24_PROFILE.rankingRevision
     ) {
       dependencies.log("warn", {
         operation: "state-fallback",
@@ -213,7 +220,7 @@ export function createRelatedPetsResolver(
       snapshot.generationId !== activeGenerationId ||
       snapshot.sourceSlug !== current.slug ||
       snapshot.rankingRevision !==
-        CURRENT_RELATED_PETS_RANKING_PROFILE.rankingRevision ||
+        RELATED_PETS_V24_PROFILE.rankingRevision ||
       !Array.isArray(snapshot.relatedSlugs)
     ) {
       dependencies.log("warn", {
@@ -238,6 +245,25 @@ export function createRelatedPetsResolver(
       durationMs,
     });
     return hydrateSnapshotOrder(snapshot.relatedSlugs, candidates, heuristic);
+
+    async function loadCandidates(
+      catalogRevision: string,
+    ): Promise<RelatedPetCandidate[]> {
+      return uniqueApprovedCandidates(
+        await dependencies.getCandidates(catalogRevision),
+        current.slug,
+      );
+    }
+
+    async function loadHeuristic(
+      catalogRevision: string,
+    ): Promise<RelatedPetCandidate[]> {
+      return selectRelatedPets(
+        await loadCandidates(catalogRevision),
+        current,
+        RELATED_PETS_SNAPSHOT_DEPTH,
+      );
+    }
   };
 }
 
