@@ -30,8 +30,8 @@ import type {
   RelatedPetsState,
 } from "@/lib/pets/related-pets-repository";
 import type { PublicPet } from "@/lib/pets/types";
-import { RELATED_PETS_V24_FALLBACK_POLICY_REVISION } from "@/lib/pets/related-pets-v24-fallback-policy";
-import { RELATED_PETS_V24_RELATION_POLICY_REVISION } from "@/lib/pets/related-pets-v24-relation-policy";
+import { RELATED_PETS_V24_FALLBACK_POLICY_REVISION } from "@/lib/pets/related-pets-fallback-policy";
+import { RELATED_PETS_V24_RELATION_POLICY_REVISION } from "@/lib/pets/related-pets-relation-policy";
 
 const profile: RelatedPetsRebuildProfile = {
   strategy: "sparse-fallback-v24",

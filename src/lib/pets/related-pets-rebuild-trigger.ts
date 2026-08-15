@@ -2,7 +2,7 @@ import {
   invalidateRelatedPets,
   rebuildRelatedPets,
 } from "@/lib/pets/related-pets-rebuild";
-import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-v24-profile";
+import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
 import type { PetSearchSemanticConfig } from "@/lib/pets/search-config";
 import { petSearchRuntimeConfig } from "@/lib/pets/search-provider-runtime";
 

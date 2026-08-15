@@ -55,8 +55,8 @@ import {
   decodeRelatedPetV24Vector,
   rankRelatedPetsV24,
   type RelatedPetsV24RankingProfile,
-} from "@/lib/pets/related-pets-v24-ranking";
-import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-v24-profile";
+} from "@/lib/pets/related-pets-ranking";
+import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
 import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 import type { PublicPet } from "@/lib/pets/types";
 import { isYdbConfigured } from "@/lib/ydb/client";

@@ -4,7 +4,7 @@ import type { ResolvedRelatedPetAnnotation } from "@/lib/pets/related-pets-annot
 import {
   applyRelatedPetsRelationPolicy,
   RELATED_PETS_V24_RELATION_POLICY_REVISION,
-} from "@/lib/pets/related-pets-v24-relation-policy";
+} from "@/lib/pets/related-pets-relation-policy";
 
 const annotation: ResolvedRelatedPetAnnotation = {
   schemaVersion: 1,
