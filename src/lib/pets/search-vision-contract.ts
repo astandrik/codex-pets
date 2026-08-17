@@ -287,12 +287,21 @@ function formatCaptionIssue(
     return `${path} must be ${articleFor(issue.expected)} ${issue.expected}.`;
   }
   if (issue.code === "too_big") {
-    return `${path} must contain at most ${issue.maximum} ${issue.origin}.`;
+    const unit = limitUnit(issue.origin, issue.maximum);
+    return `${path} must contain at most ${issue.maximum} ${unit}.`;
   }
   if (issue.code === "too_small") {
-    return `${path} must contain at least ${issue.minimum} ${issue.origin}.`;
+    const unit = limitUnit(issue.origin, issue.minimum);
+    return `${path} must contain at least ${issue.minimum} ${unit}.`;
   }
   return `${path} does not match the expected schema.`;
+}
+
+function limitUnit(origin: string, limit: number | bigint): string {
+  const singular = Number(limit) === 1;
+  if (origin === "string") return singular ? "character" : "characters";
+  if (origin === "array") return singular ? "item" : "items";
+  return singular ? "value" : "values";
 }
 
 function hasPath(input: unknown, path: readonly PropertyKey[]): boolean {

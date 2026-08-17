@@ -251,11 +251,17 @@ describe("Yandex vision caption client", () => {
     let currentTime = 0;
     const waits: number[] = [];
     const bodies: Array<Record<string, unknown>> = [];
+    const diagnostics: Array<Record<string, unknown>> = [];
     const responses = [
       Response.json({
         status: "incomplete",
         incomplete_details: { reason: "max_output_tokens" },
-        output: [],
+        output: [
+          {
+            type: "message",
+            content: [{ type: "output_text", text: '{"subject":' }],
+          },
+        ],
         usage: {
           input_tokens: 448,
           output_tokens: 8_000,
@@ -274,6 +280,7 @@ describe("Yandex vision caption client", () => {
         waits.push(milliseconds);
         currentTime += milliseconds;
       },
+      onDiagnostic: (entry) => diagnostics.push(entry),
       fetchImpl: async (_url, init) => {
         bodies.push(JSON.parse(String(init?.body)));
         return responses.shift() ?? providerResponse(providerCaption);
@@ -286,6 +293,35 @@ describe("Yandex vision caption client", () => {
       16_000,
     ]);
     expect(waits).toEqual([1_000, 5_000]);
+    expect(diagnostics[0]).toMatchObject({
+      status: "incomplete",
+      reason: "output_limit",
+      stage: "response_status",
+    });
+  });
+
+  it("preserves failed provider status in diagnostics", async () => {
+    const diagnostics: Array<Record<string, unknown>> = [];
+    const client = createYandexVisionCaptionClient({
+      folderId: "folder-1",
+      apiKey: "secret-key",
+      modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+      timeoutMs: 30_000,
+      sleep: async () => undefined,
+      onDiagnostic: (entry) => diagnostics.push(entry),
+      fetchImpl: async () =>
+        Response.json({ status: "failed", output: [] }),
+    });
+
+    await expect(client.createCaption(frames)).rejects.toMatchObject({
+      reason: "provider_error",
+    });
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toMatchObject({
+      status: "failed",
+      reason: "provider_error",
+      stage: "response_status",
+    });
   });
 
   it("retries a schema-invalid structured response only once", async () => {

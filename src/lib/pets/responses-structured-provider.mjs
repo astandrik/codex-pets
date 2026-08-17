@@ -154,6 +154,7 @@ async function requestOnce(input) {
     return classifyParsedResponse(data, {
       ...baseDiagnostics(input),
       ...responseMetadata,
+      status: stringValue(data?.status) ?? undefined,
     });
   } catch (error) {
     return classifySdkError(

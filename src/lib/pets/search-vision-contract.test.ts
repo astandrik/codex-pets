@@ -72,6 +72,45 @@ describe("pet vision caption contract", () => {
     ).toThrow(/colors\.en/i);
   });
 
+  it.each([
+    {
+      caption: {
+        ...rawCaption,
+        subject: { ...rawCaption.subject, en: "x".repeat(321) },
+      },
+      message: "subject.en must contain at most 320 characters.",
+    },
+    {
+      caption: {
+        ...rawCaption,
+        colors: {
+          ...rawCaption.colors,
+          en: Array.from({ length: 9 }, (_, index) => `color-${index}`),
+        },
+      },
+      message: "colors.en must contain at most 8 items.",
+    },
+    {
+      caption: {
+        ...rawCaption,
+        subject: { ...rawCaption.subject, en: "" },
+      },
+      message: "subject.en must contain at least 1 character.",
+    },
+    {
+      caption: {
+        ...rawCaption,
+        colors: { ...rawCaption.colors, en: [] },
+      },
+      message: "colors.en must contain at least 1 item.",
+    },
+  ])(
+    "uses readable units in size diagnostics: $message",
+    ({ caption, message }) => {
+      expect(() => parsePetVisionCaption(caption)).toThrow(message);
+    },
+  );
+
   it("builds the caption text in the frozen field order", () => {
     const caption = parsePetVisionCaption(rawCaption);
     expect(buildPetVisionCaptionText(caption)).toBe(
