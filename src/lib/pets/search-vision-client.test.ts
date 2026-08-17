@@ -60,12 +60,13 @@ describe("Yandex vision caption client", () => {
     expect(requests[0]?.url).toBe(
       "https://ai.api.cloud.yandex.net/v1/responses",
     );
-    expect(requests[0]?.init?.headers).toMatchObject({
-      Authorization: "Api-Key secret-key",
-      "Content-Type": "application/json",
-      "OpenAI-Project": "folder-1",
-      "x-client-request-id": "00000000-0000-4000-8000-000000000001",
-    });
+    const headers = new Headers(requests[0]?.init?.headers);
+    expect(headers.get("Authorization")).toBe("Api-Key secret-key");
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(headers.get("OpenAI-Project")).toBe("folder-1");
+    expect(headers.get("x-client-request-id")).toBe(
+      "00000000-0000-4000-8000-000000000001",
+    );
     const body = JSON.parse(String(requests[0]?.init?.body));
     expect(body).toMatchObject({
       model: "gpt://folder-1/qwen3.6-35b-a3b",
@@ -174,15 +175,93 @@ describe("Yandex vision caption client", () => {
     expect(cancelFirstBody).toHaveBeenCalledOnce();
   });
 
+  it("keeps retries in the outer policy and treats 4xx as terminal", async () => {
+    const serverFailure = vi.fn(
+      async (...request: Parameters<typeof fetch>) => {
+        void request;
+        return new Response(null, { status: 503 });
+      },
+    );
+    const retryingClient = createYandexVisionCaptionClient({
+      folderId: "folder-1",
+      apiKey: "secret-key",
+      modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+      timeoutMs: 30_000,
+      sleep: async () => undefined,
+      fetchImpl: serverFailure,
+    });
+
+    await expect(retryingClient.createCaption(frames)).rejects.toMatchObject({
+      reason: "provider_error",
+    });
+    expect(serverFailure).toHaveBeenCalledTimes(3);
+    for (const request of serverFailure.mock.calls) {
+      expect(new Headers(request[1]?.headers).get("x-stainless-retry-count")).toBe(
+        "0",
+      );
+    }
+
+    for (const [status, reason] of [
+      [400, "invalid_request"],
+      [401, "authentication_error"],
+      [403, "authentication_error"],
+    ] as const) {
+      const fetchImpl = vi.fn(async () => new Response(null, { status }));
+      const client = createYandexVisionCaptionClient({
+        folderId: "folder-1",
+        apiKey: "secret-key",
+        modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+        timeoutMs: 30_000,
+        sleep: async () => undefined,
+        fetchImpl,
+      });
+
+      await expect(client.createCaption(frames)).rejects.toMatchObject({ reason });
+      expect(fetchImpl).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("retries network failures at most three times", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError("SECRET_NETWORK_ERROR");
+    });
+    const diagnostics: unknown[] = [];
+    const client = createYandexVisionCaptionClient({
+      folderId: "folder-1",
+      apiKey: "secret-key",
+      modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+      timeoutMs: 30_000,
+      sleep: async () => undefined,
+      fetchImpl,
+      onDiagnostic: (entry) => diagnostics.push(entry),
+    });
+
+    const error = await client.createCaption(frames).catch((value) => value);
+    expect(error).toEqual(
+      expect.objectContaining<Partial<VisionCaptionProviderError>>({
+        reason: "provider_error",
+      }),
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(inspect(error)).not.toContain("SECRET_NETWORK_ERROR");
+    expect(JSON.stringify(diagnostics)).not.toContain("SECRET_NETWORK_ERROR");
+  });
+
   it("retries an output-limited response with 16000 tokens", async () => {
     let currentTime = 0;
     const waits: number[] = [];
     const bodies: Array<Record<string, unknown>> = [];
+    const diagnostics: Array<Record<string, unknown>> = [];
     const responses = [
       Response.json({
         status: "incomplete",
         incomplete_details: { reason: "max_output_tokens" },
-        output: [],
+        output: [
+          {
+            type: "message",
+            content: [{ type: "output_text", text: '{"subject":' }],
+          },
+        ],
         usage: {
           input_tokens: 448,
           output_tokens: 8_000,
@@ -201,6 +280,7 @@ describe("Yandex vision caption client", () => {
         waits.push(milliseconds);
         currentTime += milliseconds;
       },
+      onDiagnostic: (entry) => diagnostics.push(entry),
       fetchImpl: async (_url, init) => {
         bodies.push(JSON.parse(String(init?.body)));
         return responses.shift() ?? providerResponse(providerCaption);
@@ -213,6 +293,35 @@ describe("Yandex vision caption client", () => {
       16_000,
     ]);
     expect(waits).toEqual([1_000, 5_000]);
+    expect(diagnostics[0]).toMatchObject({
+      status: "incomplete",
+      reason: "output_limit",
+      stage: "response_status",
+    });
+  });
+
+  it("preserves failed provider status in diagnostics", async () => {
+    const diagnostics: Array<Record<string, unknown>> = [];
+    const client = createYandexVisionCaptionClient({
+      folderId: "folder-1",
+      apiKey: "secret-key",
+      modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+      timeoutMs: 30_000,
+      sleep: async () => undefined,
+      onDiagnostic: (entry) => diagnostics.push(entry),
+      fetchImpl: async () =>
+        Response.json({ status: "failed", output: [] }),
+    });
+
+    await expect(client.createCaption(frames)).rejects.toMatchObject({
+      reason: "provider_error",
+    });
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toMatchObject({
+      status: "failed",
+      reason: "provider_error",
+      stage: "response_status",
+    });
   });
 
   it("retries a schema-invalid structured response only once", async () => {

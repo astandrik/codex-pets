@@ -33,6 +33,7 @@
     "@yandex-cloud/nodejs-sdk": "^2.9.0",
     "jszip": "^3.10.1",
     "next": "16.0.10",
+    "openai": "7.4.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "sharp": "^0.34.5",
