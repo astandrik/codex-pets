@@ -137,10 +137,7 @@ async function requestOnce(input) {
   const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
   const client = createClient(input, responseMetadata);
   try {
-    const request = createResponsesStructuredRequest({
-      ...input,
-      maxOutputTokens: input.maxOutputTokens,
-    });
+    const request = createResponsesStructuredRequest(input);
     const { data, response, request_id: requestId } = await client.responses
       .parse(request, {
         headers: { "x-client-request-id": input.clientRequestId },
@@ -352,7 +349,6 @@ function containsRefusal(output) {
 
 function metadataFromResponse(response, requestId) {
   return {
-    stage: "http",
     httpStatus: response.status,
     requestId:
       requestId ?? response.headers.get("x-request-id") ?? undefined,
