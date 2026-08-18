@@ -187,8 +187,8 @@ export function parseRelatedPetAnnotationProposal(input) {
   const entityKey = entityValue.key === null
     ? null
     : canonicalKey(entityValue.key, "entity.key");
-  const entityConfidence = confidence(entityValue.confidence, "entity");
-  const entityEvidence = evidenceList(entityValue.evidence, "entity.evidence");
+  const entityConfidence = entityValue.confidence;
+  const entityEvidence = stableUnique(entityValue.evidence);
   if (entityKey === null && entityConfidence !== "none") {
     throw new Error("entity confidence must be none when key is null.");
   }
@@ -401,8 +401,8 @@ function relationProposals(input, path) {
   for (const [index, item] of input.entries()) {
     const proposal = {
       key: canonicalKey(item.key, `${path}[${index}].key`),
-      confidence: confidence(item.confidence, `${path}[${index}]`),
-      evidence: evidenceList(item.evidence, `${path}[${index}].evidence`),
+      confidence: item.confidence,
+      evidence: stableUnique(item.evidence),
     };
     const current = byKey.get(proposal.key);
     if (!current || isPreferredRelationProposal(proposal, current)) {
@@ -550,26 +550,6 @@ function assertAllowedStrongFacets(annotation) {
       throw new Error(`annotation.${field} contains a disallowed broad label.`);
     }
   }
-}
-
-function confidence(input, path) {
-  if (!CONFIDENCE_VALUES.includes(input)) {
-    throw new Error(`${path}.confidence is invalid.`);
-  }
-  return input;
-}
-
-function evidenceList(input, path) {
-  if (!Array.isArray(input) || input.length > MAX_EVIDENCE_ITEMS) {
-    throw new Error(`${path} must contain at most ${MAX_EVIDENCE_ITEMS} items.`);
-  }
-  const values = stableUnique(input.map((item) => {
-    if (!EVIDENCE_VALUES.includes(item)) {
-      throw new Error(`${path} contains invalid evidence.`);
-    }
-    return item;
-  }));
-  return values;
 }
 
 function canonicalKeys(input, path) {
