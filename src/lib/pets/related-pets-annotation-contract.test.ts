@@ -9,6 +9,7 @@ import {
   RELATED_PETS_ANNOTATION_QUERY_REVISION,
   RELATED_PETS_ANNOTATION_REVISION,
   RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
+  RELATED_PETS_ANNOTATION_SCHEMA_NAME,
   RELATED_PETS_ANNOTATION_SYSTEM_PROMPT,
   RELATED_PETS_ANNOTATION_TOKEN_POLICY,
   buildRelatedPetAnnotationInput,
@@ -62,10 +63,13 @@ describe("current related pet annotation contract", () => {
       RELATED_PETS_ANNOTATION_QUERY_REVISION,
       RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
     ]).toEqual([
-      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r6",
-      "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r6",
-      "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r6",
+      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r7",
+      "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r7",
+      "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r7",
     ]);
+    expect(RELATED_PETS_ANNOTATION_SCHEMA_NAME).toBe(
+      "related_pet_annotation_v11_r7",
+    );
     expect(RELATED_PETS_ANNOTATION_TOKEN_POLICY).toEqual({
       revision: "related-pets-annotation-token-policy-2026-08-v11-r5",
       reasoning: "model-default",
@@ -315,6 +319,7 @@ describe("current related pet annotation contract", () => {
         vi: {
           reason: "Verified from the card source.",
           entity: null,
+          aliases: ["Violet"],
           franchises: ["arcane-series"],
         },
       },
@@ -360,7 +365,7 @@ describe("current related pet annotation contract", () => {
       modelUri: "gpt://folder/qwen3.6-35b-a3b",
     });
     expect(first).toBe(
-      "a91076f9fc29a6b85802b0d02fad4dd2cbf60b3627118954c88b9bd35994034f",
+      "e209bda618b4371df32e293f915212a7877d60b248951b8359b4bc68307b55ed",
     );
     const same = createRelatedPetAnnotationSourceHash({
       pet: { ...pet, tags: pet.tags.toReversed() },
@@ -397,29 +402,45 @@ describe("current related pet annotation contract", () => {
     );
   });
 
-  it("rejects schema drift and invalid confidence combinations", () => {
+  it("rejects schema drift", () => {
     expect(() => parseRelatedPetAnnotationProposal({ ...proposal, extra: [] }))
       .toThrow(/unknown field/i);
-    expect(() => parseRelatedPetAnnotationProposal({
-      ...proposal,
-      entity: { key: null, aliases: [], confidence: "high", evidence: [] },
-    })).toThrow(/confidence must be none/i);
   });
 
-  it("rejects evidence-free proposals and relation arrays longer than four", () => {
+  it.each([
+    {
+      key: null,
+      aliases: ["Violet"],
+      confidence: "high",
+      evidence: [],
+    },
+    {
+      key: "Vi",
+      aliases: ["Violet"],
+      confidence: "none",
+      evidence: ["name"],
+    },
+    {
+      key: "Vi",
+      aliases: ["Violet"],
+      confidence: "high",
+      evidence: [],
+    },
+  ] as const)("normalizes an inconsistent entity proposal to absent", (entity) => {
+    expect(parseRelatedPetAnnotationProposal({ ...proposal, entity }).entity)
+      .toEqual({
+        key: null,
+        aliases: [],
+        confidence: "none",
+        evidence: [],
+      });
+  });
+
+  it("rejects evidence-free relations and relation arrays longer than four", () => {
     expect(() => parseRelatedPetAnnotationProposal({
       ...proposal,
       themes: [relation("Action", "medium", [])],
     })).toThrow(/invalid/i);
-    expect(() => parseRelatedPetAnnotationProposal({
-      ...proposal,
-      entity: {
-        key: "Vi",
-        aliases: [],
-        confidence: "high",
-        evidence: [],
-      },
-    })).toThrow(/evidence/i);
     expect(() => parseRelatedPetAnnotationProposal({
       ...proposal,
       themes: Array.from({ length: 5 }, (_, index) =>
@@ -444,6 +465,35 @@ describe("current related pet annotation contract", () => {
       confidence: "medium",
       evidence: ["description"],
     }]);
+  });
+
+  it("applies configured aliases before deduplicating relation proposals", () => {
+    const cardSupported = relation("Kono Suba", "high", ["description"]);
+    const worldKnowledge = relation("Konosuba", "high", ["world_knowledge"]);
+    const proposals = [
+      {
+        ...proposal,
+        franchises: [cardSupported, worldKnowledge],
+        franchise_families: [],
+      },
+      {
+        ...proposal,
+        franchises: [worldKnowledge, cardSupported],
+        franchise_families: [],
+      },
+    ];
+
+    for (const candidate of proposals) {
+      expect(parseRelatedPetAnnotationProposal(candidate).franchises).toEqual([{
+        key: "konosuba",
+        confidence: "high",
+        evidence: ["description"],
+      }]);
+      expect(listUnresolvedStrongRelations({ slug: "aqua", proposal: candidate }))
+        .toEqual([]);
+      expect(resolveRelatedPetAnnotation({ slug: "aqua", proposal: candidate }))
+        .toMatchObject({ franchises: ["konosuba"] });
+    }
   });
 
   it("types null as a valid entity proposal key", () => {
