@@ -270,6 +270,25 @@ describe("current related pet annotation contract", () => {
     });
   });
 
+  it("blocks compound broad archetypes without filtering proper names", () => {
+    const resolved = resolveRelatedPetAnnotation({
+      slug: "aqua",
+      proposal: {
+        ...proposal,
+        franchises: [relation("Black Clover", "high", ["description"])],
+        franchise_families: [],
+        specific_archetypes: [
+          relation("Anime Girl", "high", ["description"]),
+          relation("Blue Haired Girl", "high", ["description"]),
+          relation("Red Mage", "high", ["description"]),
+        ],
+      },
+    });
+
+    expect(resolved.franchises).toEqual(["black-clover"]);
+    expect(resolved.specificArchetypes).toEqual(["red-mage"]);
+  });
+
   it("blocks broad entity proposals and strong override values", () => {
     const broadEntity = {
       ...proposal,
@@ -293,6 +312,16 @@ describe("current related pet annotation contract", () => {
         },
       },
     })).toThrow(/collections contains a disallowed broad label/i);
+    expect(() => resolveRelatedPetAnnotation({
+      slug: pet.slug,
+      proposal,
+      overrides: {
+        [pet.slug]: {
+          reason: "Compound broad archetypes must not enter controlled data.",
+          specificArchetypes: ["anime-girl"],
+        },
+      },
+    })).toThrow(/specificArchetypes contains a disallowed broad label/i);
   });
 
   it("applies field-replacement overrides and the frozen Soviet collection", () => {
@@ -365,7 +394,7 @@ describe("current related pet annotation contract", () => {
       modelUri: "gpt://folder/qwen3.6-35b-a3b",
     });
     expect(first).toBe(
-      "e209bda618b4371df32e293f915212a7877d60b248951b8359b4bc68307b55ed",
+      "9359a964507a8a5c08029109886cfd86c3f9b6525ef0929f3e27e8860dd4a004",
     );
     const same = createRelatedPetAnnotationSourceHash({
       pet: { ...pet, tags: pet.tags.toReversed() },
@@ -531,6 +560,33 @@ describe("current related pet annotation contract", () => {
     })).toEqual([]);
   });
 
+  it.each([
+    ["franchises", "franchises"],
+    ["franchise_families", "franchiseFamilies"],
+    ["collections", "collections"],
+    ["specific_archetypes", "specificArchetypes"],
+  ] as const)(
+    "ignores medium world-only %s that cannot enter strong metadata",
+    (wireField, resolvedField) => {
+      const candidate = {
+        ...proposal,
+        franchise_families: [],
+        themes: [],
+        media_origins: [],
+        [wireField]: [relation("Unverified", "medium", ["world_knowledge"])],
+      };
+
+      expect(resolveRelatedPetAnnotation({
+        slug: "aqua",
+        proposal: candidate,
+      })[resolvedField]).toEqual([]);
+      expect(listUnresolvedStrongRelations({
+        slug: "aqua",
+        proposal: candidate,
+      })).toEqual([]);
+    },
+  );
+
   it("does not copy aliases from an unverified entity into controlled text", () => {
     const worldOnly = {
       ...proposal,
@@ -557,16 +613,19 @@ describe("current related pet annotation contract", () => {
     expect(resolved.aliases).toEqual([]);
   });
 
-  it("requires overrides for weak world-knowledge-only values too", () => {
-    const worldOnlyTheme = {
+  it("requires overrides for medium world-only weak values", () => {
+    const worldOnlyWeakValues = {
       ...proposal,
       franchise_families: [],
       themes: [relation("Action", "medium", ["world_knowledge"])],
+      media_origins: [
+        relation("Animated Series", "medium", ["world_knowledge"]),
+      ],
     };
     expect(listUnresolvedStrongRelations({
       slug: pet.slug,
-      proposal: worldOnlyTheme,
-    })).toEqual(["themes"]);
+      proposal: worldOnlyWeakValues,
+    })).toEqual(["themes", "mediaOrigins"]);
   });
 });
 
