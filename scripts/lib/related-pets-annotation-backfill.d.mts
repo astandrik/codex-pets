@@ -25,7 +25,10 @@ export function runRelatedPetAnnotationBackfill(input: {
   annotationRevision: string;
   modelUri: string;
   pets: readonly RelatedPetAnnotationInput[];
-  getAnnotation: (revision: string, slug: string) => Promise<unknown>;
+  getAnnotation: (
+    revision: string,
+    slug: string,
+  ) => Promise<StoredRelatedPetAnnotation | null>;
   createProposal: (
     pet: RelatedPetAnnotationInput,
   ) => Promise<RelatedPetAnnotationProposal>;
@@ -44,6 +47,7 @@ export function runRelatedPetAnnotationEmbeddingBackfill(input: {
   modelRevision: string;
   role: "query" | "document";
   dimensions: number;
+  modelUri: string | null;
   pets: readonly RelatedPetAnnotationInput[];
   annotations: readonly StoredRelatedPetAnnotation[];
   getMetadata: (

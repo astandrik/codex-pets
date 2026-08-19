@@ -107,7 +107,7 @@ async function getAnnotation(driver, revision, slug) {
   const result = await executeYdbQuery(driver, `
 DECLARE $revision AS Utf8;
 DECLARE $slug AS Utf8;
-SELECT source_hash, proposal_json
+SELECT source_hash, proposal_json, annotation_json, annotation_text
 FROM ${ANNOTATIONS_TABLE}
 WHERE annotation_revision = $revision AND pet_slug = $slug
 LIMIT 1;
@@ -117,7 +117,13 @@ LIMIT 1;
   });
   const row = rowsFromResult(result)[0];
   return row
-    ? { sourceHash: textAt(row, 0), proposalJson: textAt(row, 1) }
+    ? {
+        slug,
+        sourceHash: textAt(row, 0),
+        proposalJson: textAt(row, 1),
+        annotationJson: textAt(row, 2),
+        annotationText: textAt(row, 3),
+      }
     : null;
 }
 

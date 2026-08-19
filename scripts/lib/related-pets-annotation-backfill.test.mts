@@ -40,6 +40,7 @@ const proposal = {
   themes: [],
   mediaOrigins: [],
 };
+const annotationModelUri = "gpt://folder/qwen3.6-35b-a3b";
 
 describe("related pet annotation backfill", () => {
   it("parses resumable modes and rejects ambiguous combinations", () => {
@@ -170,8 +171,7 @@ describe("related pet annotation backfill", () => {
     ["query", RELATED_PETS_ANNOTATION_QUERY_REVISION],
     ["document", RELATED_PETS_ANNOTATION_DOCUMENT_REVISION],
   ] as const)("backfills the %s vector from controlled text", async (role, revision) => {
-    const resolved = resolveRelatedPetAnnotation({ slug: pet.slug, proposal });
-    const annotationText = buildRelatedPetAnnotationText(resolved);
+    const storedAnnotation = currentAnnotation(pet);
     const upsert = vi.fn(async () => undefined);
     const summary = await runRelatedPetAnnotationEmbeddingBackfill({
       options: options("apply"),
@@ -179,16 +179,12 @@ describe("related pet annotation backfill", () => {
       modelRevision: revision,
       role,
       dimensions: 768,
+      modelUri: annotationModelUri,
       pets: [pet],
-      annotations: [{
-        slug: "vi",
-        sourceHash: "annotation-hash",
-        annotationJson: JSON.stringify(resolved),
-        annotationText,
-      }],
+      annotations: [storedAnnotation],
       getMetadata: async () => null,
       embed: async (text: string, actualRole: string) => {
-        expect(text).toBe(annotationText);
+        expect(text).toBe(storedAnnotation.annotationText);
         expect(actualRole).toBe(role);
         return Array(768).fill(0.25);
       },
@@ -203,11 +199,12 @@ describe("related pet annotation backfill", () => {
     }));
   });
 
-  it("requires a rebuild after a partial vector write", async () => {
+  it("rejects a stale annotation before embedding it", async () => {
     const resolved = resolveRelatedPetAnnotation({ slug: pet.slug, proposal });
     const annotationText = buildRelatedPetAnnotationText(resolved);
-    const logs: Array<Record<string, unknown>> = [];
-    let embeddingCall = 0;
+    const embed = vi.fn(async () => Array(768).fill(0.25));
+    const getMetadata = vi.fn(async () => null);
+    const upsert = vi.fn(async () => undefined);
 
     await expect(runRelatedPetAnnotationEmbeddingBackfill({
       options: options("apply"),
@@ -215,13 +212,64 @@ describe("related pet annotation backfill", () => {
       modelRevision: RELATED_PETS_ANNOTATION_QUERY_REVISION,
       role: "query",
       dimensions: 768,
-      pets: [pet, { ...pet, slug: "jinx" }],
-      annotations: ["vi", "jinx"].map((slug) => ({
-        slug,
-        sourceHash: "annotation-hash",
+      modelUri: annotationModelUri,
+      pets: [pet],
+      annotations: [{
+        slug: pet.slug,
+        sourceHash: createRelatedPetAnnotationSourceHash({
+          pet: { ...pet, description: "Old description" },
+          modelUri: annotationModelUri,
+          annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+        }),
         annotationJson: JSON.stringify(resolved),
         annotationText,
-      })),
+      }],
+      getMetadata,
+      embed,
+      upsert,
+      log: () => undefined,
+    })).rejects.toThrow("annotation_stale");
+
+    expect(getMetadata).not.toHaveBeenCalled();
+    expect(embed).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("requires annotation model identity before using a stored row", async () => {
+    const embed = vi.fn(async () => Array(768).fill(0.25));
+
+    await expect(runRelatedPetAnnotationEmbeddingBackfill({
+      options: options("dry-run"),
+      annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+      modelRevision: RELATED_PETS_ANNOTATION_QUERY_REVISION,
+      role: "query",
+      dimensions: 768,
+      modelUri: null,
+      pets: [pet],
+      annotations: [currentAnnotation(pet)],
+      getMetadata: async () => null,
+      embed,
+      upsert: async () => undefined,
+      log: () => undefined,
+    })).rejects.toThrow("annotation_model_uri_missing");
+
+    expect(embed).not.toHaveBeenCalled();
+  });
+
+  it("requires a rebuild after a partial vector write", async () => {
+    const logs: Array<Record<string, unknown>> = [];
+    let embeddingCall = 0;
+    const pets = [pet, { ...pet, slug: "jinx" }];
+
+    await expect(runRelatedPetAnnotationEmbeddingBackfill({
+      options: options("apply"),
+      annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+      modelRevision: RELATED_PETS_ANNOTATION_QUERY_REVISION,
+      role: "query",
+      dimensions: 768,
+      modelUri: annotationModelUri,
+      pets,
+      annotations: pets.map(currentAnnotation),
       getMetadata: async () => null,
       embed: async () => {
         embeddingCall += 1;
@@ -245,5 +293,22 @@ function options(mode: "dry-run" | "apply") {
     force: false,
     continueOnError: false,
     concurrency: 1,
+  };
+}
+
+function currentAnnotation(inputPet: typeof pet) {
+  const annotation = resolveRelatedPetAnnotation({
+    slug: inputPet.slug,
+    proposal,
+  });
+  return {
+    slug: inputPet.slug,
+    sourceHash: createRelatedPetAnnotationSourceHash({
+      pet: inputPet,
+      modelUri: annotationModelUri,
+      annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+    }),
+    annotationJson: JSON.stringify(annotation),
+    annotationText: buildRelatedPetAnnotationText(annotation),
   };
 }

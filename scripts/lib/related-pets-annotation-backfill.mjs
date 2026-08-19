@@ -1,12 +1,12 @@
 import {
   RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
   RELATED_PETS_ANNOTATION_QUERY_REVISION,
-  buildRelatedPetAnnotationText,
   createRelatedPetAnnotationEmbeddingSourceHash,
-  listUnresolvedStrongRelations,
-  parseResolvedRelatedPetAnnotation,
-  resolveRelatedPetAnnotation,
 } from "../../src/lib/pets/related-pets-annotation-contract.mjs";
+import {
+  refreshRelatedPetAnnotationRecord,
+  validateCurrentRelatedPetAnnotation,
+} from "../../src/lib/pets/related-pets-annotation-refresh.mjs";
 import { createRelatedPetsRebuildRequiredLog } from "./related-pets-maintenance.mjs";
 import {
   parseResumableBackfillArgs,
@@ -36,42 +36,19 @@ export async function runRelatedPetAnnotationBackfill({
     log,
     failureDetails: unresolvedFields,
     processItem: async (pet) => {
-      const sourceHash = createSourceHash({
+      const result = await refreshRelatedPetAnnotationRecord({
+        mode: options.mode,
+        force: options.force,
         pet,
         modelUri,
         annotationRevision,
+        getAnnotation,
+        createProposal,
+        upsertAnnotation,
+        createSourceHash,
+        now,
       });
-      const stored = options.force
-        ? null
-        : await getAnnotation(annotationRevision, pet.slug);
-      if (stored?.sourceHash === sourceHash) return "unchanged";
-      if (options.mode === "dry-run") return "planned";
-
-      const proposal = await createProposal(pet);
-      const unresolved = listUnresolvedStrongRelations({
-        slug: pet.slug,
-        proposal,
-      });
-      if (unresolved.length > 0) {
-        throw Object.assign(new Error("unresolved_strong_relation"), {
-          reason: "unresolved_strong_relation",
-          unresolvedFields: unresolved,
-        });
-      }
-      const annotation = resolveRelatedPetAnnotation({
-        slug: pet.slug,
-        proposal,
-      });
-      await upsertAnnotation({
-        annotationRevision,
-        slug: pet.slug,
-        sourceHash,
-        proposalJson: JSON.stringify(proposal),
-        annotationJson: JSON.stringify(annotation),
-        annotationText: buildRelatedPetAnnotationText(annotation),
-        updatedAt: now().toISOString(),
-      });
-      return "updated";
+      return result.outcome;
     },
   });
 }
@@ -82,6 +59,7 @@ export async function runRelatedPetAnnotationEmbeddingBackfill({
   modelRevision,
   role,
   dimensions,
+  modelUri,
   pets,
   annotations,
   getMetadata,
@@ -104,19 +82,19 @@ export async function runRelatedPetAnnotationEmbeddingBackfill({
       processItem: async (pet) => {
         const storedAnnotation = annotationsBySlug.get(pet.slug);
         if (!storedAnnotation) throw new Error("annotation_missing");
-        const annotation = parseResolvedRelatedPetAnnotation(
-          storedAnnotation.annotationJson,
-        );
-        const annotationText = buildRelatedPetAnnotationText(annotation);
-        if (annotationText !== storedAnnotation.annotationText) {
-          throw new Error("annotation_text_mismatch");
-        }
+        if (!modelUri) throw new Error("annotation_model_uri_missing");
+        const currentAnnotation = validateCurrentRelatedPetAnnotation({
+          pet,
+          stored: storedAnnotation,
+          annotationRevision,
+          modelUri,
+        });
         const sourceHash = createRelatedPetAnnotationEmbeddingSourceHash({
           modelRevision,
           role,
           annotationRevision,
-          annotationSourceHash: storedAnnotation.sourceHash,
-          annotationText,
+          annotationSourceHash: currentAnnotation.sourceHash,
+          annotationText: currentAnnotation.annotationText,
         });
         const metadata = options.force
           ? null
@@ -129,7 +107,7 @@ export async function runRelatedPetAnnotationEmbeddingBackfill({
         }
         if (options.mode === "dry-run") return "planned";
 
-        const embedding = await embed(annotationText, role);
+        const embedding = await embed(currentAnnotation.annotationText, role);
         if (
           !Array.isArray(embedding) ||
           embedding.length !== dimensions ||

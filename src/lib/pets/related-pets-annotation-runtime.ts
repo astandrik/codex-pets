@@ -3,15 +3,12 @@ import {
   RELATED_PETS_ANNOTATION_MODEL_NAME,
   RELATED_PETS_ANNOTATION_QUERY_REVISION,
   RELATED_PETS_ANNOTATION_REVISION,
-  buildRelatedPetAnnotationText,
   createRelatedPetAnnotationEmbeddingSourceHash,
-  createRelatedPetAnnotationSourceHash,
-  listUnresolvedStrongRelations,
-  resolveRelatedPetAnnotation,
   type RelatedPetAnnotationInput,
   type RelatedPetAnnotationProposal,
 } from "@/lib/pets/related-pets-annotation-contract.mjs";
 import { createYandexRelatedPetAnnotationClient } from "@/lib/pets/related-pets-annotation-client.mjs";
+import { refreshRelatedPetAnnotationRecord } from "@/lib/pets/related-pets-annotation-refresh.mjs";
 import {
   getRelatedPetAnnotation,
   upsertRelatedPetAnnotation,
@@ -61,39 +58,18 @@ export function createRelatedPetAnnotationRuntime(dependencies: Dependencies) {
   async function refresh(
     pet: RelatedPetAnnotationInput,
   ): Promise<RelatedPetAnnotationRefreshResult> {
-    const sourceHash = createRelatedPetAnnotationSourceHash({
+    const annotation = await refreshRelatedPetAnnotationRecord({
+      mode: "apply",
+      force: false,
       pet,
       modelUri: dependencies.modelUri,
       annotationRevision: dependencies.annotationRevision,
+      getAnnotation: dependencies.getAnnotation,
+      createProposal: dependencies.createProposal,
+      upsertAnnotation: dependencies.upsertAnnotation,
+      now,
     });
-    const stored = await dependencies.getAnnotation(
-      dependencies.annotationRevision,
-      pet.slug,
-    );
-    let annotationUpdated = false;
-    let annotationSourceHash = stored?.sourceHash ?? "";
-    let annotationText = stored?.annotationText ?? "";
-    if (stored?.sourceHash !== sourceHash) {
-      const proposal = await dependencies.createProposal(pet);
-      if (listUnresolvedStrongRelations({ slug: pet.slug, proposal }).length > 0) {
-        throw Object.assign(new Error("unresolved_strong_relation"), {
-          reason: "unresolved_strong_relation",
-        });
-      }
-      const annotation = resolveRelatedPetAnnotation({ slug: pet.slug, proposal });
-      annotationText = buildRelatedPetAnnotationText(annotation);
-      annotationSourceHash = sourceHash;
-      await dependencies.upsertAnnotation({
-        annotationRevision: dependencies.annotationRevision,
-        slug: pet.slug,
-        sourceHash,
-        proposalJson: JSON.stringify(proposal),
-        annotationJson: JSON.stringify(annotation),
-        annotationText,
-        updatedAt: now().toISOString(),
-      });
-      annotationUpdated = true;
-    }
+    const annotationUpdated = annotation.outcome === "updated";
 
     const queryUpdated = await refreshVector({
       revision: dependencies.queryRevision,
@@ -119,8 +95,8 @@ export function createRelatedPetAnnotationRuntime(dependencies: Dependencies) {
         modelRevision: input.revision,
         role: input.role,
         annotationRevision: dependencies.annotationRevision,
-        annotationSourceHash,
-        annotationText,
+        annotationSourceHash: annotation.sourceHash,
+        annotationText: annotation.annotationText,
       });
       const metadata = await dependencies.getEmbeddingMetadata(
         input.revision,
@@ -132,7 +108,7 @@ export function createRelatedPetAnnotationRuntime(dependencies: Dependencies) {
       ) {
         return false;
       }
-      const embedding = await input.embed(annotationText);
+      const embedding = await input.embed(annotation.annotationText);
       if (embedding.length !== dependencies.dimensions) {
         throw Object.assign(new Error("annotation_embedding_invalid"), {
           reason: "annotation_embedding_invalid",

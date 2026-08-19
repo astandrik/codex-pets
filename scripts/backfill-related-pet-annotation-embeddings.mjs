@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 
 import {
   RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+  RELATED_PETS_ANNOTATION_MODEL_NAME,
   RELATED_PETS_ANNOTATION_QUERY_REVISION,
   RELATED_PETS_ANNOTATION_REVISION,
 } from "../src/lib/pets/related-pets-annotation-contract.mjs";
@@ -18,6 +19,7 @@ import {
 import {
   TypedValues,
   executeYdbQuery,
+  parseStringArray,
   rowsFromResult,
   textAt,
   uint32At,
@@ -48,6 +50,11 @@ export async function main(argv = process.argv.slice(2)) {
     const providerConfig = options.mode === "apply"
       ? readProviderConfig()
       : null;
+    const folderId = providerConfig?.folderId ??
+      process.env.YANDEX_AI_STUDIO_FOLDER_ID?.trim();
+    const annotationModelUri = folderId
+      ? `gpt://${folderId}/${RELATED_PETS_ANNOTATION_MODEL_NAME}`
+      : null;
     const embed = options.mode === "apply"
       ? createEmbeddingProvider(providerConfig)
       : async () => {
@@ -59,6 +66,7 @@ export async function main(argv = process.argv.slice(2)) {
       modelRevision: revision,
       role,
       dimensions: DIMENSIONS,
+      modelUri: annotationModelUri,
       pets: await listApprovedPets(driver),
       annotations: await listAnnotations(driver),
       getMetadata: (modelRevision, slug) =>
@@ -130,10 +138,17 @@ function createEmbeddingProvider(config) {
 async function listApprovedPets(driver) {
   const result = await executeYdbQuery(driver, `
 DECLARE $status AS Utf8;
-SELECT slug FROM ${PETS_TABLE} WHERE status = $status ORDER BY slug;
+SELECT slug, display_name, description, kind, tags_json
+FROM ${PETS_TABLE}
+WHERE status = $status
+ORDER BY slug;
   `, { $status: TypedValues.utf8("approved") });
   return rowsFromResult(result).map((row) => ({
     slug: textAt(row, 0),
+    displayName: textAt(row, 1),
+    description: textAt(row, 2),
+    kind: textAt(row, 3),
+    tags: parseStringArray(textAt(row, 4)),
     status: "approved",
   }));
 }
