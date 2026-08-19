@@ -90,13 +90,17 @@ export function createRequestStartLimiter({
   }
   const minimumIntervalMs = Math.ceil(60_000 / requestsPerMinute);
   let nextStartAt = 0;
+  let reservationQueue = Promise.resolve();
 
-  return async function reserveRequestStart() {
-    const waitMs = Math.max(0, nextStartAt - now());
-    if (waitMs > 0) await sleep(waitMs);
-
-    const startedAt = now();
-    nextStartAt = Math.max(nextStartAt, startedAt) + minimumIntervalMs;
+  return function reserveRequestStart() {
+    const reservation = reservationQueue.then(async () => {
+      const waitMs = Math.max(0, nextStartAt - now());
+      if (waitMs > 0) await sleep(waitMs);
+      const startedAt = now();
+      nextStartAt = Math.max(nextStartAt, startedAt) + minimumIntervalMs;
+    });
+    reservationQueue = reservation.catch(() => undefined);
+    return reservation;
   };
 }
 

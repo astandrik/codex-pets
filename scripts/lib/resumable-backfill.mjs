@@ -1,11 +1,10 @@
 import { parseArgs } from "node:util";
 
 const SAFE_SLUG = /^[a-z0-9][a-z0-9-]{0,47}$/;
-const SAFE_REVISION = /^[a-z0-9][a-z0-9.-]{0,191}$/;
 
 export function parseResumableBackfillArgs(
   argv,
-  { allowReuseProposals = false, maxConcurrency = 10 } = {},
+  { maxConcurrency = 10 } = {},
 ) {
   let values;
   try {
@@ -20,9 +19,6 @@ export function parseResumableBackfillArgs(
         force: { type: "boolean" },
         "continue-on-error": { type: "boolean" },
         concurrency: { type: "string" },
-        ...(allowReuseProposals
-          ? { "reuse-proposals-from": { type: "string" } }
-          : {}),
       },
     }));
   } catch (error) {
@@ -39,11 +35,8 @@ export function parseResumableBackfillArgs(
   const force = values.force ?? false;
   const continueOnError = values["continue-on-error"] ?? false;
   const concurrency = parseConcurrency(values.concurrency, maxConcurrency);
-  const reuseProposalsFrom = allowReuseProposals
-    ? (values["reuse-proposals-from"] ?? null)
-    : null;
 
-  if (slug && !SAFE_SLUG.test(slug)) {
+  if (values.slug !== undefined && !SAFE_SLUG.test(values.slug)) {
     throw new Error("--slug must be a valid public pet slug.");
   }
   if (force && mode !== "apply") {
@@ -58,17 +51,12 @@ export function parseResumableBackfillArgs(
   if (mode === "apply" && concurrency > 1 && !continueOnError) {
     throw new Error("Parallel --apply requires --continue-on-error.");
   }
-  if (reuseProposalsFrom && !SAFE_REVISION.test(reuseProposalsFrom)) {
-    throw new Error("--reuse-proposals-from must be a valid revision.");
-  }
-
   return {
     mode,
     slug,
     force,
     continueOnError,
     concurrency,
-    ...(allowReuseProposals ? { reuseProposalsFrom } : {}),
   };
 }
 

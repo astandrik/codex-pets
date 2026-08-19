@@ -28,7 +28,7 @@ export function createYandexRelatedPetAnnotationClient(options) {
     ((milliseconds) =>
       new Promise((resolve) => setTimeout(resolve, milliseconds)));
   let nextStartAt = 0;
-  let queue = Promise.resolve();
+  let reservationQueue = Promise.resolve();
   const requestProposal = createResponsesStructuredRequester({
     ...options,
     systemPrompt: RELATED_PETS_ANNOTATION_SYSTEM_PROMPT,
@@ -55,25 +55,25 @@ export function createYandexRelatedPetAnnotationClient(options) {
 
   return {
     createProposal(pet) {
-      const run = () => requestProposal(pet).catch((error) => {
+      return requestProposal(pet).catch((error) => {
         if (error instanceof StructuredResponseRequestError) {
-          throw new RelatedPetAnnotationProviderError(error.reason);
+          throw new RelatedPetAnnotationProviderError(error.reason, {
+            cause: error,
+          });
         }
         throw error;
       });
-      const task = queue.then(run, run);
-      queue = task.then(
-        () => undefined,
-        () => undefined,
-      );
-      return task;
     },
   };
 
-  async function reserveStart() {
-    const waitMs = Math.max(0, nextStartAt - now());
-    if (waitMs > 0) await sleep(waitMs);
-    const startedAt = now();
-    nextStartAt = Math.max(nextStartAt, startedAt) + START_INTERVAL_MS;
+  function reserveStart() {
+    const reservation = reservationQueue.then(async () => {
+      const waitMs = Math.max(0, nextStartAt - now());
+      if (waitMs > 0) await sleep(waitMs);
+      const startedAt = now();
+      nextStartAt = Math.max(nextStartAt, startedAt) + START_INTERVAL_MS;
+    });
+    reservationQueue = reservation.catch(() => undefined);
+    return reservation;
   }
 }

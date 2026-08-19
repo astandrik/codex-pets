@@ -5,45 +5,17 @@ import {
   createRelatedPetAnnotationEmbeddingSourceHash,
   listUnresolvedStrongRelations,
   parseResolvedRelatedPetAnnotation,
-  parseStoredRelatedPetAnnotationProposal,
   resolveRelatedPetAnnotation,
 } from "../../src/lib/pets/related-pets-annotation-contract.mjs";
+import { createRelatedPetsRebuildRequiredLog } from "./related-pets-maintenance.mjs";
 import {
   parseResumableBackfillArgs,
   runResumableBackfill,
   selectApprovedItems,
 } from "./resumable-backfill.mjs";
 
-const SAFE_REVISION = /^[a-z0-9][a-z0-9.-]{0,191}$/;
-
 export function parseRelatedPetAnnotationBackfillArgs(argv) {
-  return parseResumableBackfillArgs(argv, { allowReuseProposals: true });
-}
-
-export function createStoredRelatedPetAnnotationProposalLoader({
-  sourceRevision,
-  getAnnotation,
-}) {
-  if (!SAFE_REVISION.test(sourceRevision)) {
-    throw new Error("Source annotation revision is invalid.");
-  }
-  return async (pet) => {
-    const stored = await getAnnotation(sourceRevision, pet.slug);
-    if (!stored?.proposalJson) {
-      throw Object.assign(new Error("source_annotation_missing"), {
-        reason: "source_annotation_missing",
-      });
-    }
-    try {
-      return parseStoredRelatedPetAnnotationProposal(
-        JSON.parse(stored.proposalJson),
-      );
-    } catch {
-      throw Object.assign(new Error("source_annotation_invalid"), {
-        reason: "source_annotation_invalid",
-      });
-    }
-  };
+  return parseResumableBackfillArgs(argv);
 }
 
 export async function runRelatedPetAnnotationBackfill({
@@ -123,57 +95,65 @@ export async function runRelatedPetAnnotationEmbeddingBackfill({
     annotations.map((annotation) => [annotation.slug, annotation]),
   );
 
-  return runResumableBackfill({
-    items: selectApprovedItems([...pets], options.slug),
-    options,
-    log,
-    processItem: async (pet) => {
-      const storedAnnotation = annotationsBySlug.get(pet.slug);
-      if (!storedAnnotation) throw new Error("annotation_missing");
-      const annotation = parseResolvedRelatedPetAnnotation(
-        storedAnnotation.annotationJson,
-      );
-      const annotationText = buildRelatedPetAnnotationText(annotation);
-      if (annotationText !== storedAnnotation.annotationText) {
-        throw new Error("annotation_text_mismatch");
-      }
-      const sourceHash = createRelatedPetAnnotationEmbeddingSourceHash({
-        modelRevision,
-        role,
-        annotationRevision,
-        annotationSourceHash: storedAnnotation.sourceHash,
-        annotationText,
-      });
-      const metadata = options.force
-        ? null
-        : await getMetadata(modelRevision, pet.slug);
-      if (
-        metadata?.sourceHash === sourceHash &&
-        metadata.dimensions === dimensions
-      ) {
-        return "unchanged";
-      }
-      if (options.mode === "dry-run") return "planned";
+  let updated = 0;
+  try {
+    return await runResumableBackfill({
+      items: selectApprovedItems([...pets], options.slug),
+      options,
+      log,
+      processItem: async (pet) => {
+        const storedAnnotation = annotationsBySlug.get(pet.slug);
+        if (!storedAnnotation) throw new Error("annotation_missing");
+        const annotation = parseResolvedRelatedPetAnnotation(
+          storedAnnotation.annotationJson,
+        );
+        const annotationText = buildRelatedPetAnnotationText(annotation);
+        if (annotationText !== storedAnnotation.annotationText) {
+          throw new Error("annotation_text_mismatch");
+        }
+        const sourceHash = createRelatedPetAnnotationEmbeddingSourceHash({
+          modelRevision,
+          role,
+          annotationRevision,
+          annotationSourceHash: storedAnnotation.sourceHash,
+          annotationText,
+        });
+        const metadata = options.force
+          ? null
+          : await getMetadata(modelRevision, pet.slug);
+        if (
+          metadata?.sourceHash === sourceHash &&
+          metadata.dimensions === dimensions
+        ) {
+          return "unchanged";
+        }
+        if (options.mode === "dry-run") return "planned";
 
-      const embedding = await embed(annotationText, role);
-      if (
-        !Array.isArray(embedding) ||
-        embedding.length !== dimensions ||
-        embedding.some((value) => !Number.isFinite(value))
-      ) {
-        throw new Error("embedding_invalid");
-      }
-      await upsert({
-        modelRevision,
-        slug: pet.slug,
-        sourceHash,
-        dimensions,
-        embedding,
-        updatedAt: now().toISOString(),
-      });
-      return "updated";
-    },
-  });
+        const embedding = await embed(annotationText, role);
+        if (
+          !Array.isArray(embedding) ||
+          embedding.length !== dimensions ||
+          embedding.some((value) => !Number.isFinite(value))
+        ) {
+          throw new Error("embedding_invalid");
+        }
+        await upsert({
+          modelRevision,
+          slug: pet.slug,
+          sourceHash,
+          dimensions,
+          embedding,
+          updatedAt: now().toISOString(),
+        });
+        updated += 1;
+        return "updated";
+      },
+    });
+  } finally {
+    if (options.mode === "apply" && updated > 0) {
+      log(createRelatedPetsRebuildRequiredLog());
+    }
+  }
 }
 
 function assertAnnotationEmbeddingRevision(revision, role) {

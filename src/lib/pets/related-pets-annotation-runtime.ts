@@ -16,15 +16,19 @@ import {
   getRelatedPetAnnotation,
   upsertRelatedPetAnnotation,
 } from "@/lib/pets/related-pets-annotations-repository";
-import type { YandexEmbeddingClient } from "@/lib/pets/search-embeddings";
+import {
+  createYandexEmbeddingClient,
+  type YandexEmbeddingClient,
+} from "@/lib/pets/search-embeddings";
+import {
+  PET_SEARCH_EMBEDDING_MODELS,
+  type PetSearchSemanticConfig,
+} from "@/lib/pets/search-config";
 import {
   getPetSearchEmbeddingMetadata,
   upsertPetSearchEmbedding,
 } from "@/lib/pets/search-embeddings-repository";
-import {
-  petSearchEmbeddingClient,
-  petSearchRuntimeConfig,
-} from "@/lib/pets/search-provider-runtime";
+import { petSearchRuntimeConfig } from "@/lib/pets/search-provider-runtime";
 
 export type RelatedPetAnnotationRefreshResult =
   | "unchanged"
@@ -151,8 +155,23 @@ export function createRelatedPetAnnotationRuntime(dependencies: Dependencies) {
   }
 }
 
+export function createRelatedPetAnnotationEmbeddingClient(
+  config: PetSearchSemanticConfig,
+): YandexEmbeddingClient {
+  return createYandexEmbeddingClient({
+    folderId: config.folderId,
+    apiKey: config.apiKey,
+    revision: RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+    ...PET_SEARCH_EMBEDDING_MODELS["yandex-text-embeddings-v2-768"],
+    timeoutMs: config.timeoutMs,
+  });
+}
+
 const semantic = petSearchRuntimeConfig.semantic;
-const productionRuntime = semantic && petSearchEmbeddingClient
+const annotationEmbeddingClient = semantic
+  ? createRelatedPetAnnotationEmbeddingClient(semantic)
+  : null;
+const productionRuntime = semantic && annotationEmbeddingClient
   ? createRelatedPetAnnotationRuntime({
       annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
       queryRevision: RELATED_PETS_ANNOTATION_QUERY_REVISION,
@@ -165,7 +184,7 @@ const productionRuntime = semantic && petSearchEmbeddingClient
         modelUri: `gpt://${semantic.folderId}/${RELATED_PETS_ANNOTATION_MODEL_NAME}`,
         timeoutMs: 180_000,
       }).createProposal,
-      embeddingClient: petSearchEmbeddingClient,
+      embeddingClient: annotationEmbeddingClient,
       getAnnotation: getRelatedPetAnnotation,
       upsertAnnotation: upsertRelatedPetAnnotation,
       getEmbeddingMetadata: getPetSearchEmbeddingMetadata,

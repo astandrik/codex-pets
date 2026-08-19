@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createRelatedPetAnnotationRuntime } from "@/lib/pets/related-pets-annotation-runtime";
+import {
+  createRelatedPetAnnotationEmbeddingClient,
+  createRelatedPetAnnotationRuntime,
+} from "@/lib/pets/related-pets-annotation-runtime";
 import {
   buildRelatedPetAnnotationText,
   createRelatedPetAnnotationSourceHash,
@@ -25,6 +28,20 @@ const proposal = {
 };
 
 describe("current annotation runtime", () => {
+  it("uses a dedicated 768-dimensional v2 embedding client", () => {
+    const client = createRelatedPetAnnotationEmbeddingClient({
+      folderId: "folder-1",
+      apiKey: "key",
+      revision: "yandex-text-search-2026-07",
+      embeddingModelId: "yandex-text-search-v1-256",
+      dimensions: 256,
+      minSemanticScore: 0.31,
+      timeoutMs: 800,
+    });
+
+    expect(client.dimensions).toBe(768);
+  });
+
   it("writes the annotation before its query and document vectors", async () => {
     const writes: string[] = [];
     const runtime = createRelatedPetAnnotationRuntime({

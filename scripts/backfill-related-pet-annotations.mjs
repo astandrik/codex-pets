@@ -9,7 +9,6 @@ import {
 } from "../src/lib/pets/related-pets-annotation-contract.mjs";
 import { createYandexRelatedPetAnnotationClient } from "../src/lib/pets/related-pets-annotation-client.mjs";
 import {
-  createStoredRelatedPetAnnotationProposalLoader,
   parseRelatedPetAnnotationBackfillArgs,
   runRelatedPetAnnotationBackfill,
 } from "./lib/related-pets-annotation-backfill.mjs";
@@ -28,28 +27,16 @@ const DEFAULT_TIMEOUT_MS = 180_000;
 
 export async function main(argv = process.argv.slice(2)) {
   const options = parseRelatedPetAnnotationBackfillArgs(argv);
-  if (options.reuseProposalsFrom === RELATED_PETS_ANNOTATION_REVISION) {
-    throw new Error("Source and target annotation revisions must differ.");
-  }
-  const provider = readProviderConfig(
-    options.mode,
-    !options.reuseProposalsFrom,
-  );
-  const modelUri =
-    `gpt://${provider.folderId}/${RELATED_PETS_ANNOTATION_MODEL_NAME}`;
 
   return withYdbCliDriver(async (driver) => {
+    const provider = readProviderConfig(options.mode);
+    const modelUri =
+      `gpt://${provider.folderId}/${RELATED_PETS_ANNOTATION_MODEL_NAME}`;
     let createProposal;
     if (options.mode !== "apply") {
       createProposal = async () => {
         throw new Error("Dry-run must not load an annotation proposal.");
       };
-    } else if (options.reuseProposalsFrom) {
-      createProposal = createStoredRelatedPetAnnotationProposalLoader({
-        sourceRevision: options.reuseProposalsFrom,
-        getAnnotation: (revision, slug) =>
-          getAnnotation(driver, revision, slug),
-      });
     } else {
       createProposal = createYandexRelatedPetAnnotationClient({
         folderId: provider.folderId,
@@ -75,14 +62,14 @@ export async function main(argv = process.argv.slice(2)) {
     });
     if (summary.failed > 0) process.exitCode = 1;
     return summary;
-  });
+  }, { requireExplicitTarget: options.mode === "apply" });
 }
 
-function readProviderConfig(mode, needsApiKey) {
+function readProviderConfig(mode) {
   const folderId = process.env.YANDEX_AI_STUDIO_FOLDER_ID?.trim();
   if (!folderId) throw new Error("YANDEX_AI_STUDIO_FOLDER_ID is required.");
   let apiKey = "";
-  if (mode === "apply" && needsApiKey) {
+  if (mode === "apply") {
     const file = process.env.YANDEX_AI_STUDIO_API_KEY_FILE?.trim();
     if (!file) {
       throw new Error("--apply requires YANDEX_AI_STUDIO_API_KEY_FILE.");

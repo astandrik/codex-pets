@@ -15,7 +15,6 @@ import {
   parseRelatedPetAnnotationBackfillArgs,
   runRelatedPetAnnotationEmbeddingBackfill,
 } from "./lib/related-pets-annotation-backfill.mjs";
-import { createRelatedPetsRebuildRequiredLog } from "./lib/related-pets-maintenance.mjs";
 import {
   TypedValues,
   executeYdbQuery,
@@ -45,9 +44,10 @@ export async function main(argv = process.argv.slice(2)) {
       "PET_SEARCH_MODEL_REVISION must name a current annotation revision.",
     );
   }
-  const providerConfig = readProviderConfig(options.mode);
-
   return withYdbCliDriver(async (driver) => {
+    const providerConfig = options.mode === "apply"
+      ? readProviderConfig()
+      : null;
     const embed = options.mode === "apply"
       ? createEmbeddingProvider(providerConfig)
       : async () => {
@@ -67,26 +67,20 @@ export async function main(argv = process.argv.slice(2)) {
       upsert: (input) => upsertEmbedding(driver, input),
       log: (entry) => console.log(JSON.stringify(entry)),
     });
-    if (options.mode === "apply" && summary.updated > 0) {
-      console.log(JSON.stringify(createRelatedPetsRebuildRequiredLog()));
-    }
     if (summary.failed > 0) process.exitCode = 1;
     return summary;
-  });
+  }, { requireExplicitTarget: options.mode === "apply" });
 }
 
-function readProviderConfig(mode) {
+function readProviderConfig() {
   const folderId = process.env.YANDEX_AI_STUDIO_FOLDER_ID?.trim();
   if (!folderId) throw new Error("YANDEX_AI_STUDIO_FOLDER_ID is required.");
-  let apiKey = "";
-  if (mode === "apply") {
-    const file = process.env.YANDEX_AI_STUDIO_API_KEY_FILE?.trim();
-    if (!file) {
-      throw new Error("--apply requires YANDEX_AI_STUDIO_API_KEY_FILE.");
-    }
-    apiKey = readFileSync(file, "utf8").trim();
-    if (!apiKey) throw new Error("YANDEX_AI_STUDIO_API_KEY_FILE is empty.");
+  const file = process.env.YANDEX_AI_STUDIO_API_KEY_FILE?.trim();
+  if (!file) {
+    throw new Error("--apply requires YANDEX_AI_STUDIO_API_KEY_FILE.");
   }
+  const apiKey = readFileSync(file, "utf8").trim();
+  if (!apiKey) throw new Error("YANDEX_AI_STUDIO_API_KEY_FILE is empty.");
   const raw = Number(process.env.PET_SEARCH_EMBEDDING_TIMEOUT_MS);
   const timeoutMs = Number.isInteger(raw) && raw >= 50 && raw <= 5_000
     ? raw

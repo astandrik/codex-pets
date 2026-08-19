@@ -74,7 +74,7 @@ export async function main(argv = process.argv.slice(2)) {
     });
     if (summary.failed > 0) process.exitCode = 1;
     return summary;
-  });
+  }, { requireExplicitTarget: options.mode === "apply" });
 }
 
 function readEmbeddingProviderConfig() {

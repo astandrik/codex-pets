@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -17,6 +19,11 @@ import {
   RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
   RELATED_PETS_DESCRIPTION_QUERY_REVISION,
 } from "../src/lib/pets/related-pets-semantics.mjs";
+import { RELATED_PETS_TEXT_QUERY_REVISION } from "../src/lib/pets/related-pets-profile";
+
+const packageScripts = (JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+) as { scripts: Record<string, string> }).scripts;
 
 const {
   buildRelatedPetDocument,
@@ -81,6 +88,13 @@ describe("pet search embeddings backfill", () => {
       requestDimensions: 768,
       inputKind: "related-query",
     });
+    expect(PET_SEARCH_BACKFILL_REVISIONS[RELATED_PETS_TEXT_QUERY_REVISION])
+      .toEqual({
+        dimensions: 768,
+        modelPath: "text-embeddings-v2-query",
+        requestDimensions: 768,
+        inputKind: "related-query",
+      });
     expect(
       createEmbeddingRequest({
         folderId: "folder-1",
@@ -184,6 +198,48 @@ describe("pet search embeddings backfill", () => {
 
     expect(starts).toEqual([0, 1_000, 2_000]);
     expect(waits).toEqual([1_000, 1_000]);
+  });
+
+  it("serializes concurrent rate-limit reservations", async () => {
+    let currentTime = 0;
+    const waits: number[] = [];
+    const pendingSleeps: Array<() => void> = [];
+    const reserve = createRequestStartLimiter({
+      requestsPerMinute: 60,
+      now: () => currentTime,
+      sleep: (milliseconds: number) => {
+        waits.push(milliseconds);
+        return new Promise<void>((resolve) => {
+          pendingSleeps.push(() => {
+            currentTime += milliseconds;
+            resolve();
+          });
+        });
+      },
+    });
+
+    const reservations = [reserve(), reserve(), reserve()];
+    await reservations[0];
+    await Promise.resolve();
+    expect(waits).toEqual([1_000]);
+    pendingSleeps.shift()?.();
+    await reservations[1];
+    await Promise.resolve();
+    expect(waits).toEqual([1_000, 1_000]);
+    pendingSleeps.shift()?.();
+    await Promise.all(reservations);
+  });
+
+  it("keeps the active query command separate from V24 preparation", () => {
+    expect(packageScripts["related:backfill-query"]).toContain(
+      RELATED_PETS_TEXT_QUERY_REVISION,
+    );
+    expect(packageScripts["related:backfill-description-query"]).toContain(
+      RELATED_PETS_DESCRIPTION_QUERY_REVISION,
+    );
+    expect(packageScripts["related:backfill-description-document"]).toContain(
+      RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
+    );
   });
 
   it("dry-runs stale approved pets without provider or YDB writes", async () => {

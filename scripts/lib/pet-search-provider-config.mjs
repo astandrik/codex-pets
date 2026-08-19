@@ -15,6 +15,12 @@ export const PET_SEARCH_BACKFILL_REVISIONS = {
     documentModelPath: "text-embeddings-v2-doc",
     requestDimensions: 768,
   },
+  "yandex-text-embeddings-v2-768-related-tags-query-2026-08": {
+    dimensions: 768,
+    modelPath: "text-embeddings-v2-query",
+    requestDimensions: 768,
+    inputKind: "related-query",
+  },
   [RELATED_PETS_DESCRIPTION_QUERY_REVISION]: {
     dimensions: 768,
     modelPath: "text-embeddings-v2-query",

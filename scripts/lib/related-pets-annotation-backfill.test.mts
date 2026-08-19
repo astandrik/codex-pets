@@ -9,7 +9,6 @@ import {
   resolveRelatedPetAnnotation,
 } from "../../src/lib/pets/related-pets-annotation-contract.mjs";
 import {
-  createStoredRelatedPetAnnotationProposalLoader,
   parseRelatedPetAnnotationBackfillArgs,
   runRelatedPetAnnotationBackfill,
   runRelatedPetAnnotationEmbeddingBackfill,
@@ -53,7 +52,6 @@ describe("related pet annotation backfill", () => {
       force: false,
       continueOnError: true,
       concurrency: 1,
-      reuseProposalsFrom: null,
     });
     expect(() => parseRelatedPetAnnotationBackfillArgs([
       "--apply",
@@ -63,36 +61,11 @@ describe("related pet annotation backfill", () => {
     ])).toThrow(/cannot be combined/i);
   });
 
-  it("parses a safe proposal source revision", () => {
-    expect(parseRelatedPetAnnotationBackfillArgs([
-      "--apply",
-      "--reuse-proposals-from",
-      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r3",
-    ])).toMatchObject({
-      reuseProposalsFrom:
-        "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r3",
-    });
+  it("rejects proposal reuse without verifiable source provenance", () => {
     expect(() => parseRelatedPetAnnotationBackfillArgs([
       "--apply",
-      "--reuse-proposals-from=../../unsafe",
-    ])).toThrow(/valid revision/i);
-  });
-
-  it("loads and validates a stored provider proposal without calling AI", async () => {
-    const getAnnotation = vi.fn(async () => ({
-      proposalJson: JSON.stringify(proposal),
-    }));
-    const loadProposal = createStoredRelatedPetAnnotationProposalLoader({
-      sourceRevision:
-        "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r3",
-      getAnnotation,
-    });
-
-    await expect(loadProposal(pet)).resolves.toEqual(proposal);
-    expect(getAnnotation).toHaveBeenCalledWith(
-      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r3",
-      "vi",
-    );
+      "--reuse-proposals-from=old-r1",
+    ])).toThrow(/unknown argument/i);
   });
 
   it("dry-runs without provider calls or writes", async () => {
@@ -229,6 +202,40 @@ describe("related pet annotation backfill", () => {
       dimensions: 768,
     }));
   });
+
+  it("requires a rebuild after a partial vector write", async () => {
+    const resolved = resolveRelatedPetAnnotation({ slug: pet.slug, proposal });
+    const annotationText = buildRelatedPetAnnotationText(resolved);
+    const logs: Array<Record<string, unknown>> = [];
+    let embeddingCall = 0;
+
+    await expect(runRelatedPetAnnotationEmbeddingBackfill({
+      options: options("apply"),
+      annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+      modelRevision: RELATED_PETS_ANNOTATION_QUERY_REVISION,
+      role: "query",
+      dimensions: 768,
+      pets: [pet, { ...pet, slug: "jinx" }],
+      annotations: ["vi", "jinx"].map((slug) => ({
+        slug,
+        sourceHash: "annotation-hash",
+        annotationJson: JSON.stringify(resolved),
+        annotationText,
+      })),
+      getMetadata: async () => null,
+      embed: async () => {
+        embeddingCall += 1;
+        if (embeddingCall === 2) throw new Error("provider_failed");
+        return Array(768).fill(0.25);
+      },
+      upsert: async () => undefined,
+      log: (entry) => logs.push(entry as Record<string, unknown>),
+    })).rejects.toThrow("provider_failed");
+
+    expect(logs).toContainEqual(expect.objectContaining({
+      action: "related-pets-rebuild-required",
+    }));
+  });
 });
 
 function options(mode: "dry-run" | "apply") {
@@ -238,6 +245,5 @@ function options(mode: "dry-run" | "apply") {
     force: false,
     continueOnError: false,
     concurrency: 1,
-    reuseProposalsFrom: null,
   };
 }

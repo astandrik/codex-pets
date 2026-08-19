@@ -12,15 +12,32 @@ const {
 
 export { TypedValues };
 
-export function readYdbCliConfig(env = process.env) {
+export function readYdbCliConfig(
+  env = process.env,
+  { requireExplicitTarget = false } = {},
+) {
+  const explicitEndpoint = env.YDB_PETS_ENDPOINT?.trim();
+  const explicitDatabase = env.YDB_PETS_DATABASE?.trim();
+  if (requireExplicitTarget && (!explicitEndpoint || !explicitDatabase)) {
+    const missing = [
+      !explicitEndpoint && "YDB_PETS_ENDPOINT",
+      !explicitDatabase && "YDB_PETS_DATABASE",
+    ].filter(Boolean);
+    throw new Error(`--apply requires explicit ${missing.join(" and ")}.`);
+  }
   return {
-    endpoint: env.YDB_PETS_ENDPOINT?.trim() || "grpc://127.0.0.1:2136",
-    database: env.YDB_PETS_DATABASE?.trim() || "/local",
+    endpoint: explicitEndpoint || "grpc://127.0.0.1:2136",
+    database: explicitDatabase || "/local",
   };
 }
 
-export function createYdbCliDriver({ env = process.env } = {}) {
-  const { endpoint, database } = readYdbCliConfig(env);
+export function createYdbCliDriver({
+  env = process.env,
+  requireExplicitTarget = false,
+} = {}) {
+  const { endpoint, database } = readYdbCliConfig(env, {
+    requireExplicitTarget,
+  });
   if (isLocalYdbEndpoint(endpoint)) {
     env.YDB_ANONYMOUS_CREDENTIALS ??= "1";
     env.YDB_ENDPOINT ??= endpoint;

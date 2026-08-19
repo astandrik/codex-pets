@@ -29,6 +29,8 @@ describe("resumable backfill helper", () => {
       "--apply",
       "--concurrency=2",
     ])).toThrow(/continue-on-error/i);
+    expect(() => parseResumableBackfillArgs(["--apply", "--slug="]))
+      .toThrow(/valid public pet slug/i);
   });
 
   it("keeps successful results when another item fails", async () => {

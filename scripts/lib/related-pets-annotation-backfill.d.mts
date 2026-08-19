@@ -15,20 +15,11 @@ type StoredRelatedPetAnnotation = {
   annotationText: string;
 };
 
-export type RelatedPetAnnotationBackfillOptions = ResumableBackfillOptions & {
-  reuseProposalsFrom: string | null;
-};
+export type RelatedPetAnnotationBackfillOptions = ResumableBackfillOptions;
 export type RelatedPetAnnotationBackfillSummary = ResumableBackfillSummary;
 export function parseRelatedPetAnnotationBackfillArgs(
   argv: readonly string[],
 ): RelatedPetAnnotationBackfillOptions;
-export function createStoredRelatedPetAnnotationProposalLoader(input: {
-  sourceRevision: string;
-  getAnnotation: (
-    revision: string,
-    slug: string,
-  ) => Promise<{ proposalJson?: string } | null>;
-}): (pet: RelatedPetAnnotationInput) => Promise<RelatedPetAnnotationProposal>;
 export function runRelatedPetAnnotationBackfill(input: {
   options: RelatedPetAnnotationBackfillOptions;
   annotationRevision: string;

@@ -124,6 +124,35 @@ describe("related pet annotation client", () => {
   it("serializes provider starts", async () => {
     let timestamp = 0;
     const starts: number[] = [];
+    const waits: number[] = [];
+    const client = createYandexRelatedPetAnnotationClient({
+      folderId: "folder-1",
+      apiKey: "key",
+      modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+      timeoutMs: 30_000,
+      now: () => timestamp,
+      sleep: async (milliseconds) => {
+        waits.push(milliseconds);
+        timestamp += milliseconds;
+      },
+      fetchImpl: async () => {
+        starts.push(timestamp);
+        return completedResponse(proposal);
+      },
+    });
+
+    await Promise.all([client.createProposal(pet), client.createProposal(pet)]);
+    expect(starts).toHaveLength(2);
+    expect(waits).toEqual([6_000]);
+  });
+
+  it("allows requests to overlap after their starts are reserved", async () => {
+    let timestamp = 0;
+    let requestCount = 0;
+    let resolveFirst: ((response: Response) => void) | undefined;
+    const firstResponse = new Promise<Response>((resolve) => {
+      resolveFirst = resolve;
+    });
     const client = createYandexRelatedPetAnnotationClient({
       folderId: "folder-1",
       apiKey: "key",
@@ -134,13 +163,20 @@ describe("related pet annotation client", () => {
         timestamp += milliseconds;
       },
       fetchImpl: async () => {
-        starts.push(timestamp);
-        return completedResponse(proposal);
+        requestCount += 1;
+        return requestCount === 1
+          ? firstResponse
+          : completedResponse(proposal);
       },
     });
 
-    await Promise.all([client.createProposal(pet), client.createProposal(pet)]);
-    expect(starts).toEqual([0, 6_000]);
+    const first = client.createProposal(pet);
+    const second = client.createProposal({ ...pet, slug: "jinx" });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(requestCount).toBe(2);
+    resolveFirst?.(completedResponse(proposal));
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
   });
 
   it("surfaces terminal refusal without leaking its body", async () => {
@@ -161,6 +197,7 @@ describe("related pet annotation client", () => {
     await expect(client.createProposal(pet)).rejects.toMatchObject({
       reason: "refused",
       message: "Related pet annotation provider request failed.",
+      cause: expect.objectContaining({ reason: "refused" }),
     });
   });
 });

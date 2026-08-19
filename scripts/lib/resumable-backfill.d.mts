@@ -4,7 +4,6 @@ export type ResumableBackfillOptions = {
   force: boolean;
   continueOnError: boolean;
   concurrency: number;
-  reuseProposalsFrom?: string | null;
 };
 
 export type BackfillOutcome = "unchanged" | "planned" | "updated";
@@ -19,7 +18,7 @@ export type ResumableBackfillSummary = {
 
 export function parseResumableBackfillArgs(
   argv: string[],
-  options?: { allowReuseProposals?: boolean; maxConcurrency?: number },
+  options?: { maxConcurrency?: number },
 ): ResumableBackfillOptions;
 export function selectApprovedItems<
   T extends { slug: string; status?: string },
