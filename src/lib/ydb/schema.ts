@@ -17,4 +17,5 @@ export const TABLES = {
   searchCaptions: "codex_pet_search_captions",
   relatedState: "codex_pet_related_state",
   relatedSnapshots: "codex_pet_related_snapshots",
+  relatedAnnotations: "codex_pet_related_annotations",
 } as const;
