@@ -66,4 +66,68 @@ describe("resumable backfill helper", () => {
       reason: "provider_failed",
     }));
   });
+
+  it("drains started workers before rethrowing a terminal failure", async () => {
+    const terminalError = new Error("terminal_failure");
+    const started: string[] = [];
+    let releasePeer!: () => void;
+    const peerRelease = new Promise<void>((resolve) => {
+      releasePeer = resolve;
+    });
+    let markPeerStarted!: () => void;
+    const peerStarted = new Promise<void>((resolve) => {
+      markPeerStarted = resolve;
+    });
+    let markFailureIssued!: () => void;
+    const failureIssued = new Promise<void>((resolve) => {
+      markFailureIssued = resolve;
+    });
+    let peerFinished = false;
+    let settled = false;
+
+    const result = runResumableBackfill({
+      items: [{ slug: "a" }, { slug: "b" }, { slug: "c" }],
+      options: {
+        mode: "dry-run",
+        slug: null,
+        force: false,
+        continueOnError: false,
+        concurrency: 2,
+      },
+      processItem: async ({ slug }) => {
+        started.push(slug);
+        if (slug === "a") {
+          await peerStarted;
+          markFailureIssued();
+          throw terminalError;
+        }
+        if (slug === "b") {
+          markPeerStarted();
+          await peerRelease;
+          peerFinished = true;
+        }
+        return "updated";
+      },
+      log: vi.fn(),
+    }).then(
+      () => ({ status: "resolved" as const }),
+      (error) => ({ status: "rejected" as const, error }),
+    ).finally(() => {
+      settled = true;
+    });
+
+    await failureIssued;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    expect(peerFinished).toBe(false);
+    expect(started).toEqual(["a", "b"]);
+
+    releasePeer();
+    await expect(result).resolves.toEqual({
+      status: "rejected",
+      error: terminalError,
+    });
+    expect(peerFinished).toBe(true);
+    expect(started).toEqual(["a", "b"]);
+  });
 });

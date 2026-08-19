@@ -118,7 +118,7 @@ export function parseStringArray(value) {
 
 export function isLocalYdbEndpoint(value) {
   try {
-    return ["localhost", "127.0.0.1", "::1", "ydb-local"].includes(
+    return ["localhost", "127.0.0.1", "::1", "[::1]", "ydb-local"].includes(
       new URL(value).hostname,
     );
   } catch {

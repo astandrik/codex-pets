@@ -45,6 +45,7 @@ describe("YDB maintenance CLI helpers", () => {
     expect(parseStringArray('["a",2,"b"]')).toEqual(["a", "b"]);
     expect(parseStringArray("invalid")).toEqual([]);
     expect(isLocalYdbEndpoint("grpc://127.0.0.1:2136")).toBe(true);
+    expect(isLocalYdbEndpoint("grpc://[::1]:2136")).toBe(true);
     expect(isLocalYdbEndpoint("grpcs://example.net:2135")).toBe(false);
   });
 });

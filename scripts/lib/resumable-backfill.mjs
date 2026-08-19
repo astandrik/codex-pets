@@ -77,10 +77,12 @@ export async function runResumableBackfill({
     failedSlugs: [],
   };
   let nextIndex = 0;
+  let stopRequested = false;
+  let terminalError;
   const workerCount = Math.min(options.concurrency ?? 1, items.length);
 
   await Promise.all(Array.from({ length: workerCount }, async () => {
-    while (nextIndex < items.length) {
+    while (!stopRequested && nextIndex < items.length) {
       const item = items[nextIndex];
       nextIndex += 1;
       const slug = itemId(item);
@@ -101,10 +103,15 @@ export async function runResumableBackfill({
           reason: sanitizedReason(error),
           ...failureDetails(error),
         });
-        if (!(options.continueOnError ?? false)) throw error;
+        if (!(options.continueOnError ?? false)) {
+          if (!stopRequested) terminalError = error;
+          stopRequested = true;
+        }
       }
     }
   }));
+
+  if (stopRequested) throw terminalError;
 
   summary.failedSlugs.sort();
   log({ action: "summary", ...summary });
