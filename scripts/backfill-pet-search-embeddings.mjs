@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
 import {
+  buildRelatedPetDocument,
   buildRelatedPetQuery,
+  createRelatedPetDocumentSourceHash,
   createRequestStartLimiter,
   createRelatedPetQuerySourceHash,
   embeddingToBuffer,
@@ -16,15 +17,15 @@ import {
   createEmbeddingRequest,
   requirePetSearchBackfillRevision,
 } from "./lib/pet-search-provider-config.mjs";
-
-const require = createRequire(import.meta.url);
-const {
-  Driver,
-  StaticCredentialsAuthService,
+import {
   TypedValues,
-  getCredentialsFromEnv,
-  getDefaultLogger,
-} = require("ydb-sdk");
+  executeYdbQuery,
+  parseStringArray,
+  rowsFromResult,
+  textAt,
+  uint32At,
+  withYdbCliDriver,
+} from "./lib/ydb-cli.mjs";
 
 const PETS_TABLE = "codex_pets";
 const EMBEDDINGS_TABLE = "codex_pet_search_embeddings";
@@ -39,21 +40,7 @@ export async function main(argv = process.argv.slice(2)) {
   const revisionDefinition =
     requirePetSearchBackfillRevision(revision);
 
-  const endpoint =
-    process.env.YDB_PETS_ENDPOINT?.trim() || "grpc://127.0.0.1:2136";
-  const database = process.env.YDB_PETS_DATABASE?.trim() || "/local";
-  if (isLocalEndpoint(endpoint)) {
-    process.env.YDB_ANONYMOUS_CREDENTIALS ??= "1";
-    process.env.YDB_ENDPOINT ??= endpoint;
-  }
-
-  const driver = createDriver(endpoint, database);
-  try {
-    const ready = await driver.ready(15_000);
-    if (!ready) {
-      throw new Error(`YDB driver is not ready for ${endpoint} ${database}.`);
-    }
-
+  return withYdbCliDriver(async (driver) => {
     const embedDocument = options.mode === "apply"
       ? createEmbeddingProvider(
           readEmbeddingProviderConfig(),
@@ -63,7 +50,7 @@ export async function main(argv = process.argv.slice(2)) {
           throw new Error("Dry-run must not call the embedding provider.");
         };
     const pets = await listApprovedPets(driver);
-    return await runPetSearchBackfill({
+    const summary = await runPetSearchBackfill({
       options,
       revision,
       dimensions: revisionDefinition.dimensions,
@@ -74,57 +61,20 @@ export async function main(argv = process.argv.slice(2)) {
       upsert: (input) => upsertEmbedding(driver, input),
       ...(revisionDefinition.inputKind === "related-query"
         ? {
-            buildInput: buildRelatedPetQuery,
+            buildInput: (pet) => buildRelatedPetQuery(pet, revision),
             createSourceHash: createRelatedPetQuerySourceHash,
           }
-        : {}),
+        : revisionDefinition.inputKind === "related-document"
+          ? {
+              buildInput: (pet) => buildRelatedPetDocument(pet, revision),
+              createSourceHash: createRelatedPetDocumentSourceHash,
+            }
+          : {}),
       log: (entry) => console.log(JSON.stringify(entry)),
     });
-  } finally {
-    await driver.destroy();
-  }
-}
-
-function createDriver(endpoint, database) {
-  return new Driver({
-    endpoint,
-    database,
-    authService: createAuthService(endpoint),
-    clientOptions: {
-      "grpc.max_receive_message_length": 16 * 1024 * 1024,
-      "grpc.max_send_message_length": 16 * 1024 * 1024,
-    },
-    poolSettings: {
-      minLimit: 1,
-      maxLimit: 4,
-      keepAlivePeriod: 30_000,
-    },
-  });
-}
-
-function createAuthService(endpoint) {
-  const user = process.env.YDB_STATIC_CREDENTIALS_USER?.trim();
-  if (!user) return getCredentialsFromEnv();
-
-  const password = readYdbPassword();
-  if (!password) {
-    throw new Error(
-      "YDB_STATIC_CREDENTIALS_USER is set, but no password or password file was provided.",
-    );
-  }
-
-  return new StaticCredentialsAuthService(
-    user,
-    password,
-    process.env.YDB_STATIC_CREDENTIALS_AUTH_ENDPOINT?.trim() || endpoint,
-    getDefaultLogger(),
-  );
-}
-
-function readYdbPassword() {
-  const file = process.env.YDB_STATIC_CREDENTIALS_PASSWORD_FILE?.trim();
-  if (file) return readFileSync(file, "utf8").replace(/[\r\n]+$/, "");
-  return process.env.YDB_STATIC_CREDENTIALS_PASSWORD?.trim() || undefined;
+    if (summary.failed > 0) process.exitCode = 1;
+    return summary;
+  }, { requireExplicitTarget: options.mode === "apply" });
 }
 
 function readEmbeddingProviderConfig() {
@@ -198,7 +148,7 @@ function createEmbeddingProvider(
 }
 
 async function listApprovedPets(driver) {
-  const result = await execute(
+  const result = await executeYdbQuery(
     driver,
     `
 DECLARE $status AS Utf8;
@@ -216,13 +166,13 @@ ORDER BY created_at DESC;
     displayName: textAt(row, 1),
     description: textAt(row, 2),
     kind: textAt(row, 3),
-    tags: parseTags(textAt(row, 4)),
+    tags: parseStringArray(textAt(row, 4)),
     status: "approved",
   }));
 }
 
 async function getEmbeddingMetadata(driver, modelRevision, slug) {
-  const result = await execute(
+  const result = await executeYdbQuery(
     driver,
     `
 DECLARE $model_revision AS Utf8;
@@ -241,12 +191,12 @@ LIMIT 1;
   );
   const row = rowsFromResult(result)[0];
   return row
-    ? { sourceHash: textAt(row, 0), dimensions: uintAt(row, 1) }
+    ? { sourceHash: textAt(row, 0), dimensions: uint32At(row, 1) }
     : null;
 }
 
 async function upsertEmbedding(driver, input) {
-  await execute(
+  await executeYdbQuery(
     driver,
     `
 DECLARE $model_revision AS Utf8;
@@ -270,49 +220,6 @@ VALUES
       $updated_at: TypedValues.utf8(input.updatedAt),
     },
   );
-}
-
-function execute(driver, statement, params = {}) {
-  return driver.tableClient.withSessionRetry(
-    (session) => session.executeQuery(statement, params),
-    10_000,
-    3,
-  );
-}
-
-function rowsFromResult(result) {
-  return result?.resultSets?.[0]?.rows ?? [];
-}
-
-function textAt(row, index) {
-  return row.items?.[index]?.textValue ?? "";
-}
-
-function uintAt(row, index) {
-  const value = row.items?.[index]?.uint32Value;
-  return typeof value === "number" ? value : Number(value ?? 0);
-}
-
-function parseTags(value) {
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed)
-      ? parsed.filter((tag) => typeof tag === "string")
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function isLocalEndpoint(value) {
-  try {
-    const parsed = new URL(value);
-    return ["localhost", "127.0.0.1", "::1", "ydb-local"].includes(
-      parsed.hostname,
-    );
-  } catch {
-    return false;
-  }
 }
 
 const invokedAsScript = process.argv[1] &&

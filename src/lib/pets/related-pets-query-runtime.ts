@@ -79,7 +79,7 @@ export function createRelatedPetQueryRuntime(
     }
 
     const embedding = await embeddingClient.embedPreparedQuery(
-      buildRelatedPetQuery(pet),
+      buildRelatedPetQuery(pet, dependencies.profile.textQueryRevision),
     );
     await dependencies.upsert({
       modelRevision: dependencies.profile.textQueryRevision,

@@ -2,6 +2,8 @@ export type BackfillOptions = {
   mode: "dry-run" | "apply";
   slug: string | null;
   force: boolean;
+  continueOnError: boolean;
+  concurrency: number;
 };
 
 export type BackfillPet = {
@@ -18,16 +20,29 @@ export type BackfillSummary = {
   unchanged: number;
   planned: number;
   updated: number;
+  failed: number;
+  failedSlugs: string[];
 };
 
 export function parseBackfillArgs(argv: string[]): BackfillOptions;
 export function buildPetSearchDocument(pet: BackfillPet): string;
-export function buildRelatedPetQuery(pet: BackfillPet): string;
+export function buildRelatedPetQuery(
+  pet: BackfillPet,
+  modelRevision: string,
+): string;
+export function buildRelatedPetDocument(
+  pet: BackfillPet,
+  modelRevision: string,
+): string;
 export function createPetSearchSourceHash(
   pet: BackfillPet,
   modelRevision: string,
 ): string;
 export function createRelatedPetQuerySourceHash(
+  pet: BackfillPet,
+  modelRevision: string,
+): string;
+export function createRelatedPetDocumentSourceHash(
   pet: BackfillPet,
   modelRevision: string,
 ): string;
