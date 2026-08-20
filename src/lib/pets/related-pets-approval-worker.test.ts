@@ -102,6 +102,151 @@ describe("related pet approval worker", () => {
     }));
   });
 
+  it("retries ordinary worker failures without a custom reason", async () => {
+    const markFailure = vi.fn(async (input: { failureCode: string }) => ({
+      ...preparation,
+      status: "retry" as const,
+      failureCode: input.failureCode,
+    }));
+    const worker = createRelatedPetApprovalWorker(dependencies({
+      getPet: async () => {
+        throw new Error("temporary storage outage");
+      },
+      markFailure,
+    }));
+
+    await expect(worker.runOnce("worker-1")).resolves.toBe("retry");
+    expect(markFailure).toHaveBeenCalledWith(expect.objectContaining({
+      failureCode: "preparation_failed",
+      retryable: true,
+    }));
+  });
+
+  it("preserves a succeeded result returned by failure reconciliation", async () => {
+    const markFailure = vi.fn(async () => ({
+      ...preparation,
+      status: "succeeded" as const,
+    }));
+    const worker = createRelatedPetApprovalWorker(dependencies({
+      finalize: async () => {
+        throw new Error("finalize response lost");
+      },
+      markFailure,
+    }));
+
+    await expect(worker.runOnce("worker-1")).resolves.toBe("succeeded");
+  });
+
+  it("reports in_progress after another worker reclaims the preparation", async () => {
+    const markFailure = vi.fn(async () => ({
+      ...preparation,
+      leaseOwner: "worker-2",
+      status: "preparing" as const,
+    }));
+    const worker = createRelatedPetApprovalWorker(dependencies({
+      finalize: async () => false,
+      markFailure,
+    }));
+
+    await expect(worker.runOnce("worker-1")).resolves.toBe("in_progress");
+  });
+
+  it("cleans older generations after a successful finalization", async () => {
+    const cleanupGenerations = vi.fn(async () => true);
+    const cleanupInactiveGeneration = vi.fn(async () => true);
+    const workerDependencies = {
+      ...dependencies(),
+      cleanupGenerations,
+      cleanupInactiveGeneration,
+    };
+    const worker = createRelatedPetApprovalWorker(workerDependencies);
+
+    await expect(worker.runOnce("worker-1")).resolves.toBe("succeeded");
+    expect(cleanupGenerations).toHaveBeenCalledWith({
+      expectedGenerationId: "generation-current",
+    });
+    expect(cleanupInactiveGeneration).not.toHaveBeenCalled();
+  });
+
+  it("cleans an inactive generation after failed finalization", async () => {
+    const cleanupGenerations = vi.fn(async () => false);
+    const cleanupInactiveGeneration = vi.fn(async () => true);
+    const workerDependencies = {
+      ...dependencies({ finalize: async () => false }),
+      cleanupGenerations,
+      cleanupInactiveGeneration,
+    };
+    const worker = createRelatedPetApprovalWorker(workerDependencies);
+
+    await expect(worker.runOnce("worker-1")).resolves.toBe("manual_review");
+    expect(cleanupGenerations).toHaveBeenCalledWith({
+      expectedGenerationId: "generation-current",
+    });
+    expect(cleanupInactiveGeneration).toHaveBeenCalledWith({
+      expectedGenerationId: "generation-current",
+    });
+  });
+
+  it("cleans a partially built generation without masking the worker result", async () => {
+    const cleanupGenerations = vi.fn(async () => false);
+    const cleanupInactiveGeneration = vi.fn(async () => true);
+    const workerDependencies = {
+      ...dependencies({
+        buildGeneration: async () => {
+          throw Object.assign(new Error("provider unavailable"), {
+            reason: "provider_unavailable",
+          });
+        },
+        markFailure: async () => ({ ...preparation, status: "retry" }),
+      }),
+      cleanupGenerations,
+      cleanupInactiveGeneration,
+    };
+    const worker = createRelatedPetApprovalWorker(workerDependencies);
+
+    await expect(worker.runOnce("worker-1")).resolves.toBe("retry");
+    expect(cleanupInactiveGeneration).toHaveBeenCalledWith({
+      expectedGenerationId: "generation-current",
+    });
+  });
+
+  it("does not let cleanup failures overwrite a successful approval", async () => {
+    const workerDependencies = {
+      ...dependencies(),
+      cleanupGenerations: async () => {
+        throw new Error("cleanup unavailable");
+      },
+      cleanupInactiveGeneration: async () => {
+        throw new Error("cleanup unavailable");
+      },
+    };
+    const worker = createRelatedPetApprovalWorker(workerDependencies);
+
+    await expect(worker.runOnce("worker-1")).resolves.toBe("succeeded");
+  });
+
+  it("does not let cleanup failures mask a failure-persistence error", async () => {
+    const workerDependencies = {
+      ...dependencies({
+        finalize: async () => false,
+        markFailure: async () => {
+          throw new Error("failure persistence unavailable");
+        },
+      }),
+      cleanupGenerations: async () => {
+        throw new Error("cleanup unavailable");
+      },
+      cleanupInactiveGeneration: async () => {
+        throw new Error("cleanup unavailable");
+      },
+    };
+    const worker = createRelatedPetApprovalWorker(workerDependencies);
+
+    await expect(worker.runOnce("worker-1")).rejects.toThrow(
+      "failure persistence unavailable",
+    );
+  });
+
   it("routes a changed pending submission to manual review", async () => {
     const prepareSignals = vi.fn();
     const markFailure = vi.fn(async (input: { failureCode: string }) => ({
@@ -153,6 +298,8 @@ function dependencies(
     buildGeneration: async () => generation,
     finalize: async () => true,
     markFailure: async () => null,
+    cleanupGenerations: async () => true,
+    cleanupInactiveGeneration: async () => true,
     createGenerationId: () => "generation-current",
     createReviewId: () => "review-1",
     now: () => now,

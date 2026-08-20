@@ -10,6 +10,13 @@ type PreparedPet = {
   updatedAt: string;
 };
 
+type ApprovalWorkerResult =
+  | "idle"
+  | "in_progress"
+  | "succeeded"
+  | "retry"
+  | "manual_review";
+
 type WorkerDependencies<Pet extends PreparedPet> = {
   claim: (input: {
     workerId: string;
@@ -43,6 +50,12 @@ type WorkerDependencies<Pet extends PreparedPet> = {
     retryable: boolean;
     now: Date;
   }) => Promise<ApprovalPreparation | null>;
+  cleanupGenerations: (input: {
+    expectedGenerationId: string;
+  }) => Promise<boolean>;
+  cleanupInactiveGeneration: (input: {
+    expectedGenerationId: string;
+  }) => Promise<boolean>;
   createGenerationId: () => string;
   createReviewId: () => string;
   now: () => Date;
@@ -50,6 +63,7 @@ type WorkerDependencies<Pet extends PreparedPet> = {
 
 const LEASE_MS = 30 * 60_000;
 const RETRYABLE_FAILURES = new Set([
+  "preparation_failed",
   "network_error",
   "timeout",
   "rate_limited",
@@ -66,7 +80,7 @@ export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(
 
   async function runOnce(
     workerId: string,
-  ): Promise<"idle" | "succeeded" | "retry" | "manual_review"> {
+  ): Promise<ApprovalWorkerResult> {
     const startedAt = dependencies.now();
     const preparation = await dependencies.claim({
       workerId,
@@ -75,6 +89,7 @@ export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(
     });
     if (!preparation) return "idle";
 
+    let generationId: string | null = null;
     try {
       const pet = await dependencies.getPet(preparation.petId);
       if (
@@ -87,7 +102,7 @@ export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(
       }
       const preparedPet = { ...pet, status: "approved" as const };
       await dependencies.prepareSignals(preparedPet);
-      const generationId = dependencies.createGenerationId();
+      generationId = dependencies.createGenerationId();
       const generation = await dependencies.buildGeneration({
         generationId,
         pet: preparedPet,
@@ -111,8 +126,43 @@ export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(
         retryable: RETRYABLE_FAILURES.has(failureCode),
         now: dependencies.now(),
       });
-      return updated?.status === "retry" ? "retry" : "manual_review";
+      return resultFromPreparation(updated);
+    } finally {
+      if (generationId) await cleanupGeneration(generationId);
     }
+  }
+
+  async function cleanupGeneration(generationId: string): Promise<void> {
+    try {
+      if (await dependencies.cleanupGenerations({
+        expectedGenerationId: generationId,
+      })) return;
+    } catch {
+      // Cleanup must not overwrite the persisted approval outcome.
+    }
+    try {
+      await dependencies.cleanupInactiveGeneration({
+        expectedGenerationId: generationId,
+      });
+    } catch {
+      // A later rebuild can retry cleanup of an unreferenced generation.
+    }
+  }
+}
+
+function resultFromPreparation(
+  preparation: ApprovalPreparation | null,
+): ApprovalWorkerResult {
+  switch (preparation?.status) {
+    case "succeeded":
+      return "succeeded";
+    case "retry":
+      return "retry";
+    case "queued":
+    case "preparing":
+      return "in_progress";
+    default:
+      return "manual_review";
   }
 }
 
