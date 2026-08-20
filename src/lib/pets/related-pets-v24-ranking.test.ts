@@ -81,6 +81,21 @@ function lowMatches(slugs: readonly string[]): RelatedPetsV24PrecomputedMatches 
   };
 }
 
+function pollutedMatches(
+  sourceSlug: string,
+  duplicateSlug: string,
+  invalidScore: number,
+  matches: RelatedPetsV24PrecomputedMatches["text"],
+): RelatedPetsV24PrecomputedMatches["text"] {
+  return [
+    { slug: "unknown", score: 1 },
+    { slug: sourceSlug, score: 1 },
+    { slug: duplicateSlug, score: invalidScore },
+    ...matches,
+    { slug: duplicateSlug, score: 0.1 },
+  ];
+}
+
 describe("V24 vector helpers", () => {
   const expected = {
     modelRevision: "text-v2",
@@ -293,6 +308,66 @@ describe("V24 related-pet ranking", () => {
     expect(new Set(ranked).size).toBe(8);
     expect(ranked).not.toContain("source");
     expect(ranked).not.toContain("unknown");
+  });
+
+  it("normalizes modality matches to finite unique candidates before ranking", () => {
+    const source = candidate("source");
+    const candidates = [source, candidate("a"), candidate("b")];
+    const annotations = new Map(candidates.map(({ slug }) => [
+      slug,
+      annotation({ entity: "same-entity" }),
+    ]));
+    const cleanMatches: RelatedPetsV24PrecomputedMatches = {
+      text: [
+        { slug: "a", score: 0.9 },
+        { slug: "b", score: 0.9 },
+      ],
+      annotation: [
+        { slug: "b", score: 0.9 },
+        { slug: "a", score: 0.9 },
+      ],
+      visual: [
+        { slug: "a", score: 0.9 },
+        { slug: "b", score: 0.9 },
+      ],
+    };
+    const profile = {
+      ...PROFILE,
+      annotationWeight: 0.9,
+      visualMinSimilarity: null,
+      visualWeight: 0,
+    };
+    const clean = rankRelatedPetsV24WithDiagnostics({
+      source,
+      candidates,
+      annotations,
+      precomputedMatches: cleanMatches,
+      profile,
+    });
+    const polluted = rankRelatedPetsV24WithDiagnostics({
+      source,
+      candidates,
+      annotations,
+      precomputedMatches: {
+        text: pollutedMatches("source", "a", Number.NaN, cleanMatches.text),
+        annotation: pollutedMatches(
+          "source",
+          "b",
+          Number.POSITIVE_INFINITY,
+          cleanMatches.annotation,
+        ),
+        visual: pollutedMatches(
+          "source",
+          "a",
+          Number.NEGATIVE_INFINITY,
+          cleanMatches.visual,
+        ),
+      },
+      profile,
+    });
+
+    expect(clean.slugs).toEqual(["a", "b"]);
+    expect(polluted).toEqual(clean);
   });
 });
 

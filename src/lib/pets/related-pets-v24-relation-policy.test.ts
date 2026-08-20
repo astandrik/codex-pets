@@ -45,4 +45,12 @@ describe("V24 relation policy", () => {
       revision: "unknown",
     })).toThrow("Unsupported related-pets relation policy revision.");
   });
+
+  it("fails closed for an empty supplied revision", () => {
+    expect(() => applyRelatedPetsRelationPolicy({
+      slug: "primaris",
+      annotation,
+      revision: "",
+    })).toThrow("Unsupported related-pets relation policy revision.");
+  });
 });

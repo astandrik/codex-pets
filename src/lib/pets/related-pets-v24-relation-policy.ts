@@ -23,7 +23,7 @@ export function applyRelatedPetsRelationPolicy(input: {
   annotation: ResolvedRelatedPetAnnotation | null;
   revision?: string;
 }): ResolvedRelatedPetAnnotation | null {
-  if (!input.revision) return input.annotation;
+  if (input.revision === undefined) return input.annotation;
   if (input.revision !== RELATED_PETS_V24_RELATION_POLICY_REVISION) {
     throw new Error("Unsupported related-pets relation policy revision.");
   }

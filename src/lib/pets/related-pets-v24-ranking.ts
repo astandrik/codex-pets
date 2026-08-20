@@ -232,26 +232,36 @@ function rankSparseFallback(
   }
 
   const candidateSlugs = uniqueCandidateSlugs(input.candidates, input.source.slug);
-  const textMatches = input.precomputedMatches?.text ??
+  const candidateSlugSet = new Set(candidateSlugs);
+  const textMatches = normalizeCandidateMatches(
+    input.precomputedMatches?.text ??
     (input.textQueryVectors && input.textDocumentVectors
       ? rankRelatedPetV24VectorMatches(
           input.source.slug,
           input.textQueryVectors,
           input.textDocumentVectors,
         )
-      : []);
-  const annotationMatches = input.precomputedMatches?.annotation ??
+      : []),
+    candidateSlugSet,
+  );
+  const annotationMatches = normalizeCandidateMatches(
+    input.precomputedMatches?.annotation ??
     (input.annotationQueryVectors && input.annotationDocumentVectors
       ? rankRelatedPetV24VectorMatches(
           input.source.slug,
           input.annotationQueryVectors,
           input.annotationDocumentVectors,
         )
-      : []);
-  const visualMatches = input.precomputedMatches?.visual ??
+      : []),
+    candidateSlugSet,
+  );
+  const visualMatches = normalizeCandidateMatches(
+    input.precomputedMatches?.visual ??
     (input.visualVectors
       ? rankRelatedPetV24VectorMatches(input.source.slug, input.visualVectors)
-      : []);
+      : []),
+    candidateSlugSet,
+  );
   const textRanks = rankingPositions(textMatches);
   const annotationRanks = rankingPositions(annotationMatches);
   const visualRanks = rankingPositions(visualMatches);
@@ -550,6 +560,26 @@ function rankingPositions(
   matches: readonly RelatedPetV24Similarity[],
 ): Map<string, number> {
   return new Map(matches.map(({ slug }, index) => [slug, index + 1]));
+}
+
+function normalizeCandidateMatches(
+  matches: readonly RelatedPetV24Similarity[],
+  candidateSlugs: ReadonlySet<string>,
+): RelatedPetV24Similarity[] {
+  const normalized: RelatedPetV24Similarity[] = [];
+  const seen = new Set<string>();
+  for (const match of matches) {
+    if (
+      !candidateSlugs.has(match.slug) ||
+      seen.has(match.slug) ||
+      !Number.isFinite(match.score)
+    ) {
+      continue;
+    }
+    seen.add(match.slug);
+    normalized.push(match);
+  }
+  return normalized;
 }
 
 function rrfContribution(rank: number | null, weight: number): number {
