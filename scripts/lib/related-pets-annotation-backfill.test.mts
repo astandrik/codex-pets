@@ -235,9 +235,39 @@ describe("related pet annotation backfill", () => {
     expect(upsert).not.toHaveBeenCalled();
   });
 
-  it("requires annotation model identity before using a stored row", async () => {
-    const embed = vi.fn(async () => Array(768).fill(0.25));
+  it("rejects a missing annotation model identity once before starting workers", async () => {
+    const pets = [pet, { ...pet, slug: "jinx" }];
+    const logs: unknown[] = [];
+    const getMetadata = vi.fn(async () => null);
 
+    await expect(runRelatedPetAnnotationEmbeddingBackfill({
+      options: {
+        ...options("dry-run"),
+        continueOnError: true,
+        concurrency: 2,
+      },
+      annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+      modelRevision: RELATED_PETS_ANNOTATION_QUERY_REVISION,
+      role: "query",
+      dimensions: 768,
+      modelUri: null,
+      pets,
+      annotations: pets.map(currentAnnotation),
+      getMetadata,
+      embed: async () => {
+        throw new Error("unexpected_embed");
+      },
+      upsert: async () => {
+        throw new Error("unexpected_upsert");
+      },
+      log: (entry) => logs.push(entry),
+    })).rejects.toThrow("annotation_model_uri_missing");
+
+    expect(logs).toEqual([]);
+    expect(getMetadata).not.toHaveBeenCalled();
+  });
+
+  it("reports a missing annotation without requiring model identity", async () => {
     await expect(runRelatedPetAnnotationEmbeddingBackfill({
       options: options("dry-run"),
       annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
@@ -246,14 +276,16 @@ describe("related pet annotation backfill", () => {
       dimensions: 768,
       modelUri: null,
       pets: [pet],
-      annotations: [currentAnnotation(pet)],
+      annotations: [],
       getMetadata: async () => null,
-      embed,
-      upsert: async () => undefined,
+      embed: async () => {
+        throw new Error("unexpected_embed");
+      },
+      upsert: async () => {
+        throw new Error("unexpected_upsert");
+      },
       log: () => undefined,
-    })).rejects.toThrow("annotation_model_uri_missing");
-
-    expect(embed).not.toHaveBeenCalled();
+    })).rejects.toThrow("annotation_missing");
   });
 
   it("requires a rebuild after a partial vector write", async () => {

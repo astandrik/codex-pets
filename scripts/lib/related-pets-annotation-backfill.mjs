@@ -72,17 +72,20 @@ export async function runRelatedPetAnnotationEmbeddingBackfill({
   const annotationsBySlug = new Map(
     annotations.map((annotation) => [annotation.slug, annotation]),
   );
+  const items = selectApprovedItems([...pets], options.slug);
+  if (!modelUri && items.some((pet) => annotationsBySlug.has(pet.slug))) {
+    throw new Error("annotation_model_uri_missing");
+  }
 
   let updated = 0;
   try {
     return await runResumableBackfill({
-      items: selectApprovedItems([...pets], options.slug),
+      items,
       options,
       log,
       processItem: async (pet) => {
         const storedAnnotation = annotationsBySlug.get(pet.slug);
         if (!storedAnnotation) throw new Error("annotation_missing");
-        if (!modelUri) throw new Error("annotation_model_uri_missing");
         const currentAnnotation = validateCurrentRelatedPetAnnotation({
           pet,
           stored: storedAnnotation,
