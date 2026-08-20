@@ -23,7 +23,7 @@ export async function pollApprovalPreparation(
   const maxAttempts = options.maxAttempts ?? 150;
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    await sleep(2_000);
+    if (attempt > 0) await sleep(2_000);
     let response: Response;
     try {
       response = await fetchImpl(url, { cache: "no-store" });

@@ -64,6 +64,19 @@ describe("related pet approval worker", () => {
     });
   });
 
+  it("leaves claim failures to the outer worker loop", async () => {
+    const markFailure = vi.fn();
+    const worker = createRelatedPetApprovalWorker(dependencies({
+      claim: async () => {
+        throw new Error("claim_failed");
+      },
+      markFailure,
+    }));
+
+    await expect(worker.runOnce("worker-1")).rejects.toThrow("claim_failed");
+    expect(markFailure).not.toHaveBeenCalled();
+  });
+
   it("keeps the pet pending and schedules transient failures", async () => {
     const finalize = vi.fn();
     const markFailure = vi.fn(async (input: { failureCode: string }) => ({

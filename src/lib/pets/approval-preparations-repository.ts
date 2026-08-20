@@ -53,7 +53,7 @@ type Dependencies = {
 };
 
 const RETRY_DELAYS_MS = [60_000, 300_000, 1_800_000, 7_200_000, 21_600_000];
-const STATE_ID = "global";
+const STATE_ID = "active";
 const STATUSES = new Set<ApprovalPreparationStatus>([
   "queued",
   "preparing",
@@ -66,6 +66,7 @@ export function createApprovalPreparationId(input: {
   petId: string;
   petUpdatedAt: string;
   rankingRevision: string;
+  expectedActiveGenerationId: string;
 }): string {
   const digest = createHash("sha256")
     .update(input.petId)
@@ -73,6 +74,8 @@ export function createApprovalPreparationId(input: {
     .update(input.petUpdatedAt)
     .update("\0")
     .update(input.rankingRevision)
+    .update("\0")
+    .update(input.expectedActiveGenerationId)
     .digest("hex")
     .slice(0, 32);
   return `approval_${digest}`;
@@ -218,10 +221,11 @@ DECLARE $preparing AS Utf8;
 DECLARE $worker_id AS Utf8;
 DECLARE $lease_until AS Utf8;
 DECLARE $now AS Utf8;
+DECLARE $one AS Uint32;
 
 UPDATE ${TABLES.approvalPreparations}
 SET status = $preparing,
-    attempts = attempts + 1,
+    attempts = attempts + $one,
     lease_owner = $worker_id,
     lease_until = $lease_until,
     updated_at = $now
@@ -235,6 +239,7 @@ WHERE preparation_id = $preparation_id
           $worker_id: dependencies.values.utf8(input.workerId),
           $lease_until: dependencies.values.utf8(input.leaseUntil),
           $now: dependencies.values.utf8(input.now),
+          $one: dependencies.values.uint32(1),
         },
       );
       const claimed = await getWithExecute(execute, candidate.preparationId);
