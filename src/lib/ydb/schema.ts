@@ -18,4 +18,5 @@ export const TABLES = {
   relatedState: "codex_pet_related_state",
   relatedSnapshots: "codex_pet_related_snapshots",
   relatedAnnotations: "codex_pet_related_annotations",
+  approvalPreparations: "codex_pet_approval_preparations",
 } as const;
