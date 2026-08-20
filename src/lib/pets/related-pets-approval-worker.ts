@@ -56,6 +56,7 @@ type WorkerDependencies<Pet extends PreparedPet> = {
   cleanupInactiveGeneration: (input: {
     expectedGenerationId: string;
   }) => Promise<boolean>;
+  onSucceeded: () => Promise<void>;
   createGenerationId: () => string;
   createReviewId: () => string;
   now: () => Date;
@@ -116,6 +117,7 @@ export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(
         ...generation,
       });
       if (!finalized) throw preparationFailure("stale_catalog");
+      await notifySucceeded();
       return "succeeded";
     } catch (error) {
       const failureCode = failureCodeFrom(error);
@@ -126,7 +128,9 @@ export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(
         retryable: RETRYABLE_FAILURES.has(failureCode),
         now: dependencies.now(),
       });
-      return resultFromPreparation(updated);
+      const result = resultFromPreparation(updated);
+      if (result === "succeeded") await notifySucceeded();
+      return result;
     } finally {
       if (generationId) await cleanupGeneration(generationId);
     }
@@ -146,6 +150,14 @@ export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(
       });
     } catch {
       // A later rebuild can retry cleanup of an unreferenced generation.
+    }
+  }
+
+  async function notifySucceeded(): Promise<void> {
+    try {
+      await dependencies.onSucceeded();
+    } catch {
+      // Cache invalidation must not overwrite a committed approval outcome.
     }
   }
 }

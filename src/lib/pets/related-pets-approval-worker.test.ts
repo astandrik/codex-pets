@@ -41,14 +41,21 @@ const generation = {
 describe("related pet approval worker", () => {
   it("publishes only after every signal and inactive generation are ready", async () => {
     const order: string[] = [];
-    const worker = createRelatedPetApprovalWorker(dependencies({
-      prepareSignals: async () => { order.push("signals"); },
-      buildGeneration: async () => { order.push("generation"); return generation; },
-      finalize: async () => { order.push("finalize"); return true; },
-    }));
+    const workerDependencies = {
+      ...dependencies({
+        prepareSignals: async () => { order.push("signals"); },
+        buildGeneration: async () => {
+          order.push("generation");
+          return generation;
+        },
+        finalize: async () => { order.push("finalize"); return true; },
+      }),
+      onSucceeded: async () => { order.push("succeeded"); },
+    };
+    const worker = createRelatedPetApprovalWorker(workerDependencies);
 
     await expect(worker.runOnce("worker-1")).resolves.toBe("succeeded");
-    expect(order).toEqual(["signals", "generation", "finalize"]);
+    expect(order).toEqual(["signals", "generation", "finalize", "succeeded"]);
   });
 
   it("uses a thirty minute lease", async () => {
@@ -123,16 +130,53 @@ describe("related pet approval worker", () => {
   });
 
   it("preserves a succeeded result returned by failure reconciliation", async () => {
+    const onSucceeded = vi.fn(async () => undefined);
     const markFailure = vi.fn(async () => ({
       ...preparation,
       status: "succeeded" as const,
     }));
-    const worker = createRelatedPetApprovalWorker(dependencies({
-      finalize: async () => {
-        throw new Error("finalize response lost");
+    const workerDependencies = {
+      ...dependencies({
+        finalize: async () => {
+          throw new Error("finalize response lost");
+        },
+        markFailure,
+      }),
+      onSucceeded,
+    };
+    const worker = createRelatedPetApprovalWorker(workerDependencies);
+
+    await expect(worker.runOnce("worker-1")).resolves.toBe("succeeded");
+    expect(onSucceeded).toHaveBeenCalledOnce();
+  });
+
+  it("does not run the success hook for a retry", async () => {
+    const onSucceeded = vi.fn(async () => undefined);
+    const workerDependencies = {
+      ...dependencies({
+        finalize: async () => {
+          throw Object.assign(new Error("provider unavailable"), {
+            reason: "provider_unavailable",
+          });
+        },
+        markFailure: async () => ({ ...preparation, status: "retry" }),
+      }),
+      onSucceeded,
+    };
+    const worker = createRelatedPetApprovalWorker(workerDependencies);
+
+    await expect(worker.runOnce("worker-1")).resolves.toBe("retry");
+    expect(onSucceeded).not.toHaveBeenCalled();
+  });
+
+  it("does not let a success-hook error overwrite persisted success", async () => {
+    const workerDependencies = {
+      ...dependencies(),
+      onSucceeded: async () => {
+        throw new Error("cache invalidation unavailable");
       },
-      markFailure,
-    }));
+    };
+    const worker = createRelatedPetApprovalWorker(workerDependencies);
 
     await expect(worker.runOnce("worker-1")).resolves.toBe("succeeded");
   });
@@ -300,6 +344,7 @@ function dependencies(
     markFailure: async () => null,
     cleanupGenerations: async () => true,
     cleanupInactiveGeneration: async () => true,
+    onSucceeded: async () => undefined,
     createGenerationId: () => "generation-current",
     createReviewId: () => "review-1",
     now: () => now,
