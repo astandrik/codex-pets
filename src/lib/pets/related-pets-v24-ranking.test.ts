@@ -416,6 +416,49 @@ describe("V24 related-pet ranking", () => {
     expect(actual).toEqual(expected);
   });
 
+  it("rejects precomputed cosine scores outside the valid range", () => {
+    const source = candidate("source");
+    const candidates = [source, candidate("a"), candidate("b"), candidate("c")];
+    const annotations = new Map(candidates.map(({ slug }) => [
+      slug,
+      annotation({ entity: "same-entity" }),
+    ]));
+    const cleanModality = [
+      { slug: "b", score: 0.9 },
+      { slug: "a", score: 0.85 },
+    ];
+    const clean = rankRelatedPetsV24WithDiagnostics({
+      source,
+      candidates,
+      annotations,
+      precomputedMatches: {
+        text: cleanModality,
+        annotation: cleanModality,
+        visual: cleanModality,
+      },
+      profile: PROFILE,
+    });
+    const pollutedModality = [
+      { slug: "a", score: 2 },
+      { slug: "c", score: -2.5 },
+      ...cleanModality,
+    ];
+    const polluted = rankRelatedPetsV24WithDiagnostics({
+      source,
+      candidates,
+      annotations,
+      precomputedMatches: {
+        text: pollutedModality,
+        annotation: pollutedModality,
+        visual: pollutedModality,
+      },
+      profile: PROFILE,
+    });
+
+    expect(clean.slugs).toEqual(["b", "a", "c"]);
+    expect(polluted).toEqual(clean);
+  });
+
   it("ignores all visual input when visual ranking is disabled", () => {
     const source = candidate("source", { tags: ["shared"] });
     const candidates = [

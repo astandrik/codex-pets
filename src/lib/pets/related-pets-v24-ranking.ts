@@ -570,7 +570,12 @@ function normalizeCandidateMatches(
 ): RelatedPetV24Similarity[] {
   const scoresBySlug = new Map<string, number>();
   for (const match of matches) {
-    if (!candidateSlugs.has(match.slug) || !Number.isFinite(match.score)) {
+    if (
+      !candidateSlugs.has(match.slug) ||
+      !Number.isFinite(match.score) ||
+      match.score < -1 ||
+      match.score > 1
+    ) {
       continue;
     }
     const current = scoresBySlug.get(match.slug);
