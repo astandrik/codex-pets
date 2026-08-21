@@ -369,6 +369,130 @@ describe("V24 related-pet ranking", () => {
     expect(clean.slugs).toEqual(["a", "b"]);
     expect(polluted).toEqual(clean);
   });
+
+  it("canonicalizes unsorted finite duplicates by their maximum score", () => {
+    const source = candidate("source");
+    const candidates = [source, candidate("a"), candidate("b")];
+    const annotations = new Map(candidates.map(({ slug }) => [
+      slug,
+      annotation({ entity: "same-entity" }),
+    ]));
+    const canonical: RelatedPetsV24PrecomputedMatches = {
+      text: [{ slug: "a", score: 0.9 }, { slug: "b", score: 0.8 }],
+      annotation: [{ slug: "a", score: 0.9 }, { slug: "b", score: 0.8 }],
+      visual: [{ slug: "a", score: 0.9 }, { slug: "b", score: 0.8 }],
+    };
+    const expected = rankRelatedPetsV24WithDiagnostics({
+      source,
+      candidates,
+      annotations,
+      precomputedMatches: canonical,
+      profile: PROFILE,
+    });
+    const actual = rankRelatedPetsV24WithDiagnostics({
+      source,
+      candidates,
+      annotations,
+      precomputedMatches: {
+        text: [
+          { slug: "b", score: 0.8 },
+          { slug: "a", score: 0.1 },
+          { slug: "a", score: 0.9 },
+        ],
+        annotation: [
+          { slug: "b", score: 0.8 },
+          { slug: "a", score: 0.9 },
+          { slug: "b", score: 0.2 },
+        ],
+        visual: [
+          { slug: "a", score: 0.2 },
+          { slug: "b", score: 0.8 },
+          { slug: "a", score: 0.9 },
+        ],
+      },
+      profile: PROFILE,
+    });
+
+    expect(actual).toEqual(expected);
+  });
+
+  it("ignores all visual input when visual ranking is disabled", () => {
+    const source = candidate("source", { tags: ["shared"] });
+    const candidates = [
+      source,
+      candidate("a", { tags: ["shared"] }),
+      candidate("b", { tags: ["shared"] }),
+    ];
+    const annotations = new Map(candidates.map(({ slug }) => [slug, annotation()]));
+    const baseMatches = {
+      text: [{ slug: "a", score: 0.7 }, { slug: "b", score: 0.7 }],
+      annotation: [{ slug: "a", score: 0.7 }, { slug: "b", score: 0.7 }],
+    };
+    const profile = { ...PROFILE, visualMinSimilarity: null };
+    const left = rankRelatedPetsV24WithDiagnostics({
+      source,
+      candidates,
+      annotations,
+      precomputedMatches: {
+        ...baseMatches,
+        visual: [{ slug: "a", score: 0.99 }, { slug: "b", score: 0.1 }],
+      },
+      profile,
+    });
+    const right = rankRelatedPetsV24WithDiagnostics({
+      source,
+      candidates,
+      annotations,
+      precomputedMatches: {
+        ...baseMatches,
+        visual: [{ slug: "b", score: 0.99 }, { slug: "a", score: 0.1 }],
+      },
+      profile,
+    });
+
+    expect(right).toEqual(left);
+    expect(left.diagnostics.every((entry) =>
+      entry.visualRank === null && entry.visualSimilarity === null
+    )).toBe(true);
+  });
+
+  it("does not activate sparse fallback when a qualified candidate exists", () => {
+    const source = candidate("source", { tags: ["shared"] });
+    const qualified = candidate("qualified");
+    const sharedFallback = candidate("shared-fallback", { tags: ["shared"] });
+    const result = rankRelatedPetsV24WithDiagnostics({
+      source,
+      candidates: [source, qualified, sharedFallback],
+      annotations: new Map([
+        [source.slug, annotation()],
+        [qualified.slug, annotation()],
+        [sharedFallback.slug, annotation()],
+      ]),
+      precomputedMatches: {
+        text: [
+          { slug: qualified.slug, score: 0.9 },
+          { slug: sharedFallback.slug, score: 0.7 },
+        ],
+        annotation: [
+          { slug: qualified.slug, score: 0.9 },
+          { slug: sharedFallback.slug, score: 0.7 },
+        ],
+        visual: [
+          { slug: sharedFallback.slug, score: 0.99 },
+          { slug: qualified.slug, score: 0.8 },
+        ],
+      },
+      profile: PROFILE,
+    });
+
+    expect(result.slugs).toEqual([qualified.slug, sharedFallback.slug]);
+    expect(result.diagnostics[1]).toMatchObject({
+      slug: sharedFallback.slug,
+      tier: "controlled_fallback",
+      sparseFallbackRank: null,
+      fallbackProvenance: "description_then_annotation",
+    });
+  });
 });
 
 describe("V24 profile contract", () => {

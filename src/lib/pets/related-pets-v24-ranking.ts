@@ -255,13 +255,15 @@ function rankSparseFallback(
       : []),
     candidateSlugSet,
   );
-  const visualMatches = normalizeCandidateMatches(
-    input.precomputedMatches?.visual ??
-    (input.visualVectors
-      ? rankRelatedPetV24VectorMatches(input.source.slug, input.visualVectors)
-      : []),
-    candidateSlugSet,
-  );
+  const visualMatches = input.profile.visualMinSimilarity === null
+    ? []
+    : normalizeCandidateMatches(
+        input.precomputedMatches?.visual ??
+        (input.visualVectors
+          ? rankRelatedPetV24VectorMatches(input.source.slug, input.visualVectors)
+          : []),
+        candidateSlugSet,
+      );
   const textRanks = rankingPositions(textMatches);
   const annotationRanks = rankingPositions(annotationMatches);
   const visualRanks = rankingPositions(visualMatches);
@@ -566,20 +568,20 @@ function normalizeCandidateMatches(
   matches: readonly RelatedPetV24Similarity[],
   candidateSlugs: ReadonlySet<string>,
 ): RelatedPetV24Similarity[] {
-  const normalized: RelatedPetV24Similarity[] = [];
-  const seen = new Set<string>();
+  const scoresBySlug = new Map<string, number>();
   for (const match of matches) {
-    if (
-      !candidateSlugs.has(match.slug) ||
-      seen.has(match.slug) ||
-      !Number.isFinite(match.score)
-    ) {
+    if (!candidateSlugs.has(match.slug) || !Number.isFinite(match.score)) {
       continue;
     }
-    seen.add(match.slug);
-    normalized.push(match);
+    const current = scoresBySlug.get(match.slug);
+    if (current === undefined || match.score > current) {
+      scoresBySlug.set(match.slug, match.score);
+    }
   }
-  return normalized;
+  return Array.from(scoresBySlug, ([slug, score]) => ({ slug, score }))
+    .toSorted((left, right) =>
+      right.score - left.score || left.slug.localeCompare(right.slug)
+    );
 }
 
 function rrfContribution(rank: number | null, weight: number): number {
