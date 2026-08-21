@@ -249,6 +249,78 @@ CREATE TABLE codex_pet_generation_request_images (
   PRIMARY KEY (request_id)
 );
 
+CREATE TABLE codex_pet_generation_runs (
+  id Utf8 NOT NULL,
+  request_id Utf8 NOT NULL,
+  idempotency_key Utf8 NOT NULL,
+  status Utf8 NOT NULL,
+  base_revision Uint32 NOT NULL,
+  targeted_retry_count Uint32 NOT NULL,
+  image_call_count Uint32 NOT NULL,
+  last_stage Utf8 NOT NULL,
+  failure_code Utf8 NOT NULL,
+  failure_message Utf8 NOT NULL,
+  review_json Utf8 NOT NULL,
+  final_id Utf8 NOT NULL,
+  final_display_name Utf8 NOT NULL,
+  final_description Utf8 NOT NULL,
+  final_kind Utf8 NOT NULL,
+  final_tags_json Utf8 NOT NULL,
+  final_pet_id Utf8 NOT NULL,
+  final_pet_slug Utf8 NOT NULL,
+  approved_by Utf8 NOT NULL,
+  created_at Utf8 NOT NULL,
+  updated_at Utf8 NOT NULL,
+  completed_at Utf8 NOT NULL,
+  cancelled_at Utf8 NOT NULL,
+  PRIMARY KEY (id)
+);
+
+CREATE TABLE codex_pet_generation_stage_attempts (
+  run_id Utf8 NOT NULL,
+  stage Utf8 NOT NULL,
+  attempt Uint32 NOT NULL,
+  status Utf8 NOT NULL,
+  lease_owner Utf8 NOT NULL,
+  lease_token Utf8 NOT NULL,
+  lease_expires_at Utf8 NOT NULL,
+  heartbeat_at Utf8 NOT NULL,
+  request_hash Utf8 NOT NULL,
+  model Utf8 NOT NULL,
+  usage_json Utf8 NOT NULL,
+  provider_request_id Utf8 NOT NULL,
+  error_code Utf8 NOT NULL,
+  error_message Utf8 NOT NULL,
+  ambiguous Bool NOT NULL,
+  started_at Utf8 NOT NULL,
+  updated_at Utf8 NOT NULL,
+  completed_at Utf8 NOT NULL,
+  PRIMARY KEY (run_id, stage, attempt)
+);
+
+CREATE TABLE codex_pet_generation_artifacts (
+  run_id Utf8 NOT NULL,
+  artifact_key Utf8 NOT NULL,
+  stage Utf8 NOT NULL,
+  file_name Utf8 NOT NULL,
+  content_type Utf8 NOT NULL,
+  byte_size Uint64 NOT NULL,
+  sha256 Utf8 NOT NULL,
+  created_at Utf8 NOT NULL,
+  expires_at Utf8 NOT NULL,
+  retained Bool NOT NULL,
+  PRIMARY KEY (run_id, artifact_key)
+);
+
+CREATE TABLE codex_pet_generation_artifact_chunks (
+  run_id Utf8 NOT NULL,
+  artifact_key Utf8 NOT NULL,
+  chunk_number Uint32 NOT NULL,
+  size_bytes Uint32 NOT NULL,
+  chunk_bytes String NOT NULL,
+  PRIMARY KEY (run_id, artifact_key, chunk_number)
+);
+
 CREATE TABLE codex_idempotency_keys (
   route Utf8 NOT NULL,
   idempotency_key Utf8 NOT NULL,

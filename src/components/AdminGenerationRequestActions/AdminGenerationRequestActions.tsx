@@ -21,6 +21,7 @@ import "./AdminGenerationRequestActions.scss";
 type AdminGenerationRequestActionsProps = {
   requestId: string;
   status: GenerationRequestStatus;
+  automationActive?: boolean;
 };
 
 type DialogKind = "fulfill" | "reject" | "delete" | null;
@@ -28,6 +29,7 @@ type DialogKind = "fulfill" | "reject" | "delete" | null;
 export function AdminGenerationRequestActions({
   requestId,
   status,
+  automationActive = false,
 }: AdminGenerationRequestActionsProps) {
   const router = useRouter();
   const { add } = useToaster();
@@ -39,6 +41,10 @@ export function AdminGenerationRequestActions({
   const canStart = status === "pending";
   const canFulfill = status !== "fulfilled";
   const canReject = status !== "fulfilled" && status !== "rejected";
+
+  if (automationActive) {
+    return <Text variant="caption-1" color="secondary">Use run actions</Text>;
+  }
 
   function notifyFailure(action: string, statusCode: number) {
     add({

@@ -37,6 +37,7 @@ export type MockPetRecord = {
 };
 
 type CreateMockPetRecordInput = {
+  id?: string;
   requestedSlug: string;
   displayName: string;
   description: string;
@@ -525,7 +526,7 @@ export function createMockPetRecord(
   const slug = resolveUniqueMockSlug(input.requestedSlug);
   const pet: MockPetRecord = {
     slug,
-    id: `mock_${slug}`,
+    id: input.id ?? `mock_${slug}`,
     assetId: assetIdFromUrl(input.spritesheetUrl) ?? `mock_asset_${slug}`,
     displayName: input.displayName,
     description: input.description,

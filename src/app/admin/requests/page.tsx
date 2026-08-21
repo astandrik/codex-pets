@@ -17,6 +17,8 @@ import {
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { withBasePath } from "@/lib/base-path";
 import { listGenerationRequests } from "@/lib/pets/generation-requests-repository";
+import { getPetGenerationConfig } from "@/lib/pets/generation/config";
+import { listLatestGenerationRunsByRequestIds } from "@/lib/pets/generation/repository";
 import { getPageViewOtherMetadata } from "@/lib/site-metadata";
 
 function EmptyIcon() {
@@ -43,6 +45,10 @@ export default async function AdminRequestsPage() {
   const principal = await getCurrentPrincipal();
   const isAdmin = isAdminUser(principal);
   const requests = isAdmin ? await listGenerationRequests() : [];
+  const generationEnabled = getPetGenerationConfig().enabled;
+  const runs = isAdmin
+    ? await listLatestGenerationRunsByRequestIds(requests.map((request) => request.id))
+    : new Map();
   const rows: GenerationRequestRow[] = requests.map((request) => ({
     id: request.id,
     status: request.status,
@@ -56,6 +62,7 @@ export default async function AdminRequestsPage() {
     referenceImage: request.referenceImage,
     adminNote: request.adminNote,
     createdAt: request.createdAt,
+    generationRun: runs.get(request.id) ?? null,
   }));
 
   return (
@@ -92,7 +99,7 @@ export default async function AdminRequestsPage() {
             description="This account does not have admin access."
           />
         ) : rows.length > 0 ? (
-          <GenerationRequestsTable rows={rows} />
+          <GenerationRequestsTable rows={rows} generationEnabled={generationEnabled} />
         ) : (
           <PlaceholderContainer
             size="l"

@@ -11,12 +11,20 @@ vi.mock("@/lib/pets/generation-requests-repository", () => ({
   rejectGenerationRequest: vi.fn(),
   softDeleteGenerationRequest: vi.fn(),
 }));
+vi.mock("@/lib/pets/generation/repository", () => ({
+  cancelGenerationRun: vi.fn(),
+  guardGenerationRequestManualMutation: vi.fn(),
+}));
 
 import { POST as deletePost } from "@/app/api/admin/generation-requests/[id]/delete/route";
 import { POST as fulfillPost } from "@/app/api/admin/generation-requests/[id]/fulfill/route";
 import { POST as rejectPost } from "@/app/api/admin/generation-requests/[id]/reject/route";
 import { POST as startPost } from "@/app/api/admin/generation-requests/[id]/start/route";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
+import {
+  cancelGenerationRun,
+  guardGenerationRequestManualMutation,
+} from "@/lib/pets/generation/repository";
 import {
   fulfillGenerationRequest,
   markGenerationRequestInProgress,
@@ -28,6 +36,7 @@ import type { PetGenerationRequest } from "@/lib/pets/types";
 describe("admin generation request routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(guardGenerationRequestManualMutation).mockResolvedValue({ ok: true, runId: null });
   });
 
   it("rejects non-admin requests", async () => {
@@ -64,6 +73,8 @@ describe("admin generation request routes", () => {
 
   it("rejects a request", async () => {
     mockAdmin();
+    vi.mocked(guardGenerationRequestManualMutation).mockResolvedValueOnce({ ok: true, runId: "run_1" });
+    vi.mocked(cancelGenerationRun).mockResolvedValueOnce({ ok: true, run: {} as never });
     const request = makeRequest({ status: "rejected", adminNote: "Too broad" });
     vi.mocked(rejectGenerationRequest).mockResolvedValueOnce(request);
 
@@ -76,6 +87,7 @@ describe("admin generation request routes", () => {
       requestId: "req_1",
       adminNote: "Too broad",
     });
+    expect(cancelGenerationRun).toHaveBeenCalledWith("run_1");
   });
 
   it("soft-deletes a request", async () => {
@@ -88,6 +100,16 @@ describe("admin generation request routes", () => {
 
     expect(response.status).toBe(200);
     expect(softDeleteGenerationRequest).toHaveBeenCalledWith("req_1");
+  });
+
+  it("blocks manual closure during final submission", async () => {
+    mockAdmin();
+    vi.mocked(guardGenerationRequestManualMutation).mockResolvedValueOnce({
+      ok: false, error: "conflict", message: "Resolve final submission first.",
+    });
+    const response = await deletePost(jsonRequest({}), { params: Promise.resolve({ id: "req_1" }) });
+    expect(response.status).toBe(409);
+    expect(softDeleteGenerationRequest).not.toHaveBeenCalled();
   });
 
   it("fulfills a request with an existing pet lookup", async () => {

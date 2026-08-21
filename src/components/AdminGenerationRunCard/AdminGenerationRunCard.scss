@@ -1,0 +1,89 @@
+.admin-generation-run-card {
+  margin-top: var(--spacing-sm);
+  padding: var(--spacing-md);
+  max-width: 540px;
+
+  &_empty {
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+
+  &__progress {
+    height: 4px;
+    overflow: hidden;
+    background: var(--g-color-base-generic);
+    border-radius: 999px;
+
+    span {
+      display: block;
+      height: 100%;
+      background: var(--g-color-base-brand);
+      transition: width 160ms ease;
+    }
+  }
+
+  &__preview-link,
+  &__sheet-link,
+  &__pet-link {
+    color: var(--g-color-text-link);
+    text-decoration: none;
+  }
+
+  &__base {
+    display: block;
+    width: 112px;
+    height: 112px;
+    background-color: var(--g-color-base-generic);
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: contain;
+    border: 1px solid var(--g-color-line-generic-accent);
+    border-radius: var(--radius-md);
+  }
+
+  &__sheet-link {
+    display: flex;
+    width: 180px;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+
+    span {
+      display: block;
+      height: 112px;
+      background-color: var(--g-color-base-generic);
+      background-position: center;
+      background-repeat: no-repeat;
+      background-size: contain;
+      border: 1px solid var(--g-color-line-generic-accent);
+      border-radius: var(--radius-sm);
+    }
+  }
+
+  &__animations a {
+    display: block;
+    width: 52px;
+    height: 56px;
+    background-color: var(--g-color-base-generic);
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: contain;
+    border: 1px solid var(--g-color-line-generic-accent);
+    border-radius: var(--radius-xs);
+  }
+
+  &__issues {
+    ul {
+      margin: var(--spacing-xs) 0 0;
+      padding-left: var(--spacing-lg);
+      color: var(--g-color-text-secondary);
+      font-size: var(--g-text-caption-1-font-size);
+    }
+  }
+
+  &__form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    padding-top: var(--spacing-sm);
+    border-top: 1px solid var(--g-color-line-generic);
+  }
+}
