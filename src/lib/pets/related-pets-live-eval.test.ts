@@ -15,7 +15,6 @@ import { rankRelatedPetsWithDiagnostics } from "@/lib/pets/related-pets-ranking"
 import {
   getCurrentRelatedPetsVisualSourceContext,
   prepareRelatedPetsRankingInputs,
-  type RelatedPetsRebuildProfile,
 } from "@/lib/pets/related-pets-rebuild";
 import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 
@@ -34,7 +33,7 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
       if (!LIVE_EVAL_SPLIT) {
         throw new Error("Related-pet live eval mode is invalid.");
       }
-      const profile: RelatedPetsRebuildProfile = {
+      const profile = {
         ...CURRENT_RELATED_PETS_RANKING_PROFILE,
         visualCaptionRevision:
           PET_VISUAL_MODEL_REVISIONS[

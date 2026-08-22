@@ -28,6 +28,7 @@ export type RelatedPetsSnapshot = {
 export type RelatedPetsRankingInputScope = {
   embeddingModelRevisions: readonly string[];
   captionRevision: string | null;
+  annotationRevision?: string | null;
 };
 
 export type RecoverPreviousRelatedPetsGenerationInput = {
@@ -190,7 +191,46 @@ LIMIT 1;
       captions: scope.captionRevision
         ? await getCaptionRevisionWithExecute(execute, scope.captionRevision)
         : null,
+      ...(scope.annotationRevision
+        ? {
+            annotations: await getAnnotationRevisionWithExecute(
+              execute,
+              scope.annotationRevision,
+            ),
+          }
+        : {}),
     });
+  }
+
+  async function getAnnotationRevisionWithExecute(
+    execute: Execute,
+    annotationRevision: string,
+  ): Promise<string> {
+    const result = await execute(
+      `
+DECLARE $annotation_revision AS Utf8;
+
+SELECT pet_slug,
+       source_hash,
+       updated_at
+FROM ${TABLES.relatedAnnotations}
+WHERE annotation_revision = $annotation_revision
+ORDER BY pet_slug;
+      `,
+      { $annotation_revision: dependencies.values.utf8(annotationRevision) },
+    );
+    return JSON.stringify([
+      annotationRevision,
+      rowsFromResult(result).map((row) => {
+        const slug = textAt(row, 0);
+        const sourceHash = textAt(row, 1);
+        const updatedAt = textAt(row, 2);
+        if (!slug || !sourceHash || !updatedAt) {
+          throw new Error("Invalid related pets annotation revision row.");
+        }
+        return [slug, sourceHash, updatedAt];
+      }),
+    ]);
   }
 
   async function getCatalogRevisionWithExecute(
@@ -321,14 +361,7 @@ LIMIT 1;
     const row = rowsFromResult(result)[0];
     if (!row) return null;
 
-    const storedSourceSlug = textAt(row, 1);
-    return {
-      generationId: textAt(row, 0),
-      sourceSlug: storedSourceSlug,
-      rankingRevision: textAt(row, 2),
-      relatedSlugs: parseRelatedSlugs(textAt(row, 3), storedSourceSlug),
-      createdAt: textAt(row, 4),
-    };
+    return snapshotFromRow(row);
   }
 
   async function requestBuild(input: {
@@ -901,6 +934,19 @@ WHERE state_id = $state_id
       };
     });
   }
+}
+
+function snapshotFromRow(
+  row: ReturnType<typeof rowsFromResult>[number],
+): RelatedPetsSnapshot {
+  const sourceSlug = textAt(row, 1);
+  return {
+    generationId: textAt(row, 0),
+    sourceSlug,
+    rankingRevision: textAt(row, 2),
+    relatedSlugs: parseRelatedSlugs(textAt(row, 3), sourceSlug),
+    createdAt: textAt(row, 4),
+  };
 }
 
 function parseRelatedSlugs(value: string, sourceSlug: string): string[] {

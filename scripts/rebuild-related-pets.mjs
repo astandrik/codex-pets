@@ -24,6 +24,8 @@ const SAFE_REBUILD_FAILURE_REASONS = new Set([
   "rebuild_failed",
   "storage_unavailable",
   "text_vectors_incomplete",
+  "annotations_incomplete",
+  "annotation_vectors_incomplete",
   "visual_vectors_incomplete",
 ]);
 
