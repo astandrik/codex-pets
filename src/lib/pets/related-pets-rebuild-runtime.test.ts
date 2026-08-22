@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+  RELATED_PETS_ANNOTATION_QUERY_REVISION,
+  RELATED_PETS_ANNOTATION_REVISION,
+} from "@/lib/pets/related-pets-annotation-contract.mjs";
+
 const runtimeMocks = vi.hoisted(() => ({
   isYdbConfigured: vi.fn(),
   listApprovedPetsForSearch: vi.fn(),
@@ -39,12 +45,6 @@ const TEXT_REVISION =
   "yandex-text-embeddings-v2-768-related-description-document-2026-08-v1";
 const TEXT_QUERY_REVISION =
   "yandex-text-embeddings-v2-768-related-description-query-2026-08-v3";
-const ANNOTATION_REVISION =
-  "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r5";
-const ANNOTATION_DOCUMENT_REVISION =
-  "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r5";
-const ANNOTATION_QUERY_REVISION =
-  "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r5";
 const VISUAL_REVISION =
   "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1";
 const CAPTION_REVISION =
@@ -78,11 +78,11 @@ describe("related pets production visual source compatibility", () => {
     ).toEqual([
       TEXT_QUERY_REVISION,
       TEXT_REVISION,
-      ANNOTATION_QUERY_REVISION,
-      ANNOTATION_DOCUMENT_REVISION,
+      RELATED_PETS_ANNOTATION_QUERY_REVISION,
+      RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
     ]);
     expect(runtimeMocks.listRelatedPetAnnotations).toHaveBeenCalledWith(
-      ANNOTATION_REVISION,
+      RELATED_PETS_ANNOTATION_REVISION,
     );
     expect(runtimeMocks.listPetSearchCaptions).not.toHaveBeenCalled();
   });
@@ -104,12 +104,12 @@ describe("related pets production visual source compatibility", () => {
     ).toEqual([
       TEXT_QUERY_REVISION,
       TEXT_REVISION,
-      ANNOTATION_QUERY_REVISION,
-      ANNOTATION_DOCUMENT_REVISION,
+      RELATED_PETS_ANNOTATION_QUERY_REVISION,
+      RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
       VISUAL_REVISION,
     ]);
     expect(runtimeMocks.listRelatedPetAnnotations).toHaveBeenCalledWith(
-      ANNOTATION_REVISION,
+      RELATED_PETS_ANNOTATION_REVISION,
     );
     expect(runtimeMocks.listPetSearchCaptions).toHaveBeenCalledWith(
       CAPTION_REVISION,

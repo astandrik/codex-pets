@@ -27,9 +27,9 @@ export const RELATED_PETS_CANDIDATES_CACHE_TAG =
   "codex-pets:related-pets-candidates";
 
 const getCachedRelatedPetCandidates = unstable_cache(
-  async (catalogRevision: string) => {
+  async (cacheKeySalt: string) => {
     // Function arguments are part of the unstable_cache key.
-    void catalogRevision;
+    void cacheKeySalt;
     return listRelatedPetCandidates();
   },
   ["pet-related-candidates"],
@@ -37,9 +37,9 @@ const getCachedRelatedPetCandidates = unstable_cache(
 );
 
 export function getRelatedPetCandidates(
-  catalogRevision = "heuristic",
+  cacheKeySalt = "heuristic",
 ): Promise<RelatedPetCandidate[]> {
-  return getCachedRelatedPetCandidates(catalogRevision);
+  return getCachedRelatedPetCandidates(cacheKeySalt);
 }
 
 type RelatedPetSource = Pick<
@@ -82,7 +82,7 @@ export type RelatedPetsResolverLogLevel = "info" | "warn";
 
 export type RelatedPetsResolverDependencies = {
   getCandidates: (
-    catalogRevision?: string,
+    cacheKeySalt?: string,
   ) => Promise<RelatedPetCandidate[]>;
   getState: () => Promise<RelatedPetsState | null>;
   getSnapshot: (
@@ -247,19 +247,19 @@ export function createRelatedPetsResolver(
     return hydrateSnapshotOrder(snapshot.relatedSlugs, candidates, heuristic);
 
     async function loadCandidates(
-      catalogRevision: string,
+      cacheKeySalt: string,
     ): Promise<RelatedPetCandidate[]> {
       return uniqueApprovedCandidates(
-        await dependencies.getCandidates(catalogRevision),
+        await dependencies.getCandidates(cacheKeySalt),
         current.slug,
       );
     }
 
     async function loadHeuristic(
-      catalogRevision: string,
+      cacheKeySalt: string,
     ): Promise<RelatedPetCandidate[]> {
       return selectRelatedPets(
-        await loadCandidates(catalogRevision),
+        await loadCandidates(cacheKeySalt),
         current,
         RELATED_PETS_SNAPSHOT_DEPTH,
       );

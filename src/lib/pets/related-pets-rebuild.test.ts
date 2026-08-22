@@ -15,6 +15,7 @@ import {
 } from "@/lib/pets/search-vision-contract";
 import {
   createRelatedPetsRebuildService,
+  prepareRelatedPetsRankingInputs,
   RelatedPetsRebuildError,
   type RelatedPetsRebuildProfile,
 } from "@/lib/pets/related-pets-rebuild";
@@ -634,6 +635,45 @@ function createHarness(options: {
 }
 
 describe("related pets rebuild service", () => {
+  it("keeps legacy evaluation input preparation free of V24 annotations", () => {
+    const source = pet("source");
+    const prepared = prepareRelatedPetsRankingInputs({
+      pets: [source],
+      textQueryRows: [rawVector({
+        slug: source.slug,
+        modelRevision: profile.textQueryRevision,
+        sourceHash: createRelatedPetQuerySourceHash(
+          source,
+          profile.textQueryRevision,
+        ),
+      })],
+      textRows: [rawVector({
+        slug: source.slug,
+        modelRevision: profile.textRevision,
+        sourceHash: createRelatedPetDocumentSourceHash(
+          source,
+          profile.textRevision,
+        ),
+      })],
+      visualRows: [],
+      captions: [],
+      profile: {
+        textRevision: profile.textRevision,
+        textQueryRevision: profile.textQueryRevision,
+        textDimensions: profile.textDimensions,
+        visualRevision: profile.visualRevision,
+        visualDimensions: profile.visualDimensions,
+      },
+      visualContext: null,
+    });
+
+    expect(prepared.textQueryVectors.size).toBe(1);
+    expect(prepared.textDocumentVectors.size).toBe(1);
+    expect(prepared.annotations.size).toBe(0);
+    expect(prepared.annotationQueryVectors.size).toBe(0);
+    expect(prepared.annotationDocumentVectors.size).toBe(0);
+  });
+
   it("fails closed when controlled annotations are incomplete", async () => {
     const harness = createHarness({ annotationRows: [] });
 
@@ -656,35 +696,6 @@ describe("related pets rebuild service", () => {
       name: "RelatedPetsRebuildError",
       reason: "annotation_vectors_incomplete",
     });
-  });
-
-  it("writes a prepared generation without changing active state", async () => {
-    const initialState: RelatedPetsState = {
-      requestedGenerationId: "generation-active",
-      activeGenerationId: "generation-active",
-      previousGenerationId: "generation-v6",
-      status: "ready",
-      rankingRevision: profile.rankingRevision,
-      failureReason: null,
-      updatedAt: "2026-08-03T09:00:00.000Z",
-    };
-    const harness = createHarness({ initialState });
-
-    await expect(harness.service.prepareGeneration({
-      generationId: "generation-prepared",
-      candidatePets: [pet("source"), pet("peer-a"), pet("peer-b")],
-      includeVisual: true,
-    })).resolves.toMatchObject({
-      generationId: "generation-prepared",
-      coverage: { approvedPetCount: 3, snapshotCount: 3 },
-    });
-
-    expect(harness.mutations).toEqual([
-      "write:source",
-      "write:peer-a",
-      "write:peer-b",
-    ]);
-    expect(harness.state).toEqual(initialState);
   });
 
   it("publishes every approved source with validated text and visual vectors", async () => {

@@ -10,12 +10,11 @@ import {
   evaluateRelatedPetsCalibration,
   evaluateRelatedPetsHoldout,
 } from "@/lib/pets/related-pets-calibration";
-import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-v24-profile";
-import { rankRelatedPetsV24WithDiagnostics } from "@/lib/pets/related-pets-v24-ranking";
+import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
+import { rankRelatedPetsWithDiagnostics } from "@/lib/pets/related-pets-ranking";
 import {
   getCurrentRelatedPetsVisualSourceContext,
   prepareRelatedPetsRankingInputs,
-  type RelatedPetsRebuildProfile,
 } from "@/lib/pets/related-pets-rebuild";
 import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 
@@ -34,11 +33,11 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
       if (!LIVE_EVAL_SPLIT) {
         throw new Error("Related-pet live eval mode is invalid.");
       }
-      const profile: RelatedPetsRebuildProfile = {
-        ...RELATED_PETS_V24_PROFILE,
+      const profile = {
+        ...CURRENT_RELATED_PETS_RANKING_PROFILE,
         visualCaptionRevision:
           PET_VISUAL_MODEL_REVISIONS[
-            RELATED_PETS_V24_PROFILE.visualRevision
+            CURRENT_RELATED_PETS_RANKING_PROFILE.visualRevision
           ].captionRevision,
       };
       const visualContext = getCurrentRelatedPetsVisualSourceContext();
@@ -121,14 +120,11 @@ describe.skipIf(!LIVE_EVAL_SPLIT)("live related-pet evaluation", () => {
       if (!tallulah) {
         throw new Error("Tallulah live regression source is required.");
       }
-      const tallulahRanking = rankRelatedPetsV24WithDiagnostics({
+      const tallulahRanking = rankRelatedPetsWithDiagnostics({
         source: tallulah,
         candidates: prepared.approvedPets,
         textQueryVectors: prepared.textQueryVectors,
         textDocumentVectors: prepared.textDocumentVectors,
-        annotationQueryVectors: prepared.annotationQueryVectors,
-        annotationDocumentVectors: prepared.annotationDocumentVectors,
-        annotations: prepared.annotations,
         visualVectors: prepared.visualVectors,
         profile,
       });

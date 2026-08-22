@@ -75,6 +75,21 @@ export type RelatedPetsRebuildProfile = RelatedPetsV24RankingProfile & {
   visualDimensions: number;
 };
 
+type RelatedPetsInputPreparationProfile = Pick<
+  RelatedPetsRebuildProfile,
+  | "textRevision"
+  | "textQueryRevision"
+  | "textDimensions"
+  | "visualRevision"
+  | "visualDimensions"
+> & Partial<Pick<
+  RelatedPetsRebuildProfile,
+  | "annotationRevision"
+  | "annotationDocumentRevision"
+  | "annotationQueryRevision"
+  | "annotationDimensions"
+>>;
+
 export type VisualSourceContext = {
   captionRevision: string;
   modelUri: string;
@@ -219,61 +234,9 @@ export function createRelatedPetsRebuildService(
 ) {
   return {
     rebuild,
-    prepareGeneration,
     invalidate,
     recoverPrevious,
   };
-
-  async function prepareGeneration(input: {
-    generationId: string;
-    candidatePets: readonly PublicPet[];
-    includeVisual?: boolean;
-  }): Promise<{
-    generationId: string;
-    rankingRevision: string;
-    coverage: RelatedPetsRebuildCoverage;
-    rankings: Array<{ sourceSlug: string; relatedSlugs: string[] }>;
-    inputScope: RelatedPetsRankingInputScope;
-    expectedInputRevision: string;
-  }> {
-    if (!dependencies.isStorageAvailable()) {
-      throw new RelatedPetsRebuildError("storage_unavailable");
-    }
-    const includeVisual = input.includeVisual ?? true;
-    const inputScope = createRankingInputScope(includeVisual);
-    const expectedInputRevision = await dependencies.repository
-      .getRankingInputRevision(inputScope);
-    if (!expectedInputRevision) {
-      throw new RelatedPetsRebuildError("storage_unavailable");
-    }
-    const { rankings, coverage } = await buildRankings(
-      includeVisual,
-      input.candidatePets,
-    );
-    const createdAt = dependencies.now().toISOString();
-    for (const ranking of rankings) {
-      await dependencies.repository.writeSnapshot({
-        generationId: input.generationId,
-        sourceSlug: ranking.sourceSlug,
-        rankingRevision: dependencies.profile.rankingRevision,
-        relatedSlugs: ranking.relatedSlugs,
-        createdAt,
-      });
-    }
-    const currentInputRevision = await dependencies.repository
-      .getRankingInputRevision(inputScope);
-    if (currentInputRevision !== expectedInputRevision) {
-      throw new RelatedPetsRebuildError("rebuild_failed");
-    }
-    return {
-      generationId: input.generationId,
-      rankingRevision: dependencies.profile.rankingRevision,
-      coverage,
-      rankings,
-      inputScope,
-      expectedInputRevision,
-    };
-  }
 
   async function rebuild(input: {
     mode: "dry-run" | "apply";
@@ -461,10 +424,7 @@ export function createRelatedPetsRebuildService(
     }
   }
 
-  async function buildRankings(
-    includeVisual: boolean,
-    candidatePets?: readonly PublicPet[],
-  ): Promise<{
+  async function buildRankings(includeVisual: boolean): Promise<{
     rankings: Array<{ sourceSlug: string; relatedSlugs: string[] }>;
     coverage: RelatedPetsRebuildCoverage;
   }> {
@@ -477,7 +437,7 @@ export function createRelatedPetsRebuildService(
       requestedVisualContext.modelUri.trim()
         ? requestedVisualContext
         : null;
-    const pets = candidatePets ?? await dependencies.listApprovedPets();
+    const pets = await dependencies.listApprovedPets();
     const annotationProfile = getAnnotationProfile(dependencies.profile);
     const annotationModelUri = dependencies.getAnnotationModelUri();
     if (!annotationModelUri) {
@@ -841,7 +801,7 @@ function uniqueApprovedPets(pets: readonly PublicPet[]): PublicPet[] {
 }
 
 function getAnnotationProfile(
-  profile: RelatedPetsRebuildProfile,
+  profile: RelatedPetsInputPreparationProfile,
 ): {
   annotationRevision: string;
   annotationDocumentRevision: string;
@@ -853,6 +813,7 @@ function getAnnotationProfile(
     !profile.annotationRevision ||
     !profile.annotationDocumentRevision ||
     !profile.annotationQueryRevision ||
+    typeof annotationDimensions !== "number" ||
     !Number.isSafeInteger(annotationDimensions) ||
     annotationDimensions <= 0
   ) {
@@ -876,7 +837,7 @@ export function prepareRelatedPetsRankingInputs(input: {
   annotationModelUri?: string | null;
   visualRows: readonly StoredRawPetSearchEmbedding[];
   captions: readonly StoredPetSearchCaption[];
-  profile: RelatedPetsRebuildProfile;
+  profile: RelatedPetsInputPreparationProfile;
   visualContext: VisualSourceContext | null;
 }): {
   approvedPets: PublicPet[];
@@ -906,8 +867,15 @@ export function prepareRelatedPetsRankingInputs(input: {
       sourceHash: createRelatedPetDocumentSourceHash,
     },
   );
-  const annotationProfile = getAnnotationProfile(input.profile);
-  const preparedAnnotations = input.annotationModelUri
+  const hasAnnotationProfile =
+    input.profile.annotationRevision !== undefined ||
+    input.profile.annotationDocumentRevision !== undefined ||
+    input.profile.annotationQueryRevision !== undefined ||
+    input.profile.annotationDimensions !== undefined;
+  const annotationProfile = hasAnnotationProfile
+    ? getAnnotationProfile(input.profile)
+    : null;
+  const preparedAnnotations = annotationProfile && input.annotationModelUri
     ? validatedAnnotations({
         pets: approvedPets,
         rows: input.annotations ?? [],
@@ -919,24 +887,28 @@ export function prepareRelatedPetsRankingInputs(input: {
         sourceHashes: new Map<string, string>(),
         texts: new Map<string, string>(),
       };
-  const annotationQueryVectors = validatedAnnotationVectors({
-    rows: input.annotationQueryRows ?? [],
-    revision: annotationProfile.annotationQueryRevision,
-    dimensions: annotationProfile.annotationDimensions,
-    role: "query",
-    annotationRevision: annotationProfile.annotationRevision,
-    sourceHashes: preparedAnnotations.sourceHashes,
-    texts: preparedAnnotations.texts,
-  });
-  const annotationDocumentVectors = validatedAnnotationVectors({
-    rows: input.annotationRows ?? [],
-    revision: annotationProfile.annotationDocumentRevision,
-    dimensions: annotationProfile.annotationDimensions,
-    role: "document",
-    annotationRevision: annotationProfile.annotationRevision,
-    sourceHashes: preparedAnnotations.sourceHashes,
-    texts: preparedAnnotations.texts,
-  });
+  const annotationQueryVectors = annotationProfile
+    ? validatedAnnotationVectors({
+        rows: input.annotationQueryRows ?? [],
+        revision: annotationProfile.annotationQueryRevision,
+        dimensions: annotationProfile.annotationDimensions,
+        role: "query",
+        annotationRevision: annotationProfile.annotationRevision,
+        sourceHashes: preparedAnnotations.sourceHashes,
+        texts: preparedAnnotations.texts,
+      })
+    : new Map<string, readonly number[]>();
+  const annotationDocumentVectors = annotationProfile
+    ? validatedAnnotationVectors({
+        rows: input.annotationRows ?? [],
+        revision: annotationProfile.annotationDocumentRevision,
+        dimensions: annotationProfile.annotationDimensions,
+        role: "document",
+        annotationRevision: annotationProfile.annotationRevision,
+        sourceHashes: preparedAnnotations.sourceHashes,
+        texts: preparedAnnotations.texts,
+      })
+    : new Map<string, readonly number[]>();
   const visualVectors = input.visualContext
     ? validatedVisualVectors({
         petsBySlug: new Map(
@@ -1058,7 +1030,10 @@ function validatedVisualVectors(input: {
   petsBySlug: ReadonlyMap<string, PublicPet>;
   rows: readonly StoredRawPetSearchEmbedding[];
   captions: readonly StoredPetSearchCaption[];
-  profile: RelatedPetsRebuildProfile;
+  profile: Pick<
+    RelatedPetsInputPreparationProfile,
+    "visualRevision" | "visualDimensions"
+  >;
   context: VisualSourceContext;
 }): Map<string, readonly number[]> {
   const captionsBySlug = new Map(
@@ -1178,6 +1153,5 @@ const service = createRelatedPetsRebuildService({
 });
 
 export const rebuildRelatedPets = service.rebuild;
-export const prepareRelatedPetsGeneration = service.prepareGeneration;
 export const invalidateRelatedPets = service.invalidate;
 export const recoverPreviousRelatedPets = service.recoverPrevious;

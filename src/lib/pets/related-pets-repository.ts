@@ -110,7 +110,6 @@ export function createRelatedPetsRepository(
     getState,
     getRankingInputRevision,
     getSnapshot,
-    listSnapshots,
     requestBuild,
     writeSnapshot,
     activateGeneration,
@@ -363,28 +362,6 @@ LIMIT 1;
     if (!row) return null;
 
     return snapshotFromRow(row);
-  }
-
-  async function listSnapshots(
-    generationId: string,
-  ): Promise<RelatedPetsSnapshot[]> {
-    if (!dependencies.isConfigured()) return [];
-    const result = await dependencies.execute(
-      `
-DECLARE $generation_id AS Utf8;
-
-SELECT generation_id,
-       source_slug,
-       ranking_revision,
-       related_slugs_json,
-       created_at
-FROM ${TABLES.relatedSnapshots}
-WHERE generation_id = $generation_id
-ORDER BY source_slug;
-      `,
-      { $generation_id: dependencies.values.utf8(generationId) },
-    );
-    return rowsFromResult(result).map(snapshotFromRow);
   }
 
   async function requestBuild(input: {
@@ -1055,7 +1032,6 @@ export const getRelatedPetsState = repository.getState;
 export const getRelatedPetsRankingInputRevision =
   repository.getRankingInputRevision;
 export const getRelatedPetsSnapshot = repository.getSnapshot;
-export const listRelatedPetsSnapshots = repository.listSnapshots;
 export const requestRelatedPetsBuild = repository.requestBuild;
 export const writeRelatedPetsSnapshot = repository.writeSnapshot;
 export const activateRelatedPetsGeneration = repository.activateGeneration;
