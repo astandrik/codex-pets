@@ -9,7 +9,7 @@ import {
   RELATED_PETS_PAGE_LIMIT,
   RELATED_PETS_SNAPSHOT_DEPTH,
 } from "@/lib/pets/related-pets-limits";
-import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-v24-profile";
+import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
 import {
   getRelatedPetsSnapshot,
   getRelatedPetsState,

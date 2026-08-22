@@ -55,8 +55,8 @@ import {
   decodeRelatedPetV24Vector,
   rankRelatedPetsV24,
   type RelatedPetsV24RankingProfile,
-} from "@/lib/pets/related-pets-v24-ranking";
-import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-v24-profile";
+} from "@/lib/pets/related-pets-ranking";
+import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
 import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 import type { PublicPet } from "@/lib/pets/types";
 import { isYdbConfigured } from "@/lib/ydb/client";
@@ -234,9 +234,65 @@ export function createRelatedPetsRebuildService(
 ) {
   return {
     rebuild,
+    prepareGeneration,
     invalidate,
     recoverPrevious,
   };
+
+  async function prepareGeneration(input: {
+    generationId: string;
+    pendingPet: PublicPet & { status: "approved" };
+    includeVisual?: boolean;
+  }): Promise<{
+    generationId: string;
+    rankingRevision: string;
+    coverage: RelatedPetsRebuildCoverage;
+    rankings: Array<{ sourceSlug: string; relatedSlugs: string[] }>;
+    inputScope: RelatedPetsRankingInputScope;
+    expectedInputRevision: string;
+  }> {
+    if (!dependencies.isStorageAvailable()) {
+      throw new RelatedPetsRebuildError("storage_unavailable");
+    }
+    const includeVisual = input.includeVisual ?? true;
+    const inputScope = createRankingInputScope(includeVisual);
+    const expectedInputRevision = await dependencies.repository
+      .getRankingInputRevision(inputScope);
+    if (!expectedInputRevision) {
+      throw new RelatedPetsRebuildError("storage_unavailable");
+    }
+    const approvedPets = await dependencies.listApprovedPets();
+    if (approvedPets.some(({ slug }) => slug === input.pendingPet.slug)) {
+      throw new RelatedPetsRebuildError("rebuild_failed");
+    }
+    const { rankings, coverage } = await buildRankings(
+      includeVisual,
+      [...approvedPets, input.pendingPet],
+    );
+    const createdAt = dependencies.now().toISOString();
+    for (const ranking of rankings) {
+      await dependencies.repository.writeSnapshot({
+        generationId: input.generationId,
+        sourceSlug: ranking.sourceSlug,
+        rankingRevision: dependencies.profile.rankingRevision,
+        relatedSlugs: ranking.relatedSlugs,
+        createdAt,
+      });
+    }
+    const currentInputRevision = await dependencies.repository
+      .getRankingInputRevision(inputScope);
+    if (currentInputRevision !== expectedInputRevision) {
+      throw new RelatedPetsRebuildError("rebuild_failed");
+    }
+    return {
+      generationId: input.generationId,
+      rankingRevision: dependencies.profile.rankingRevision,
+      coverage,
+      rankings,
+      inputScope,
+      expectedInputRevision,
+    };
+  }
 
   async function rebuild(input: {
     mode: "dry-run" | "apply";
@@ -424,7 +480,10 @@ export function createRelatedPetsRebuildService(
     }
   }
 
-  async function buildRankings(includeVisual: boolean): Promise<{
+  async function buildRankings(
+    includeVisual: boolean,
+    petsOverride?: readonly PublicPet[],
+  ): Promise<{
     rankings: Array<{ sourceSlug: string; relatedSlugs: string[] }>;
     coverage: RelatedPetsRebuildCoverage;
   }> {
@@ -437,7 +496,9 @@ export function createRelatedPetsRebuildService(
       requestedVisualContext.modelUri.trim()
         ? requestedVisualContext
         : null;
-    const pets = await dependencies.listApprovedPets();
+    const pets = petsOverride
+      ? [...petsOverride]
+      : await dependencies.listApprovedPets();
     const annotationProfile = getAnnotationProfile(dependencies.profile);
     const annotationModelUri = dependencies.getAnnotationModelUri();
     if (!annotationModelUri) {
@@ -1153,5 +1214,6 @@ const service = createRelatedPetsRebuildService({
 });
 
 export const rebuildRelatedPets = service.rebuild;
+export const prepareRelatedPetsGeneration = service.prepareGeneration;
 export const invalidateRelatedPets = service.invalidate;
 export const recoverPreviousRelatedPets = service.recoverPrevious;

@@ -1,14 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const cacheMocks = vi.hoisted(() => ({
-  revalidateTag: vi.fn(),
-  unstableCache: vi.fn((callback: unknown) => callback),
-}));
+const cacheMocks = vi.hoisted(() => {
+  const invocations: string[] = [];
+  return {
+    invocations,
+    revalidateTag: vi.fn(),
+    unstableCache: vi.fn((callback: (cacheKeySalt: string) => unknown) =>
+      (cacheKeySalt: string) => {
+        invocations.push(cacheKeySalt);
+        return callback(cacheKeySalt);
+      }),
+  };
+});
 
 const petsRepositoryMocks = vi.hoisted(() => ({
   listApprovedPets: vi.fn(),
   listApprovedPetsForSearch: vi.fn(),
   listApprovedPetSitemapEntries: vi.fn(),
+}));
+
+const relatedRepositoryMocks = vi.hoisted(() => ({
+  getRelatedPetsState: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({
@@ -23,11 +35,19 @@ vi.mock("@/lib/pets/repository", () => ({
     petsRepositoryMocks.listApprovedPetSitemapEntries,
 }));
 
+vi.mock("@/lib/pets/related-pets-repository", () => ({
+  getRelatedPetsState: relatedRepositoryMocks.getRelatedPetsState,
+}));
+
 describe("sitemap", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    cacheMocks.invocations.length = 0;
     vi.resetModules();
     vi.unstubAllEnvs();
+    relatedRepositoryMocks.getRelatedPetsState.mockResolvedValue({
+      activeGenerationId: "generation-current",
+    });
   });
 
   it("returns cached static and approved pet entries", async () => {
@@ -68,6 +88,8 @@ describe("sitemap", () => {
           tags: [sitemapCache.SITEMAP_CACHE_TAG],
         },
       );
+      expect(relatedRepositoryMocks.getRelatedPetsState).toHaveBeenCalledOnce();
+      expect(cacheMocks.invocations).toEqual(["generation-current"]);
       const urls = entries.map((entry) => entry.url);
 
       expect(new Set(urls).size).toBe(urls.length);

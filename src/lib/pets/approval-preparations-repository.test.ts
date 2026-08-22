@@ -41,6 +41,95 @@ describe("approval preparation identity and retries", () => {
     ]);
   });
 
+  it("requeues an unchanged manual-review preparation transactionally", async () => {
+    let requeued = false;
+    const execute = async (statement: string) => {
+      if (
+        statement.includes("status = $queued") &&
+        statement.includes("attempts = $zero")
+      ) {
+        requeued = true;
+        expect(statement).toContain("attempts = $zero");
+        expect(statement).toContain("prepared_generation_id = $empty");
+        expect(statement).toContain("failure_code = $empty");
+        expect(statement).toContain("AND status = $manual_review");
+        return { resultSets: [] };
+      }
+      if (statement.includes("WHERE preparation_id = $preparation_id")) {
+        return preparationResult({
+          status: requeued ? "queued" : "manual_review",
+          attempts: requeued ? 0 : 6,
+        });
+      }
+      return { resultSets: [] };
+    };
+    const repository = createApprovalPreparationsRepository({
+      isConfigured: () => true,
+      values: {
+        utf8: (value: string) => value,
+        uint32: (value: number) => value,
+      },
+      execute,
+      transaction: async <T>(operation: (actual: typeof execute) => Promise<T>) =>
+        operation(execute),
+    });
+
+    await expect(repository.enqueue({
+      petId: "pet-1",
+      petSlug: "tallulah",
+      petUpdatedAt: "2026-08-11T00:00:00.000Z",
+      reviewerId: "admin-1",
+      rankingRevision: "current-revision",
+      expectedActiveGenerationId: "generation-active",
+      now: "2026-08-11T00:10:00.000Z",
+    })).resolves.toMatchObject({
+      status: "queued",
+      attempts: 0,
+      failureCode: "",
+      preparedGenerationId: "",
+    });
+    expect(requeued).toBe(true);
+  });
+
+  it.each(["queued", "preparing", "retry", "succeeded"] as const)(
+    "keeps an existing %s preparation idempotent",
+    async (status) => {
+      const statements: string[] = [];
+      const execute = async (statement: string) => {
+        statements.push(statement);
+        if (statement.includes("WHERE preparation_id = $preparation_id")) {
+          return preparationResult({ status, attempts: 2 });
+        }
+        return { resultSets: [] };
+      };
+      const repository = createApprovalPreparationsRepository({
+        isConfigured: () => true,
+        values: {
+          utf8: (value: string) => value,
+          uint32: (value: number) => value,
+        },
+        execute,
+        transaction: async <T>(
+          operation: (actual: typeof execute) => Promise<T>,
+        ) => operation(execute),
+      });
+
+      await expect(repository.enqueue({
+        petId: "pet-1",
+        petSlug: "tallulah",
+        petUpdatedAt: "2026-08-11T00:00:00.000Z",
+        reviewerId: "admin-1",
+        rankingRevision: "current-revision",
+        expectedActiveGenerationId: "generation-active",
+        now: "2026-08-11T00:10:00.000Z",
+      })).resolves.toMatchObject({ status, attempts: 2 });
+      expect(statements.some((statement) =>
+        statement.includes("status = $queued") &&
+        statement.includes("attempts = $zero")
+      )).toBe(false);
+    },
+  );
+
   it("increments Uint32 attempts with a typed parameter when claiming", async () => {
     let updated = false;
     const execute = async (
@@ -175,7 +264,7 @@ function preparationResult({
   attempts,
   leaseOwner = "",
 }: {
-  status: "queued" | "preparing";
+  status: "queued" | "preparing" | "retry" | "manual_review" | "succeeded";
   attempts: number;
   leaseOwner?: string;
 }) {

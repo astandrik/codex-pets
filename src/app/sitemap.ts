@@ -4,6 +4,7 @@ import { unstable_cache } from "next/cache";
 import { toPublicUrl } from "@/lib/base-path";
 import { buildGalleryHref } from "@/lib/pets/gallery-filters";
 import { CATALOG_PAGE_SIZE } from "@/lib/pets/pagination";
+import { getRelatedPetsState } from "@/lib/pets/related-pets-repository";
 import { listApprovedPetSitemapEntries } from "@/lib/pets/repository";
 import {
   SITEMAP_CACHE_TAG,
@@ -14,7 +15,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const getSitemapSnapshot = unstable_cache(
-  async (): Promise<MetadataRoute.Sitemap> => {
+  async (cacheKeySalt: string): Promise<MetadataRoute.Sitemap> => {
+    // Function arguments are part of the unstable_cache key.
+    void cacheKeySalt;
     return buildSitemap();
   },
   [
@@ -30,7 +33,14 @@ const getSitemapSnapshot = unstable_cache(
 );
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  return getSitemapSnapshot();
+  let cacheKeySalt = "state-unavailable";
+  try {
+    const state = await getRelatedPetsState();
+    cacheKeySalt = state?.activeGenerationId ?? state?.updatedAt ?? "state-missing";
+  } catch {
+    // Sitemap availability does not depend on related-pet state availability.
+  }
+  return getSitemapSnapshot(cacheKeySalt);
 }
 
 async function buildSitemap(): Promise<MetadataRoute.Sitemap> {

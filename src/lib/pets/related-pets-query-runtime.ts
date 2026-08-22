@@ -1,4 +1,4 @@
-import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-v24-profile";
+import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
 import {
   buildRelatedPetDocument,
   buildRelatedPetQuery,
