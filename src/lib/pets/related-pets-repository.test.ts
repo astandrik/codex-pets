@@ -120,6 +120,24 @@ function captionRevisionResult(updatedAt: string) {
   };
 }
 
+function annotationRevisionResult(updatedAt: string) {
+  return {
+    resultSets: [
+      {
+        rows: [
+          {
+            items: [
+              { textValue: "source-pet" },
+              { textValue: "annotation-source-hash" },
+              { textValue: updatedAt },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
 function generationRevisionResult(rankingRevision: string) {
   return {
     resultSets: [
@@ -599,6 +617,52 @@ describe("related pets repository", () => {
     ).toBe(false);
   });
 
+  it("rejects rankings captured before an annotation row changed", async () => {
+    let annotationUpdatedAt = "2026-08-03T10:00:00.000Z";
+    const inputScope = {
+      embeddingModelRevisions: [],
+      captionRevision: null,
+      annotationRevision: "annotation-v1",
+    };
+    const harness = createHarness(async (statement) => {
+      if (statement.includes("FROM codex_pet_related_annotations")) {
+        return annotationRevisionResult(annotationUpdatedAt);
+      }
+      return { resultSets: [] };
+    });
+    const expectedInputRevision =
+      await harness.repository.getRankingInputRevision(inputScope);
+    if (expectedInputRevision === null) {
+      throw new Error("Expected configured ranking input revision.");
+    }
+    annotationUpdatedAt = "2026-08-03T10:01:00.000Z";
+
+    await expect(
+      harness.repository.requestBuild({
+        generationId: "generation-2",
+        rankingRevision: "ranking-v1",
+        updatedAt: "2026-08-03T10:02:00.000Z",
+        expectedState: null,
+        inputScope,
+        expectedInputRevision,
+      }),
+    ).resolves.toBe(false);
+
+    const annotationReads = harness.statements.filter(({ statement }) =>
+      statement.includes("FROM codex_pet_related_annotations"),
+    );
+    expect(annotationReads).toHaveLength(2);
+    expect(annotationReads[0]?.transactional).toBe(false);
+    expect(annotationReads[1]?.transactional).toBe(true);
+    expect(
+      harness.statements.some(
+        ({ statement }) =>
+          statement.includes("UPDATE codex_pet_related_state") ||
+          statement.includes("UPSERT INTO codex_pet_related_state"),
+      ),
+    ).toBe(false);
+  });
+
   it("conditionally activates only the requested generation", async () => {
     const current = createHarness(async (statement) =>
       statement.includes("SELECT state_id")
@@ -700,6 +764,58 @@ describe("related pets repository", () => {
       $previous_status: { textValue: "ready" },
       $previous_ranking_revision: { textValue: "ranking-v1" },
     });
+  });
+
+  it("rejects activation after an annotation row changed", async () => {
+    let annotationUpdatedAt = "2026-08-03T10:00:00.000Z";
+    const inputScope = {
+      embeddingModelRevisions: [],
+      captionRevision: null,
+      annotationRevision: "annotation-v1",
+    };
+    const harness = createHarness(async (statement) => {
+      if (statement.includes("FROM codex_pet_related_annotations")) {
+        return annotationRevisionResult(annotationUpdatedAt);
+      }
+      if (statement.includes("SELECT state_id")) {
+        return stateResult({
+          requested: "generation-2",
+          active: "generation-1",
+          status: "building",
+        });
+      }
+      return { resultSets: [] };
+    });
+    const expectedInputRevision =
+      await harness.repository.getRankingInputRevision(inputScope);
+    if (expectedInputRevision === null) {
+      throw new Error("Expected configured ranking input revision.");
+    }
+    annotationUpdatedAt = "2026-08-03T10:01:00.000Z";
+
+    await expect(
+      harness.repository.activateGeneration({
+        generationId: "generation-2",
+        rankingRevision: "ranking-v1",
+        updatedAt: "2026-08-03T10:02:00.000Z",
+        inputScope,
+        expectedInputRevision,
+        previousState: PREVIOUS_READY_STATE,
+      }),
+    ).resolves.toBe(false);
+
+    const annotationReads = harness.statements.filter(({ statement }) =>
+      statement.includes("FROM codex_pet_related_annotations"),
+    );
+    expect(annotationReads).toHaveLength(2);
+    expect(annotationReads[0]?.transactional).toBe(false);
+    expect(annotationReads[1]?.transactional).toBe(true);
+    const restore = harness.statements.find(({ statement }) =>
+      statement.includes(
+        "SET requested_generation_id = $previous_requested_generation_id",
+      ),
+    );
+    expect(restore?.transactional).toBe(true);
   });
 
   it("restores the last ready generation instead of an abandoned building generation", async () => {

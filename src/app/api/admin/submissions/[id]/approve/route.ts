@@ -2,17 +2,9 @@ import { NextResponse } from "next/server";
 
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
-import { refreshPetRelatedAnnotation } from "@/lib/pets/related-pets-annotation-runtime";
-import {
-  invalidateRelatedPetsBestEffort,
-  isRelatedPetsTextRefreshCompatible,
-  rebuildRelatedPetsBestEffort,
-} from "@/lib/pets/related-pets-rebuild-trigger";
 import { refreshApprovedPetRelatedDescriptionEmbeddings } from "@/lib/pets/related-pets-query-runtime";
 import { moderatePet } from "@/lib/pets/repository";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
-import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-v24-profile";
-import { petSearchRuntimeConfig } from "@/lib/pets/search-provider-runtime";
 import { refreshApprovedPetSearchEmbedding } from "@/lib/pets/search-runtime";
 import { refreshApprovedPetVisionSearchBestEffort } from "@/lib/pets/search-vision-runtime";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
@@ -41,15 +33,10 @@ export async function POST(
 
   revalidateSitemapCache();
   revalidateRelatedPetCandidatesCache();
-  const canPublishRelatedPets = isRelatedPetsTextRefreshCompatible(
-    petSearchRuntimeConfig.semantic,
-  );
-  const [searchDocumentResult, relatedResult, annotationResult] =
-    await Promise.allSettled([
-      refreshApprovedPetSearchEmbedding(pet),
-      refreshApprovedPetRelatedDescriptionEmbeddings(pet),
-      refreshPetRelatedAnnotation(pet),
-    ]);
+  const [searchDocumentResult, relatedResult] = await Promise.allSettled([
+    refreshApprovedPetSearchEmbedding(pet),
+    refreshApprovedPetRelatedDescriptionEmbeddings(pet),
+  ]);
   const searchDocumentStatus = refreshStatus(searchDocumentResult);
   const relatedStatuses = relatedResult.status === "fulfilled"
     ? relatedResult.value
@@ -60,16 +47,12 @@ export async function POST(
   const relatedReady = Object.values(relatedStatuses).every(
     isReadyRefreshStatus,
   );
-  const annotationReady = annotationResult.status === "fulfilled";
-  const inputsReady = relatedReady && annotationReady;
-  const requiresVisual = RELATED_PETS_V24_PROFILE.visualMinSimilarity !== null;
 
-  if (!inputsReady) {
+  if (!relatedReady) {
     console.warn("[codex-pets][related-pets-v24-refresh]", {
       operation: "refresh",
       status: "incomplete",
       ...relatedStatuses,
-      annotation: annotationReady ? "ready" : "failed",
     });
   }
   if (!isReadyRefreshStatus(searchDocumentStatus)) {
@@ -79,29 +62,7 @@ export async function POST(
     });
   }
 
-  if (canPublishRelatedPets) {
-    if (inputsReady && !requiresVisual) {
-      await rebuildRelatedPetsBestEffort({
-        trigger: "approve-text",
-        includeVisual: false,
-      });
-    }
-  } else {
-    await invalidateRelatedPetsBestEffort({
-      trigger: "approve-text",
-      reason: "text-profile-incompatible",
-    });
-  }
-
-  void refreshApprovedPetVisionSearchBestEffort(pet, {
-    onSuccessfulRefresh: async () => {
-      if (!canPublishRelatedPets || !inputsReady || !requiresVisual) return;
-      await rebuildRelatedPetsBestEffort({
-        trigger: "approve-visual",
-        includeVisual: true,
-      });
-    },
-  }).catch(() => undefined);
+  void refreshApprovedPetVisionSearchBestEffort(pet).catch(() => undefined);
 
   const indexNow = await notifyIndexNowOfApprovedPet(pet.slug);
   if (indexNow.status === "submitted") {
