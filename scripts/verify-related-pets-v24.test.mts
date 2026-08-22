@@ -100,6 +100,40 @@ describe("related:verify:v24", () => {
     ]);
   });
 
+  it("reports materialized sources that are absent from the dry-run", async () => {
+    const runtime = service({
+      listSnapshots: vi.fn(async () => [
+        ...rankings.map((ranking) => ({
+          ...ranking,
+          generationId: "generation-v24",
+          rankingRevision,
+          createdAt: "2026-08-15T00:00:00.000Z",
+        })),
+        {
+          sourceSlug: "extra",
+          relatedSlugs: ["a", "b"],
+          generationId: "generation-v24",
+          rankingRevision,
+          createdAt: "2026-08-15T00:00:00.000Z",
+        },
+      ]),
+    });
+    const lines: Array<Record<string, unknown>> = [];
+
+    await expect(runRelatedPetsV24Verification({
+      loadService: async () => runtime,
+      write: (line: string) => lines.push(
+        JSON.parse(line) as Record<string, unknown>,
+      ),
+    })).resolves.toBe(1);
+    expect(lines).toEqual([
+      expect.objectContaining({
+        status: "failed",
+        mismatchedSources: ["extra"],
+      }),
+    ]);
+  });
+
   it("rejects arguments and incompatible active generations", async () => {
     await expect(runRelatedPetsV24Verification({ argv: ["--apply"] }))
       .rejects.toThrow("does not accept arguments");

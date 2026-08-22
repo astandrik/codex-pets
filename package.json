@@ -15,7 +15,6 @@
     "db:migrate": "node scripts/apply-ydb-migrations.mjs",
     "search:backfill": "node scripts/backfill-pet-search-embeddings.mjs",
     "search:backfill-vision": "node scripts/backfill-pet-vision-search.mjs",
-    "related:backfill-query": "PET_SEARCH_MODEL_REVISION=yandex-text-embeddings-v2-768-related-tags-query-2026-08 node scripts/backfill-pet-search-embeddings.mjs",
     "related:backfill-description-query": "PET_SEARCH_MODEL_REVISION=yandex-text-embeddings-v2-768-related-description-query-2026-08-v3 node scripts/backfill-pet-search-embeddings.mjs",
     "related:backfill-description-document": "PET_SEARCH_MODEL_REVISION=yandex-text-embeddings-v2-768-related-description-document-2026-08-v1 node scripts/backfill-pet-search-embeddings.mjs",
     "related:backfill-annotations": "node scripts/backfill-related-pet-annotations.mjs",

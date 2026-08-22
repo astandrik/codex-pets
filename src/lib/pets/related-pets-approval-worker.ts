@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
 import type {
   ApprovalPreparation,
   ApprovalRankingInputScope,
@@ -17,12 +18,10 @@ import {
   cleanupInactiveRelatedPetsGeneration,
   cleanupRelatedPetsGenerations,
 } from "@/lib/pets/related-pets-repository";
-import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
 import { getPetForApprovalPreparationById } from "@/lib/pets/repository";
 import type { PublicPet } from "@/lib/pets/types";
 import { refreshApprovedPetSearchEmbedding } from "@/lib/pets/search-runtime";
 import { refreshApprovedPetVisionSearch } from "@/lib/pets/search-vision-runtime";
-import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 type PreparedPet = {
   id: string;
@@ -77,7 +76,7 @@ type WorkerDependencies<Pet extends PreparedPet> = {
   cleanupInactiveGeneration: (input: {
     expectedGenerationId: string;
   }) => Promise<boolean>;
-  onSucceeded: () => Promise<void>;
+  onSucceeded: (petSlug: string) => Promise<void>;
   createGenerationId: () => string;
   createReviewId: () => string;
   now: () => Date;
@@ -138,7 +137,7 @@ export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(
         ...generation,
       });
       if (!finalized) throw preparationFailure("stale_catalog");
-      await notifySucceeded();
+      await notifySucceeded(preparation.petSlug);
       return "succeeded";
     } catch (error) {
       const failureCode = failureCodeFrom(error);
@@ -150,7 +149,7 @@ export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(
         now: dependencies.now(),
       });
       const result = resultFromPreparation(updated);
-      if (result === "succeeded") await notifySucceeded();
+      if (result === "succeeded") await notifySucceeded(preparation.petSlug);
       return result;
     } finally {
       if (generationId) await cleanupGeneration(generationId);
@@ -174,11 +173,11 @@ export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(
     }
   }
 
-  async function notifySucceeded(): Promise<void> {
+  async function notifySucceeded(petSlug: string): Promise<void> {
     try {
-      await dependencies.onSucceeded();
+      await dependencies.onSucceeded(petSlug);
     } catch {
-      // Cache invalidation must not overwrite a committed approval outcome.
+      // Publication hooks must not overwrite a committed approval outcome.
     }
   }
 }
@@ -250,13 +249,35 @@ const productionWorker = createRelatedPetApprovalWorker({
   markFailure: markApprovalPreparationFailure,
   cleanupGenerations: cleanupRelatedPetsGenerations,
   cleanupInactiveGeneration: cleanupInactiveRelatedPetsGeneration,
-  onSucceeded: async () => {
-    revalidateSitemapCache();
-    revalidateRelatedPetCandidatesCache();
-  },
+  onSucceeded: publishApprovedPet,
   createGenerationId: randomUUID,
   createReviewId: createApprovalReviewId,
   now: () => new Date(),
 });
+
+async function publishApprovedPet(petSlug: string): Promise<void> {
+  const result = await notifyIndexNowOfApprovedPet(petSlug);
+  if (result.status === "submitted") {
+    console.info("[codex-pets][indexnow]", {
+      slug: petSlug,
+      status: "submitted",
+      httpStatus: result.httpStatus,
+      urlCount: result.urls.length,
+    });
+  } else if (result.status === "failed") {
+    console.warn("[codex-pets][indexnow]", {
+      slug: petSlug,
+      status: "failed",
+      httpStatus: result.httpStatus ?? null,
+      urlCount: result.urls.length,
+    });
+  } else {
+    console.info("[codex-pets][indexnow]", {
+      slug: petSlug,
+      status: "skipped",
+      reason: result.reason,
+    });
+  }
+}
 
 export const runRelatedPetApprovalWorkerOnce = productionWorker.runOnce;

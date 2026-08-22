@@ -230,9 +230,7 @@ describe("pet search embeddings backfill", () => {
   });
 
   it("keeps the active query command separate from V24 preparation", () => {
-    expect(packageScripts["related:backfill-query"]).toContain(
-      RELATED_PETS_DESCRIPTION_QUERY_REVISION,
-    );
+    expect(packageScripts["related:backfill-query"]).toBeUndefined();
     expect(packageScripts["related:backfill-description-query"]).toContain(
       RELATED_PETS_DESCRIPTION_QUERY_REVISION,
     );

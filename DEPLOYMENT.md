@@ -169,10 +169,10 @@ description, controlled-annotation, and visual inputs. Backfill every role
 sequentially so the jobs share the AI Studio rate budget:
 
 ```bash
-npm run related:backfill-query -- --dry-run
-npm run related:backfill-query -- --apply
-npm run related:backfill-document -- --dry-run
-npm run related:backfill-document -- --apply
+npm run related:backfill-description-query -- --dry-run
+npm run related:backfill-description-query -- --apply
+npm run related:backfill-description-document -- --dry-run
+npm run related:backfill-description-document -- --apply
 npm run related:backfill-annotations -- --dry-run
 npm run related:backfill-annotations -- --apply
 npm run related:backfill-annotation-query -- --dry-run
@@ -224,13 +224,17 @@ approved external step. Existing `pet_install_command_copy` and
 need replacement goals. Compare positions 1-4 with 5-8 after 7 and 14 days,
 separating direct card conversions from conversions after detail navigation.
 
-With `PET_RELATED_PREAPPROVAL_ENABLED=true`, admin approval queues a preparation
-instead of publishing immediately. Run `npm run related:approval-worker` in a
-separate process. It refreshes the ordinary search document, description
+Start `npm run related:approval-worker` as a separate process before setting
+`PET_RELATED_PREAPPROVAL_ENABLED=true`. Until the flag is exact `true`, admin
+approval returns `503 approval_preparation_required` and leaves the pet pending.
+With the flag enabled, approval queues a preparation instead of publishing
+immediately. The worker refreshes the ordinary search document, description
 query/document vectors, controlled annotation and both annotation-vector roles,
 and visual input. It builds an inactive generation, then atomically publishes
 the pet, review, and generation only if the card, catalog, source hashes, and
-active generation are unchanged. Failures leave the pet pending and preserve
+active generation are unchanged. The new generation also rotates the
+related-candidate and sitemap cache keys across app and worker processes.
+Failures leave the pet pending and preserve
 the current generation. Keep the worker disabled during a V24 rollback.
 
 To roll back ordering without discarding derived rows, first disable the

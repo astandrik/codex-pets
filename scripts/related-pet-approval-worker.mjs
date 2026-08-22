@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { register } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -35,6 +36,11 @@ export async function runApprovalWorkerLoop({
   } while (true);
 }
 
+export function createApprovalWorkerId({ hostname, pid, randomId }) {
+  const host = hostname?.trim() || "worker";
+  return `${host}:${pid}:${randomId}`;
+}
+
 async function main() {
   const scriptsRoot = path.dirname(fileURLToPath(import.meta.url));
   const sourceRoot = path.resolve(scriptsRoot, "../src");
@@ -49,7 +55,11 @@ async function main() {
   );
   return runApprovalWorkerLoop({
     once: process.argv.includes("--once"),
-    workerId: process.env.HOSTNAME?.trim() || `worker-${process.pid}`,
+    workerId: createApprovalWorkerId({
+      hostname: process.env.HOSTNAME,
+      pid: process.pid,
+      randomId: randomUUID(),
+    }),
     runOnce: runRelatedPetApprovalWorkerOnce,
   });
 }

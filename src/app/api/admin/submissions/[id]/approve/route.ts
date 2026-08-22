@@ -1,19 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
-import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
 import { enqueueApprovalPreparation } from "@/lib/pets/approval-preparations-repository";
 import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
-import { refreshApprovedPetRelatedDescriptionEmbeddings } from "@/lib/pets/related-pets-query-runtime";
 import { getRelatedPetsState } from "@/lib/pets/related-pets-repository";
-import {
-  getPetForApprovalPreparationById,
-  moderatePet,
-} from "@/lib/pets/repository";
-import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
-import { refreshApprovedPetSearchEmbedding } from "@/lib/pets/search-runtime";
-import { refreshApprovedPetVisionSearchBestEffort } from "@/lib/pets/search-vision-runtime";
-import { revalidateSitemapCache } from "@/lib/sitemap-cache";
+import { getPetForApprovalPreparationById } from "@/lib/pets/repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,86 +17,15 @@ export async function POST(
   if (!principal || !isAdminUser(principal)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
+  if (process.env.PET_RELATED_PREAPPROVAL_ENABLED !== "true") {
+    return NextResponse.json(
+      { error: "approval_preparation_required" },
+      { status: 503 },
+    );
+  }
 
   const { id } = await params;
-  if (process.env.PET_RELATED_PREAPPROVAL_ENABLED === "true") {
-    return enqueuePreparation(id, principal.userId);
-  }
-
-  const pet = await moderatePet({
-    petId: id,
-    reviewerId: principal.userId,
-    decision: "approved",
-  });
-  if (!pet) {
-    return NextResponse.json({ error: "not_found" }, { status: 404 });
-  }
-
-  revalidateSitemapCache();
-  revalidateRelatedPetCandidatesCache();
-  const [searchDocumentResult, relatedResult] = await Promise.allSettled([
-    refreshApprovedPetSearchEmbedding(pet),
-    refreshApprovedPetRelatedDescriptionEmbeddings(pet),
-  ]);
-  const searchDocumentStatus = refreshStatus(searchDocumentResult);
-  const relatedStatuses = relatedResult.status === "fulfilled"
-    ? relatedResult.value
-    : {
-        descriptionQuery: "failed" as const,
-        descriptionDocument: "failed" as const,
-      };
-  const relatedReady = Object.values(relatedStatuses).every(
-    isReadyRefreshStatus,
-  );
-
-  if (!relatedReady) {
-    console.warn("[codex-pets][related-pets-v24-refresh]", {
-      operation: "refresh",
-      status: "incomplete",
-      ...relatedStatuses,
-    });
-  }
-  if (!isReadyRefreshStatus(searchDocumentStatus)) {
-    console.warn("[codex-pets][search-document-refresh]", {
-      operation: "refresh",
-      status: searchDocumentStatus,
-    });
-  }
-
-  void refreshApprovedPetVisionSearchBestEffort(pet).catch(() => undefined);
-
-  const indexNow = await notifyIndexNowOfApprovedPet(pet.slug);
-  if (indexNow.status === "submitted") {
-    console.info("[codex-pets][indexnow]", {
-      slug: pet.slug,
-      status: "submitted",
-      httpStatus: indexNow.httpStatus,
-      urlCount: indexNow.urls.length,
-    });
-  } else if (indexNow.status === "failed") {
-    console.warn("[codex-pets][indexnow]", {
-      slug: pet.slug,
-      status: "failed",
-      httpStatus: indexNow.httpStatus ?? null,
-      ...(indexNow.error !== undefined ? { error: "request_failed" } : {}),
-      urlCount: indexNow.urls.length,
-    });
-  } else {
-    console.info("[codex-pets][indexnow]", {
-      slug: pet.slug,
-      status: "skipped",
-      reason: indexNow.reason,
-    });
-  }
-
-  return NextResponse.json({ ok: true, pet });
-}
-
-async function enqueuePreparation(
-  petId: string,
-  reviewerId: string,
-): Promise<Response> {
-  const pendingPet = await getPetForApprovalPreparationById(petId);
+  const pendingPet = await getPetForApprovalPreparationById(id);
   if (!pendingPet || pendingPet.status !== "pending") {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
@@ -120,7 +40,7 @@ async function enqueuePreparation(
     petId: pendingPet.id,
     petSlug: pendingPet.slug,
     petUpdatedAt: pendingPet.updatedAt,
-    reviewerId,
+    reviewerId: principal.userId,
     rankingRevision: RELATED_PETS_V24_PROFILE.rankingRevision,
     expectedActiveGenerationId: relatedState.activeGenerationId,
     now: new Date().toISOString(),
@@ -139,18 +59,4 @@ async function enqueuePreparation(
     },
     { status: 202 },
   );
-}
-
-type RefreshStatus = "updated" | "unchanged" | "skipped" | "failed";
-
-function refreshStatus(
-  result: PromiseSettledResult<"updated" | "unchanged" | "skipped">,
-): RefreshStatus {
-  return result.status === "fulfilled" ? result.value : "failed";
-}
-
-function isReadyRefreshStatus(
-  status: RefreshStatus,
-): status is "updated" | "unchanged" {
-  return status === "updated" || status === "unchanged";
 }

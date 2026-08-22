@@ -50,12 +50,17 @@ describe("related pet approval worker", () => {
         },
         finalize: async () => { order.push("finalize"); return true; },
       }),
-      onSucceeded: async () => { order.push("succeeded"); },
+      onSucceeded: async (slug: string) => { order.push(`succeeded:${slug}`); },
     };
     const worker = createRelatedPetApprovalWorker(workerDependencies);
 
     await expect(worker.runOnce("worker-1")).resolves.toBe("succeeded");
-    expect(order).toEqual(["signals", "generation", "finalize", "succeeded"]);
+    expect(order).toEqual([
+      "signals",
+      "generation",
+      "finalize",
+      "succeeded:tallulah",
+    ]);
   });
 
   it("uses a thirty minute lease", async () => {
@@ -147,7 +152,7 @@ describe("related pet approval worker", () => {
     const worker = createRelatedPetApprovalWorker(workerDependencies);
 
     await expect(worker.runOnce("worker-1")).resolves.toBe("succeeded");
-    expect(onSucceeded).toHaveBeenCalledOnce();
+    expect(onSucceeded).toHaveBeenCalledWith("tallulah");
   });
 
   it("does not run the success hook for a retry", async () => {

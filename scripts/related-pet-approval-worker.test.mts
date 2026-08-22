@@ -1,8 +1,68 @@
+import { spawnSync } from "node:child_process";
+
 import { describe, expect, it, vi } from "vitest";
 
-import { runApprovalWorkerLoop } from "./related-pet-approval-worker.mjs";
+import {
+  createApprovalWorkerId,
+  runApprovalWorkerLoop,
+} from "./related-pet-approval-worker.mjs";
 
 describe("approval worker loop", () => {
+  it("loads the production worker entrypoint in standalone Node", () => {
+    const result = spawnSync(
+      process.execPath,
+      ["scripts/related-pet-approval-worker.mjs", "--once"],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        timeout: 10_000,
+        env: {
+          ...process.env,
+          YDB_PETS_ENDPOINT: "",
+          YDB_PETS_DATABASE: "",
+          YANDEX_AI_STUDIO_FOLDER_ID: "",
+          YANDEX_AI_STUDIO_API_KEY_FILE: "",
+          PET_SEARCH_MODEL_REVISION: "",
+          PET_SEARCH_VISION_CAPTION_REVISION: "",
+          PET_SEARCH_VISUAL_MODEL_REVISION: "",
+        },
+      },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout.trim())).toEqual({
+      operation: "approval-worker",
+      status: "idle",
+    });
+  });
+
+  it("creates a unique stable owner for each process", () => {
+    expect(createApprovalWorkerId({
+      hostname: "worker-host",
+      pid: 42,
+      randomId: "first",
+    })).toBe("worker-host:42:first");
+    expect(createApprovalWorkerId({
+      hostname: "worker-host",
+      pid: 42,
+      randomId: "second",
+    })).not.toBe("worker-host:42:first");
+  });
+
+  it("treats reclaimed work as an active iteration", async () => {
+    const write = vi.fn();
+    await expect(runApprovalWorkerLoop({
+      once: true,
+      workerId: "worker-1",
+      runOnce: vi.fn().mockResolvedValue("in_progress"),
+      write,
+    })).resolves.toBe(0);
+    expect(write).toHaveBeenCalledWith(JSON.stringify({
+      operation: "approval-worker",
+      status: "in_progress",
+    }));
+  });
   it("fails one-shot runs without exposing the error", async () => {
     const errors: string[] = [];
 

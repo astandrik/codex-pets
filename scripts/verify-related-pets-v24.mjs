@@ -47,18 +47,17 @@ export async function runRelatedPetsV24Verification({
     const actualBySource = new Map(
       snapshots.map(({ sourceSlug, relatedSlugs }) => [sourceSlug, relatedSlugs]),
     );
-    const mismatchedSources = Array.from(
-      expectedBySource,
-      ([sourceSlug, expected]) => ({
-        sourceSlug,
-        expected,
-        actual: actualBySource.get(sourceSlug) ?? null,
-      }),
-    ).filter(({ expected, actual }) =>
-      actual === null || !sameOrderedSlugs(expected, actual)
-    ).map(({ sourceSlug }) => sourceSlug);
+    const mismatchedSources = Array.from(new Set([
+      ...expectedBySource.keys(),
+      ...actualBySource.keys(),
+    ])).toSorted(compareCodePoints).filter((sourceSlug) => {
+      const expected = expectedBySource.get(sourceSlug);
+      const actual = actualBySource.get(sourceSlug);
+      return !expected || !actual || !sameOrderedSlugs(expected, actual);
+    });
     const integrityFailures = snapshots.filter((snapshot) =>
       snapshot.rankingRevision !== service.rankingRevision ||
+      !approvedSlugs.has(snapshot.sourceSlug) ||
       snapshot.relatedSlugs.length !== Math.min(8, approvedSlugs.size - 1) ||
       new Set(snapshot.relatedSlugs).size !== snapshot.relatedSlugs.length ||
       snapshot.relatedSlugs.includes(snapshot.sourceSlug) ||

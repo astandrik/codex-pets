@@ -306,10 +306,10 @@ related-pet snapshot follow-up. Run both commands after embedding maintenance
 completes so snapshot rankings do not remain stale:
 
 ```bash
-npm run related:backfill-query -- --dry-run
-npm run related:backfill-query -- --apply
-npm run related:backfill-document -- --dry-run
-npm run related:backfill-document -- --apply
+npm run related:backfill-description-query -- --dry-run
+npm run related:backfill-description-query -- --apply
+npm run related:backfill-description-document -- --dry-run
+npm run related:backfill-description-document -- --apply
 npm run related:backfill-annotations -- --dry-run
 npm run related:backfill-annotations -- --apply
 npm run related:backfill-annotation-query -- --dry-run
@@ -343,7 +343,11 @@ Admin approval can queue an atomic preparation that refreshes the ordinary
 search document, description query/document vectors, controlled annotation and
 both annotation-vector roles, plus visual input. It publishes the pet, review,
 and prepared generation in one transaction only after every input is current.
-Failures leave the pet pending and the previous generation active.
+Failures leave the pet pending and the previous generation active. When
+`PET_RELATED_PREAPPROVAL_ENABLED` is not exact `true`, approval fails closed
+instead of publishing a pet without current V24 inputs.
+Atomic generation activation also rotates the related-candidate and sitemap
+cache keys, so the standalone worker does not depend on a Next request context.
 `npm run related:verify:v24` is read-only: it recomputes V24 from stored inputs
 and checks coverage, integrity, the active revision, and exact ordered snapshot
 parity without calling AI Studio.

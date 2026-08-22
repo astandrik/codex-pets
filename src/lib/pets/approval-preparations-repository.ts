@@ -109,7 +109,37 @@ export function createApprovalPreparationsRepository(
     const preparationId = createApprovalPreparationId(input);
     return dependencies.transaction(async (execute) => {
       const existing = await getWithExecute(execute, preparationId);
-      if (existing) return existing;
+      if (existing) {
+        if (existing.status !== "manual_review") return existing;
+        await execute(
+          `
+DECLARE $preparation_id AS Utf8;
+DECLARE $reviewer_id AS Utf8;
+DECLARE $manual_review AS Utf8;
+DECLARE $queued AS Utf8;
+DECLARE $zero AS Uint32;
+DECLARE $empty AS Utf8;
+DECLARE $now AS Utf8;
+
+UPDATE ${TABLES.approvalPreparations}
+SET reviewer_id = $reviewer_id, status = $queued, attempts = $zero,
+    next_attempt_at = $now, prepared_generation_id = $empty,
+    lease_owner = $empty, lease_until = $empty, failure_code = $empty,
+    updated_at = $now
+WHERE preparation_id = $preparation_id AND status = $manual_review;
+          `,
+          {
+            $preparation_id: dependencies.values.utf8(preparationId),
+            $reviewer_id: dependencies.values.utf8(input.reviewerId),
+            $manual_review: dependencies.values.utf8("manual_review"),
+            $queued: dependencies.values.utf8("queued"),
+            $zero: dependencies.values.uint32(0),
+            $empty: dependencies.values.utf8(""),
+            $now: dependencies.values.utf8(input.now),
+          },
+        );
+        return getWithExecute(execute, preparationId);
+      }
       await execute(
         `
 DECLARE $preparation_id AS Utf8;

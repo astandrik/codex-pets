@@ -49,6 +49,28 @@ describe("approval preparation polling", () => {
     })).resolves.toBe("timeout");
   });
 
+  it("aborts a hung status request and exhausts the bounded attempts", async () => {
+    const polling = pollApprovalPreparation("https://pets.test/status", {
+      fetchImpl: vi.fn((_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError"))
+          );
+        })
+      ),
+      sleep: vi.fn().mockResolvedValue(undefined),
+      maxAttempts: 1,
+      requestTimeoutMs: 5,
+    });
+
+    await expect(Promise.race([
+      polling,
+      new Promise<never>((_resolve, reject) =>
+        setTimeout(() => reject(new Error("status fetch remained pending")), 50)
+      ),
+    ])).resolves.toBe("timeout");
+  });
+
   it("fails malformed or unknown successful responses", async () => {
     const sleep = vi.fn().mockResolvedValue(undefined);
 
