@@ -1,4 +1,6 @@
 .git
+.scratch
+.worktrees
 .next
 .playwright-mcp
 node_modules
