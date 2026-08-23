@@ -63,9 +63,16 @@ export async function runRelatedPetsV24Verification({
       snapshot.relatedSlugs.includes(snapshot.sourceSlug) ||
       snapshot.relatedSlugs.some((slug) => !approvedSlugs.has(slug))
     ).map(({ sourceSlug }) => sourceSlug);
+    const finalState = await service.getState();
+    const activeGenerationChanged =
+      !finalState ||
+      finalState.status !== "ready" ||
+      finalState.activeGenerationId !== state.activeGenerationId ||
+      finalState.rankingRevision !== state.rankingRevision;
 
     const status =
-      snapshots.length === dryRun.coverage.approvedPetCount &&
+      !activeGenerationChanged &&
+        snapshots.length === dryRun.coverage.approvedPetCount &&
         actualBySource.size === expectedBySource.size &&
         mismatchedSources.length === 0 &&
         integrityFailures.length === 0
@@ -81,6 +88,9 @@ export async function runRelatedPetsV24Verification({
       snapshotCount: snapshots.length,
       mismatchedSources,
       integrityFailures,
+      ...(activeGenerationChanged
+        ? { failureReason: "active_generation_changed" }
+        : {}),
     }));
     return status === "verified" ? 0 : 1;
   } finally {

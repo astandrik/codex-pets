@@ -327,8 +327,9 @@ excluded from both embedding inputs. The query revision uses the query role and
 the document revision uses the document role of the same 768-dimensional model.
 Run model backfills sequentially so they share the AI Studio rate budget. V24
 combines description similarity with controlled entity, franchise, collection,
-and archetype annotations. Visual similarity only orders already qualified
-candidates and cannot promote a visual-only match into that tier.
+and archetype annotations. Visual similarity contributes to ordering inside the
+qualified tier and also orders shared-topic sparse-fallback candidates after
+topic count and kind. Visual evidence alone cannot qualify or rescue a match.
 The current ranking revision stores eight ordered slugs per approved pet. Pet
 detail pages render all eight immediately (four columns on desktop, three on
 tablet, and two on mobile); the private Markdown twin intentionally keeps the

@@ -9,20 +9,39 @@ vi.mock("@/lib/pets/approval-preparations-repository", () => ({
   enqueueApprovalPreparation: vi.fn(),
 }));
 
+vi.mock("@/lib/pets/mock-data", () => ({
+  isMockPetsDataSource: vi.fn(),
+}));
+
 vi.mock("@/lib/pets/related-pets-repository", () => ({
   getRelatedPetsState: vi.fn(),
 }));
 
 vi.mock("@/lib/pets/repository", () => ({
   getPetForApprovalPreparationById: vi.fn(),
+  moderatePet: vi.fn(),
+}));
+
+vi.mock("@/lib/pets/related-pets-server", () => ({
+  revalidateRelatedPetCandidatesCache: vi.fn(),
+}));
+
+vi.mock("@/lib/sitemap-cache", () => ({
+  revalidateSitemapCache: vi.fn(),
 }));
 
 import { POST } from "@/app/api/admin/submissions/[id]/approve/route";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { enqueueApprovalPreparation } from "@/lib/pets/approval-preparations-repository";
+import { isMockPetsDataSource } from "@/lib/pets/mock-data";
 import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
 import { getRelatedPetsState } from "@/lib/pets/related-pets-repository";
-import { getPetForApprovalPreparationById } from "@/lib/pets/repository";
+import {
+  getPetForApprovalPreparationById,
+  moderatePet,
+} from "@/lib/pets/repository";
+import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
+import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 const pendingPet = {
   id: "pet_1",
@@ -86,6 +105,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
       role: "admin",
     });
     vi.mocked(isAdminUser).mockReturnValue(true);
+    vi.mocked(isMockPetsDataSource).mockReturnValue(false);
     vi.mocked(getPetForApprovalPreparationById).mockResolvedValue(pendingPet);
     vi.mocked(getRelatedPetsState).mockResolvedValue(readyState);
     vi.mocked(enqueueApprovalPreparation).mockResolvedValue(preparation);
@@ -116,6 +136,36 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     expect(getPetForApprovalPreparationById).not.toHaveBeenCalled();
     expect(enqueueApprovalPreparation).not.toHaveBeenCalled();
   });
+
+  it.each([undefined, "false"])(
+    "approves directly in mock mode when preparation flag is %s",
+    async (flag) => {
+      vi.stubEnv("PET_RELATED_PREAPPROVAL_ENABLED", flag ?? "");
+      vi.mocked(isMockPetsDataSource).mockReturnValueOnce(true);
+      vi.mocked(moderatePet).mockResolvedValueOnce({
+        ...pendingPet,
+        status: "approved",
+        approvedAt: pendingPet.updatedAt,
+      });
+
+      const response = await approve();
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        ok: true,
+        pet: { slug: pendingPet.slug, status: "approved" },
+      });
+      expect(moderatePet).toHaveBeenCalledWith({
+        petId: pendingPet.id,
+        reviewerId: "admin_1",
+        decision: "approved",
+      });
+      expect(revalidateSitemapCache).toHaveBeenCalledOnce();
+      expect(revalidateRelatedPetCandidatesCache).toHaveBeenCalledOnce();
+      expect(getRelatedPetsState).not.toHaveBeenCalled();
+      expect(enqueueApprovalPreparation).not.toHaveBeenCalled();
+    },
+  );
 
   it("rejects missing or non-pending pets", async () => {
     vi.mocked(getPetForApprovalPreparationById).mockResolvedValueOnce(null);

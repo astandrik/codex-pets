@@ -107,4 +107,36 @@ describe("AdminSubmissionActions", () => {
       title: "Approval needs attention",
     }));
   });
+
+  it("keeps a timed-out preparation observable and resumes it", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      Response.json(
+        { status: "preparing", preparationId: "preparation-1" },
+        { status: 202 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchImpl);
+    mocks.poll
+      .mockResolvedValueOnce("timeout")
+      .mockResolvedValueOnce("succeeded");
+
+    await act(async () => {
+      root.render(<AdminSubmissionActions petId="pet-1" />);
+    });
+    const approve = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.includes("Approve"));
+    await act(async () => approve?.click());
+
+    expect(mocks.add).toHaveBeenCalledWith(expect.objectContaining({
+      theme: "normal",
+      title: "Approval continues in background",
+    }));
+
+    await act(async () => approve?.click());
+
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(mocks.poll).toHaveBeenCalledTimes(2);
+    expect(mocks.trackGoal).toHaveBeenCalledWith("pet_review_approve");
+    expect(mocks.refresh).toHaveBeenCalledOnce();
+  });
 });

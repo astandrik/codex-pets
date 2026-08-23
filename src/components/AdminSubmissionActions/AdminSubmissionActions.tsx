@@ -29,6 +29,9 @@ export function AdminSubmissionActions({ petId }: AdminSubmissionActionsProps) {
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const [approvalPreparationId, setApprovalPreparationId] = useState<
+    string | null
+  >(null);
 
   function notifyFailure(action: string, status: number) {
     add({
@@ -50,49 +53,69 @@ export function AdminSubmissionActions({ petId }: AdminSubmissionActionsProps) {
   async function approve() {
     setBusy(true);
     try {
-      const response = await fetch(
-        withBasePath(`/api/admin/submissions/${petId}/approve`),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reason: "" }),
-        },
-      );
-      if (!response.ok) {
-        notifyFailure("Approve", response.status);
-        return;
-      }
-      if (response.status === 202) {
+      let preparationId = approvalPreparationId;
+      if (!preparationId) {
+        const response = await fetch(
+          withBasePath(`/api/admin/submissions/${petId}/approve`),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: "" }),
+          },
+        );
+        if (!response.ok) {
+          notifyFailure("Approve", response.status);
+          return;
+        }
+        if (response.status !== 202) {
+          completeApproval();
+          return;
+        }
         const payload = await response.json() as { preparationId?: unknown };
         if (typeof payload.preparationId !== "string") {
           notifyFailure("Approve", 500);
           return;
         }
-        const url = new URL(
-          withBasePath(`/api/admin/submissions/${petId}/approval-preparation`),
-          window.location.origin,
-        );
-        url.searchParams.set("preparationId", payload.preparationId);
-        const status = await pollApprovalPreparation(url.href);
-        if (status !== "succeeded") {
-          add({
-            name: `pet-mod-${petId}-preparation`,
-            theme: "danger",
-            title: status === "manual_review"
-              ? "Approval needs attention"
-              : status === "timeout"
-                ? "Approval preparation timed out"
-                : "Approval status check failed",
-          });
-          return;
-        }
+        preparationId = payload.preparationId;
+        setApprovalPreparationId(preparationId);
       }
-      trackGoal("pet_review_approve");
-      notifySuccess("Pet approved");
-      router.refresh();
+      const url = new URL(
+        withBasePath(`/api/admin/submissions/${petId}/approval-preparation`),
+        window.location.origin,
+      );
+      url.searchParams.set("preparationId", preparationId);
+      const status = await pollApprovalPreparation(url.href);
+      if (status === "timeout") {
+        add({
+          name: `pet-mod-${petId}-preparation`,
+          theme: "normal",
+          title: "Approval continues in background",
+          content: "Use Approve again to resume the status check.",
+        });
+        return;
+      }
+      if (status !== "succeeded") {
+        setApprovalPreparationId(null);
+        add({
+          name: `pet-mod-${petId}-preparation`,
+          theme: "danger",
+          title: status === "manual_review"
+            ? "Approval needs attention"
+            : "Approval status check failed",
+        });
+        return;
+      }
+      setApprovalPreparationId(null);
+      completeApproval();
     } finally {
       setBusy(false);
     }
+  }
+
+  function completeApproval() {
+    trackGoal("pet_review_approve");
+    notifySuccess("Pet approved");
+    router.refresh();
   }
 
   async function reject() {

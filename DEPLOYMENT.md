@@ -184,9 +184,10 @@ npm run related:backfill-annotation-document -- --apply
 Description query and document inputs contain normalized name, kind, and
 description; tags are excluded. Controlled annotations provide canonical
 entity, franchise, family, collection, and archetype facets. Visual similarity
-only orders already qualified candidates and cannot qualify a visual-only
-match. Only after every backfill reports complete current coverage, build the
-replacement snapshots:
+contributes to ordering inside the qualified tier and also orders shared-topic
+sparse-fallback candidates after topic count and kind. Visual evidence alone
+cannot qualify or rescue a match. Only after every backfill reports complete
+current coverage, build the replacement snapshots:
 
 ```bash
 npm run related:rebuild -- --dry-run

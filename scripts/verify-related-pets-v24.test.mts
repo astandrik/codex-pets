@@ -134,6 +134,36 @@ describe("related:verify:v24", () => {
     ]);
   });
 
+  it("fails when the active generation changes during verification", async () => {
+    const getState = vi.fn()
+      .mockResolvedValueOnce({
+        status: "ready",
+        activeGenerationId: "generation-v24",
+        rankingRevision,
+      })
+      .mockResolvedValueOnce({
+        status: "ready",
+        activeGenerationId: "generation-next",
+        rankingRevision,
+      });
+    const runtime = service({ getState });
+    const lines: Array<Record<string, unknown>> = [];
+
+    await expect(runRelatedPetsV24Verification({
+      loadService: async () => runtime,
+      write: (line: string) => lines.push(
+        JSON.parse(line) as Record<string, unknown>,
+      ),
+    })).resolves.toBe(1);
+    expect(getState).toHaveBeenCalledTimes(2);
+    expect(lines).toEqual([
+      expect.objectContaining({
+        status: "failed",
+        failureReason: "active_generation_changed",
+      }),
+    ]);
+  });
+
   it("rejects arguments and incompatible active generations", async () => {
     await expect(runRelatedPetsV24Verification({ argv: ["--apply"] }))
       .rejects.toThrow("does not accept arguments");

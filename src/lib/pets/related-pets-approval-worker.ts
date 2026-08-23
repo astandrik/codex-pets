@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
 import type {
   ApprovalPreparation,
+  ApprovalPreparationFinalizeResult,
   ApprovalRankingInputScope,
 } from "@/lib/pets/approval-preparations-repository";
 import {
@@ -62,7 +63,7 @@ type WorkerDependencies<Pet extends PreparedPet> = {
     inputScope: ApprovalRankingInputScope;
     expectedInputRevision: string;
     expectedSnapshotCount: number;
-  }) => Promise<boolean>;
+  }) => Promise<ApprovalPreparationFinalizeResult>;
   markFailure: (input: {
     preparationId: string;
     workerId: string;
@@ -92,6 +93,7 @@ const RETRYABLE_FAILURES = new Set([
   "provider_error",
   "provider_unavailable",
   "server_error",
+  "generation_conflict",
 ]);
 
 export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(
@@ -111,6 +113,7 @@ export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(
     if (!preparation) return "idle";
 
     let generationId: string | null = null;
+    let finalizationOutcomeUncertain = false;
     try {
       const pet = await dependencies.getPet(preparation.petId);
       if (
@@ -128,15 +131,26 @@ export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(
         generationId,
         pet: preparedPet,
       });
-      const finalized = await dependencies.finalize({
-        preparationId: preparation.preparationId,
-        workerId,
-        preparedGenerationId: generationId,
-        reviewId: dependencies.createReviewId(),
-        now: dependencies.now().toISOString(),
-        ...generation,
-      });
-      if (!finalized) throw preparationFailure("stale_catalog");
+      let finalization: ApprovalPreparationFinalizeResult;
+      try {
+        finalization = await dependencies.finalize({
+          preparationId: preparation.preparationId,
+          workerId,
+          preparedGenerationId: generationId,
+          reviewId: dependencies.createReviewId(),
+          now: dependencies.now().toISOString(),
+          ...generation,
+        });
+      } catch (error) {
+        finalizationOutcomeUncertain = true;
+        throw error;
+      }
+      if (finalization === "generation_conflict") {
+        throw preparationFailure("generation_conflict");
+      }
+      if (finalization === "stale_inputs") {
+        throw preparationFailure("stale_catalog");
+      }
       await notifySucceeded(preparation.petSlug);
       return "succeeded";
     } catch (error) {
@@ -149,7 +163,9 @@ export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(
         now: dependencies.now(),
       });
       const result = resultFromPreparation(updated);
-      if (result === "succeeded") await notifySucceeded(preparation.petSlug);
+      if (result === "succeeded" && finalizationOutcomeUncertain) {
+        await notifySucceeded(preparation.petSlug);
+      }
       return result;
     } finally {
       if (generationId) await cleanupGeneration(generationId);
