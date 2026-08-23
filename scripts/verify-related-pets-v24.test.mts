@@ -36,6 +36,7 @@ function service(overrides = {}) {
       activeGenerationId: "generation-v24",
       rankingRevision,
     })),
+    getRankingInputRevision: vi.fn(async () => "inputs-v24"),
     listSnapshots: vi.fn(async () => rankings.map((ranking) => ({
       ...ranking,
       generationId: "generation-v24",
@@ -65,6 +66,7 @@ describe("related:verify:v24", () => {
       mode: "dry-run",
       includeVisual: true,
     });
+    expect(runtime.getRankingInputRevision).toHaveBeenCalledTimes(2);
     expect(lines).toEqual([
       expect.objectContaining({
         status: "verified",
@@ -147,6 +149,9 @@ describe("related:verify:v24", () => {
         rankingRevision,
       });
     const runtime = service({ getState });
+    vi.mocked(runtime.getRankingInputRevision)
+      .mockResolvedValueOnce("inputs-before")
+      .mockResolvedValueOnce("inputs-after");
     const lines: Array<Record<string, unknown>> = [];
 
     await expect(runRelatedPetsV24Verification({
@@ -160,6 +165,28 @@ describe("related:verify:v24", () => {
       expect.objectContaining({
         status: "failed",
         failureReason: "active_generation_changed",
+      }),
+    ]);
+  });
+
+  it("fails when ranking inputs change without rotating the generation", async () => {
+    const getRankingInputRevision = vi.fn()
+      .mockResolvedValueOnce("inputs-before")
+      .mockResolvedValueOnce("inputs-after");
+    const runtime = service({ getRankingInputRevision });
+    const lines: Array<Record<string, unknown>> = [];
+
+    await expect(runRelatedPetsV24Verification({
+      loadService: async () => runtime,
+      write: (line: string) => lines.push(
+        JSON.parse(line) as Record<string, unknown>,
+      ),
+    })).resolves.toBe(1);
+    expect(getRankingInputRevision).toHaveBeenCalledTimes(2);
+    expect(lines).toEqual([
+      expect.objectContaining({
+        status: "failed",
+        failureReason: "ranking_inputs_changed",
       }),
     ]);
   });

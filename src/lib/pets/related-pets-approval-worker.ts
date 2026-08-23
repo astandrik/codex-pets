@@ -94,6 +94,7 @@ const RETRYABLE_FAILURES = new Set([
   "provider_unavailable",
   "server_error",
   "generation_conflict",
+  "ranking_inputs_changed",
 ]);
 
 export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(

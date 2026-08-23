@@ -20,10 +20,9 @@ export async function runRelatedPetsV24Verification({
 
   const service = await loadService();
   try {
-    const [state, dryRun, candidates] = await Promise.all([
+    const [state, initialInputRevision] = await Promise.all([
       service.getState(),
-      service.rebuild({ mode: "dry-run", includeVisual: true }),
-      service.listCandidates(),
+      service.getRankingInputRevision({ includeVisual: true }),
     ]);
     if (
       !state ||
@@ -33,6 +32,11 @@ export async function runRelatedPetsV24Verification({
     ) {
       throw new Error("active_generation_incompatible");
     }
+
+    const [dryRun, candidates] = await Promise.all([
+      service.rebuild({ mode: "dry-run", includeVisual: true }),
+      service.listCandidates(),
+    ]);
 
     const snapshots = await service.listSnapshots(state.activeGenerationId);
     const approvedSlugs = new Set(
@@ -63,15 +67,21 @@ export async function runRelatedPetsV24Verification({
       snapshot.relatedSlugs.includes(snapshot.sourceSlug) ||
       snapshot.relatedSlugs.some((slug) => !approvedSlugs.has(slug))
     ).map(({ sourceSlug }) => sourceSlug);
-    const finalState = await service.getState();
+    const [finalState, finalInputRevision] = await Promise.all([
+      service.getState(),
+      service.getRankingInputRevision({ includeVisual: true }),
+    ]);
     const activeGenerationChanged =
       !finalState ||
       finalState.status !== "ready" ||
       finalState.activeGenerationId !== state.activeGenerationId ||
       finalState.rankingRevision !== state.rankingRevision;
+    const rankingInputsChanged =
+      finalInputRevision !== initialInputRevision;
 
     const status =
       !activeGenerationChanged &&
+        !rankingInputsChanged &&
         snapshots.length === dryRun.coverage.approvedPetCount &&
         actualBySource.size === expectedBySource.size &&
         mismatchedSources.length === 0 &&
@@ -90,7 +100,9 @@ export async function runRelatedPetsV24Verification({
       integrityFailures,
       ...(activeGenerationChanged
         ? { failureReason: "active_generation_changed" }
-        : {}),
+        : rankingInputsChanged
+          ? { failureReason: "ranking_inputs_changed" }
+          : {}),
     }));
     return status === "verified" ? 0 : 1;
   } finally {
@@ -146,6 +158,8 @@ async function loadProductionService() {
   return {
     rebuild: rebuildRuntime.rebuildRelatedPets,
     getState: relatedRepository.getRelatedPetsState,
+    getRankingInputRevision:
+      rebuildRuntime.getCurrentRelatedPetsRankingInputRevision,
     listSnapshots: relatedRepository.listRelatedPetsSnapshots,
     listCandidates: petRepository.listRelatedPetCandidates,
     rankingRevision: profile.RELATED_PETS_V24_RANKING_REVISION,

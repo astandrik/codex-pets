@@ -147,6 +147,7 @@ export type RelatedPetsInvalidationReason = "text_profile_incompatible";
 
 type RelatedPetsRebuildFailureReason =
   | "rebuild_failed"
+  | "ranking_inputs_changed"
   | "storage_unavailable"
   | "text_vectors_incomplete"
   | "annotations_incomplete"
@@ -235,9 +236,25 @@ export function createRelatedPetsRebuildService(
   return {
     rebuild,
     prepareGeneration,
+    getRankingInputRevision,
     invalidate,
     recoverPrevious,
   };
+
+  async function getRankingInputRevision(input: {
+    includeVisual?: boolean;
+  } = {}): Promise<string> {
+    if (!dependencies.isStorageAvailable()) {
+      throw new RelatedPetsRebuildError("storage_unavailable");
+    }
+    const revision = await dependencies.repository.getRankingInputRevision(
+      createRankingInputScope(input.includeVisual ?? true),
+    );
+    if (!revision) {
+      throw new RelatedPetsRebuildError("storage_unavailable");
+    }
+    return revision;
+  }
 
   async function prepareGeneration(input: {
     generationId: string;
@@ -251,16 +268,11 @@ export function createRelatedPetsRebuildService(
     inputScope: RelatedPetsRankingInputScope;
     expectedInputRevision: string;
   }> {
-    if (!dependencies.isStorageAvailable()) {
-      throw new RelatedPetsRebuildError("storage_unavailable");
-    }
     const includeVisual = input.includeVisual ?? true;
     const inputScope = createRankingInputScope(includeVisual);
-    const expectedInputRevision = await dependencies.repository
-      .getRankingInputRevision(inputScope);
-    if (!expectedInputRevision) {
-      throw new RelatedPetsRebuildError("storage_unavailable");
-    }
+    const expectedInputRevision = await getRankingInputRevision({
+      includeVisual,
+    });
     const approvedPets = await dependencies.listApprovedPets();
     if (approvedPets.some(({ slug }) => slug === input.pendingPet.slug)) {
       throw new RelatedPetsRebuildError("rebuild_failed");
@@ -282,7 +294,7 @@ export function createRelatedPetsRebuildService(
     const currentInputRevision = await dependencies.repository
       .getRankingInputRevision(inputScope);
     if (currentInputRevision !== expectedInputRevision) {
-      throw new RelatedPetsRebuildError("rebuild_failed");
+      throw new RelatedPetsRebuildError("ranking_inputs_changed");
     }
     return {
       generationId: input.generationId,
@@ -1215,5 +1227,7 @@ const service = createRelatedPetsRebuildService({
 
 export const rebuildRelatedPets = service.rebuild;
 export const prepareRelatedPetsGeneration = service.prepareGeneration;
+export const getCurrentRelatedPetsRankingInputRevision =
+  service.getRankingInputRevision;
 export const invalidateRelatedPets = service.invalidate;
 export const recoverPreviousRelatedPets = service.recoverPrevious;

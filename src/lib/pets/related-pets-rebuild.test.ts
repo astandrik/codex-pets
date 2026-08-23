@@ -700,6 +700,14 @@ describe("related pets rebuild service", () => {
     expect(harness.state).toBeNull();
   });
 
+  it("exposes the current scoped ranking input revision", async () => {
+    const harness = createHarness();
+
+    await expect(harness.service.getRankingInputRevision({
+      includeVisual: true,
+    })).resolves.toBe("catalog-revision-1:embedding-revision-1");
+  });
+
   it("rejects a prepared generation when the approved catalog changes", async () => {
     const approvedPets = [pet("source"), pet("peer-a")];
     const pendingPet = pet("pending") as PublicPet & { status: "approved" };
@@ -715,7 +723,7 @@ describe("related pets rebuild service", () => {
       includeVisual: true,
     })).rejects.toMatchObject({
       name: "RelatedPetsRebuildError",
-      reason: "rebuild_failed",
+      reason: "ranking_inputs_changed",
     });
     expect(harness.state).toBeNull();
   });
