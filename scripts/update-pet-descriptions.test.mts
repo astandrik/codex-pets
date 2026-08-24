@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -13,7 +13,7 @@ const {
 } = await import("./lib/pet-description-update.mjs");
 const {
   RELATED_PETS_REBUILD_COMMANDS,
-  buildRelatedPetsQueryBackfillCommands,
+  buildRelatedPetsDerivedBackfillCommands,
 } = await import(
   "./lib/related-pets-maintenance.mjs"
 );
@@ -222,6 +222,17 @@ describe("assertAllDescriptionsChanged", () => {
 });
 
 describe("buildEmbeddingBackfillCommands", () => {
+  it("describes all V24 related-pet derived inputs to operators", () => {
+    const source = readFileSync(
+      new URL("./update-pet-descriptions.mjs", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("V24 related-pet derived inputs");
+    expect(source).not.toContain("related-query embeddings");
+    expect(source).not.toContain("document and related-query backfills");
+  });
+
   it("prints one apply command per updated slug", () => {
     expect(buildEmbeddingBackfillCommands(["kesha", "wild-boar"])).toEqual([
       "node scripts/backfill-pet-search-embeddings.mjs --apply --slug kesha",
@@ -229,15 +240,23 @@ describe("buildEmbeddingBackfillCommands", () => {
     ]);
   });
 
-  it("refreshes related queries before rebuilding snapshots", () => {
+  it("refreshes every V24 text input before rebuilding snapshots", () => {
     const commands = [
-      ...buildRelatedPetsQueryBackfillCommands(["kesha", "wild-boar"]),
+      ...buildRelatedPetsDerivedBackfillCommands(["kesha", "wild-boar"]),
       ...RELATED_PETS_REBUILD_COMMANDS,
     ];
 
     expect(commands).toEqual([
-      "npm run related:backfill-query -- --apply --slug kesha",
-      "npm run related:backfill-query -- --apply --slug wild-boar",
+      "npm run related:backfill-description-query -- --apply --slug kesha",
+      "npm run related:backfill-description-document -- --apply --slug kesha",
+      "npm run related:backfill-annotations -- --apply --slug kesha",
+      "npm run related:backfill-annotation-query -- --apply --slug kesha",
+      "npm run related:backfill-annotation-document -- --apply --slug kesha",
+      "npm run related:backfill-description-query -- --apply --slug wild-boar",
+      "npm run related:backfill-description-document -- --apply --slug wild-boar",
+      "npm run related:backfill-annotations -- --apply --slug wild-boar",
+      "npm run related:backfill-annotation-query -- --apply --slug wild-boar",
+      "npm run related:backfill-annotation-document -- --apply --slug wild-boar",
       "npm run related:rebuild -- --dry-run",
       "npm run related:rebuild -- --apply",
     ]);

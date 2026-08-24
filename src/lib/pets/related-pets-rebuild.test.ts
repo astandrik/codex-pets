@@ -31,8 +31,8 @@ import type {
   RelatedPetsState,
 } from "@/lib/pets/related-pets-repository";
 import type { PublicPet } from "@/lib/pets/types";
-import { RELATED_PETS_V24_FALLBACK_POLICY_REVISION } from "@/lib/pets/related-pets-v24-fallback-policy";
-import { RELATED_PETS_V24_RELATION_POLICY_REVISION } from "@/lib/pets/related-pets-v24-relation-policy";
+import { RELATED_PETS_V24_FALLBACK_POLICY_REVISION } from "@/lib/pets/related-pets-fallback-policy";
+import { RELATED_PETS_V24_RELATION_POLICY_REVISION } from "@/lib/pets/related-pets-relation-policy";
 
 const profile: RelatedPetsRebuildProfile = {
   strategy: "sparse-fallback-v24",
@@ -206,6 +206,7 @@ function annotationVectorFor(
 function createHarness(options: {
   rebuildProfile?: RelatedPetsRebuildProfile;
   pets?: PublicPet[];
+  approvedPets?: PublicPet[];
   textQueryRows?: StoredRawPetSearchEmbedding[];
   textRows?: StoredRawPetSearchEmbedding[];
   annotationRows?: StoredRelatedPetAnnotation[];
@@ -584,7 +585,7 @@ function createHarness(options: {
         catalogMutated = true;
         catalogRevision = "catalog-revision-2";
       }
-      return pets;
+      return options.approvedPets ?? pets;
     },
     listRawVectors: async (revision) => {
       vectorRevisionReads.push(revision);
@@ -672,6 +673,59 @@ describe("related pets rebuild service", () => {
     expect(prepared.annotations.size).toBe(0);
     expect(prepared.annotationQueryVectors.size).toBe(0);
     expect(prepared.annotationDocumentVectors.size).toBe(0);
+  });
+
+  it("prepares an inactive generation from the current catalog and pending pet", async () => {
+    const approvedPets = [pet("source"), pet("peer-a")];
+    const pendingPet = pet("pending") as PublicPet & { status: "approved" };
+    const harness = createHarness({
+      pets: [...approvedPets, pendingPet],
+      approvedPets,
+    });
+
+    await expect(harness.service.prepareGeneration({
+      generationId: "generation-prepared",
+      pendingPet,
+      includeVisual: true,
+    })).resolves.toMatchObject({
+      generationId: "generation-prepared",
+      coverage: { approvedPetCount: 3, snapshotCount: 3 },
+    });
+
+    expect(harness.mutations).toEqual([
+      "write:source",
+      "write:peer-a",
+      "write:pending",
+    ]);
+    expect(harness.state).toBeNull();
+  });
+
+  it("exposes the current scoped ranking input revision", async () => {
+    const harness = createHarness();
+
+    await expect(harness.service.getRankingInputRevision({
+      includeVisual: true,
+    })).resolves.toBe("catalog-revision-1:embedding-revision-1");
+  });
+
+  it("rejects a prepared generation when the approved catalog changes", async () => {
+    const approvedPets = [pet("source"), pet("peer-a")];
+    const pendingPet = pet("pending") as PublicPet & { status: "approved" };
+    const harness = createHarness({
+      pets: [...approvedPets, pendingPet],
+      approvedPets,
+      mutateCatalogDuringRanking: true,
+    });
+
+    await expect(harness.service.prepareGeneration({
+      generationId: "generation-prepared",
+      pendingPet,
+      includeVisual: true,
+    })).rejects.toMatchObject({
+      name: "RelatedPetsRebuildError",
+      reason: "ranking_inputs_changed",
+    });
+    expect(harness.state).toBeNull();
   });
 
   it("fails closed when controlled annotations are incomplete", async () => {

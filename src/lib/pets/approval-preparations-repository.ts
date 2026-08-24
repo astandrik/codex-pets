@@ -37,6 +37,13 @@ export type ApprovalRankingInputScope = {
   annotationRevision?: string | null;
 };
 
+export type ApprovalPreparationFinalizeResult =
+  | "succeeded"
+  | "generation_conflict"
+  | "generation_incomplete"
+  | "ranking_inputs_changed"
+  | "stale_inputs";
+
 type Execute = (
   statement: string,
   params: Record<string, unknown>,
@@ -66,7 +73,6 @@ export function createApprovalPreparationId(input: {
   petId: string;
   petUpdatedAt: string;
   rankingRevision: string;
-  expectedActiveGenerationId: string;
 }): string {
   const digest = createHash("sha256")
     .update(input.petId)
@@ -74,8 +80,6 @@ export function createApprovalPreparationId(input: {
     .update(input.petUpdatedAt)
     .update("\0")
     .update(input.rankingRevision)
-    .update("\0")
-    .update(input.expectedActiveGenerationId)
     .digest("hex")
     .slice(0, 32);
   return `approval_${digest}`;
@@ -109,7 +113,42 @@ export function createApprovalPreparationsRepository(
     const preparationId = createApprovalPreparationId(input);
     return dependencies.transaction(async (execute) => {
       const existing = await getWithExecute(execute, preparationId);
-      if (existing) return existing;
+      if (existing) {
+        if (existing.status !== "manual_review") return existing;
+        await execute(
+          `
+DECLARE $preparation_id AS Utf8;
+DECLARE $reviewer_id AS Utf8;
+DECLARE $active_generation_id AS Utf8;
+DECLARE $manual_review AS Utf8;
+DECLARE $queued AS Utf8;
+DECLARE $zero AS Uint32;
+DECLARE $empty AS Utf8;
+DECLARE $now AS Utf8;
+
+UPDATE ${TABLES.approvalPreparations}
+SET reviewer_id = $reviewer_id, status = $queued, attempts = $zero,
+    expected_active_generation_id = $active_generation_id,
+    next_attempt_at = $now, prepared_generation_id = $empty,
+    lease_owner = $empty, lease_until = $empty, failure_code = $empty,
+    updated_at = $now
+WHERE preparation_id = $preparation_id AND status = $manual_review;
+          `,
+          {
+            $preparation_id: dependencies.values.utf8(preparationId),
+            $reviewer_id: dependencies.values.utf8(input.reviewerId),
+            $active_generation_id: dependencies.values.utf8(
+              input.expectedActiveGenerationId,
+            ),
+            $manual_review: dependencies.values.utf8("manual_review"),
+            $queued: dependencies.values.utf8("queued"),
+            $zero: dependencies.values.uint32(0),
+            $empty: dependencies.values.utf8(""),
+            $now: dependencies.values.utf8(input.now),
+          },
+        );
+        return getWithExecute(execute, preparationId);
+      }
       await execute(
         `
 DECLARE $preparation_id AS Utf8;
@@ -213,6 +252,24 @@ LIMIT 1;
       const candidateRow = rowsFromResult(result)[0];
       if (!candidateRow) return null;
       const candidate = preparationFromRow(candidateRow);
+      const stateResult = await execute(
+        `
+DECLARE $state_id AS Utf8;
+DECLARE $ready AS Utf8;
+
+SELECT status, active_generation_id
+FROM ${TABLES.relatedState}
+WHERE state_id = $state_id AND status = $ready
+LIMIT 1;
+        `,
+        {
+          $state_id: dependencies.values.utf8(STATE_ID),
+          $ready: dependencies.values.utf8("ready"),
+        },
+      );
+      const stateRow = rowsFromResult(stateResult)[0];
+      const activeGenerationId = stateRow ? textAt(stateRow, 1) : "";
+      if (!activeGenerationId) return null;
       await execute(
         `
 DECLARE $preparation_id AS Utf8;
@@ -222,10 +279,12 @@ DECLARE $worker_id AS Utf8;
 DECLARE $lease_until AS Utf8;
 DECLARE $now AS Utf8;
 DECLARE $one AS Uint32;
+DECLARE $active_generation_id AS Utf8;
 
 UPDATE ${TABLES.approvalPreparations}
 SET status = $preparing,
     attempts = attempts + $one,
+    expected_active_generation_id = $active_generation_id,
     lease_owner = $worker_id,
     lease_until = $lease_until,
     updated_at = $now
@@ -240,6 +299,7 @@ WHERE preparation_id = $preparation_id
           $lease_until: dependencies.values.utf8(input.leaseUntil),
           $now: dependencies.values.utf8(input.now),
           $one: dependencies.values.uint32(1),
+          $active_generation_id: dependencies.values.utf8(activeGenerationId),
         },
       );
       const claimed = await getWithExecute(execute, candidate.preparationId);
@@ -291,8 +351,8 @@ WHERE preparation_id = $preparation_id
     inputScope: ApprovalRankingInputScope;
     expectedInputRevision: string;
     expectedSnapshotCount: number;
-  }): Promise<boolean> {
-    if (!dependencies.isConfigured()) return false;
+  }): Promise<ApprovalPreparationFinalizeResult> {
+    if (!dependencies.isConfigured()) return "stale_inputs";
     return dependencies.transaction(async (execute) => {
       const preparation = await getWithExecute(execute, input.preparationId);
       if (
@@ -300,13 +360,7 @@ WHERE preparation_id = $preparation_id
         preparation.status !== "preparing" ||
         preparation.leaseOwner !== input.workerId
       ) {
-        return false;
-      }
-      if (
-        await getInputRevisionWithExecute(execute, input.inputScope) !==
-        input.expectedInputRevision
-      ) {
-        return false;
+        return "stale_inputs";
       }
       const checks = await execute(
         `
@@ -360,12 +414,16 @@ WHERE generation_id = $generation_id
           0,
         )
       );
+      if (counts[0] !== 1) return "stale_inputs";
+      if (counts[1] !== 1) return "generation_conflict";
+      if (counts[2] !== input.expectedSnapshotCount) {
+        return "generation_incomplete";
+      }
       if (
-        counts[0] !== 1 ||
-        counts[1] !== 1 ||
-        counts[2] !== input.expectedSnapshotCount
+        await getInputRevisionWithExecute(execute, input.inputScope) !==
+        input.expectedInputRevision
       ) {
-        return false;
+        return "ranking_inputs_changed";
       }
 
       await execute(finalizeStatement(), {
@@ -389,7 +447,7 @@ WHERE generation_id = $generation_id
         $ranking_revision: dependencies.values.utf8(preparation.rankingRevision),
         $succeeded: dependencies.values.utf8("succeeded"),
       });
-      return true;
+      return "succeeded";
     });
   }
 
