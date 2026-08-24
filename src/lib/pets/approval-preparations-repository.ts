@@ -40,6 +40,8 @@ export type ApprovalRankingInputScope = {
 export type ApprovalPreparationFinalizeResult =
   | "succeeded"
   | "generation_conflict"
+  | "generation_incomplete"
+  | "ranking_inputs_changed"
   | "stale_inputs";
 
 type Execute = (
@@ -414,12 +416,14 @@ WHERE generation_id = $generation_id
       );
       if (counts[0] !== 1) return "stale_inputs";
       if (counts[1] !== 1) return "generation_conflict";
-      if (counts[2] !== input.expectedSnapshotCount) return "stale_inputs";
+      if (counts[2] !== input.expectedSnapshotCount) {
+        return "generation_incomplete";
+      }
       if (
         await getInputRevisionWithExecute(execute, input.inputScope) !==
         input.expectedInputRevision
       ) {
-        return "stale_inputs";
+        return "ranking_inputs_changed";
       }
 
       await execute(finalizeStatement(), {

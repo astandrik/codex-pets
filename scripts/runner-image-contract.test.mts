@@ -54,4 +54,30 @@ describe("runner image maintenance contract", () => {
     expect(dockerignore).not.toContain("related-pets-live-eval.test.ts");
     expect(dockerignore).toContain("!src/lib/pets/search-live-eval.test.ts");
   });
+
+  it("documents the fail-closed preparation default in runtime examples", () => {
+    for (const path of [
+      "../.env.example",
+      "../deploy/app-session.env.runtime.example",
+      "../DEPLOYMENT.md",
+    ]) {
+      expect(readFileSync(new URL(path, import.meta.url), "utf8")).toContain(
+        "PET_RELATED_PREAPPROVAL_ENABLED=false",
+      );
+    }
+  });
+
+  it("describes the full V24 maintenance sequence", () => {
+    const readme = readFileSync(
+      new URL("../README.md", import.meta.url),
+      "utf8",
+    );
+    const section = readme.slice(
+      readme.indexOf("An applied text or visual backfill"),
+      readme.indexOf("Related-pets description similarity"),
+    );
+
+    expect(section).toContain("Run the full V24 derived-data sequence");
+    expect(section).not.toContain("Run both commands");
+  });
 });

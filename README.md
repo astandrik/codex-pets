@@ -302,8 +302,8 @@ base `lexical` and visual `off` → additive migrations → backfills → visual
 `sexy` top five → both modes `hybrid`.
 
 An applied text or visual backfill that changes vectors prints the required
-related-pet snapshot follow-up. Run both commands after embedding maintenance
-completes so snapshot rankings do not remain stale:
+related-pet snapshot follow-up. Run the full V24 derived-data sequence after
+embedding maintenance completes so snapshot rankings do not remain stale:
 
 ```bash
 npm run related:backfill-description-query -- --dry-run

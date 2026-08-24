@@ -88,7 +88,7 @@ export async function main(argv = process.argv.slice(2)) {
       console.log(command);
     }
     console.log(
-      "refresh the related-query embeddings for the rewritten description(s):",
+      "refresh all V24 related-pet derived inputs for the rewritten description(s):",
     );
     for (const command of buildRelatedPetsDerivedBackfillCommands(
       updates.map((update) => update.slug),
@@ -96,7 +96,7 @@ export async function main(argv = process.argv.slice(2)) {
       console.log(command);
     }
     console.log(
-      "after all document and related-query backfills succeed, refresh related-pet snapshots:",
+      "after all V24 related-pet derived-input backfills succeed, refresh related-pet snapshots:",
     );
     for (const command of RELATED_PETS_REBUILD_COMMANDS) {
       console.log(command);

@@ -277,7 +277,11 @@ describe("approval preparation identity and retries", () => {
       label: "active generation",
       outcome: "generation_conflict",
     },
-    { counts: [1, 1, 8], label: "prepared generation", outcome: "stale_inputs" },
+    {
+      counts: [1, 1, 8],
+      label: "prepared generation",
+      outcome: "generation_incomplete",
+    },
   ])("does not publish a stale or incomplete $label", async ({
     counts,
     outcome,
@@ -288,6 +292,22 @@ describe("approval preparation identity and retries", () => {
     );
 
     await expect(repository.finalize(finalizeInput(9))).resolves.toBe(outcome);
+    expect(statements.some((statement) =>
+      statement.includes("UPSERT INTO codex_pet_reviews")
+    )).toBe(false);
+  });
+
+  it("reports ranking inputs changed after generation preparation", async () => {
+    const statements: string[] = [];
+    const repository = createApprovalPreparationsRepository(
+      fakeDependencies(statements, [1, 1, 9], [], {
+        catalogRows: [["other-pet", "2026-08-11T00:00:01.000Z"]],
+      }),
+    );
+
+    await expect(repository.finalize(finalizeInput(9))).resolves.toBe(
+      "ranking_inputs_changed",
+    );
     expect(statements.some((statement) =>
       statement.includes("UPSERT INTO codex_pet_reviews")
     )).toBe(false);
@@ -311,6 +331,9 @@ function fakeDependencies(
   statements: string[],
   counts: number[],
   parameters: Array<Record<string, unknown>> = [],
+  options: {
+    catalogRows?: Array<[slug: string, updatedAt: string]>;
+  } = {},
 ) {
   const execute = async (
     statement: string,
@@ -328,6 +351,15 @@ function fakeDependencies(
     if (statement.includes("SELECT COUNT(*) AS pet_count")) {
       return {
         resultSets: counts.map((count) => ({ rows: [{ items: [uint(count)] }] })),
+      };
+    }
+    if (statement.includes("SELECT slug, updated_at")) {
+      return {
+        resultSets: [{
+          rows: (options.catalogRows ?? []).map(([slug, updatedAt]) => ({
+            items: [text(slug), text(updatedAt)],
+          })),
+        }],
       };
     }
     return { resultSets: [] };

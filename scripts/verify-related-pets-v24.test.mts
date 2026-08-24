@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import { runRelatedPetsV24Verification } from "./verify-related-pets-v24.mjs";
+import type { RelatedPetsV24VerificationService } from "./verify-related-pets-v24.mjs";
 
 const rankingRevision = "ranking-v24";
 const rankings = [
@@ -51,6 +52,12 @@ function service(overrides = {}) {
 }
 
 describe("related:verify:v24", () => {
+  it("requires a ranking input revision reader in injected services", () => {
+    expectTypeOf<RelatedPetsV24VerificationService>()
+      .toHaveProperty("getRankingInputRevision")
+      .toBeFunction();
+  });
+
   it("verifies exact ordered snapshots without writes", async () => {
     const runtime = service();
     const lines: Array<Record<string, unknown>> = [];

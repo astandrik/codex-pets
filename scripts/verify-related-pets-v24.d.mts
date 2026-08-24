@@ -11,6 +11,9 @@ export type RelatedPetsV24VerificationService = {
     activeGenerationId: string | null;
     rankingRevision: string;
   } | null>;
+  getRankingInputRevision: (input: {
+    includeVisual: true;
+  }) => Promise<string>;
   listSnapshots: (generationId: string) => Promise<Array<{
     sourceSlug: string;
     rankingRevision: string;

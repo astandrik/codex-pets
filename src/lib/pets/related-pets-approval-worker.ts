@@ -94,6 +94,7 @@ const RETRYABLE_FAILURES = new Set([
   "provider_unavailable",
   "server_error",
   "generation_conflict",
+  "generation_incomplete",
   "ranking_inputs_changed",
 ]);
 
@@ -148,6 +149,12 @@ export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(
       }
       if (finalization === "generation_conflict") {
         throw preparationFailure("generation_conflict");
+      }
+      if (finalization === "generation_incomplete") {
+        throw preparationFailure("generation_incomplete");
+      }
+      if (finalization === "ranking_inputs_changed") {
+        throw preparationFailure("ranking_inputs_changed");
       }
       if (finalization === "stale_inputs") {
         throw preparationFailure("stale_catalog");

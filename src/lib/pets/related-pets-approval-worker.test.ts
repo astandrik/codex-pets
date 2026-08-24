@@ -200,6 +200,38 @@ describe("related pet approval worker", () => {
     });
   });
 
+  it.each([
+    ["ranking_inputs_changed", "ranking_inputs_changed"],
+    ["generation_incomplete", "generation_incomplete"],
+  ] as const)(
+    "retries a %s finalization outcome",
+    async (finalization, expectedFailureCode) => {
+      const cleanupInactiveGeneration = vi.fn(async () => true);
+      const markFailure = vi.fn(async (input: { failureCode: string }) => ({
+        ...preparation,
+        status: "retry" as const,
+        failureCode: input.failureCode,
+      }));
+      const worker = createRelatedPetApprovalWorker({
+        ...dependencies({
+          finalize: async () => finalization,
+          markFailure,
+        }),
+        cleanupGenerations: async () => false,
+        cleanupInactiveGeneration,
+      });
+
+      await expect(worker.runOnce("worker-1")).resolves.toBe("retry");
+      expect(markFailure).toHaveBeenCalledWith(expect.objectContaining({
+        failureCode: expectedFailureCode,
+        retryable: true,
+      }));
+      expect(cleanupInactiveGeneration).toHaveBeenCalledWith({
+        expectedGenerationId: "generation-current",
+      });
+    },
+  );
+
   it("retries a generation invalidated by changed ranking inputs", async () => {
     const cleanupInactiveGeneration = vi.fn(async () => true);
     const markFailure = vi.fn(async (input: { failureCode: string }) => ({
@@ -317,8 +349,19 @@ describe("related pet approval worker", () => {
   it("cleans an inactive generation after failed finalization", async () => {
     const cleanupGenerations = vi.fn(async () => false);
     const cleanupInactiveGeneration = vi.fn(async () => true);
+    const markFailure = vi.fn(async (input: {
+      failureCode: string;
+      retryable: boolean;
+    }) => ({
+      ...preparation,
+      status: "manual_review" as const,
+      failureCode: input.failureCode,
+    }));
     const workerDependencies = {
-      ...dependencies({ finalize: async () => "stale_inputs" }),
+      ...dependencies({
+        finalize: async () => "stale_inputs",
+        markFailure,
+      }),
       cleanupGenerations,
       cleanupInactiveGeneration,
     };
@@ -331,6 +374,10 @@ describe("related pet approval worker", () => {
     expect(cleanupInactiveGeneration).toHaveBeenCalledWith({
       expectedGenerationId: "generation-current",
     });
+    expect(markFailure).toHaveBeenCalledWith(expect.objectContaining({
+      failureCode: "stale_catalog",
+      retryable: false,
+    }));
   });
 
   it("cleans a partially built generation without masking the worker result", async () => {

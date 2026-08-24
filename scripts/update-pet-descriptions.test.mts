@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -222,6 +222,17 @@ describe("assertAllDescriptionsChanged", () => {
 });
 
 describe("buildEmbeddingBackfillCommands", () => {
+  it("describes all V24 related-pet derived inputs to operators", () => {
+    const source = readFileSync(
+      new URL("./update-pet-descriptions.mjs", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("V24 related-pet derived inputs");
+    expect(source).not.toContain("related-query embeddings");
+    expect(source).not.toContain("document and related-query backfills");
+  });
+
   it("prints one apply command per updated slug", () => {
     expect(buildEmbeddingBackfillCommands(["kesha", "wild-boar"])).toEqual([
       "node scripts/backfill-pet-search-embeddings.mjs --apply --slug kesha",
