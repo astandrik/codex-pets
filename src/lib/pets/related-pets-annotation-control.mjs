@@ -1,5 +1,5 @@
 export const RELATED_PETS_ANNOTATION_CONTROL_REVISION =
-  "related-pets-annotation-control-2026-08-v11-r4";
+  "related-pets-annotation-control-2026-08-v11-r5";
 
 export const RELATED_PETS_ANNOTATION_ALIASES = Object.freeze({
   entities: Object.freeze({}),
@@ -144,8 +144,9 @@ export const RELATED_PETS_ANNOTATION_OVERRIDES = Object.freeze({
     collections: Object.freeze([]),
   }),
   "sunny-sprout": Object.freeze({
-    reason: "The card identifies Neznayka but does not state an exact franchise identifier.",
+    reason: "The card identifies Neznayka but states neither an exact franchise identifier nor a thematic relation.",
     franchises: Object.freeze([]),
+    themes: Object.freeze([]),
   }),
   "round-bear": Object.freeze({
     reason: "This Winnie-the-Pooh card depicts the Soviet animated adaptation.",

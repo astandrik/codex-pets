@@ -23,6 +23,7 @@ import {
 } from "@/lib/pets/related-pets-annotation-contract.mjs";
 import {
   RELATED_PETS_ANNOTATION_ALIASES,
+  RELATED_PETS_ANNOTATION_CONTROL_REVISION,
   RELATED_PETS_ANNOTATION_OVERRIDES,
 } from "@/lib/pets/related-pets-annotation-control.mjs";
 
@@ -63,12 +64,15 @@ describe("current related pet annotation contract", () => {
       RELATED_PETS_ANNOTATION_QUERY_REVISION,
       RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
     ]).toEqual([
-      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r7",
-      "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r7",
-      "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r7",
+      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r8",
+      "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r8",
+      "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r8",
     ]);
     expect(RELATED_PETS_ANNOTATION_SCHEMA_NAME).toBe(
-      "related_pet_annotation_v11_r7",
+      "related_pet_annotation_v11_r8",
+    );
+    expect(RELATED_PETS_ANNOTATION_CONTROL_REVISION).toBe(
+      "related-pets-annotation-control-2026-08-v11-r5",
     );
     expect(RELATED_PETS_ANNOTATION_TOKEN_POLICY).toEqual({
       revision: "related-pets-annotation-token-policy-2026-08-v11-r5",
@@ -121,6 +125,35 @@ describe("current related pet annotation contract", () => {
         },
       },
     });
+  });
+
+  it("clears unsupported world-only themes for Sunny Sprout", () => {
+    const sunnyProposal = {
+      ...proposal,
+      entity: {
+        key: "Neznayka",
+        aliases: [],
+        confidence: "high" as const,
+        evidence: ["name" as const],
+      },
+      franchises: [],
+      franchise_families: [],
+      collections: [],
+      specific_archetypes: [],
+      themes: [relation("Unverified Theme", "medium", ["world_knowledge"])],
+      media_origins: [],
+    };
+
+    expect(listUnresolvedStrongRelations({
+      slug: "sunny-sprout",
+      proposal: sunnyProposal,
+    })).toEqual([]);
+    expect(resolveRelatedPetAnnotation({
+      slug: "sunny-sprout",
+      proposal: sunnyProposal,
+    }).themes).toEqual([]);
+    expect(RELATED_PETS_ANNOTATION_OVERRIDES["sunny-sprout"])
+      .toMatchObject({ franchises: [], themes: [] });
   });
 
   it("canonicalizes the KonoSuba and Evangelion franchise IDs", () => {
@@ -394,7 +427,7 @@ describe("current related pet annotation contract", () => {
       modelUri: "gpt://folder/qwen3.6-35b-a3b",
     });
     expect(first).toBe(
-      "9359a964507a8a5c08029109886cfd86c3f9b6525ef0929f3e27e8860dd4a004",
+      "aaa42e8dea5bd686bc538eae8fb990896e9042ffa1f8efd3b05f9ee6bddcfa36",
     );
     const same = createRelatedPetAnnotationSourceHash({
       pet: { ...pet, tags: pet.tags.toReversed() },

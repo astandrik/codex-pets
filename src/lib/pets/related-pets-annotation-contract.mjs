@@ -9,14 +9,14 @@ import {
 } from "./related-pets-annotation-control.mjs";
 
 export const RELATED_PETS_ANNOTATION_REVISION =
-  "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r7";
+  "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r8";
 export const RELATED_PETS_ANNOTATION_QUERY_REVISION =
-  "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r7";
+  "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r8";
 export const RELATED_PETS_ANNOTATION_DOCUMENT_REVISION =
-  "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r7";
+  "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r8";
 export const RELATED_PETS_ANNOTATION_MODEL_NAME = "qwen3.6-35b-a3b";
 export const RELATED_PETS_ANNOTATION_SCHEMA_NAME =
-  "related_pet_annotation_v11_r7";
+  "related_pet_annotation_v11_r8";
 export const RELATED_PETS_ANNOTATION_TOKEN_POLICY = Object.freeze({
   revision: "related-pets-annotation-token-policy-2026-08-v11-r5",
   reasoning: "model-default",
