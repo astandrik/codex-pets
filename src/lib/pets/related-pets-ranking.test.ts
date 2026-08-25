@@ -31,7 +31,7 @@ const PROFILE: RelatedPetsV24RankingProfile = {
 };
 
 const EXPECTED_RANKING_REVISION =
-  "related-pets-sparse-fallback-v24:depth=8:base=related-pets-franchise-coverage-v23:depth=8:base=related-pets-entity-controlled-v11-r3:depth=8:tail=description-first:gate=qualified-negatives:cal=related-pets-eval-v7:text-min=0.6167421023517932:annotation-min=0.4133420129086638:annotation-weight=1:visual-min=0.8178749331551675:visual-weight=0.25:description=yandex-text-embeddings-v2-768-related-description-document-2026-08-v1:description-query=yandex-text-embeddings-v2-768-related-description-query-2026-08-v3:annotation=yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r7:annotation-document=yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r7:annotation-query=yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r7:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1:relation-policy=related-pets-relation-policy-2026-08-v23-r1:fallback-policy=related-pets-zero-qualified-empty-top4-shared-topic-visual-v24-r2";
+  "related-pets-sparse-fallback-v24:depth=8:base=related-pets-franchise-coverage-v23:depth=8:base=related-pets-entity-controlled-v11-r3:depth=8:tail=description-first:gate=qualified-negatives:cal=related-pets-eval-v7:text-min=0.6167421023517932:annotation-min=0.4133420129086638:annotation-weight=1:visual-min=0.8178749331551675:visual-weight=0.25:description=yandex-text-embeddings-v2-768-related-description-document-2026-08-v1:description-query=yandex-text-embeddings-v2-768-related-description-query-2026-08-v3:annotation=yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r8:annotation-document=yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r8:annotation-query=yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r8:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1:relation-policy=related-pets-relation-policy-2026-08-v23-r1:fallback-policy=related-pets-zero-qualified-empty-top4-shared-topic-visual-v24-r2";
 
 function candidate(
   slug: string,
@@ -549,11 +549,11 @@ describe("V24 profile contract", () => {
       textQueryRevision:
         "yandex-text-embeddings-v2-768-related-description-query-2026-08-v3",
       annotationRevision:
-        "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r7",
+        "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r8",
       annotationDocumentRevision:
-        "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r7",
+        "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r8",
       annotationQueryRevision:
-        "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r7",
+        "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r8",
       visualRevision:
         "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
       relationPolicyRevision:
