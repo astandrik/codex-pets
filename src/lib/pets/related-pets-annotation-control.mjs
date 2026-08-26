@@ -1,5 +1,5 @@
 export const RELATED_PETS_ANNOTATION_CONTROL_REVISION =
-  "related-pets-annotation-control-2026-08-v11-r5";
+  "related-pets-annotation-control-2026-08-v11-r6";
 
 export const RELATED_PETS_ANNOTATION_ALIASES = Object.freeze({
   entities: Object.freeze({}),
@@ -93,8 +93,9 @@ export const RELATED_PETS_ANNOTATION_OVERRIDES = Object.freeze({
     franchises: Object.freeze([]),
   }),
   "karlson-2": Object.freeze({
-    reason: "The card identifies Karlson but does not state an exact franchise identifier.",
+    reason: "The card identifies Karlson but states neither an exact franchise identifier nor a media-origin category.",
     franchises: Object.freeze([]),
+    mediaOrigins: Object.freeze([]),
   }),
   "lady-d-2": Object.freeze({
     reason: "The card explicitly labels Lady D as a vampire.",
@@ -122,9 +123,17 @@ export const RELATED_PETS_ANNOTATION_OVERRIDES = Object.freeze({
     reason: "The card's codex-pet label is operational metadata, not a thematic collection.",
     collections: Object.freeze([]),
   }),
+  "otets-potets": Object.freeze({
+    reason: "The card names Father Potets and describes the referenced character, but does not state an exact franchise identifier.",
+    franchises: Object.freeze([]),
+  }),
   "paprika-2": Object.freeze({
     reason: "The card describes the character and appearance but does not state a specific archetype.",
     specificArchetypes: Object.freeze([]),
+  }),
+  primaris: Object.freeze({
+    reason: "The card is Warhammer-inspired, which does not establish an exact franchise identifier.",
+    franchises: Object.freeze([]),
   }),
   "ryuk-2": Object.freeze({
     reason: "The card describes a Ryuk-inspired shinigami but does not state an exact franchise identifier.",
@@ -134,6 +143,11 @@ export const RELATED_PETS_ANNOTATION_OVERRIDES = Object.freeze({
     reason: "The description confirms a kunoichi archetype but no exact franchise.",
     franchises: Object.freeze([]),
     specificArchetypes: Object.freeze(["kunoichi"]),
+  }),
+  "sakura-chibi": Object.freeze({
+    reason: "The card describes a pink-haired shinobi character but does not state an exact franchise or franchise family.",
+    franchises: Object.freeze([]),
+    franchiseFamilies: Object.freeze([]),
   }),
   "sage-anime-girl": Object.freeze({
     reason: "The card's codex label is operational metadata, not a thematic collection.",
