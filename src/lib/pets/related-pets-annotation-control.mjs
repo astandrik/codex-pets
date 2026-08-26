@@ -1,5 +1,5 @@
 export const RELATED_PETS_ANNOTATION_CONTROL_REVISION =
-  "related-pets-annotation-control-2026-08-v11-r6";
+  "related-pets-annotation-control-2026-08-v11-r7";
 
 export const RELATED_PETS_ANNOTATION_ALIASES = Object.freeze({
   entities: Object.freeze({}),
@@ -145,9 +145,10 @@ export const RELATED_PETS_ANNOTATION_OVERRIDES = Object.freeze({
     specificArchetypes: Object.freeze(["kunoichi"]),
   }),
   "sakura-chibi": Object.freeze({
-    reason: "The card describes a pink-haired shinobi character but does not state an exact franchise or franchise family.",
+    reason: "The card describes a pink-haired shinobi character, supporting the kunoichi archetype, but does not state an exact franchise or franchise family.",
     franchises: Object.freeze([]),
     franchiseFamilies: Object.freeze([]),
+    specificArchetypes: Object.freeze(["kunoichi"]),
   }),
   "sage-anime-girl": Object.freeze({
     reason: "The card's codex label is operational metadata, not a thematic collection.",
