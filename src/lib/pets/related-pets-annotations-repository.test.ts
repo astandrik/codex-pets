@@ -20,6 +20,9 @@ describe("related pet annotations repository", () => {
             rows: [{ items: [
               { textValue: "vi" },
               { textValue: "hash" },
+              { textValue: "proposal-r1" },
+              { textValue: "proposal-input-hash" },
+              { textValue: "proposal-hash" },
               { textValue: "{\"entity\":{}}" },
               { textValue: "{\"schemaVersion\":1}" },
               { textValue: "entity: vi" },
@@ -33,6 +36,9 @@ describe("related pet annotations repository", () => {
     await expect(repository.get("annotation-current", "vi")).resolves.toMatchObject({
       slug: "vi",
       sourceHash: "hash",
+      proposalRevision: "proposal-r1",
+      proposalInputHash: "proposal-input-hash",
+      proposalHash: "proposal-hash",
       annotationText: "entity: vi",
     });
     await expect(repository.listByRevision("annotation-current")).resolves.toHaveLength(1);
@@ -40,6 +46,9 @@ describe("related pet annotations repository", () => {
       annotationRevision: "annotation-current",
       slug: "vi",
       sourceHash: "hash",
+      proposalRevision: "proposal-r1",
+      proposalInputHash: "proposal-input-hash",
+      proposalHash: "proposal-hash",
       proposalJson: "{}",
       annotationJson: "{}",
       annotationText: "entity: vi",

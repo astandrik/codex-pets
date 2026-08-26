@@ -5,7 +5,10 @@ import {
   createRelatedPetAnnotationRuntime,
 } from "@/lib/pets/related-pets-annotation-runtime";
 import {
+  RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
   buildRelatedPetAnnotationText,
+  createRelatedPetAnnotationProposalHash,
+  createRelatedPetAnnotationProposalInputHash,
   createRelatedPetAnnotationSourceHash,
   resolveRelatedPetAnnotation,
 } from "@/lib/pets/related-pets-annotation-contract.mjs";
@@ -46,6 +49,7 @@ describe("current annotation runtime", () => {
     const writes: string[] = [];
     const runtime = createRelatedPetAnnotationRuntime({
       annotationRevision: "annotation-current",
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
       queryRevision: "query-current",
       documentRevision: "document-current",
       dimensions: 2,
@@ -73,6 +77,7 @@ describe("current annotation runtime", () => {
     const annotation = resolveRelatedPetAnnotation({ slug: pet.slug, proposal });
     const runtime = createRelatedPetAnnotationRuntime({
       annotationRevision,
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
       queryRevision: "query-current",
       documentRevision: "document-current",
       dimensions: 2,
@@ -84,9 +89,8 @@ describe("current annotation runtime", () => {
       },
       getAnnotation: async () => ({
         slug: pet.slug,
-        sourceHash: createRelatedPetAnnotationSourceHash({
+        ...annotationProvenance({
           pet,
-          modelUri,
           annotationRevision,
         }),
         proposalJson: JSON.stringify(proposal),
@@ -102,3 +106,26 @@ describe("current annotation runtime", () => {
     expect(createProposal).not.toHaveBeenCalled();
   });
 });
+
+function annotationProvenance(input: {
+  pet: typeof pet;
+  annotationRevision: string;
+}) {
+  const proposalInputHash = createRelatedPetAnnotationProposalInputHash({
+    pet: input.pet,
+    modelUri: "gpt://folder/qwen",
+  });
+  const proposalHash = createRelatedPetAnnotationProposalHash(proposal);
+  return {
+    sourceHash: createRelatedPetAnnotationSourceHash({
+      slug: input.pet.slug,
+      annotationRevision: input.annotationRevision,
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+      proposalInputHash,
+      proposalHash,
+    }),
+    proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+    proposalInputHash,
+    proposalHash,
+  };
+}

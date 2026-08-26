@@ -3,12 +3,10 @@ import { randomUUID } from "node:crypto";
 import { getPetAssetIdFromSpritesheetUrl } from "@/lib/pets/asset-urls";
 import {
   RELATED_PETS_ANNOTATION_MODEL_NAME,
-  buildRelatedPetAnnotationText,
   createRelatedPetAnnotationEmbeddingSourceHash,
-  createRelatedPetAnnotationSourceHash,
-  parseResolvedRelatedPetAnnotation,
   type ResolvedRelatedPetAnnotation,
 } from "@/lib/pets/related-pets-annotation-contract.mjs";
+import { validateCurrentRelatedPetAnnotation } from "@/lib/pets/related-pets-annotation-refresh.mjs";
 import type { StoredRelatedPetAnnotation } from "@/lib/pets/related-pets-annotations-repository";
 import {
   listPetSearchCaptions,
@@ -67,6 +65,7 @@ export type RelatedPetsRebuildProfile = RelatedPetsV24RankingProfile & {
   textQueryRevision: string;
   textDimensions: number;
   annotationRevision: string;
+  annotationProposalRevision: string;
   annotationDocumentRevision: string;
   annotationQueryRevision: string;
   annotationDimensions: number;
@@ -85,6 +84,7 @@ type RelatedPetsInputPreparationProfile = Pick<
 > & Partial<Pick<
   RelatedPetsRebuildProfile,
   | "annotationRevision"
+  | "annotationProposalRevision"
   | "annotationDocumentRevision"
   | "annotationQueryRevision"
   | "annotationDimensions"
@@ -877,6 +877,7 @@ function getAnnotationProfile(
   profile: RelatedPetsInputPreparationProfile,
 ): {
   annotationRevision: string;
+  annotationProposalRevision: string;
   annotationDocumentRevision: string;
   annotationQueryRevision: string;
   annotationDimensions: number;
@@ -884,6 +885,7 @@ function getAnnotationProfile(
   const annotationDimensions = profile.annotationDimensions;
   if (
     !profile.annotationRevision ||
+    !profile.annotationProposalRevision ||
     !profile.annotationDocumentRevision ||
     !profile.annotationQueryRevision ||
     typeof annotationDimensions !== "number" ||
@@ -894,6 +896,7 @@ function getAnnotationProfile(
   }
   return {
     annotationRevision: profile.annotationRevision,
+    annotationProposalRevision: profile.annotationProposalRevision,
     annotationDocumentRevision: profile.annotationDocumentRevision,
     annotationQueryRevision: profile.annotationQueryRevision,
     annotationDimensions,
@@ -1022,22 +1025,16 @@ function validatedAnnotations(input: {
     const pet = petsBySlug.get(row.slug);
     if (!pet) continue;
     try {
-      const expectedSourceHash = createRelatedPetAnnotationSourceHash({
+      const current = validateCurrentRelatedPetAnnotation({
         pet,
+        stored: row,
         modelUri: input.modelUri,
         annotationRevision: input.profile.annotationRevision,
+        proposalRevision: input.profile.annotationProposalRevision,
       });
-      const annotation = parseResolvedRelatedPetAnnotation(row.annotationJson);
-      const annotationText = buildRelatedPetAnnotationText(annotation);
-      if (
-        row.sourceHash !== expectedSourceHash ||
-        row.annotationText !== annotationText
-      ) {
-        continue;
-      }
-      values.set(row.slug, annotation);
-      sourceHashes.set(row.slug, row.sourceHash);
-      texts.set(row.slug, annotationText);
+      values.set(row.slug, current.annotation);
+      sourceHashes.set(row.slug, current.sourceHash);
+      texts.set(row.slug, current.annotationText);
     } catch {
       // Malformed derived rows are excluded from current coverage.
     }

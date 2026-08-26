@@ -9,14 +9,16 @@ import {
 } from "./related-pets-annotation-control.mjs";
 
 export const RELATED_PETS_ANNOTATION_REVISION =
-  "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r10";
+  "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r11";
 export const RELATED_PETS_ANNOTATION_QUERY_REVISION =
-  "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r10";
+  "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r11";
 export const RELATED_PETS_ANNOTATION_DOCUMENT_REVISION =
-  "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r10";
+  "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r11";
+export const RELATED_PETS_ANNOTATION_PROPOSAL_REVISION =
+  "yandex-qwen3.6-35b-a3b-related-annotation-proposal-2026-08-v11-r1";
 export const RELATED_PETS_ANNOTATION_MODEL_NAME = "qwen3.6-35b-a3b";
 export const RELATED_PETS_ANNOTATION_SCHEMA_NAME =
-  "related_pet_annotation_v11_r10";
+  "related_pet_annotation_v11_r11";
 export const RELATED_PETS_ANNOTATION_TOKEN_POLICY = Object.freeze({
   revision: "related-pets-annotation-token-policy-2026-08-v11-r5",
   reasoning: "model-default",
@@ -357,26 +359,42 @@ export function buildRelatedPetAnnotationText(annotation) {
   return lines.length > 0 ? lines.join("\n") : "entity: unknown";
 }
 
-export function createRelatedPetAnnotationSourceHash(input) {
-  const override = input.overrides?.[input.pet.slug] ??
-    RELATED_PETS_ANNOTATION_OVERRIDES[input.pet.slug] ?? null;
+export function createRelatedPetAnnotationProposalInputHash(input) {
   const tokenPolicy = input.tokenPolicy ??
     RELATED_PETS_ANNOTATION_TOKEN_POLICY;
   return lengthPrefixedSha256([
-    input.annotationRevision ?? RELATED_PETS_ANNOTATION_REVISION,
+    input.proposalRevision ?? RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
     input.modelUri,
     RELATED_PETS_ANNOTATION_SYSTEM_PROMPT,
     RELATED_PETS_ANNOTATION_USER_PROMPT,
+    RELATED_PETS_ANNOTATION_SCHEMA_NAME,
     JSON.stringify(RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA),
-    RELATED_PETS_ANNOTATION_RESOLVER_REVISION,
-    RELATED_PETS_ANNOTATION_CONTROL_REVISION,
     tokenPolicy.revision,
     tokenPolicy.reasoning,
     String(tokenPolicy.initialMaxOutputTokens),
     String(tokenPolicy.retryMaxOutputTokens),
+    buildRelatedPetAnnotationInput(input.pet),
+  ]);
+}
+
+export function createRelatedPetAnnotationProposalHash(proposal) {
+  return lengthPrefixedSha256([
+    stableJson(parseStoredRelatedPetAnnotationProposal(proposal)),
+  ]);
+}
+
+export function createRelatedPetAnnotationSourceHash(input) {
+  const override = input.overrides?.[input.slug] ??
+    RELATED_PETS_ANNOTATION_OVERRIDES[input.slug] ?? null;
+  return lengthPrefixedSha256([
+    input.annotationRevision ?? RELATED_PETS_ANNOTATION_REVISION,
+    input.proposalRevision ?? RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+    input.proposalInputHash,
+    input.proposalHash,
+    RELATED_PETS_ANNOTATION_RESOLVER_REVISION,
+    RELATED_PETS_ANNOTATION_CONTROL_REVISION,
     stableJson(RELATED_PETS_ANNOTATION_ALIASES),
     stableJson(override),
-    buildRelatedPetAnnotationInput(input.pet),
   ]);
 }
 

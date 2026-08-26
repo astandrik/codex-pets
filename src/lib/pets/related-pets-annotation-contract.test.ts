@@ -6,6 +6,7 @@ import type { RelatedPetAnnotationProposal } from "@/lib/pets/related-pets-annot
 
 import {
   RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+  RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
   RELATED_PETS_ANNOTATION_QUERY_REVISION,
   RELATED_PETS_ANNOTATION_REVISION,
   RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
@@ -15,6 +16,8 @@ import {
   buildRelatedPetAnnotationInput,
   buildRelatedPetAnnotationText,
   createRelatedPetAnnotationEmbeddingSourceHash,
+  createRelatedPetAnnotationProposalHash,
+  createRelatedPetAnnotationProposalInputHash,
   createRelatedPetAnnotationSourceHash,
   parseRelatedPetAnnotationProposal,
   parseStoredRelatedPetAnnotationProposal,
@@ -64,12 +67,12 @@ describe("current related pet annotation contract", () => {
       RELATED_PETS_ANNOTATION_QUERY_REVISION,
       RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
     ]).toEqual([
-      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r10",
-      "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r10",
-      "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r10",
+      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r11",
+      "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r11",
+      "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r11",
     ]);
     expect(RELATED_PETS_ANNOTATION_SCHEMA_NAME).toBe(
-      "related_pet_annotation_v11_r10",
+      "related_pet_annotation_v11_r11",
     );
     expect(RELATED_PETS_ANNOTATION_CONTROL_REVISION).toBe(
       "related-pets-annotation-control-2026-08-v11-r7",
@@ -525,24 +528,24 @@ describe("current related pet annotation contract", () => {
   });
 
   it("changes hashes only when their controlled inputs change", () => {
-    const first = createRelatedPetAnnotationSourceHash({
+    const first = createRelatedPetAnnotationProposalInputHash({
       pet,
       modelUri: "gpt://folder/qwen3.6-35b-a3b",
     });
     expect(first).toBe(
-      "f015b004b22d457acacb50da8b9a5f1be77f9e91dd9db5d2cdde27057c165fd5",
+      "1519852815c74b86e2602b0e8840df116b539c5a872e0ad4790db31aea477381",
     );
-    const same = createRelatedPetAnnotationSourceHash({
+    const same = createRelatedPetAnnotationProposalInputHash({
       pet: { ...pet, tags: pet.tags.toReversed() },
       modelUri: "gpt://folder/qwen3.6-35b-a3b",
     });
-    const changed = createRelatedPetAnnotationSourceHash({
+    const changed = createRelatedPetAnnotationProposalInputHash({
       pet: { ...pet, description: `${pet.description} Updated.` },
       modelUri: "gpt://folder/qwen3.6-35b-a3b",
     });
     expect(same).toBe(first);
     expect(changed).not.toBe(first);
-    expect(createRelatedPetAnnotationSourceHash({
+    expect(createRelatedPetAnnotationProposalInputHash({
       pet,
       modelUri: "gpt://folder/qwen3.6-35b-a3b",
       tokenPolicy: {
@@ -551,17 +554,39 @@ describe("current related pet annotation contract", () => {
       },
     })).not.toBe(first);
 
+    const parsedProposal = parseRelatedPetAnnotationProposal(proposal);
+    const proposalHash = createRelatedPetAnnotationProposalHash(parsedProposal);
+    expect(proposalHash).toBe(
+      "d2c6e48e84ebfdb4a3b3f55c07fa8a793ceb0f68a9a6ef6fa516a1fd112073fe",
+    );
+    const annotationSourceHash = createRelatedPetAnnotationSourceHash({
+      slug: pet.slug,
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+      proposalInputHash: first,
+      proposalHash,
+    });
+    expect(annotationSourceHash).toBe(
+      "f93406f37bb6ebb645620eb5255a1b84d9032a706c1c85e35e8c835f568012a5",
+    );
+    expect(annotationSourceHash).not.toBe(createRelatedPetAnnotationSourceHash({
+      slug: pet.slug,
+      annotationRevision: "annotation-next",
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+      proposalInputHash: first,
+      proposalHash,
+    }));
+
     const vectorHash = createRelatedPetAnnotationEmbeddingSourceHash({
       modelRevision: RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
       role: "document",
-      annotationSourceHash: first,
+      annotationSourceHash,
       annotationText: "entity: vi",
     });
     expect(vectorHash).not.toBe(
       createRelatedPetAnnotationEmbeddingSourceHash({
         modelRevision: RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
         role: "query",
-        annotationSourceHash: first,
+        annotationSourceHash,
         annotationText: "entity: vi",
       }),
     );

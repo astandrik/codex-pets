@@ -2,13 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+  RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
   RELATED_PETS_ANNOTATION_QUERY_REVISION,
   RELATED_PETS_ANNOTATION_REVISION,
   buildRelatedPetAnnotationText,
+  createRelatedPetAnnotationProposalHash,
+  createRelatedPetAnnotationProposalInputHash,
   createRelatedPetAnnotationSourceHash,
   resolveRelatedPetAnnotation,
 } from "../../src/lib/pets/related-pets-annotation-contract.mjs";
 import {
+  adoptLegacyRelatedPetAnnotationProposal,
+  createRelatedPetAnnotationCatalogFingerprint,
   parseRelatedPetAnnotationBackfillArgs,
   runRelatedPetAnnotationBackfill,
   runRelatedPetAnnotationEmbeddingBackfill,
@@ -20,6 +25,8 @@ const pet = {
   description: "An Arcane fighter.",
   kind: "character" as const,
   tags: ["arcane"],
+  createdAt: "2026-08-15T00:00:00.000Z",
+  approvedAt: "2026-08-16T00:00:00.000Z",
   status: "approved",
 };
 const proposal = {
@@ -53,6 +60,8 @@ describe("related pet annotation backfill", () => {
       force: false,
       continueOnError: true,
       concurrency: 1,
+      reuseProposalsFrom: null,
+      expectedCatalogFingerprint: null,
     });
     expect(() => parseRelatedPetAnnotationBackfillArgs([
       "--apply",
@@ -62,11 +71,205 @@ describe("related pet annotation backfill", () => {
     ])).toThrow(/cannot be combined/i);
   });
 
-  it("rejects proposal reuse without verifiable source provenance", () => {
+  it("binds explicit legacy proposal bootstrap to one catalog fingerprint", () => {
+    const fingerprint = "a".repeat(64);
+    expect(parseRelatedPetAnnotationBackfillArgs([
+      "--apply",
+      "--reuse-proposals-from=old-r1",
+      `--expected-catalog-fingerprint=${fingerprint}`,
+    ])).toMatchObject({
+      reuseProposalsFrom: "old-r1",
+      expectedCatalogFingerprint: fingerprint,
+    });
     expect(() => parseRelatedPetAnnotationBackfillArgs([
       "--apply",
       "--reuse-proposals-from=old-r1",
-    ])).toThrow(/unknown argument/i);
+    ])).toThrow(/expected-catalog-fingerprint/i);
+    expect(() => parseRelatedPetAnnotationBackfillArgs([
+      "--apply",
+      `--expected-catalog-fingerprint=${fingerprint}`,
+    ])).toThrow(/reuse-proposals-from/i);
+    expect(() => parseRelatedPetAnnotationBackfillArgs([
+      "--apply",
+      "--reuse-proposals-from=old-r1",
+      "--expected-catalog-fingerprint=not-a-sha256",
+    ])).toThrow(/64.*hex|sha-?256/i);
+    expect(() => parseRelatedPetAnnotationBackfillArgs([
+      "--apply",
+      "--force",
+      "--reuse-proposals-from=old-r1",
+      `--expected-catalog-fingerprint=${fingerprint}`,
+    ])).toThrow(/cannot be combined/i);
+  });
+
+  it("uses verifier-compatible stable catalog fingerprint serialization", () => {
+    const secondPet = {
+      ...pet,
+      slug: "jinx",
+      displayName: "Jinx",
+      tags: ["zaun", "arcane"],
+    };
+    const expected = createRelatedPetAnnotationCatalogFingerprint([
+      pet,
+      secondPet,
+    ]);
+    expect(expected).toBe(
+      "900382861712c1ff5c3b99bd1bada130531ee3602196d515bc1398bd10fb0cba",
+    );
+    expect(createRelatedPetAnnotationCatalogFingerprint([
+      { ...secondPet, tags: [...secondPet.tags].reverse() },
+      pet,
+    ])).toBe(expected);
+    expect(createRelatedPetAnnotationCatalogFingerprint([
+      { ...pet, description: "Changed card" },
+      secondPet,
+    ])).not.toBe(expected);
+  });
+
+  it("rejects a legacy catalog mismatch before reuse, provider, or writes", async () => {
+    const findReusableProposal = vi.fn();
+    const createProposal = vi.fn();
+    const upsertAnnotation = vi.fn();
+    await expect(runRelatedPetAnnotationBackfill({
+      options: {
+        ...options("apply"),
+        reuseProposalsFrom: "annotation-r9",
+        expectedCatalogFingerprint: "0".repeat(64),
+      },
+      annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+      modelUri: annotationModelUri,
+      pets: [pet],
+      getAnnotation: vi.fn(),
+      findReusableProposal,
+      createProposal,
+      upsertAnnotation,
+      log: () => undefined,
+    })).rejects.toThrow("annotation_catalog_fingerprint_mismatch");
+    expect(findReusableProposal).not.toHaveBeenCalled();
+    expect(createProposal).not.toHaveBeenCalled();
+    expect(upsertAnnotation).not.toHaveBeenCalled();
+  });
+
+  it("adopts a legacy proposal with explicit current provenance", () => {
+    const legacy = {
+      slug: "vi",
+      sourceHash: "legacy-source",
+      proposalJson: JSON.stringify(proposal),
+      annotationJson: "{}",
+      annotationText: "entity: vi",
+    };
+    expect(adoptLegacyRelatedPetAnnotationProposal(
+      legacy,
+      "current-proposal-input",
+    )).toMatchObject({
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+      proposalInputHash: "current-proposal-input",
+      proposalHash: createRelatedPetAnnotationProposalHash(proposal),
+    });
+  });
+
+  it("preserves complete provenance and rejects partial legacy metadata", () => {
+    const current = currentAnnotation(pet);
+    expect(adoptLegacyRelatedPetAnnotationProposal(
+      current,
+      "different-input-hash",
+    )).toBe(current);
+    expect(() => adoptLegacyRelatedPetAnnotationProposal(
+      { ...current, proposalHash: "" },
+      "different-input-hash",
+    )).toThrow("legacy_proposal_provenance_invalid");
+  });
+
+  it("reuses a provenance-matching proposal without a provider call", async () => {
+    const reusable = currentAnnotation(pet, "annotation-r4");
+    const createProposal = vi.fn();
+    const upsertAnnotation = vi.fn(async () => undefined);
+    const summary = await runRelatedPetAnnotationBackfill({
+      options: options("apply"),
+      annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+      modelUri: annotationModelUri,
+      pets: [pet],
+      getAnnotation: async () => null,
+      findReusableProposal: async () => reusable,
+      createProposal,
+      upsertAnnotation,
+      log: () => undefined,
+    });
+
+    expect(summary.updated).toBe(1);
+    expect(createProposal).not.toHaveBeenCalled();
+    expect(upsertAnnotation).toHaveBeenCalledWith(expect.objectContaining({
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+      proposalInputHash: reusable.proposalInputHash,
+      proposalHash: reusable.proposalHash,
+    }));
+  });
+
+  it("reuses a full unchanged catalog and calls the model only for changed cards", async () => {
+    const pets = Array.from({ length: 158 }, (_, index) => ({
+      ...pet,
+      slug: `pet-${String(index).padStart(3, "0")}`,
+    }));
+    const reusable = new Map(pets.map((candidate) => [
+      candidate.slug,
+      currentAnnotation(candidate, "annotation-r4"),
+    ]));
+    const createProposal = vi.fn(async () => proposal);
+    const upsertAnnotation = vi.fn(async () => undefined);
+
+    const unchangedSummary = await runRelatedPetAnnotationBackfill({
+      options: { ...options("apply"), continueOnError: true, concurrency: 5 },
+      annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+      modelUri: annotationModelUri,
+      pets,
+      getAnnotation: async () => null,
+      findReusableProposal: async ({ slug }) => reusable.get(slug) ?? null,
+      createProposal,
+      upsertAnnotation,
+      log: () => undefined,
+    });
+
+    expect(unchangedSummary).toMatchObject({
+      scanned: 158,
+      updated: 158,
+      failed: 0,
+      proposalReused: 158,
+      proposalGenerated: 0,
+    });
+    expect(createProposal).not.toHaveBeenCalled();
+    expect(upsertAnnotation).toHaveBeenCalledTimes(158);
+
+    for (const candidate of pets.slice(-8)) {
+      reusable.set(
+        candidate.slug,
+        currentAnnotation(
+          { ...candidate, description: "Stale description" },
+          "annotation-r4",
+        ),
+      );
+    }
+    upsertAnnotation.mockClear();
+    const changedSummary = await runRelatedPetAnnotationBackfill({
+      options: { ...options("apply"), continueOnError: true, concurrency: 5 },
+      annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+      modelUri: annotationModelUri,
+      pets,
+      getAnnotation: async () => null,
+      findReusableProposal: async ({ slug }) => reusable.get(slug) ?? null,
+      createProposal,
+      upsertAnnotation,
+      log: () => undefined,
+    });
+
+    expect(changedSummary).toMatchObject({
+      scanned: 158,
+      updated: 158,
+      failed: 0,
+      proposalReused: 150,
+      proposalGenerated: 8,
+    });
+    expect(createProposal).toHaveBeenCalledTimes(8);
+    expect(upsertAnnotation).toHaveBeenCalledTimes(158);
   });
 
   it("dry-runs without provider calls or writes", async () => {
@@ -80,7 +283,6 @@ describe("related pet annotation backfill", () => {
       getAnnotation: async () => null,
       createProposal,
       upsertAnnotation,
-      createSourceHash: createRelatedPetAnnotationSourceHash,
       log: () => undefined,
     });
     expect(summary).toMatchObject({ planned: 1, updated: 0, failed: 0 });
@@ -98,7 +300,6 @@ describe("related pet annotation backfill", () => {
       getAnnotation: async () => null,
       createProposal: async () => proposal,
       upsertAnnotation,
-      createSourceHash: createRelatedPetAnnotationSourceHash,
       now: () => new Date("2026-08-11T00:00:00.000Z"),
       log: () => undefined,
     });
@@ -128,7 +329,6 @@ describe("related pet annotation backfill", () => {
         return proposal;
       },
       upsertAnnotation: async () => undefined,
-      createSourceHash: createRelatedPetAnnotationSourceHash,
       log: (entry) => logs.push(entry),
     });
     expect(summary).toMatchObject({ updated: 1, failed: 1, failedSlugs: ["vi"] });
@@ -153,7 +353,6 @@ describe("related pet annotation backfill", () => {
       getAnnotation: async () => null,
       createProposal: async () => worldKnowledgeProposal,
       upsertAnnotation: async () => undefined,
-      createSourceHash: createRelatedPetAnnotationSourceHash,
       log: (entry) => logs.push(entry),
     });
 
@@ -215,12 +414,7 @@ describe("related pet annotation backfill", () => {
       modelUri: annotationModelUri,
       pets: [pet],
       annotations: [{
-        slug: pet.slug,
-        sourceHash: createRelatedPetAnnotationSourceHash({
-          pet: { ...pet, description: "Old description" },
-          modelUri: annotationModelUri,
-          annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
-        }),
+        ...currentAnnotation({ ...pet, description: "Old description" }),
         annotationJson: JSON.stringify(resolved),
         annotationText,
       }],
@@ -252,7 +446,7 @@ describe("related pet annotation backfill", () => {
       dimensions: 768,
       modelUri: null,
       pets,
-      annotations: pets.map(currentAnnotation),
+      annotations: pets.map((item) => currentAnnotation(item)),
       getMetadata,
       embed: async () => {
         throw new Error("unexpected_embed");
@@ -301,7 +495,7 @@ describe("related pet annotation backfill", () => {
       dimensions: 768,
       modelUri: annotationModelUri,
       pets,
-      annotations: pets.map(currentAnnotation),
+      annotations: pets.map((item) => currentAnnotation(item)),
       getMetadata: async () => null,
       embed: async () => {
         embeddingCall += 1;
@@ -328,18 +522,32 @@ function options(mode: "dry-run" | "apply") {
   };
 }
 
-function currentAnnotation(inputPet: typeof pet) {
+function currentAnnotation(
+  inputPet: typeof pet,
+  annotationRevision = RELATED_PETS_ANNOTATION_REVISION,
+) {
   const annotation = resolveRelatedPetAnnotation({
     slug: inputPet.slug,
     proposal,
   });
+  const proposalInputHash = createRelatedPetAnnotationProposalInputHash({
+    pet: inputPet,
+    modelUri: annotationModelUri,
+  });
+  const proposalHash = createRelatedPetAnnotationProposalHash(proposal);
   return {
     slug: inputPet.slug,
     sourceHash: createRelatedPetAnnotationSourceHash({
-      pet: inputPet,
-      modelUri: annotationModelUri,
-      annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+      slug: inputPet.slug,
+      annotationRevision,
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+      proposalInputHash,
+      proposalHash,
     }),
+    proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+    proposalInputHash,
+    proposalHash,
+    proposalJson: JSON.stringify(proposal),
     annotationJson: JSON.stringify(annotation),
     annotationText: buildRelatedPetAnnotationText(annotation),
   };

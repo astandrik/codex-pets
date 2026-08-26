@@ -9,6 +9,7 @@ import {
 } from "@/lib/pets/related-pets-semantics.mjs";
 import {
   RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+  RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
   RELATED_PETS_ANNOTATION_QUERY_REVISION,
   RELATED_PETS_ANNOTATION_REVISION,
 } from "@/lib/pets/related-pets-annotation-contract.mjs";
@@ -29,7 +30,7 @@ export const RELATED_PETS_V24_DESCRIPTION_DOCUMENT_REVISION =
 
 // This value is persisted with the active generation.
 export const RELATED_PETS_V24_RANKING_REVISION =
-  "related-pets-sparse-fallback-v24:depth=8:base=related-pets-franchise-coverage-v23:depth=8:base=related-pets-entity-controlled-v11-r3:depth=8:tail=description-first:gate=qualified-negatives:cal=related-pets-eval-v7:text-min=0.6167421023517932:annotation-min=0.4133420129086638:annotation-weight=1:visual-min=0.8178749331551675:visual-weight=0.25:description=yandex-text-embeddings-v2-768-related-description-document-2026-08-v1:description-query=yandex-text-embeddings-v2-768-related-description-query-2026-08-v3:annotation=yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r10:annotation-document=yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r10:annotation-query=yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r10:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1:relation-policy=related-pets-relation-policy-2026-08-v23-r1:fallback-policy=related-pets-zero-qualified-empty-top4-shared-topic-visual-v24-r2";
+  "related-pets-sparse-fallback-v24:depth=8:base=related-pets-franchise-coverage-v23:depth=8:base=related-pets-entity-controlled-v11-r3:depth=8:tail=description-first:gate=qualified-negatives:cal=related-pets-eval-v7:text-min=0.6167421023517932:annotation-min=0.4133420129086638:annotation-weight=1:visual-min=0.8178749331551675:visual-weight=0.25:description=yandex-text-embeddings-v2-768-related-description-document-2026-08-v1:description-query=yandex-text-embeddings-v2-768-related-description-query-2026-08-v3:annotation=yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r11:annotation-proposal=yandex-qwen3.6-35b-a3b-related-annotation-proposal-2026-08-v11-r1:annotation-document=yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r11:annotation-query=yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r11:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1:relation-policy=related-pets-relation-policy-2026-08-v23-r1:fallback-policy=related-pets-zero-qualified-empty-top4-shared-topic-visual-v24-r2";
 
 type RelatedPetsV24RuntimeProfile = RelatedPetsV24RankingProfile & {
   rankingRevision: string;
@@ -38,6 +39,7 @@ type RelatedPetsV24RuntimeProfile = RelatedPetsV24RankingProfile & {
   textQueryRevision: string;
   textDimensions: number;
   annotationRevision: string;
+  annotationProposalRevision: string;
   annotationDocumentRevision: string;
   annotationQueryRevision: string;
   annotationDimensions: number;
@@ -55,6 +57,7 @@ export const RELATED_PETS_V24_PROFILE = {
     PET_SEARCH_EMBEDDING_MODELS[embeddingDefinition.embeddingModelId].dimensions,
   textMinSimilarity: 0.6167421023517932,
   annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+  annotationProposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
   annotationDocumentRevision: RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
   annotationQueryRevision: RELATED_PETS_ANNOTATION_QUERY_REVISION,
   annotationDimensions:

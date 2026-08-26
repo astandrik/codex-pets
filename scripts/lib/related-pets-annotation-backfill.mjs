@@ -1,6 +1,8 @@
 import {
   RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+  RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
   RELATED_PETS_ANNOTATION_QUERY_REVISION,
+  createRelatedPetAnnotationProposalHash,
   createRelatedPetAnnotationEmbeddingSourceHash,
 } from "../../src/lib/pets/related-pets-annotation-contract.mjs";
 import {
@@ -13,9 +15,55 @@ import {
   runResumableBackfill,
   selectApprovedItems,
 } from "./resumable-backfill.mjs";
+import { createCatalogFingerprint } from "./related-pets-catalog-fingerprint.mjs";
 
 export function parseRelatedPetAnnotationBackfillArgs(argv) {
-  return parseResumableBackfillArgs(argv);
+  const legacyOption = extractStringOption(
+    argv,
+    "reuse-proposals-from",
+  );
+  const fingerprintOption = extractStringOption(
+    legacyOption.remainingArgs,
+    "expected-catalog-fingerprint",
+  );
+  const reuseProposalsFrom = legacyOption.value;
+  const expectedCatalogFingerprint = fingerprintOption.value;
+  if (
+    expectedCatalogFingerprint &&
+    !/^[a-f0-9]{64}$/.test(expectedCatalogFingerprint)
+  ) {
+    throw new Error(
+      "--expected-catalog-fingerprint requires a lowercase 64-character SHA-256 hex value.",
+    );
+  }
+  if (reuseProposalsFrom && !expectedCatalogFingerprint) {
+    throw new Error(
+      "--reuse-proposals-from requires --expected-catalog-fingerprint.",
+    );
+  }
+  if (expectedCatalogFingerprint && !reuseProposalsFrom) {
+    throw new Error(
+      "--expected-catalog-fingerprint requires --reuse-proposals-from.",
+    );
+  }
+  const options = parseResumableBackfillArgs(fingerprintOption.remainingArgs);
+  if (reuseProposalsFrom && options.force) {
+    throw new Error("--reuse-proposals-from cannot be combined with --force.");
+  }
+  return { ...options, reuseProposalsFrom, expectedCatalogFingerprint };
+}
+
+export function createRelatedPetAnnotationCatalogFingerprint(pets) {
+  return createCatalogFingerprint(selectApprovedItems([...pets], null));
+}
+
+export function assertRelatedPetAnnotationCatalogFingerprint(options, pets) {
+  if (!options.reuseProposalsFrom) return null;
+  const actual = createRelatedPetAnnotationCatalogFingerprint(pets);
+  if (actual !== options.expectedCatalogFingerprint) {
+    throw new Error("annotation_catalog_fingerprint_mismatch");
+  }
+  return actual;
 }
 
 export async function runRelatedPetAnnotationBackfill({
@@ -24,13 +72,16 @@ export async function runRelatedPetAnnotationBackfill({
   modelUri,
   pets,
   getAnnotation,
+  findReusableProposal,
   createProposal,
   upsertAnnotation,
-  createSourceHash,
   now = () => new Date(),
   log = console.log,
 }) {
-  return runResumableBackfill({
+  assertRelatedPetAnnotationCatalogFingerprint(options, pets);
+  let proposalReused = 0;
+  let proposalGenerated = 0;
+  const summary = await runResumableBackfill({
     items: selectApprovedItems([...pets], options.slug),
     options,
     log,
@@ -43,14 +94,66 @@ export async function runRelatedPetAnnotationBackfill({
         modelUri,
         annotationRevision,
         getAnnotation,
+        findReusableProposal,
         createProposal,
         upsertAnnotation,
-        createSourceHash,
         now,
       });
+      if (result.outcome !== "unchanged") {
+        if (result.proposalAction === "reused") proposalReused += 1;
+        if (result.proposalAction === "generated") proposalGenerated += 1;
+      }
       return result.outcome;
     },
   });
+  return { ...summary, proposalReused, proposalGenerated };
+}
+
+function extractStringOption(argv, name) {
+  const prefix = `--${name}=`;
+  const flag = `--${name}`;
+  let value = null;
+  const remainingArgs = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === flag || argument.startsWith(prefix)) {
+      if (value !== null) throw new Error(`${flag} may be passed only once.`);
+      const candidate = argument === flag ? argv[++index] : argument.slice(prefix.length);
+      if (!candidate || !/^[a-z0-9][a-z0-9._:-]{0,199}$/.test(candidate)) {
+        throw new Error(`${flag} requires a valid immutable revision.`);
+      }
+      value = candidate;
+      continue;
+    }
+    remainingArgs.push(argument);
+  }
+  return { remainingArgs, value };
+}
+
+export function adoptLegacyRelatedPetAnnotationProposal(
+  stored,
+  proposalInputHash,
+) {
+  if (!stored?.proposalJson) return null;
+  const existingProvenance = [
+    stored.proposalRevision,
+    stored.proposalInputHash,
+    stored.proposalHash,
+  ];
+  if (existingProvenance.some(Boolean)) {
+    if (!existingProvenance.every(Boolean)) {
+      throw new Error("legacy_proposal_provenance_invalid");
+    }
+    return stored;
+  }
+  return {
+    ...stored,
+    proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+    proposalInputHash,
+    proposalHash: createRelatedPetAnnotationProposalHash(
+      JSON.parse(stored.proposalJson),
+    ),
+  };
 }
 
 export async function runRelatedPetAnnotationEmbeddingBackfill({

@@ -5,6 +5,9 @@ import { TABLES } from "@/lib/ydb/schema";
 export type StoredRelatedPetAnnotation = {
   slug: string;
   sourceHash: string;
+  proposalRevision: string;
+  proposalInputHash: string;
+  proposalHash: string;
   proposalJson: string;
   annotationJson: string;
   annotationText: string;
@@ -35,8 +38,8 @@ export function createRelatedPetAnnotationsRepository(
 DECLARE $annotation_revision AS Utf8;
 DECLARE $pet_slug AS Utf8;
 
-SELECT pet_slug, source_hash, proposal_json, annotation_json,
-       annotation_text, updated_at
+SELECT pet_slug, source_hash, proposal_revision, proposal_input_hash,
+       proposal_hash, proposal_json, annotation_json, annotation_text, updated_at
 FROM ${TABLES.relatedAnnotations}
 WHERE annotation_revision = $annotation_revision
   AND pet_slug = $pet_slug
@@ -59,8 +62,8 @@ LIMIT 1;
       `
 DECLARE $annotation_revision AS Utf8;
 
-SELECT pet_slug, source_hash, proposal_json, annotation_json,
-       annotation_text, updated_at
+SELECT pet_slug, source_hash, proposal_revision, proposal_input_hash,
+       proposal_hash, proposal_json, annotation_json, annotation_text, updated_at
 FROM ${TABLES.relatedAnnotations}
 WHERE annotation_revision = $annotation_revision;
       `,
@@ -75,6 +78,9 @@ WHERE annotation_revision = $annotation_revision;
     annotationRevision: string;
     slug: string;
     sourceHash: string;
+    proposalRevision: string;
+    proposalInputHash: string;
+    proposalHash: string;
     proposalJson: string;
     annotationJson: string;
     annotationText: string;
@@ -86,22 +92,32 @@ WHERE annotation_revision = $annotation_revision;
 DECLARE $annotation_revision AS Utf8;
 DECLARE $pet_slug AS Utf8;
 DECLARE $source_hash AS Utf8;
+DECLARE $proposal_revision AS Utf8;
+DECLARE $proposal_input_hash AS Utf8;
+DECLARE $proposal_hash AS Utf8;
 DECLARE $proposal_json AS Utf8;
 DECLARE $annotation_json AS Utf8;
 DECLARE $annotation_text AS Utf8;
 DECLARE $updated_at AS Utf8;
 
 UPSERT INTO ${TABLES.relatedAnnotations}
-(annotation_revision, pet_slug, source_hash, proposal_json, annotation_json,
+(annotation_revision, pet_slug, source_hash, proposal_revision,
+ proposal_input_hash, proposal_hash, proposal_json, annotation_json,
  annotation_text, updated_at)
 VALUES
-($annotation_revision, $pet_slug, $source_hash, $proposal_json, $annotation_json,
+($annotation_revision, $pet_slug, $source_hash, $proposal_revision,
+ $proposal_input_hash, $proposal_hash, $proposal_json, $annotation_json,
  $annotation_text, $updated_at);
       `,
       {
         $annotation_revision: dependencies.values.utf8(input.annotationRevision),
         $pet_slug: dependencies.values.utf8(input.slug),
         $source_hash: dependencies.values.utf8(input.sourceHash),
+        $proposal_revision: dependencies.values.utf8(input.proposalRevision),
+        $proposal_input_hash: dependencies.values.utf8(
+          input.proposalInputHash,
+        ),
+        $proposal_hash: dependencies.values.utf8(input.proposalHash),
         $proposal_json: dependencies.values.utf8(input.proposalJson),
         $annotation_json: dependencies.values.utf8(input.annotationJson),
         $annotation_text: dependencies.values.utf8(input.annotationText),
@@ -130,10 +146,13 @@ function annotationFromRow(
   return {
     slug: textAt(row, 0),
     sourceHash: textAt(row, 1),
-    proposalJson: textAt(row, 2),
-    annotationJson: textAt(row, 3),
-    annotationText: textAt(row, 4),
-    updatedAt: textAt(row, 5),
+    proposalRevision: textAt(row, 2),
+    proposalInputHash: textAt(row, 3),
+    proposalHash: textAt(row, 4),
+    proposalJson: textAt(row, 5),
+    annotationJson: textAt(row, 6),
+    annotationText: textAt(row, 7),
+    updatedAt: textAt(row, 8),
   };
 }
 
