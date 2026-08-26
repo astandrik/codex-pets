@@ -7,6 +7,7 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
   Divider,
   Flex,
   Select,
@@ -18,6 +19,10 @@ import {
 
 import { withBasePath } from "@/lib/base-path";
 import { trackGoal } from "@/lib/metrics/yandex";
+import {
+  derivePublicAuthorNameFromEmail,
+  MAX_PUBLIC_AUTHOR_NAME_LENGTH,
+} from "@/lib/pets/author-attribution";
 import {
   getPetSheet,
   type SpriteVersionNumber,
@@ -66,11 +71,28 @@ export function SubmitForm({
   const [petJsonText, setPetJsonText] = useState("");
   const [originalPetId, setOriginalPetId] = useState<string | null>(null);
   const [contactEmail, setContactEmail] = useState(defaultContactEmail ?? "");
+  const [publicAuthorName, setPublicAuthorName] = useState(
+    derivePublicAuthorNameFromEmail(defaultContactEmail ?? "") ?? "",
+  );
+  const [publishContactEmail, setPublishContactEmail] = useState(false);
   const [kind, setKind] = useState("creature");
   const [tags, setTags] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const effectiveContactEmail = isAuthenticated
+    ? defaultContactEmail?.trim() ?? ""
+    : contactEmail.trim();
+
+  function updateContactEmail(value: string) {
+    const previousDerivedName = derivePublicAuthorNameFromEmail(contactEmail);
+    const nextDerivedName = derivePublicAuthorNameFromEmail(value) ?? "";
+    setContactEmail(value);
+    setPublicAuthorName((current) =>
+      !current || current === previousDerivedName ? nextDerivedName : current,
+    );
+    if (!value.trim()) setPublishContactEmail(false);
+  }
 
   async function onZipFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
@@ -148,12 +170,15 @@ export function SubmitForm({
         url: withBasePath("/api/submissions/register"),
         prepared,
         contactEmail,
+        publicAuthorName,
+        publishContactEmail,
         kind,
         tags,
       });
       trackGoal("pet_submit_success", {
         authenticated: isAuthenticated,
         hasContactEmail: Boolean(contactEmail),
+        publishesContactEmail: publishContactEmail,
         kind,
       });
 
@@ -271,13 +296,51 @@ export function SubmitForm({
                 <TextInput
                   id="submit-email"
                   value={contactEmail}
-                  onUpdate={setContactEmail}
+                  onUpdate={updateContactEmail}
                   placeholder="optional@email.com"
                   autoComplete="email"
                   size="l"
                   hasClear
                 />
               </FieldRow>
+            ) : null}
+            {!isAuthenticated && effectiveContactEmail ? (
+              <FieldRow
+                label="Public author name"
+                htmlFor="submit-public-author-name"
+                note="Shown publicly as the pet author. It defaults to the part of your email before @."
+              >
+                <TextInput
+                  id="submit-public-author-name"
+                  value={publicAuthorName}
+                  onUpdate={setPublicAuthorName}
+                  controlProps={{
+                    maxLength: MAX_PUBLIC_AUTHOR_NAME_LENGTH,
+                    required: true,
+                  }}
+                  size="l"
+                  hasClear
+                />
+              </FieldRow>
+            ) : null}
+            {effectiveContactEmail ? (
+              <Checkbox
+                checked={publishContactEmail}
+                onUpdate={setPublishContactEmail}
+                size="l"
+                content={
+                  <Flex direction="column" gap={1}>
+                    <Text variant="body-2">
+                      Request publication of {effectiveContactEmail}
+                    </Text>
+                    <Text variant="caption-2" color="secondary">
+                      After moderator verification, the full email will appear
+                      on public pages, APIs, manifests, MCP, JSON-LD, and LLM
+                      resources.
+                    </Text>
+                  </Flex>
+                }
+              />
             ) : null}
             <FieldRow label="Kind" htmlFor="submit-kind">
               <Select
@@ -474,6 +537,8 @@ async function submitPetPackage(input: {
   url: string;
   prepared: PreparedPackage;
   contactEmail: string;
+  publicAuthorName: string;
+  publishContactEmail: boolean;
   kind: string;
   tags: string;
 }): Promise<void> {
@@ -488,6 +553,8 @@ async function submitPetPackage(input: {
   formData.set("kind", input.kind);
   formData.set("tags", input.tags);
   formData.set("contactEmail", input.contactEmail);
+  formData.set("publicAuthorName", input.publicAuthorName);
+  formData.set("publishContactEmail", String(input.publishContactEmail));
   formData.set("petIdHint", input.prepared.petId);
   formData.set("spritesheetExt", input.prepared.spritesheetExt);
 

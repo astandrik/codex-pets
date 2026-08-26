@@ -107,6 +107,7 @@ describe("POST /api/submissions/register", () => {
       "contactEmail",
       "anon@example.com",
     );
+    formData.set("publicAuthorName", "anon");
     formData.set("kind", "creature");
     formData.set("tags", "cozy,robot");
 
@@ -121,7 +122,9 @@ describe("POST /api/submissions/register", () => {
     expect(createPendingPet).toHaveBeenCalledWith(
       expect.objectContaining({
         ownerId: "",
+        ownerName: "anon",
         contactEmail: "anon@example.com",
+        publicEmailRequested: false,
         petJson: expect.objectContaining({ spriteVersionNumber: 2 }),
       }),
     );
@@ -151,8 +154,10 @@ describe("POST /api/submissions/register", () => {
 
     const firstForm = validSubmissionForm();
     firstForm.set("contactEmail", " ANON@EXAMPLE.COM ");
+    firstForm.set("publicAuthorName", "anon");
     firstForm.set("tags", " Cozy ,ROBOT ");
     const secondForm = validSubmissionForm();
+    secondForm.set("publicAuthorName", "anon");
     secondForm.set("contactEmail", "anon@example.com");
     secondForm.set("tags", "cozy,robot");
 
@@ -241,6 +246,85 @@ describe("POST /api/submissions/register", () => {
     });
     expect(storePetAssetsInYdb).toHaveBeenCalledTimes(1);
     expect(createPendingPet).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["publicAuthorName", "Custom Alias"],
+    ["publishContactEmail", "true"],
+  ])(
+    "rejects reused Idempotency-Key values when %s changes",
+    async (field, value) => {
+      vi.mocked(getCurrentPrincipal)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+      mockSuccessfulSubmission(`pet_conflict_${field}`);
+
+      const first = await POST(
+        submissionRequest(validSubmissionForm(), `submit-${field}-conflict`),
+      );
+      const changed = validSubmissionForm();
+      changed.set(field, value);
+      const second = await POST(
+        submissionRequest(changed, `submit-${field}-conflict`),
+      );
+
+      expect(first.status).toBe(201);
+      expect(second.status).toBe(409);
+      expect(storePetAssetsInYdb).toHaveBeenCalledTimes(1);
+      expect(createPendingPet).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("rejects public email opt-in without an effective email", async () => {
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce(null);
+    const formData = validSubmissionForm();
+    formData.delete("contactEmail");
+    formData.set("publishContactEmail", "true");
+
+    const response = await POST(submissionRequest(formData));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "public_email_requires_contact_email",
+      field: "publishContactEmail",
+    });
+    expect(storePetAssetsInYdb).not.toHaveBeenCalled();
+    expect(createPendingPet).not.toHaveBeenCalled();
+  });
+
+  it("requires an anonymous public author name when contact email is set", async () => {
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce(null);
+    const formData = validSubmissionForm();
+    formData.delete("publicAuthorName");
+
+    const response = await POST(submissionRequest(formData));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "missing_public_author_name",
+      field: "publicAuthorName",
+    });
+    expect(storePetAssetsInYdb).not.toHaveBeenCalled();
+    expect(createPendingPet).not.toHaveBeenCalled();
+  });
+
+  it("uses a custom anonymous alias and records public email opt-in", async () => {
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce(null);
+    mockSuccessfulSubmission("pet_alias");
+    const formData = validSubmissionForm();
+    formData.set("publicAuthorName", "  Microwave Cat  ");
+    formData.set("publishContactEmail", "true");
+
+    const response = await POST(submissionRequest(formData));
+
+    expect(response.status).toBe(201);
+    expect(createPendingPet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ownerName: "Microwave Cat",
+        contactEmail: "anon@example.com",
+        publicEmailRequested: true,
+      }),
+    );
   });
 
   it("rejects invalid Idempotency-Key values before storing assets", async () => {
@@ -486,6 +570,9 @@ describe("POST /api/submissions/register", () => {
       new File(["sprite"], "spritesheet.webp", { type: "image/webp" }),
     );
     formData.set("kind", "creature");
+    formData.set("contactEmail", "attacker@example.com");
+    formData.set("publicAuthorName", "Attacker");
+    formData.set("publishContactEmail", "true");
 
     const response = await POST(
       new Request("http://localhost:3000/api/submissions/register", {
@@ -499,7 +586,9 @@ describe("POST /api/submissions/register", () => {
       expect.objectContaining({
         ownerId: "user@example.com",
         ownerEmail: "user@example.com",
+        ownerName: "User",
         contactEmail: "user@example.com",
+        publicEmailRequested: true,
       }),
     );
   });
@@ -571,6 +660,7 @@ function validSubmissionForm(): FormData {
     new File(["sprite"], "spritesheet.webp", { type: "image/webp" }),
   );
   formData.set("contactEmail", "anon@example.com");
+  formData.set("publicAuthorName", "anon");
   formData.set("kind", "creature");
   formData.set("tags", "cozy,robot");
   return formData;
@@ -595,6 +685,7 @@ function validSubmissionFormWithoutMimeTypes(): FormData {
   );
   formData.set("sprite", new File(["sprite"], "spritesheet.webp"));
   formData.set("contactEmail", "anon@example.com");
+  formData.set("publicAuthorName", "anon");
   formData.set("kind", "creature");
   formData.set("tags", "cozy,robot");
   return formData;

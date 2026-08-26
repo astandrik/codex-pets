@@ -114,6 +114,20 @@ export default function ApiDocsPage() {
 
       <section className="page-section">
         <Text variant="display-1" as="h2">
+          Submission attribution
+        </Text>
+        <Text variant="body-2" color="secondary">
+          Anonymous submissions that include contactEmail must also include a
+          publicAuthorName of at most 80 characters. contactEmail remains
+          private. publishContactEmail only requests publication of the
+          effective contact or signed-in account address; it becomes
+          publicAuthorEmail only after moderator verification. Signed-in
+          submissions always use the profile name and account email.
+        </Text>
+      </section>
+
+      <section className="page-section">
+        <Text variant="display-1" as="h2">
           Public endpoints
         </Text>
         <ul>

@@ -55,6 +55,7 @@ export default async function AdminSubmissionsPage() {
     ownerName: pet.ownerName,
     ownerProfileSlug: pet.ownerProfileSlug ?? null,
     contactEmail: pet.contactEmail,
+    publicEmailRequested: pet.publicEmailRequested ?? false,
   }));
 
   return (

@@ -100,7 +100,11 @@ export default function TermsPage() {
         <ul>
           <li>Public registry data and MCP tools expose approved pet data only.</li>
           <li>Submissions can be rejected, edited, hidden, or deleted through moderation.</li>
-          <li>Private contact fields, admin routes, and owner-only routes are not public agent data.</li>
+          <li>
+            Private contact fields are not public. A separately requested and
+            moderator-verified author email becomes public registry data.
+          </li>
+          <li>Admin routes and owner-only routes are not public agent data.</li>
           <li>The service has no paid SLA and may change with published deprecation notice for breaking public-agent changes.</li>
         </ul>
       </section>

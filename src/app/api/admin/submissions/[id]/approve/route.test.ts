@@ -6,6 +6,7 @@ vi.mock("@/lib/auth/session", () => ({
 }));
 
 vi.mock("@/lib/pets/repository", () => ({
+  getPetPublicEmailModerationState: vi.fn(),
   moderatePet: vi.fn(),
 }));
 
@@ -47,7 +48,10 @@ vi.mock("@/lib/pets/related-pets-server", () => ({
 import { POST } from "@/app/api/admin/submissions/[id]/approve/route";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
-import { moderatePet } from "@/lib/pets/repository";
+import {
+  getPetPublicEmailModerationState,
+  moderatePet,
+} from "@/lib/pets/repository";
 import { CURRENT_RELATED_PETS_RANKING_PROFILE } from "@/lib/pets/related-pets-profile";
 import { refreshApprovedPetRelatedQueryEmbedding } from "@/lib/pets/related-pets-query-runtime";
 import {
@@ -139,6 +143,93 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     expect(notifyIndexNowOfApprovedPet).not.toHaveBeenCalled();
     expect(revalidateSitemapCache).not.toHaveBeenCalled();
     expect(revalidateRelatedPetCandidatesCache).not.toHaveBeenCalled();
+  });
+
+  it("publishes a requested email only after moderator confirmation", async () => {
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: "admin@example.com",
+      name: "Admin",
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(getPetPublicEmailModerationState).mockResolvedValueOnce({
+      requested: true,
+      hasContactEmail: true,
+    });
+    vi.mocked(moderatePet).mockResolvedValueOnce(null);
+
+    const response = await POST(
+      new Request("http://localhost", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ publishRequestedEmail: true }),
+      }),
+      { params: Promise.resolve({ id: "pet_1" }) },
+    );
+
+    expect(response.status).toBe(404);
+    expect(getPetPublicEmailModerationState).toHaveBeenCalledWith("pet_1");
+    expect(moderatePet).toHaveBeenCalledWith({
+      petId: "pet_1",
+      reviewerId: "admin_1",
+      decision: "approved",
+      publishRequestedEmail: true,
+    });
+  });
+
+  it.each([
+    [{ requested: false, hasContactEmail: true }],
+    [{ requested: true, hasContactEmail: false }],
+  ])(
+    "rejects moderator publication without a valid user request",
+    async (emailState) => {
+      vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+        userId: "admin_1",
+        email: "admin@example.com",
+        name: "Admin",
+        role: "admin",
+      });
+      vi.mocked(isAdminUser).mockReturnValueOnce(true);
+      vi.mocked(getPetPublicEmailModerationState).mockResolvedValueOnce(
+        emailState,
+      );
+
+      const response = await POST(
+        new Request("http://localhost", {
+          method: "POST",
+          body: JSON.stringify({ publishRequestedEmail: true }),
+        }),
+        { params: Promise.resolve({ id: "pet_1" }) },
+      );
+
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toEqual({
+        error: "public_email_not_requested",
+      });
+      expect(moderatePet).not.toHaveBeenCalled();
+    },
+  );
+
+  it("approves without publishing email when confirmation is absent", async () => {
+    vi.mocked(getCurrentPrincipal).mockResolvedValueOnce({
+      userId: "admin_1",
+      email: "admin@example.com",
+      name: "Admin",
+      role: "admin",
+    });
+    vi.mocked(isAdminUser).mockReturnValueOnce(true);
+    vi.mocked(moderatePet).mockResolvedValueOnce(null);
+
+    const response = await POST(new Request("http://localhost"), {
+      params: Promise.resolve({ id: "pet_1" }),
+    });
+
+    expect(response.status).toBe(404);
+    expect(getPetPublicEmailModerationState).not.toHaveBeenCalled();
+    expect(moderatePet).toHaveBeenCalledWith(
+      expect.objectContaining({ publishRequestedEmail: false }),
+    );
   });
 
   it("does not revalidate sitemap cache when the pet is missing", async () => {

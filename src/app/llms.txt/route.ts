@@ -18,12 +18,17 @@ export async function GET(): Promise<Response> {
       pet.tags.length > 0
         ? ` Tags: ${pet.tags.map(formatInlineText).join(", ")}.`
         : "";
-    const author =
-      pet.ownerProfileSlug && pet.ownerName
-        ? ` By [${formatLinkText(pet.ownerName)}](${toPublicUrl(`/users/${pet.ownerProfileSlug}`)}).`
-        : "";
+    const authorName = pet.ownerName
+      ? pet.ownerProfileSlug
+        ? `[${formatLinkText(pet.ownerName)}](${toPublicUrl(`/users/${pet.ownerProfileSlug}`)})`
+        : formatInlineText(pet.ownerName)
+      : null;
+    const author = authorName ? ` By ${authorName}.` : "";
+    const authorEmail = pet.publicAuthorEmail
+      ? ` Public email: ${formatInlineText(pet.publicAuthorEmail)}.`
+      : "";
 
-    return `- [${formatLinkText(pet.displayName)}](${toPublicUrl(`/pets/${pet.slug}`)}): Approved ${pet.kind} Codex pet pack.${author}${tags}`;
+    return `- [${formatLinkText(pet.displayName)}](${toPublicUrl(`/pets/${pet.slug}`)}): Approved ${pet.kind} Codex pet pack.${author}${authorEmail}${tags}`;
   });
   const omittedNote =
     pets.length > listedPets.length

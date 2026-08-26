@@ -1,6 +1,6 @@
 import { TABLES } from "@/lib/ydb/schema";
 import { TypedValues, withSession, isYdbConfigured } from "@/lib/ydb/client";
-import { rowsFromResult, textAt, uintAt } from "@/lib/ydb/result";
+import { boolAt, rowsFromResult, textAt, uintAt } from "@/lib/ydb/result";
 import {
   listPublicUserProfilesByIds,
   normalizeProfileSlug,
@@ -64,6 +64,8 @@ type PetRow = {
   ownerEmail: string | null;
   ownerName: string | null;
   contactEmail: string | null;
+  publicEmailRequested: boolean;
+  publicAuthorEmail: string | null;
   rejectionReason: string | null;
   createdAt: string;
   updatedAt: string;
@@ -77,6 +79,7 @@ export type CreatePendingPetInput = {
   ownerEmail: string | null;
   ownerName: string | null;
   contactEmail: string | null;
+  publicEmailRequested?: boolean;
   kind: PetKind;
   tags: string[];
   zipUrl: string;
@@ -533,6 +536,7 @@ export async function createPendingPet(
       ownerEmail: input.ownerEmail,
       ownerName: input.ownerName,
       contactEmail: input.contactEmail,
+      publicEmailRequested: input.publicEmailRequested ?? false,
     });
 
     return toPublicPet(pet, pet.metrics, mockOwnerReference(pet));
@@ -565,6 +569,8 @@ DECLARE $owner_id AS Utf8;
 DECLARE $owner_email AS Utf8;
 DECLARE $owner_name AS Utf8;
 DECLARE $contact_email AS Utf8;
+DECLARE $public_email_requested AS Bool;
+DECLARE $public_author_email AS Utf8;
 DECLARE $rejection_reason AS Utf8;
 DECLARE $created_at AS Utf8;
 DECLARE $updated_at AS Utf8;
@@ -572,8 +578,8 @@ DECLARE $approved_at AS Utf8;
 DECLARE $rejected_at AS Utf8;
 
 UPSERT INTO ${TABLES.pets}
-(slug, id, display_name, description, spritesheet_url, pet_json_url, zip_url, spritesheet_ext, kind, tags_json, status, owner_id, owner_email, owner_name, contact_email, rejection_reason, created_at, updated_at, approved_at, rejected_at)
-VALUES ($slug, $id, $display_name, $description, $spritesheet_url, $pet_json_url, $zip_url, $spritesheet_ext, $kind, $tags_json, $status, $owner_id, $owner_email, $owner_name, $contact_email, $rejection_reason, $created_at, $updated_at, $approved_at, $rejected_at);
+(slug, id, display_name, description, spritesheet_url, pet_json_url, zip_url, spritesheet_ext, kind, tags_json, status, owner_id, owner_email, owner_name, contact_email, rejection_reason, created_at, updated_at, approved_at, rejected_at, public_email_requested, public_author_email)
+VALUES ($slug, $id, $display_name, $description, $spritesheet_url, $pet_json_url, $zip_url, $spritesheet_ext, $kind, $tags_json, $status, $owner_id, $owner_email, $owner_name, $contact_email, $rejection_reason, $created_at, $updated_at, $approved_at, $rejected_at, $public_email_requested, $public_author_email);
       `,
       {
         $slug: TypedValues.utf8(slug),
@@ -591,6 +597,10 @@ VALUES ($slug, $id, $display_name, $description, $spritesheet_url, $pet_json_url
         $owner_email: TypedValues.utf8(input.ownerEmail ?? ""),
         $owner_name: TypedValues.utf8(input.ownerName ?? ""),
         $contact_email: TypedValues.utf8(input.contactEmail ?? ""),
+        $public_email_requested: TypedValues.bool(
+          input.publicEmailRequested ?? false,
+        ),
+        $public_author_email: TypedValues.utf8(""),
         $rejection_reason: TypedValues.utf8(""),
         $created_at: TypedValues.utf8(now),
         $updated_at: TypedValues.utf8(now),
@@ -616,6 +626,8 @@ VALUES ($slug, $id, $display_name, $description, $spritesheet_url, $pet_json_url
     ownerEmail: input.ownerEmail,
     ownerName: input.ownerName,
     contactEmail: input.contactEmail,
+    publicEmailRequested: input.publicEmailRequested ?? false,
+    publicAuthorEmail: null,
     rejectionReason: null,
     createdAt: now,
     updatedAt: now,
@@ -625,11 +637,28 @@ VALUES ($slug, $id, $display_name, $description, $spritesheet_url, $pet_json_url
   return toPublicPet(row, EMPTY_METRICS, await getOwnerProfileByRow(row));
 }
 
+export async function getPetPublicEmailModerationState(
+  petId: string,
+): Promise<{
+  requested: boolean;
+  hasContactEmail: boolean;
+} | null> {
+  const pet = isMockPetsDataSource()
+    ? getMockPetById(petId)
+    : await getPetById(petId);
+  if (!pet) return null;
+  return {
+    requested: pet.publicEmailRequested,
+    hasContactEmail: Boolean(pet.contactEmail),
+  };
+}
+
 export async function moderatePet(input: {
   petId: string;
   reviewerId: string;
   decision: "approved" | "rejected";
   reason?: string;
+  publishRequestedEmail?: boolean;
 }): Promise<PublicPet | null> {
   return (await moderatePetWithPreviousStatus(input))?.pet ?? null;
 }
@@ -639,6 +668,7 @@ export async function moderatePetWithPreviousStatus(input: {
   reviewerId: string;
   decision: "approved" | "rejected";
   reason?: string;
+  publishRequestedEmail?: boolean;
 }): Promise<{
   pet: PublicPet;
   previousStatus: ApprovalStatus;
@@ -673,6 +703,13 @@ export async function moderatePetWithPreviousStatus(input: {
     const rejectedAt = nextStatus === "rejected" ? now : "";
     const reason =
       nextStatus === "rejected" ? input.reason?.trim() ?? "" : "";
+    const publicAuthorEmail =
+      nextStatus === "approved" &&
+      input.publishRequestedEmail &&
+      candidate.publicEmailRequested &&
+      candidate.contactEmail
+        ? candidate.contactEmail
+        : candidate.publicAuthorEmail ?? "";
 
     await withSession((session) =>
       session.executeQuery(
@@ -683,6 +720,7 @@ DECLARE $updated_at AS Utf8;
 DECLARE $approved_at AS Utf8;
 DECLARE $rejected_at AS Utf8;
 DECLARE $rejection_reason AS Utf8;
+DECLARE $public_author_email AS Utf8;
 DECLARE $expected_status AS Utf8;
 DECLARE $expected_updated_at AS Utf8;
 
@@ -691,7 +729,8 @@ SET status = $status,
     updated_at = $updated_at,
     approved_at = $approved_at,
     rejected_at = $rejected_at,
-    rejection_reason = $rejection_reason
+    rejection_reason = $rejection_reason,
+    public_author_email = $public_author_email
 WHERE slug = $slug
   AND status = $expected_status
   AND updated_at = $expected_updated_at;
@@ -703,6 +742,7 @@ WHERE slug = $slug
           $approved_at: TypedValues.utf8(approvedAt),
           $rejected_at: TypedValues.utf8(rejectedAt),
           $rejection_reason: TypedValues.utf8(reason),
+          $public_author_email: TypedValues.utf8(publicAuthorEmail),
           $expected_status: TypedValues.utf8(candidate.status),
           $expected_updated_at: TypedValues.utf8(candidate.updatedAt),
         },
@@ -1096,6 +1136,8 @@ function petColumns(): string {
     "updated_at",
     "approved_at",
     "rejected_at",
+    "public_email_requested",
+    "public_author_email",
   ].join(", ");
 }
 
@@ -1121,6 +1163,8 @@ function parsePetRow(row: Parameters<typeof textAt>[0]): PetRow {
     updatedAt: textAt(row, 17),
     approvedAt: textAt(row, 18) || null,
     rejectedAt: textAt(row, 19) || null,
+    publicEmailRequested: boolAt(row, 20),
+    publicAuthorEmail: textAt(row, 21) || null,
   };
 }
 
@@ -1145,6 +1189,8 @@ function toPublicPet(
     ownerProfileSlug: ownerProfile?.profileSlug ?? null,
     ownerAvatarUrl: ownerProfile?.avatarUrl ?? null,
     contactEmail: row.contactEmail,
+    publicEmailRequested: row.publicEmailRequested,
+    publicAuthorEmail: row.publicAuthorEmail,
     createdAt: row.createdAt,
     approvedAt: row.approvedAt,
     downloadCount: metrics.downloadCount,

@@ -3,7 +3,10 @@ import { buildPetInstallCommand } from "@/lib/pets/install-command";
 import type { PublicPet } from "@/lib/pets/types";
 import type { PetsPaginationMetadata } from "@/lib/pets/pagination";
 
-export type PublicPetPayload = Omit<PublicPet, "contactEmail"> & {
+export type PublicPetPayload = Omit<
+  PublicPet,
+  "contactEmail" | "publicEmailRequested"
+> & {
   ownerProfileUrl: string | null;
 };
 
@@ -21,6 +24,7 @@ export function buildManifestPayload(
       kind: pet.kind,
       tags: pet.tags,
       submittedBy: pet.ownerName,
+      submittedByEmail: pet.publicAuthorEmail ?? null,
       submittedByUrl: pet.ownerProfileSlug
         ? toPublicUrl(`/users/${pet.ownerProfileSlug}`)
         : null,
@@ -72,6 +76,7 @@ export function createPublicPetPayload(pet: PublicPet): PublicPetPayload {
       ? toPublicUrl(`/users/${pet.ownerProfileSlug}`)
       : null,
     ownerAvatarUrl: pet.ownerAvatarUrl ? toPublicUrl(pet.ownerAvatarUrl) : null,
+    publicAuthorEmail: pet.publicAuthorEmail ?? null,
     createdAt: pet.createdAt,
     approvedAt: pet.approvedAt,
     downloadCount: pet.downloadCount,

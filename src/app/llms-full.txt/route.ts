@@ -14,16 +14,21 @@ export async function GET(): Promise<Response> {
   const listedPets = pets.slice(0, MAX_LISTED_PETS);
   const generatedAt = new Date().toISOString();
   const petLines = listedPets.map((pet) => {
-    const author =
-      pet.ownerProfileSlug && pet.ownerName
-        ? ` by [${formatLinkText(pet.ownerName)}](${toPublicUrl(`/users/${pet.ownerProfileSlug}`)})`
-        : "";
+    const authorName = pet.ownerName
+      ? pet.ownerProfileSlug
+        ? `[${formatLinkText(pet.ownerName)}](${toPublicUrl(`/users/${pet.ownerProfileSlug}`)})`
+        : formatInlineText(pet.ownerName)
+      : null;
+    const author = authorName ? ` by ${authorName}` : "";
+    const authorEmail = pet.publicAuthorEmail
+      ? ` Public email: ${formatInlineText(pet.publicAuthorEmail)}.`
+      : "";
     const tags =
       pet.tags.length > 0
         ? ` Tags: ${pet.tags.map(formatInlineText).join(", ")}.`
         : "";
 
-    return `- [${formatLinkText(pet.displayName)}](${toPublicUrl(`/pets/${pet.slug}`)}): Approved ${pet.kind} Codex pet pack${author}.${tags}`;
+    return `- [${formatLinkText(pet.displayName)}](${toPublicUrl(`/pets/${pet.slug}`)}): Approved ${pet.kind} Codex pet pack${author}.${authorEmail}${tags}`;
   });
 
   const omittedNote =
@@ -102,7 +107,7 @@ export async function GET(): Promise<Response> {
       "- OAuth 2.0 is not currently supported by Codex Pets.",
       "- OAuth Protected Resource metadata is published without authorization_servers because there is no OAuth authorization server.",
       "- Admin, account, moderation, delete, and private owner routes are not part of the public agent contract.",
-      "- Public JSON and MCP outputs are sanitized to avoid private contact email fields.",
+      "- Private contact fields stay hidden. A separately requested and moderator-verified public author email is part of the public registry contract.",
       "- JSON error responses include error, code, message, and when useful hint or field.",
       "",
       "## Pricing, terms, and versioning",
