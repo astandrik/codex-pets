@@ -64,15 +64,15 @@ describe("current related pet annotation contract", () => {
       RELATED_PETS_ANNOTATION_QUERY_REVISION,
       RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
     ]).toEqual([
-      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r8",
-      "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r8",
-      "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r8",
+      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r9",
+      "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r9",
+      "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r9",
     ]);
     expect(RELATED_PETS_ANNOTATION_SCHEMA_NAME).toBe(
-      "related_pet_annotation_v11_r8",
+      "related_pet_annotation_v11_r9",
     );
     expect(RELATED_PETS_ANNOTATION_CONTROL_REVISION).toBe(
-      "related-pets-annotation-control-2026-08-v11-r5",
+      "related-pets-annotation-control-2026-08-v11-r6",
     );
     expect(RELATED_PETS_ANNOTATION_TOKEN_POLICY).toEqual({
       revision: "related-pets-annotation-token-policy-2026-08-v11-r5",
@@ -102,11 +102,14 @@ describe("current related pet annotation contract", () => {
       "maybe-baby-2-2",
       "megumin-3",
       "minty-codex-pet",
+      "otets-potets",
       "paprika-2",
+      "primaris",
       "round-bear",
       "ryuk-2",
       "sage-anime-girl",
       "sakura",
+      "sakura-chibi",
       "slaanesh",
       "sunny-sprout",
     ]);
@@ -154,6 +157,75 @@ describe("current related pet annotation contract", () => {
     }).themes).toEqual([]);
     expect(RELATED_PETS_ANNOTATION_OVERRIDES["sunny-sprout"])
       .toMatchObject({ franchises: [], themes: [] });
+  });
+
+  it.each([
+    {
+      slug: "karlson-2",
+      cardProposal: {
+        ...proposal,
+        franchise_families: [],
+        themes: [],
+        media_origins: [
+          relation("Animated Series", "medium", ["world_knowledge"]),
+        ],
+      },
+      expected: { franchises: [], mediaOrigins: [] },
+    },
+    {
+      slug: "otets-potets",
+      cardProposal: {
+        ...proposal,
+        franchises: [
+          relation("Unverified Franchise", "high", ["world_knowledge"]),
+        ],
+        franchise_families: [],
+        themes: [],
+        media_origins: [],
+      },
+      expected: { franchises: [] },
+    },
+    {
+      slug: "sakura-chibi",
+      cardProposal: {
+        ...proposal,
+        franchises: [
+          relation("Unverified Franchise", "high", ["world_knowledge"]),
+        ],
+        franchise_families: [
+          relation("Unverified Family", "high", ["world_knowledge"]),
+        ],
+        themes: [],
+        media_origins: [],
+      },
+      expected: { franchises: [], franchiseFamilies: [] },
+    },
+    {
+      slug: "primaris",
+      cardProposal: {
+        ...proposal,
+        franchises: [
+          relation("Warhammer 40000", "high", ["world_knowledge"]),
+        ],
+        franchise_families: [],
+        themes: [],
+        media_origins: [],
+      },
+      expected: { franchises: [] },
+    },
+  ])("clears unsupported world-only relations for $slug", ({
+    slug,
+    cardProposal,
+    expected,
+  }) => {
+    expect(listUnresolvedStrongRelations({
+      slug,
+      proposal: cardProposal,
+    })).toEqual([]);
+    expect(resolveRelatedPetAnnotation({ slug, proposal: cardProposal }))
+      .toMatchObject(expected);
+    expect(RELATED_PETS_ANNOTATION_OVERRIDES[slug])
+      .toMatchObject(expected);
   });
 
   it("canonicalizes the KonoSuba and Evangelion franchise IDs", () => {
@@ -427,7 +499,7 @@ describe("current related pet annotation contract", () => {
       modelUri: "gpt://folder/qwen3.6-35b-a3b",
     });
     expect(first).toBe(
-      "aaa42e8dea5bd686bc538eae8fb990896e9042ffa1f8efd3b05f9ee6bddcfa36",
+      "eb58267e65e26cc43222b31800e1bc363dacb400c0587a8e89ccb6c82a2d5213",
     );
     const same = createRelatedPetAnnotationSourceHash({
       pet: { ...pet, tags: pet.tags.toReversed() },

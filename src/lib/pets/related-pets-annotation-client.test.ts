@@ -60,7 +60,7 @@ describe("related pet annotation client", () => {
       text: {
         format: {
           type: "json_schema",
-          name: "related_pet_annotation_v11_r8",
+          name: "related_pet_annotation_v11_r9",
           strict: true,
           schema: RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
         },
