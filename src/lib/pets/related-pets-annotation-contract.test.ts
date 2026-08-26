@@ -64,15 +64,15 @@ describe("current related pet annotation contract", () => {
       RELATED_PETS_ANNOTATION_QUERY_REVISION,
       RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
     ]).toEqual([
-      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r9",
-      "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r9",
-      "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r9",
+      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r10",
+      "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r10",
+      "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r10",
     ]);
     expect(RELATED_PETS_ANNOTATION_SCHEMA_NAME).toBe(
-      "related_pet_annotation_v11_r9",
+      "related_pet_annotation_v11_r10",
     );
     expect(RELATED_PETS_ANNOTATION_CONTROL_REVISION).toBe(
-      "related-pets-annotation-control-2026-08-v11-r6",
+      "related-pets-annotation-control-2026-08-v11-r7",
     );
     expect(RELATED_PETS_ANNOTATION_TOKEN_POLICY).toEqual({
       revision: "related-pets-annotation-token-policy-2026-08-v11-r5",
@@ -157,6 +157,37 @@ describe("current related pet annotation contract", () => {
     }).themes).toEqual([]);
     expect(RELATED_PETS_ANNOTATION_OVERRIDES["sunny-sprout"])
       .toMatchObject({ franchises: [], themes: [] });
+  });
+
+  it("keeps Sakura and Sakura Chibi on the card-supported kunoichi facet", () => {
+    const emptyRelations = {
+      ...proposal,
+      entity: { key: null, aliases: [], confidence: "none", evidence: [] },
+      franchises: [],
+      franchise_families: [],
+      collections: [],
+      themes: [],
+      media_origins: [],
+    };
+    const sakura = resolveRelatedPetAnnotation({
+      slug: "sakura",
+      proposal: { ...emptyRelations, specific_archetypes: [] },
+    });
+    const sakuraChibi = resolveRelatedPetAnnotation({
+      slug: "sakura-chibi",
+      proposal: {
+        ...emptyRelations,
+        specific_archetypes: [
+          relation("Shinobi Girl", "high", ["description"]),
+        ],
+      },
+    });
+
+    expect(sakura.specificArchetypes).toEqual(["kunoichi"]);
+    expect(sakuraChibi.specificArchetypes).toEqual(["kunoichi"]);
+    expect(sakuraChibi.specificArchetypes).not.toContain("shinobi-girl");
+    expect(RELATED_PETS_ANNOTATION_OVERRIDES["sakura-chibi"])
+      .toMatchObject({ specificArchetypes: ["kunoichi"] });
   });
 
   it.each([
@@ -499,7 +530,7 @@ describe("current related pet annotation contract", () => {
       modelUri: "gpt://folder/qwen3.6-35b-a3b",
     });
     expect(first).toBe(
-      "eb58267e65e26cc43222b31800e1bc363dacb400c0587a8e89ccb6c82a2d5213",
+      "f015b004b22d457acacb50da8b9a5f1be77f9e91dd9db5d2cdde27057c165fd5",
     );
     const same = createRelatedPetAnnotationSourceHash({
       pet: { ...pet, tags: pet.tags.toReversed() },
