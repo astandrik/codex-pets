@@ -156,15 +156,20 @@ ORDER BY slug;
 async function listAnnotations(driver) {
   const result = await executeYdbQuery(driver, `
 DECLARE $revision AS Utf8;
-SELECT pet_slug, source_hash, annotation_json, annotation_text
+SELECT pet_slug, source_hash, proposal_revision, proposal_input_hash,
+       proposal_hash, proposal_json, annotation_json, annotation_text
 FROM ${ANNOTATIONS_TABLE}
 WHERE annotation_revision = $revision;
   `, { $revision: TypedValues.utf8(RELATED_PETS_ANNOTATION_REVISION) });
   return rowsFromResult(result).map((row) => ({
     slug: textAt(row, 0),
     sourceHash: textAt(row, 1),
-    annotationJson: textAt(row, 2),
-    annotationText: textAt(row, 3),
+    proposalRevision: textAt(row, 2),
+    proposalInputHash: textAt(row, 3),
+    proposalHash: textAt(row, 4),
+    proposalJson: textAt(row, 5),
+    annotationJson: textAt(row, 6),
+    annotationText: textAt(row, 7),
   }));
 }
 

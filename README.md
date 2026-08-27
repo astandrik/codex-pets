@@ -330,6 +330,10 @@ combines description similarity with controlled entity, franchise, collection,
 and archetype annotations. Visual similarity contributes to ordering inside the
 qualified tier and also orders shared-topic sparse-fallback candidates after
 topic count and kind. Visual evidence alone cannot qualify or rescue a match.
+The relation policy adds verified parent families and known numbered-series
+roots without replacing entity/franchise identifiers or stored annotations.
+It preserves explicit family-field overrides. Registry changes require a new
+relation-policy revision and generation, not new annotation embeddings.
 The current ranking revision stores eight ordered slugs per approved pet. Pet
 detail pages render all eight immediately (four columns on desktop, three on
 tablet, and two on mobile); the private Markdown twin intentionally keeps the

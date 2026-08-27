@@ -1,6 +1,7 @@
 import {
   RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
   RELATED_PETS_ANNOTATION_MODEL_NAME,
+  RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
   RELATED_PETS_ANNOTATION_QUERY_REVISION,
   RELATED_PETS_ANNOTATION_REVISION,
   createRelatedPetAnnotationEmbeddingSourceHash,
@@ -34,6 +35,7 @@ export type RelatedPetAnnotationRefreshResult =
 
 type Dependencies = {
   annotationRevision: string;
+  proposalRevision: string;
   queryRevision: string;
   documentRevision: string;
   dimensions: number;
@@ -64,6 +66,7 @@ export function createRelatedPetAnnotationRuntime(dependencies: Dependencies) {
       pet,
       modelUri: dependencies.modelUri,
       annotationRevision: dependencies.annotationRevision,
+      proposalRevision: dependencies.proposalRevision,
       getAnnotation: dependencies.getAnnotation,
       createProposal: dependencies.createProposal,
       upsertAnnotation: dependencies.upsertAnnotation,
@@ -150,6 +153,7 @@ const annotationEmbeddingClient = semantic
 const productionRuntime = semantic && annotationEmbeddingClient
   ? createRelatedPetAnnotationRuntime({
       annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
       queryRevision: RELATED_PETS_ANNOTATION_QUERY_REVISION,
       documentRevision: RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
       dimensions: 768,

@@ -6,6 +6,7 @@ import type { RelatedPetAnnotationProposal } from "@/lib/pets/related-pets-annot
 
 import {
   RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+  RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
   RELATED_PETS_ANNOTATION_QUERY_REVISION,
   RELATED_PETS_ANNOTATION_REVISION,
   RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
@@ -15,6 +16,8 @@ import {
   buildRelatedPetAnnotationInput,
   buildRelatedPetAnnotationText,
   createRelatedPetAnnotationEmbeddingSourceHash,
+  createRelatedPetAnnotationProposalHash,
+  createRelatedPetAnnotationProposalInputHash,
   createRelatedPetAnnotationSourceHash,
   parseRelatedPetAnnotationProposal,
   parseStoredRelatedPetAnnotationProposal,
@@ -64,27 +67,32 @@ describe("current related pet annotation contract", () => {
       RELATED_PETS_ANNOTATION_QUERY_REVISION,
       RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
     ]).toEqual([
-      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r10",
-      "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r10",
-      "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r10",
+      "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r14",
+      "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r14",
+      "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r14",
     ]);
+    expect(RELATED_PETS_ANNOTATION_PROPOSAL_REVISION).toBe(
+      "yandex-qwen3.6-35b-a3b-related-annotation-proposal-2026-08-v11-r2",
+    );
     expect(RELATED_PETS_ANNOTATION_SCHEMA_NAME).toBe(
-      "related_pet_annotation_v11_r10",
+      "related_pet_annotation_v11_r12",
     );
     expect(RELATED_PETS_ANNOTATION_CONTROL_REVISION).toBe(
-      "related-pets-annotation-control-2026-08-v11-r7",
+      "related-pets-annotation-control-2026-08-v11-r9",
     );
     expect(RELATED_PETS_ANNOTATION_TOKEN_POLICY).toEqual({
-      revision: "related-pets-annotation-token-policy-2026-08-v11-r5",
-      reasoning: "model-default",
-      initialMaxOutputTokens: 32_000,
-      retryMaxOutputTokens: 64_000,
+      revision: "related-pets-annotation-token-policy-2026-08-v11-r6",
+      api: "chat_completions",
+      reasoning: "none",
+      initialMaxOutputTokens: 4_000,
+      retryMaxOutputTokens: 8_000,
     });
     expect(Object.keys(RELATED_PETS_ANNOTATION_OVERRIDES).toSorted()).toEqual([
       "2b-2",
       "ashe",
       "ashe-detailed",
       "aurelia",
+      "auron",
       "cheburashka",
       "chibi-wolf",
       "ffx-yuna",
@@ -112,6 +120,7 @@ describe("current related pet annotation contract", () => {
       "sakura-chibi",
       "slaanesh",
       "sunny-sprout",
+      "vi",
     ]);
     expect(createHash("sha256")
       .update(JSON.stringify(RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA))
@@ -129,6 +138,43 @@ describe("current related pet annotation contract", () => {
       },
     });
   });
+
+  it.each(["medium", "high"] as const)(
+    "clears Vi's unsupported %s-confidence media origin without changing other fields",
+    (confidence) => {
+      const viProposal = {
+        ...proposal,
+        franchise_families: [],
+        media_origins: [
+          relation("Animated Series", confidence, ["world_knowledge"]),
+        ],
+      };
+      const unoverridden = resolveRelatedPetAnnotation({
+        slug: "unoverridden-character",
+        proposal: viProposal,
+      });
+
+      expect(listUnresolvedStrongRelations({
+        slug: "vi",
+        proposal: viProposal,
+      })).toEqual([]);
+      expect(resolveRelatedPetAnnotation({ slug: "vi", proposal: viProposal }))
+        .toEqual({ ...unoverridden, mediaOrigins: [] });
+      expect(RELATED_PETS_ANNOTATION_OVERRIDES.vi).toEqual({
+        reason: "The card names Violet from Arcane but does not state a media-origin category.",
+        mediaOrigins: [],
+      });
+      expect(listUnresolvedStrongRelations({
+        slug: "vi",
+        proposal: {
+          ...viProposal,
+          franchise_families: [
+            relation("Unverified Family", "high", ["world_knowledge"]),
+          ],
+        },
+      })).toEqual(["franchiseFamilies"]);
+    },
+  );
 
   it("clears unsupported world-only themes for Sunny Sprout", () => {
     const sunnyProposal = {
@@ -391,7 +437,10 @@ describe("current related pet annotation contract", () => {
   });
 
   it("accepts only card-supported strong facets and blocks broad labels", () => {
-    const resolved = resolveRelatedPetAnnotation({ slug: pet.slug, proposal });
+    const resolved = resolveRelatedPetAnnotation({
+      slug: "unoverridden-character",
+      proposal,
+    });
 
     expect(resolved).toEqual({
       schemaVersion: 1,
@@ -512,6 +561,7 @@ describe("current related pet annotation contract", () => {
     const text = buildRelatedPetAnnotationText(resolved);
     expect(text).toContain("entity: vi");
     expect(text).toContain("franchises: arcane");
+    expect(text).not.toContain("media_origins:");
     expect(text).not.toContain(pet.description);
     expect(text).not.toContain("public-domain");
     expect(buildRelatedPetAnnotationInput(pet)).toBe(
@@ -525,43 +575,76 @@ describe("current related pet annotation contract", () => {
   });
 
   it("changes hashes only when their controlled inputs change", () => {
-    const first = createRelatedPetAnnotationSourceHash({
+    const first = createRelatedPetAnnotationProposalInputHash({
       pet,
       modelUri: "gpt://folder/qwen3.6-35b-a3b",
     });
     expect(first).toBe(
-      "f015b004b22d457acacb50da8b9a5f1be77f9e91dd9db5d2cdde27057c165fd5",
+      "7e257a961c3a6d9a79a435295da9d3fce693795fd88a0b004c525780e6a46da8",
     );
-    const same = createRelatedPetAnnotationSourceHash({
+    const same = createRelatedPetAnnotationProposalInputHash({
       pet: { ...pet, tags: pet.tags.toReversed() },
       modelUri: "gpt://folder/qwen3.6-35b-a3b",
     });
-    const changed = createRelatedPetAnnotationSourceHash({
+    const changed = createRelatedPetAnnotationProposalInputHash({
       pet: { ...pet, description: `${pet.description} Updated.` },
       modelUri: "gpt://folder/qwen3.6-35b-a3b",
     });
     expect(same).toBe(first);
     expect(changed).not.toBe(first);
-    expect(createRelatedPetAnnotationSourceHash({
+    expect(createRelatedPetAnnotationProposalInputHash({
       pet,
       modelUri: "gpt://folder/qwen3.6-35b-a3b",
       tokenPolicy: {
         ...RELATED_PETS_ANNOTATION_TOKEN_POLICY,
-        retryMaxOutputTokens: 64_001,
+        retryMaxOutputTokens: 8_001,
       },
     })).not.toBe(first);
+
+    for (const policy of [
+      { ...RELATED_PETS_ANNOTATION_TOKEN_POLICY, api: "responses" },
+      { ...RELATED_PETS_ANNOTATION_TOKEN_POLICY, reasoning: "model-default" },
+    ]) {
+      expect(createRelatedPetAnnotationProposalInputHash({
+        pet,
+        modelUri: "gpt://folder/qwen3.6-35b-a3b",
+        tokenPolicy: policy,
+      })).not.toBe(first);
+    }
+
+    const parsedProposal = parseRelatedPetAnnotationProposal(proposal);
+    const proposalHash = createRelatedPetAnnotationProposalHash(parsedProposal);
+    expect(proposalHash).toBe(
+      "d2c6e48e84ebfdb4a3b3f55c07fa8a793ceb0f68a9a6ef6fa516a1fd112073fe",
+    );
+    const annotationSourceHash = createRelatedPetAnnotationSourceHash({
+      slug: pet.slug,
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+      proposalInputHash: first,
+      proposalHash,
+    });
+    expect(annotationSourceHash).toBe(
+      "ef0907f2785d3bd4013189020deaf4cfb4dc89328598ca94a68d36e65a41fa7e",
+    );
+    expect(annotationSourceHash).not.toBe(createRelatedPetAnnotationSourceHash({
+      slug: pet.slug,
+      annotationRevision: "annotation-next",
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+      proposalInputHash: first,
+      proposalHash,
+    }));
 
     const vectorHash = createRelatedPetAnnotationEmbeddingSourceHash({
       modelRevision: RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
       role: "document",
-      annotationSourceHash: first,
+      annotationSourceHash,
       annotationText: "entity: vi",
     });
     expect(vectorHash).not.toBe(
       createRelatedPetAnnotationEmbeddingSourceHash({
         modelRevision: RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
         role: "query",
-        annotationSourceHash: first,
+        annotationSourceHash,
         annotationText: "entity: vi",
       }),
     );
@@ -749,19 +832,73 @@ describe("current related pet annotation contract", () => {
     expect(resolved.aliases).toEqual([]);
   });
 
-  it("requires overrides for medium world-only weak values", () => {
+  it.each(["medium", "high"] as const)("drops %s world-only weak values without blocking the card", (confidence) => {
     const worldOnlyWeakValues = {
       ...proposal,
       franchise_families: [],
-      themes: [relation("Action", "medium", ["world_knowledge"])],
+      themes: [relation("Action", confidence, ["world_knowledge"])],
       media_origins: [
-        relation("Animated Series", "medium", ["world_knowledge"]),
+        relation("Animated Series", confidence, ["world_knowledge"]),
       ],
     };
     expect(listUnresolvedStrongRelations({
-      slug: pet.slug,
+      slug: "unoverridden-character",
       proposal: worldOnlyWeakValues,
-    })).toEqual(["themes", "mediaOrigins"]);
+    })).toEqual([]);
+    const resolved = resolveRelatedPetAnnotation({
+      slug: "unoverridden-character",
+      proposal: worldOnlyWeakValues,
+    });
+    expect(resolved).toMatchObject({ themes: [], mediaOrigins: [] });
+    expect(buildRelatedPetAnnotationText(resolved)).not.toContain("themes:");
+    expect(buildRelatedPetAnnotationText(resolved)).not.toContain("media_origins:");
+  });
+
+  it("preserves card-supported weak values and verified override replacements", () => {
+    const candidate = {
+      ...proposal,
+      franchise_families: [],
+      themes: [
+        relation("Action", "medium", ["description", "world_knowledge"]),
+        relation("Unverified Theme", "high", ["world_knowledge"]),
+      ],
+      media_origins: [relation("Animated Series", "medium", ["tag"])],
+    };
+    const input = { slug: "unoverridden-character", proposal: candidate };
+    expect(listUnresolvedStrongRelations(input)).toEqual([]);
+    expect(resolveRelatedPetAnnotation(input)).toMatchObject({
+      themes: ["action"], mediaOrigins: ["animated-series"],
+    });
+    expect(resolveRelatedPetAnnotation({
+      ...input,
+      overrides: {
+        [input.slug]: {
+          reason: "Verified replacement fields for this regression fixture.",
+          themes: ["verified-theme"], mediaOrigins: ["verified-origin"],
+        },
+      },
+    })).toMatchObject({ themes: ["verified-theme"], mediaOrigins: ["verified-origin"] });
+  });
+
+  it("accepts only Auron's separately verified family override", () => {
+    const candidate = {
+      ...proposal,
+      entity: { key: "Auron", aliases: [], confidence: "high", evidence: ["name"] },
+      franchises: [relation("FFX", "high", ["tag"])],
+      franchise_families: [relation("Final Fantasy", "high", ["world_knowledge"])],
+      themes: [], media_origins: [],
+    };
+    expect(listUnresolvedStrongRelations({ slug: "unoverridden-character", proposal: candidate }))
+      .toEqual(["franchiseFamilies"]);
+    expect(listUnresolvedStrongRelations({ slug: "auron", proposal: candidate })).toEqual([]);
+    expect(resolveRelatedPetAnnotation({ slug: "auron", proposal: candidate }))
+      .toMatchObject({ entity: "auron", franchises: ["ffx"], franchiseFamilies: ["final-fantasy"] });
+    expect(Object.keys(RELATED_PETS_ANNOTATION_OVERRIDES.auron).toSorted())
+      .toEqual(["franchiseFamilies", "reason"]);
+    expect(listUnresolvedStrongRelations({
+      slug: "auron",
+      proposal: { ...candidate, collections: [relation("Unverified", "high", ["world_knowledge"])] },
+    })).toEqual(["collections"]);
   });
 });
 

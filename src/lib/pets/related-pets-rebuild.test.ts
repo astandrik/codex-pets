@@ -20,8 +20,11 @@ import {
   type RelatedPetsRebuildProfile,
 } from "@/lib/pets/related-pets-rebuild";
 import {
+  RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
   buildRelatedPetAnnotationText,
   createRelatedPetAnnotationEmbeddingSourceHash,
+  createRelatedPetAnnotationProposalHash,
+  createRelatedPetAnnotationProposalInputHash,
   createRelatedPetAnnotationSourceHash,
   resolveRelatedPetAnnotation,
 } from "@/lib/pets/related-pets-annotation-contract.mjs";
@@ -44,6 +47,7 @@ const profile: RelatedPetsRebuildProfile = {
   textDimensions: 2,
   textMinSimilarity: 0.1,
   annotationRevision: "annotation-current",
+  annotationProposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
   annotationQueryRevision: "annotation-query-current",
   annotationDocumentRevision: "annotation-document-current",
   annotationDimensions: 2,
@@ -168,13 +172,23 @@ function annotationFor(
     media_origins: [],
   };
   const annotation = resolveRelatedPetAnnotation({ slug: item.slug, proposal });
+  const proposalInputHash = createRelatedPetAnnotationProposalInputHash({
+    pet: item,
+    modelUri: annotationModelUri,
+  });
+  const proposalHash = createRelatedPetAnnotationProposalHash(proposal);
   return {
     slug: item.slug,
     sourceHash: createRelatedPetAnnotationSourceHash({
-      pet: item,
-      modelUri: annotationModelUri,
+      slug: item.slug,
       annotationRevision: rebuildProfile.annotationRevision,
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+      proposalInputHash,
+      proposalHash,
     }),
+    proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+    proposalInputHash,
+    proposalHash,
     proposalJson: JSON.stringify(proposal),
     annotationJson: JSON.stringify(annotation),
     annotationText: buildRelatedPetAnnotationText(annotation),
@@ -737,6 +751,25 @@ describe("related pets rebuild service", () => {
     })).rejects.toMatchObject({
       name: "RelatedPetsRebuildError",
       reason: "annotations_incomplete",
+    });
+  });
+
+  it("fails closed when an annotation lacks proposal provenance", async () => {
+    const approvedPets = [pet("alpha"), pet("beta")];
+    const annotations = approvedPets.map((item) => annotationFor(item, profile));
+    annotations[0] = { ...annotations[0], proposalInputHash: "" };
+    const harness = createHarness({
+      pets: approvedPets,
+      approvedPets,
+      annotationRows: annotations,
+    });
+
+    await expect(harness.service.rebuild({ mode: "dry-run" })).rejects.toThrow(
+      "annotations_incomplete",
+    );
+    expect(harness.logs.at(-1)).toMatchObject({
+      status: "failed",
+      failureReason: "annotations_incomplete",
     });
   });
 

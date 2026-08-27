@@ -10,34 +10,58 @@ import type {
 type StoredRelatedPetAnnotation = {
   slug: string;
   sourceHash: string;
+  proposalRevision?: string;
+  proposalInputHash?: string;
+  proposalHash?: string;
   proposalJson?: string;
   annotationJson: string;
   annotationText: string;
 };
 
-export type RelatedPetAnnotationBackfillOptions = ResumableBackfillOptions;
-export type RelatedPetAnnotationBackfillSummary = ResumableBackfillSummary;
+export type RelatedPetAnnotationBackfillOptions = ResumableBackfillOptions & {
+  reuseProposalsFrom?: string | null;
+  expectedCatalogFingerprint?: string | null;
+};
+export type RelatedPetAnnotationBackfillPet = RelatedPetAnnotationInput & {
+  createdAt: string;
+  approvedAt: string;
+};
+export type RelatedPetAnnotationBackfillSummary = ResumableBackfillSummary & {
+  proposalReused: number;
+  proposalGenerated: number;
+};
 export function parseRelatedPetAnnotationBackfillArgs(
   argv: readonly string[],
 ): RelatedPetAnnotationBackfillOptions;
+export function adoptLegacyRelatedPetAnnotationProposal(
+  stored: StoredRelatedPetAnnotation | null,
+  proposalInputHash: string,
+): StoredRelatedPetAnnotation | null;
+export function createRelatedPetAnnotationCatalogFingerprint(
+  pets: readonly RelatedPetAnnotationBackfillPet[],
+): string;
+export function assertRelatedPetAnnotationCatalogFingerprint(
+  options: RelatedPetAnnotationBackfillOptions,
+  pets: readonly RelatedPetAnnotationBackfillPet[],
+): string | null;
 export function runRelatedPetAnnotationBackfill(input: {
   options: RelatedPetAnnotationBackfillOptions;
   annotationRevision: string;
   modelUri: string;
-  pets: readonly RelatedPetAnnotationInput[];
+  pets: readonly RelatedPetAnnotationBackfillPet[];
   getAnnotation: (
     revision: string,
     slug: string,
   ) => Promise<StoredRelatedPetAnnotation | null>;
+  findReusableProposal?: (input: {
+    slug: string;
+    proposalRevision: string;
+    proposalInputHash: string;
+  }) => Promise<StoredRelatedPetAnnotation | null>;
   createProposal: (
     pet: RelatedPetAnnotationInput,
   ) => Promise<RelatedPetAnnotationProposal>;
   upsertAnnotation: (input: Record<string, unknown>) => Promise<void>;
-  createSourceHash: (input: {
-    pet: RelatedPetAnnotationInput;
-    modelUri: string;
-    annotationRevision?: string;
-  }) => string;
   now?: () => Date;
   log?: (entry: unknown) => void;
 }): Promise<RelatedPetAnnotationBackfillSummary>;

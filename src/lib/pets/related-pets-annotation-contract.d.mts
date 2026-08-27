@@ -50,11 +50,13 @@ export type RelatedPetAnnotationInput = {
 export const RELATED_PETS_ANNOTATION_REVISION: string;
 export const RELATED_PETS_ANNOTATION_QUERY_REVISION: string;
 export const RELATED_PETS_ANNOTATION_DOCUMENT_REVISION: string;
+export const RELATED_PETS_ANNOTATION_PROPOSAL_REVISION: string;
 export const RELATED_PETS_ANNOTATION_MODEL_NAME: string;
 export const RELATED_PETS_ANNOTATION_SCHEMA_NAME: string;
 export const RELATED_PETS_ANNOTATION_TOKEN_POLICY: Readonly<{
   revision: string;
-  reasoning: "model-default";
+  api: string;
+  reasoning: string;
   initialMaxOutputTokens: number;
   retryMaxOutputTokens: number;
 }>;
@@ -84,11 +86,21 @@ export function buildRelatedPetAnnotationInput(
 export function buildRelatedPetAnnotationText(
   annotation: ResolvedRelatedPetAnnotation,
 ): string;
-export function createRelatedPetAnnotationSourceHash(input: {
+export function createRelatedPetAnnotationProposalInputHash(input: {
   pet: RelatedPetAnnotationInput;
   modelUri: string;
-  annotationRevision?: string;
+  proposalRevision?: string;
   tokenPolicy?: typeof RELATED_PETS_ANNOTATION_TOKEN_POLICY;
+}): string;
+export function createRelatedPetAnnotationProposalHash(
+  proposal: unknown,
+): string;
+export function createRelatedPetAnnotationSourceHash(input: {
+  slug: string;
+  annotationRevision?: string;
+  proposalRevision?: string;
+  proposalInputHash: string;
+  proposalHash: string;
   overrides?: Readonly<Record<string, RelatedPetAnnotationOverride>>;
 }): string;
 export function createRelatedPetAnnotationEmbeddingSourceHash(input: {

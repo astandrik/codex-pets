@@ -1,5 +1,5 @@
 export const RELATED_PETS_ANNOTATION_CONTROL_REVISION =
-  "related-pets-annotation-control-2026-08-v11-r7";
+  "related-pets-annotation-control-2026-08-v11-r9";
 
 export const RELATED_PETS_ANNOTATION_ALIASES = Object.freeze({
   entities: Object.freeze({}),
@@ -45,6 +45,10 @@ export const RELATED_PETS_ANNOTATION_OVERRIDES = Object.freeze({
   aurelia: Object.freeze({
     reason: "The card's codex label is operational metadata, not a thematic collection.",
     collections: Object.freeze([]),
+  }),
+  auron: Object.freeze({
+    reason: "The card names Auron and explicitly says FFX; Square Enix lists Auron under FINAL FANTASY X in its series catalog (https://na.finalfantasy.com/titles/finalfantasy10).",
+    franchiseFamilies: Object.freeze(["final-fantasy"]),
   }),
   cheburashka: Object.freeze({
     reason: "The card confirms the named character and the Soviet animation collection; no broader franchise family is stated.",
@@ -162,6 +166,10 @@ export const RELATED_PETS_ANNOTATION_OVERRIDES = Object.freeze({
     reason: "The card identifies Neznayka but states neither an exact franchise identifier nor a thematic relation.",
     franchises: Object.freeze([]),
     themes: Object.freeze([]),
+  }),
+  vi: Object.freeze({
+    reason: "The card names Violet from Arcane but does not state a media-origin category.",
+    mediaOrigins: Object.freeze([]),
   }),
   "round-bear": Object.freeze({
     reason: "This Winnie-the-Pooh card depicts the Soviet animated adaptation.",

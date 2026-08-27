@@ -182,9 +182,25 @@ npm run related:backfill-annotation-document -- --dry-run
 npm run related:backfill-annotation-document -- --apply
 ```
 
+Annotation proposals use AI Studio Chat Completions with strict JSON Schema,
+explicit `reasoning_effort=none` and a 4,000-token budget, raised once to 8,000
+on an output limit. The SDK parses and validates the proposal before persistence.
+Visual captions retain their independent Responses API contract described above.
+Provider/API policy changes invalidate proposal-input hashes; old revision rows
+remain available and are never silently reclassified as current.
+
+World-knowledge-only themes and media origins are omitted from effective
+annotations and their embedding documents. Card-supported weak values and
+verified field overrides remain usable; unresolved high-confidence strong
+relations still block preparation until reviewed.
+
 Description query and document inputs contain normalized name, kind, and
 description; tags are excluded. Controlled annotations provide canonical
-entity, franchise, family, collection, and archetype facets. Visual similarity
+entity, franchise, family, collection, and archetype facets. The relation policy
+adds verified parent families and known numbered-series roots at ranking time,
+preserving original identifiers and explicit family-field overrides. Registry
+changes require a new relation-policy revision and generation; unchanged
+annotation documents/vectors do not need backfill. Visual similarity
 contributes to ordering inside the qualified tier and also orders shared-topic
 sparse-fallback candidates after topic count and kind. Visual evidence alone
 cannot qualify or rescue a match. Only after every backfill reports complete

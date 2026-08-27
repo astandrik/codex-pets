@@ -5,10 +5,11 @@ import { pathToFileURL } from "node:url";
 import {
   RELATED_PETS_ANNOTATION_MODEL_NAME,
   RELATED_PETS_ANNOTATION_REVISION,
-  createRelatedPetAnnotationSourceHash,
 } from "../src/lib/pets/related-pets-annotation-contract.mjs";
 import { createYandexRelatedPetAnnotationClient } from "../src/lib/pets/related-pets-annotation-client.mjs";
 import {
+  adoptLegacyRelatedPetAnnotationProposal,
+  assertRelatedPetAnnotationCatalogFingerprint,
   parseRelatedPetAnnotationBackfillArgs,
   runRelatedPetAnnotationBackfill,
 } from "./lib/related-pets-annotation-backfill.mjs";
@@ -29,6 +30,8 @@ export async function main(argv = process.argv.slice(2)) {
   const options = parseRelatedPetAnnotationBackfillArgs(argv);
 
   return withYdbCliDriver(async (driver) => {
+    const pets = await listApprovedPets(driver);
+    assertRelatedPetAnnotationCatalogFingerprint(options, pets);
     const provider = readProviderConfig(options.mode);
     const modelUri =
       `gpt://${provider.folderId}/${RELATED_PETS_ANNOTATION_MODEL_NAME}`;
@@ -53,11 +56,15 @@ export async function main(argv = process.argv.slice(2)) {
       options,
       annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
       modelUri,
-      pets: await listApprovedPets(driver),
+      pets,
       getAnnotation: (revision, slug) => getAnnotation(driver, revision, slug),
+      findReusableProposal: (input) => findReusableProposal(
+        driver,
+        input,
+        options.reuseProposalsFrom,
+      ),
       createProposal,
       upsertAnnotation: (input) => upsertAnnotation(driver, input),
-      createSourceHash: createRelatedPetAnnotationSourceHash,
       log: (entry) => console.log(JSON.stringify(entry)),
     });
     if (summary.failed > 0) process.exitCode = 1;
@@ -88,7 +95,7 @@ function readProviderConfig(mode) {
 async function listApprovedPets(driver) {
   const result = await executeYdbQuery(driver, `
 DECLARE $status AS Utf8;
-SELECT slug, display_name, description, kind, tags_json
+SELECT slug, display_name, description, kind, tags_json, created_at, approved_at
 FROM ${PETS_TABLE}
 WHERE status = $status
 ORDER BY created_at DESC;
@@ -99,6 +106,8 @@ ORDER BY created_at DESC;
     description: textAt(row, 2),
     kind: textAt(row, 3),
     tags: parseStringArray(textAt(row, 4)),
+    createdAt: textAt(row, 5),
+    approvedAt: textAt(row, 6),
     status: "approved",
   }));
 }
@@ -107,7 +116,8 @@ async function getAnnotation(driver, revision, slug) {
   const result = await executeYdbQuery(driver, `
 DECLARE $revision AS Utf8;
 DECLARE $slug AS Utf8;
-SELECT source_hash, proposal_json, annotation_json, annotation_text
+SELECT source_hash, proposal_revision, proposal_input_hash, proposal_hash,
+       proposal_json, annotation_json, annotation_text
 FROM ${ANNOTATIONS_TABLE}
 WHERE annotation_revision = $revision AND pet_slug = $slug
 LIMIT 1;
@@ -120,11 +130,31 @@ LIMIT 1;
     ? {
         slug,
         sourceHash: textAt(row, 0),
-        proposalJson: textAt(row, 1),
-        annotationJson: textAt(row, 2),
-        annotationText: textAt(row, 3),
+        proposalRevision: textAt(row, 1),
+        proposalInputHash: textAt(row, 2),
+        proposalHash: textAt(row, 3),
+        proposalJson: textAt(row, 4),
+        annotationJson: textAt(row, 5),
+        annotationText: textAt(row, 6),
       }
     : null;
+}
+
+async function findReusableProposal(
+  driver,
+  input,
+  legacyAnnotationRevision,
+) {
+  if (!legacyAnnotationRevision) return null;
+  const legacy = await getAnnotation(
+    driver,
+    legacyAnnotationRevision,
+    input.slug,
+  );
+  return adoptLegacyRelatedPetAnnotationProposal(
+    legacy,
+    input.proposalInputHash,
+  );
 }
 
 function upsertAnnotation(driver, input) {
@@ -132,19 +162,27 @@ function upsertAnnotation(driver, input) {
 DECLARE $revision AS Utf8;
 DECLARE $slug AS Utf8;
 DECLARE $source_hash AS Utf8;
+DECLARE $proposal_revision AS Utf8;
+DECLARE $proposal_input_hash AS Utf8;
+DECLARE $proposal_hash AS Utf8;
 DECLARE $proposal_json AS Utf8;
 DECLARE $annotation_json AS Utf8;
 DECLARE $annotation_text AS Utf8;
 DECLARE $updated_at AS Utf8;
 UPSERT INTO ${ANNOTATIONS_TABLE}
-(annotation_revision, pet_slug, source_hash, proposal_json, annotation_json,
+(annotation_revision, pet_slug, source_hash, proposal_revision,
+ proposal_input_hash, proposal_hash, proposal_json, annotation_json,
  annotation_text, updated_at)
-VALUES ($revision, $slug, $source_hash, $proposal_json, $annotation_json,
+VALUES ($revision, $slug, $source_hash, $proposal_revision,
+        $proposal_input_hash, $proposal_hash, $proposal_json, $annotation_json,
         $annotation_text, $updated_at);
   `, {
     $revision: TypedValues.utf8(input.annotationRevision),
     $slug: TypedValues.utf8(input.slug),
     $source_hash: TypedValues.utf8(input.sourceHash),
+    $proposal_revision: TypedValues.utf8(input.proposalRevision),
+    $proposal_input_hash: TypedValues.utf8(input.proposalInputHash),
+    $proposal_hash: TypedValues.utf8(input.proposalHash),
     $proposal_json: TypedValues.utf8(input.proposalJson),
     $annotation_json: TypedValues.utf8(input.annotationJson),
     $annotation_text: TypedValues.utf8(input.annotationText),

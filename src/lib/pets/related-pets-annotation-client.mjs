@@ -1,16 +1,7 @@
 import {
-  RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
-  RELATED_PETS_ANNOTATION_SCHEMA_NAME,
-  RELATED_PETS_ANNOTATION_SYSTEM_PROMPT,
-  RELATED_PETS_ANNOTATION_TOKEN_POLICY,
-  RELATED_PETS_ANNOTATION_USER_PROMPT,
-  buildRelatedPetAnnotationInput,
-  parseRelatedPetAnnotationProposal,
-} from "./related-pets-annotation-contract.mjs";
-import {
-  StructuredResponseRequestError,
-  createResponsesStructuredRequester,
-} from "./responses-structured-provider.mjs";
+  AnnotationRequestError,
+  createAnnotationRequester,
+} from "./related-pets-annotation-requester.mjs";
 
 const START_INTERVAL_MS = 6_000;
 
@@ -29,24 +20,10 @@ export function createYandexRelatedPetAnnotationClient(options) {
       new Promise((resolve) => setTimeout(resolve, milliseconds)));
   let nextStartAt = 0;
   let reservationQueue = Promise.resolve();
-  const requestProposal = createResponsesStructuredRequester({
+  const requestProposal = createAnnotationRequester({
     ...options,
-    systemPrompt: RELATED_PETS_ANNOTATION_SYSTEM_PROMPT,
-    responseSchemaName: RELATED_PETS_ANNOTATION_SCHEMA_NAME,
-    responseJsonSchema: RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
-    reasoning: undefined,
-    initialMaxOutputTokens:
-      RELATED_PETS_ANNOTATION_TOKEN_POLICY.initialMaxOutputTokens,
-    retryMaxOutputTokens:
-      RELATED_PETS_ANNOTATION_TOKEN_POLICY.retryMaxOutputTokens,
-    buildContent: (pet) => [{
-      type: "input_text",
-      text: [
-        RELATED_PETS_ANNOTATION_USER_PROMPT,
-        buildRelatedPetAnnotationInput(pet),
-      ].join("\n\n"),
-    }],
-    parseValue: parseRelatedPetAnnotationProposal,
+    now,
+    sleep,
     reserveStart,
     onDiagnostic: options.onDiagnostic ??
       ((diagnostic) =>
@@ -56,7 +33,7 @@ export function createYandexRelatedPetAnnotationClient(options) {
   return {
     createProposal(pet) {
       return requestProposal(pet).catch((error) => {
-        if (error instanceof StructuredResponseRequestError) {
+        if (error instanceof AnnotationRequestError) {
           throw new RelatedPetAnnotationProviderError(error.reason, {
             cause: error,
           });

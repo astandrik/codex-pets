@@ -1,8 +1,32 @@
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
+import {
+  RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
+  RELATED_PETS_ANNOTATION_QUERY_REVISION,
+} from "../src/lib/pets/related-pets-annotation-contract.mjs";
 
 describe("runner image maintenance contract", () => {
+  it("packages the annotation requester and uses current vector revisions", () => {
+    const packageJson = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { scripts: Record<string, string> };
+    for (const [role, revision] of [
+      ["query", RELATED_PETS_ANNOTATION_QUERY_REVISION],
+      ["document", RELATED_PETS_ANNOTATION_DOCUMENT_REVISION],
+    ]) {
+      expect(packageJson.scripts[`related:backfill-annotation-${role}`]).toBe(
+        `PET_SEARCH_MODEL_REVISION=${revision} node scripts/backfill-related-pet-annotation-embeddings.mjs`,
+      );
+    }
+    const dockerfile = readFileSync(new URL("../Dockerfile", import.meta.url), "utf8");
+    expect(dockerfile).toContain("COPY --from=builder /app/src ./src");
+    expect(readFileSync(
+      new URL("../src/lib/pets/related-pets-annotation-client.mjs", import.meta.url),
+      "utf8",
+    )).toContain('./related-pets-annotation-requester.mjs');
+  });
+
   it("uses the packaged TypeScript loader for the approval worker", () => {
     const packageJson = JSON.parse(
       readFileSync(new URL("../package.json", import.meta.url), "utf8"),

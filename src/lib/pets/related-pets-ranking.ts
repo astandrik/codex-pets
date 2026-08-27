@@ -270,22 +270,23 @@ function rankSparseFallback(
   const textScores = scoreMap(textMatches);
   const annotationScores = scoreMap(annotationMatches);
   const visualScores = scoreMap(visualMatches);
-  const sourceAnnotation = applyRelatedPetsRelationPolicy({
-    slug: input.source.slug,
-    annotation: input.annotations?.get(input.source.slug) ?? null,
+  const scopedAnnotations = new Map<string, ResolvedRelatedPetAnnotation>();
+  for (const slug of [input.source.slug, ...candidateSlugs]) {
+    const annotation = input.annotations?.get(slug);
+    if (annotation) scopedAnnotations.set(slug, annotation);
+  }
+  const annotations = applyRelatedPetsRelationPolicy({
+    annotations: scopedAnnotations,
     revision: input.profile.relationPolicyRevision,
   });
+  const sourceAnnotation = annotations.get(input.source.slug) ?? null;
   const candidatesBySlug = new Map(
     input.candidates.map((candidate) => [candidate.slug, candidate]),
   );
   const sourceTags = createRelatedPetFallbackTagSet(input.source.tags);
   const diagnostics = candidateSlugs.map((slug, candidateIndex) => {
     const candidate = candidatesBySlug.get(slug);
-    const candidateAnnotation = applyRelatedPetsRelationPolicy({
-      slug,
-      annotation: input.annotations?.get(slug) ?? null,
-      revision: input.profile.relationPolicyRevision,
-    });
+    const candidateAnnotation = annotations.get(slug) ?? null;
     const textSimilarity = textScores.get(slug) ?? null;
     const annotationSimilarity = annotationScores.get(slug) ?? null;
     const visualSimilarity = visualScores.get(slug) ?? null;

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { createCatalogFingerprint } from "./lib/related-pets-catalog-fingerprint.mjs";
 
 const repositoryRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -113,19 +114,6 @@ export async function runRelatedPetsV24Verification({
 function sameOrderedSlugs(left, right) {
   return left.length === right.length &&
     left.every((slug, index) => slug === right[index]);
-}
-
-function createCatalogFingerprint(pets) {
-  const catalog = pets.map((pet) => ({
-    slug: pet.slug,
-    displayName: pet.displayName,
-    description: pet.description,
-    kind: pet.kind,
-    tags: [...pet.tags].toSorted(compareCodePoints),
-    createdAt: pet.createdAt,
-    approvedAt: pet.approvedAt,
-  })).toSorted((left, right) => compareCodePoints(left.slug, right.slug));
-  return createHash("sha256").update(JSON.stringify(catalog)).digest("hex");
 }
 
 function compareCodePoints(left, right) {
