@@ -9,6 +9,14 @@ import type {
 
 export type { StructuredResponseFailureReason as AnnotationFailureReason };
 
+export type AnnotationDiagnostic = Omit<
+  StructuredResponseDiagnostic,
+  "api" | "status" | "incompleteReason"
+> & {
+  api: "chat_completions";
+  finishReason?: string;
+};
+
 export class RelatedPetAnnotationProviderError extends Error {
   readonly reason: StructuredResponseFailureReason;
   constructor(reason: StructuredResponseFailureReason, options?: ErrorOptions);
@@ -29,5 +37,5 @@ export function createYandexRelatedPetAnnotationClient(options: {
   now?: () => number;
   sleep?: (milliseconds: number) => Promise<void>;
   randomUUID?: () => string;
-  onDiagnostic?: (diagnostic: StructuredResponseDiagnostic) => void;
+  onDiagnostic?: (diagnostic: AnnotationDiagnostic) => void;
 }): YandexRelatedPetAnnotationClient;

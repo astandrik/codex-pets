@@ -31,7 +31,7 @@ const PROFILE: RelatedPetsV24RankingProfile = {
 };
 
 const EXPECTED_RANKING_REVISION =
-  "related-pets-sparse-fallback-v24:depth=8:base=related-pets-franchise-coverage-v23:depth=8:base=related-pets-entity-controlled-v11-r3:depth=8:tail=description-first:gate=qualified-negatives:cal=related-pets-eval-v7:text-min=0.6167421023517932:annotation-min=0.4133420129086638:annotation-weight=1:visual-min=0.8178749331551675:visual-weight=0.25:description=yandex-text-embeddings-v2-768-related-description-document-2026-08-v1:description-query=yandex-text-embeddings-v2-768-related-description-query-2026-08-v3:annotation=yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r11:annotation-proposal=yandex-qwen3.6-35b-a3b-related-annotation-proposal-2026-08-v11-r1:annotation-document=yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r11:annotation-query=yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r11:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1:relation-policy=related-pets-relation-policy-2026-08-v23-r1:fallback-policy=related-pets-zero-qualified-empty-top4-shared-topic-visual-v24-r2";
+  "related-pets-sparse-fallback-v24:depth=8:base=related-pets-franchise-coverage-v23:depth=8:base=related-pets-entity-controlled-v11-r3:depth=8:tail=description-first:gate=qualified-negatives:cal=related-pets-eval-v7:text-min=0.6167421023517932:annotation-min=0.4133420129086638:annotation-weight=1:visual-min=0.8178749331551675:visual-weight=0.25:description=yandex-text-embeddings-v2-768-related-description-document-2026-08-v1:description-query=yandex-text-embeddings-v2-768-related-description-query-2026-08-v3:annotation=yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r14:annotation-proposal=yandex-qwen3.6-35b-a3b-related-annotation-proposal-2026-08-v11-r2:annotation-document=yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r14:annotation-query=yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r14:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1:relation-policy=related-pets-relation-policy-2026-08-v24-r2:fallback-policy=related-pets-zero-qualified-empty-top4-shared-topic-visual-v24-r2";
 
 function candidate(
   slug: string,
@@ -538,8 +538,91 @@ describe("V24 related-pet ranking", () => {
   });
 });
 
+describe("V24 shared-family policy integration", () => {
+  it("qualifies a verified family without promoting an unrelated visual match", () => {
+    const source = candidate("series");
+    const slugs = ["game", "other-world", "visual-only"];
+    const annotations = new Map([
+      [source.slug, annotation({ franchises: ["arcane"] })],
+      ["game", annotation({ franchises: ["league-of-legends"] })],
+      ["other-world", annotation({ franchises: ["final-fantasy"] })],
+    ]);
+    const before = structuredClone([...annotations]);
+    const result = rankRelatedPetsV24WithDiagnostics({
+      source,
+      candidates: [source, ...slugs.map((slug) => candidate(slug))],
+      annotations,
+      precomputedMatches: {
+        text: [{ slug: "other-world", score: 0.99 }, { slug: "game", score: 0.7 }],
+        annotation: [{ slug: "other-world", score: 0.99 }, { slug: "game", score: 0.7 }],
+        visual: [{ slug: "visual-only", score: 1 }],
+      },
+      profile: PROFILE,
+    });
+    expect(result.slugs[0]).toBe("game");
+    expect(result.diagnostics[0]).toMatchObject({
+      tier: "franchise_family_collection",
+      franchiseConflict: false,
+      matchedFacets: ["league-of-legends"],
+      fallbackProvenance: null,
+    });
+    expect(result.diagnostics.find(({ slug }) => slug === "other-world"))
+      .toMatchObject({ tier: "conflict_fallback", franchiseConflict: true });
+    expect(result.diagnostics.find(({ slug }) => slug === "visual-only"))
+      .toMatchObject({ tier: "controlled_fallback", contributions: { visual: 0 } });
+    expect([...annotations]).toEqual(before);
+  });
+
+  it("uses a source family root even when the source is outside candidate entries", () => {
+    const source = candidate("source");
+    const result = rankRelatedPetsV24WithDiagnostics({
+      source,
+      candidates: [candidate("installment")],
+      annotations: new Map([
+        [source.slug, annotation({ franchiseFamilies: ["star-quest"] })],
+        ["installment", annotation({ franchises: ["star-quest-iv"] })],
+      ]),
+      precomputedMatches: lowMatches(["installment"]),
+      profile: PROFILE,
+    });
+    expect(result.diagnostics[0]).toMatchObject({
+      tier: "franchise_family_collection",
+      matchedFacets: ["star-quest"],
+      franchiseConflict: false,
+    });
+  });
+
+  it("does not learn family roots from annotations outside the candidate scope", () => {
+    const source = candidate("source");
+    const annotations = new Map([
+      [source.slug, annotation({ franchises: ["star-quest-iv"] })],
+      ["sibling", annotation({ franchises: ["star-quest-v"] })],
+    ]);
+    const input = {
+      source,
+      candidates: [source, candidate("sibling")],
+      precomputedMatches: lowMatches(["sibling"]),
+      profile: PROFILE,
+    };
+    const clean = rankRelatedPetsV24WithDiagnostics({ ...input, annotations });
+    const polluted = rankRelatedPetsV24WithDiagnostics({
+      ...input,
+      annotations: new Map([
+        ...annotations,
+        ["not-a-candidate", annotation({ franchiseFamilies: ["star-quest"] })],
+      ]),
+    });
+    expect(polluted).toEqual(clean);
+    expect(clean.diagnostics[0].tier).toBe("conflict_fallback");
+  });
+});
+
 describe("V24 profile contract", () => {
-  it("preserves every persisted revision byte-for-byte", () => {
+  it("uses a new immutable family relation-policy revision", () => {
+    expect(RELATED_PETS_V24_RELATION_POLICY_REVISION)
+      .toBe("related-pets-relation-policy-2026-08-v24-r2");
+  });
+  it("pins the current ranking revision and unchanged stored-vector revisions", () => {
     expect(RELATED_PETS_V24_RANKING_REVISION).toBe(EXPECTED_RANKING_REVISION);
     expect(RELATED_PETS_V24_PROFILE).toMatchObject({
       strategy: "sparse-fallback-v24",
@@ -549,17 +632,17 @@ describe("V24 profile contract", () => {
       textQueryRevision:
         "yandex-text-embeddings-v2-768-related-description-query-2026-08-v3",
       annotationRevision:
-        "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r11",
+        "yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r14",
       annotationProposalRevision:
-        "yandex-qwen3.6-35b-a3b-related-annotation-proposal-2026-08-v11-r1",
+        "yandex-qwen3.6-35b-a3b-related-annotation-proposal-2026-08-v11-r2",
       annotationDocumentRevision:
-        "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r11",
+        "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r14",
       annotationQueryRevision:
-        "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r11",
+        "yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r14",
       visualRevision:
         "yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1",
       relationPolicyRevision:
-        "related-pets-relation-policy-2026-08-v23-r1",
+        "related-pets-relation-policy-2026-08-v24-r2",
       fallbackPolicyRevision:
         "related-pets-zero-qualified-empty-top4-shared-topic-visual-v24-r2",
     });

@@ -55,7 +55,8 @@ export const RELATED_PETS_ANNOTATION_MODEL_NAME: string;
 export const RELATED_PETS_ANNOTATION_SCHEMA_NAME: string;
 export const RELATED_PETS_ANNOTATION_TOKEN_POLICY: Readonly<{
   revision: string;
-  reasoning: "model-default";
+  api: string;
+  reasoning: string;
   initialMaxOutputTokens: number;
   retryMaxOutputTokens: number;
 }>;
