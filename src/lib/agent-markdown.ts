@@ -168,8 +168,9 @@ Version 2 sets spriteVersionNumber to 2 and uses a 1536 by 2288 pixel atlas arra
 Share guidance: use /api/pets/{slug}/share or the MCP share tools when a user
 asks for README badges, animated cards, iframe embeds, or install snippets. Badge
 SVGs live at /badge/{slug}.svg. Animated card GIFs live at /card/{slug}.gif.
-Embeds live at /embed/{slug}. Public share routes return sanitized data and do
-not expose private contact fields.
+Embeds live at /embed/{slug}. Public share routes do not expose private contact
+fields. A separately requested and moderator-verified public author email is
+public registry metadata.
 
 Developer guidance: start at /developers for the human developer portal,
 /docs/api for the human API docs, /developers.md for markdown developer
@@ -300,6 +301,15 @@ the API returns \`409 idempotency_key_in_progress\`. Completed idempotency recor
 are retained for 24 hours; after that window the key can be processed as a new
 request.
 
+## Submission attribution
+
+Anonymous multipart submissions with contactEmail must also send
+publicAuthorName (maximum 80 characters). publishContactEmail defaults to false.
+contactEmail remains private; the effective contact or signed-in account address
+appears as publicAuthorEmail only when the submitter opts in and a moderator
+verifies and publishes it. Signed-in submissions always use the profile name and
+cannot replace the account email from multipart fields.
+
 ## Versioning and deprecation
 
 Current unversioned public endpoints are stable v1. Additive fields and new routes may be added without notice. Breaking public-agent contract changes require a new path or a published deprecation notice.
@@ -389,6 +399,11 @@ downloads, likes, or metric mutations.
 
 Submitted and requested pets are moderated. The service may reject submissions,
 edit public metadata, hide records, or mark records deleted.
+
+Private contact email stays private. A submitter may separately request that the
+same address be published as author metadata; it becomes public only after
+moderator verification and may then appear in pages, APIs, manifests, MCP,
+JSON-LD, and LLM resources.
 
 ## Versioning and deprecation
 

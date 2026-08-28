@@ -80,7 +80,7 @@ const searchInputSchema = {
     "Optional tag filter as a comma-separated string or array. All provided tags must match.",
   ).optional(),
   author: z.string().describe(
-    "Optional author name text matched against the public submitter name.",
+    "Optional author text matched against the public submitter name or verified public email.",
   ).optional(),
   compatibleWith: z.union([z.string(), z.array(z.string())]).describe(
     "Optional compatibility filter. Use codex for Codex-compatible pets; other values return no matches.",

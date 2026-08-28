@@ -295,6 +295,7 @@ function toHomeHeroPet(pet: PublicPetSummary): HomeHeroPet {
     kind: pet.kind,
     ownerName: pet.ownerName,
     ownerProfileSlug: pet.ownerProfileSlug,
+    publicAuthorEmail: pet.publicAuthorEmail ?? null,
     spritesheetUrl: pet.spritesheetUrl,
   };
 }

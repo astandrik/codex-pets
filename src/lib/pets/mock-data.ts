@@ -25,6 +25,8 @@ export type MockPetRecord = {
   ownerEmail: string | null;
   ownerName: string | null;
   contactEmail: string | null;
+  publicEmailRequested: boolean;
+  publicAuthorEmail: string | null;
   rejectionReason: string | null;
   createdAt: string;
   updatedAt: string;
@@ -50,6 +52,7 @@ type CreateMockPetRecordInput = {
   ownerEmail: string | null;
   ownerName: string | null;
   contactEmail: string | null;
+  publicEmailRequested?: boolean;
 };
 
 type MockPetSeed = {
@@ -486,6 +489,8 @@ const INITIAL_MOCK_PET_RECORDS: MockPetRecord[] = MOCK_PET_SEEDS.map((seed) => (
   zipUrl: assetUrl(seed.assetId, "pet.zip"),
   spritesheetExt: "png",
   contactEmail: seed.ownerEmail,
+  publicEmailRequested: false,
+  publicAuthorEmail: null,
   rejectionReason: seed.rejectionReason ?? null,
   approvedAt: seed.approvedAt ?? null,
   rejectedAt: seed.rejectedAt ?? null,
@@ -540,6 +545,8 @@ export function createMockPetRecord(
     ownerEmail: input.ownerEmail,
     ownerName: input.ownerName,
     contactEmail: input.contactEmail,
+    publicEmailRequested: input.publicEmailRequested ?? false,
+    publicAuthorEmail: null,
     rejectionReason: null,
     createdAt: now,
     updatedAt: now,
@@ -559,6 +566,7 @@ export function moderateMockPet(input: {
   petId: string;
   decision: "approved" | "rejected";
   reason?: string;
+  publishRequestedEmail?: boolean;
 }): MockPetRecord | null {
   const pet = getMockPetById(input.petId);
   if (!pet) return null;
@@ -573,6 +581,13 @@ export function moderateMockPet(input: {
     rejectedAt: nextStatus === "rejected" ? now : null,
     rejectionReason:
       nextStatus === "rejected" ? input.reason?.trim() ?? "" : null,
+    publicAuthorEmail:
+      nextStatus === "approved" &&
+      input.publishRequestedEmail &&
+      pet.publicEmailRequested &&
+      pet.contactEmail
+        ? pet.contactEmail
+        : pet.publicAuthorEmail,
   };
 
   writeMockPet(updatedPet);

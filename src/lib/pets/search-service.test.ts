@@ -22,6 +22,7 @@ const catalog: PetSearchCatalogItem[] = [
     kind: "creature",
     tags: ["space", "friendly"],
     ownerName: "Bob",
+    publicAuthorEmail: "orbit+public@example.com",
   },
   {
     slug: "terminal-cube",
@@ -154,6 +155,23 @@ describe("approved pet search service", () => {
     expect(result.pets).toEqual([catalog[2]]);
     expect(result.total).toBe(1);
     expect(result.mode).toBe("lexical");
+  });
+
+  it("matches the verified public email in the explicit author filter", async () => {
+    const search = createPetSearchService({
+      listApprovedPets: async () => catalog,
+      semanticSearch: async () => ({
+        text: [],
+        visual: [],
+        visualFallbackReason: null,
+      }),
+      mode: "lexical",
+    });
+
+    const result = await search({ author: "orbit+public@example.com" });
+
+    expect(result.pets).toEqual([catalog[1]]);
+    expect(result.total).toBe(1);
   });
 
   it("adds semantic-only candidates in hybrid mode", async () => {
