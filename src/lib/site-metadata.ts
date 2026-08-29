@@ -466,6 +466,7 @@ export function getHomepageJsonLdGraph(
       | "tags"
       | "ownerName"
       | "ownerProfileSlug"
+      | "publicAuthorEmail"
       | "createdAt"
       | "approvedAt"
       | "zipUrl"
@@ -514,6 +515,7 @@ export function getCatalogJsonLdGraph(
       | "tags"
       | "ownerName"
       | "ownerProfileSlug"
+      | "publicAuthorEmail"
       | "createdAt"
       | "approvedAt"
       | "zipUrl"
@@ -610,6 +612,7 @@ export function getPetJsonLd(
     | "tags"
     | "ownerName"
     | "ownerProfileSlug"
+    | "publicAuthorEmail"
     | "createdAt"
     | "approvedAt"
     | "zipUrl"
@@ -629,6 +632,7 @@ export function getPetJsonLd(
     creator: {
       "@type": "Person",
       name: pet.ownerName ?? "Anonymous",
+      ...(pet.publicAuthorEmail ? { email: pet.publicAuthorEmail } : {}),
       ...(pet.ownerProfileSlug
         ? { url: toPublicUrl(`/users/${pet.ownerProfileSlug}`) }
         : {}),

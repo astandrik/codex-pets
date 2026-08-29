@@ -122,6 +122,9 @@ async function renderCardFrame(input: {
 
   const title = truncateText(input.pet.displayName, 34);
   const author = `by ${truncateText(input.pet.ownerName ?? "Anonymous", 34)}`;
+  const authorEmail = input.pet.publicAuthorEmail
+    ? truncateText(input.pet.publicAuthorEmail, 38)
+    : "";
   const tags = input.pet.tags
     .slice(0, 3)
     .map((tag) => `#${truncateText(tag, 16)}`);
@@ -146,7 +149,8 @@ async function renderCardFrame(input: {
   <text x="56" y="74" fill="#ffcf75" font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="800">Companion Gallery</text>
   <text x="56" y="132" fill="#f8fafc" font-family="DejaVu Sans, sans-serif" font-size="${titleFontSize(title)}" font-weight="900">${escapeXml(title)}</text>
   <text x="58" y="172" fill="#cad2dd" font-family="DejaVu Sans, sans-serif" font-size="22" font-weight="600">${escapeXml(author)}</text>
-  <text x="58" y="220" fill="#9da8b6" font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700">${escapeXml(tagText)}</text>
+  <text x="58" y="202" fill="#9da8b6" font-family="DejaVu Sans, sans-serif" font-size="16" font-weight="600">${escapeXml(authorEmail)}</text>
+  <text x="58" y="234" fill="#9da8b6" font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700">${escapeXml(tagText)}</text>
   <rect x="56" y="268" width="272" height="38" rx="19" fill="#322d20" stroke="#6a562d"/>
   <text x="74" y="293" fill="#ffcf75" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="800">Codex-compatible · validated</text>
 </svg>`,

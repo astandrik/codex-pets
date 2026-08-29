@@ -25,6 +25,10 @@ const navigationMocks = vi.hoisted(() => ({
     throw new Error("NEXT_NOT_FOUND");
   }),
 }));
+const componentMocks = vi.hoisted(() => ({
+  currentPetWebMCPTool: vi.fn(() => null),
+  petMetaList: vi.fn(() => null),
+}));
 
 vi.mock("next/cache", () => ({
   unstable_cache: (callback: unknown) => callback,
@@ -57,7 +61,7 @@ vi.mock("@/components/PetCard/PetCard", () => ({
     ),
 }));
 vi.mock("@/components/PetDetails/PetMetaList", () => ({
-  PetMetaList: () => null,
+  PetMetaList: componentMocks.petMetaList,
 }));
 vi.mock("@/components/PetLikeButton/PetLikeButton", () => ({
   PetLikeButton: () => null,
@@ -69,7 +73,7 @@ vi.mock("@/components/StatePreview/StatePreview", () => ({
   StatePreview: () => null,
 }));
 vi.mock("@/components/WebMCP/CurrentPetWebMCPTool", () => ({
-  CurrentPetWebMCPTool: () => null,
+  CurrentPetWebMCPTool: componentMocks.currentPetWebMCPTool,
 }));
 
 const approvedPetRow = {
@@ -88,6 +92,8 @@ const approvedPetRow = {
   ownerEmail: null,
   ownerName: "Local Admin",
   contactEmail: null,
+  publicEmailRequested: true,
+  publicAuthorEmail: "public@example.com",
   rejectionReason: null,
   createdAt: "2026-05-02T10:00:00.000Z",
   updatedAt: "2026-05-04T10:00:00.000Z",
@@ -283,6 +289,36 @@ describe("/pets/[slug] related pets section", () => {
       '.pet-card[data-slug="terminal-cube"] p',
     );
     expect(cube?.textContent).toBe("A cube that lives in your terminal.");
+  }, 20_000);
+
+  it("passes the verified email into the current-page WebMCP payload", async () => {
+    await renderPetPage();
+
+    expect(componentMocks.currentPetWebMCPTool).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pet: expect.objectContaining({
+          publicAuthorEmail: "public@example.com",
+        }),
+      }),
+      undefined,
+    );
+  }, 20_000);
+
+  it("hides a retained legacy email on a rejected detail page", async () => {
+    repositoryMocks.getPetBySlug.mockResolvedValue({
+      ...approvedPetRow,
+      status: "rejected",
+      rejectionReason: "not ready",
+      rejectedAt: "2026-05-05T10:00:00.000Z",
+    });
+
+    await renderPetPage();
+
+    expect(componentMocks.currentPetWebMCPTool).not.toHaveBeenCalled();
+    expect(componentMocks.petMetaList).toHaveBeenCalledWith(
+      expect.objectContaining({ publicAuthorEmail: null }),
+      undefined,
+    );
   }, 20_000);
 
   it("omits the section when no related candidates exist", async () => {

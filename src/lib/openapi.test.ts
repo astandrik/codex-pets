@@ -149,6 +149,28 @@ describe("buildOpenApiSpec", () => {
     );
     expect(spec.paths["/api/submissions/register"].post.responses).toHaveProperty("409");
     expect(spec.paths["/api/submissions/register"].post.responses).toHaveProperty("503");
+    expect(spec.components.schemas.RegisterSubmissionForm.properties).toMatchObject({
+      contactEmail: {
+        type: "string",
+        format: "email",
+        description: expect.stringContaining("Private moderation contact"),
+      },
+      publicAuthorName: {
+        type: "string",
+        maxLength: 80,
+      },
+      publishContactEmail: {
+        type: "boolean",
+        default: false,
+        description: expect.stringContaining("moderator verification"),
+      },
+    });
+    expect(spec.components.schemas.PublicPet.properties.publicAuthorEmail).toEqual(
+      expect.objectContaining({ format: "email" }),
+    );
+    expect(spec.components.schemas.ManifestPet.properties.submittedByEmail).toEqual(
+      expect.objectContaining({ format: "email" }),
+    );
     expect(spec.components.schemas.ErrorResponse).toMatchObject({
       required: ["error", "code", "message"],
       properties: {

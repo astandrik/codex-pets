@@ -25,6 +25,7 @@ export type PetSearchCatalogItem = {
   kind: PetKind;
   tags: string[];
   ownerName: string | null;
+  publicAuthorEmail?: string | null;
 };
 
 export type PetSearchInput = {
@@ -243,7 +244,8 @@ function matchesHardFilters(
 
   if (
     author &&
-    !normalizeSearchQuery(pet.ownerName).text.includes(author)
+    !normalizeSearchQuery(pet.ownerName).text.includes(author) &&
+    !normalizeSearchQuery(pet.publicAuthorEmail).text.includes(author)
   ) {
     return false;
   }

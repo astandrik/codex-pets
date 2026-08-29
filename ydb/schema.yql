@@ -19,6 +19,8 @@ CREATE TABLE codex_pets (
   updated_at Utf8 NOT NULL,
   approved_at Utf8 NOT NULL,
   rejected_at Utf8 NOT NULL,
+  public_email_requested Bool NOT NULL,
+  public_author_email Utf8 NOT NULL,
   PRIMARY KEY (slug)
 );
 
@@ -104,6 +106,7 @@ CREATE TABLE codex_pet_related_pair_scores (
 
 CREATE TABLE codex_pet_approval_preparations (
   preparation_id Utf8 NOT NULL,
+  publish_requested_email Bool NOT NULL,
   pet_id Utf8 NOT NULL,
   pet_slug Utf8 NOT NULL,
   pet_updated_at Utf8 NOT NULL,

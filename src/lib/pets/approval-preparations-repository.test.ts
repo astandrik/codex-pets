@@ -76,6 +76,7 @@ describe("approval preparation identity and retries", () => {
     const repository = createApprovalPreparationsRepository({
       isConfigured: () => true,
       values: {
+        bool: (value: boolean) => value,
         utf8: (value: string) => value,
         uint32: (value: number) => value,
       },
@@ -116,7 +117,8 @@ describe("approval preparation identity and retries", () => {
       const repository = createApprovalPreparationsRepository({
         isConfigured: () => true,
         values: {
-          utf8: (value: string) => value,
+          bool: (value: boolean) => value,
+        utf8: (value: string) => value,
           uint32: (value: number) => value,
         },
         execute,
@@ -174,6 +176,7 @@ describe("approval preparation identity and retries", () => {
     const repository = createApprovalPreparationsRepository({
       isConfigured: () => true,
       values: {
+        bool: (value: boolean) => value,
         utf8: (value: string) => value,
         uint32: (value: number) => value,
       },
@@ -231,6 +234,7 @@ describe("approval preparation identity and retries", () => {
     const repository = createApprovalPreparationsRepository({
       isConfigured: () => true,
       values: {
+        bool: (value: boolean) => value,
         utf8: (value: string) => value,
         uint32: (value: number) => value,
       },
@@ -268,6 +272,30 @@ describe("approval preparation identity and retries", () => {
     expect(atomicWrite).toContain("UPDATE codex_pet_approval_preparations");
     expect(parameters.some((entry) => entry.$state_id === "active")).toBe(true);
     expect(parameters.some((entry) => entry.$state_id === "global")).toBe(false);
+  });
+
+  it.each([undefined, false, true])("finalizes persisted email confirmation=%s atomically", async (publishRequestedEmail) => {
+    const statements: string[] = [];
+    const parameters: Array<Record<string, unknown>> = [];
+    const repository = createApprovalPreparationsRepository(fakeDependencies(
+      statements, [1, 1, 9], parameters, { publishRequestedEmail },
+    ));
+    await expect(repository.finalize(finalizeInput(9))).resolves.toBe("succeeded");
+    expect(parameters.at(-1)?.$publish_requested_email).toBe(publishRequestedEmail ?? false);
+    expect(statements.at(-1)).toContain("public_author_email = CASE WHEN $publish_requested_email THEN contact_email");
+    const check = statements.find((statement) => statement.includes("SELECT COUNT(*) AS pet_count"));
+    expect(check).toContain("DECLARE $publish_requested_email AS Bool");
+    expect(check).toContain("updated_at = $pet_updated_at");
+    expect(check).toContain("public_email_requested = true AND contact_email !=");
+  });
+
+  it("does not publish when the confirmed pending revision is no longer valid", async () => {
+    const statements: string[] = [];
+    const repository = createApprovalPreparationsRepository(fakeDependencies(
+      statements, [0, 1, 9], [], { publishRequestedEmail: true },
+    ));
+    await expect(repository.finalize(finalizeInput(9))).resolves.toBe("stale_inputs");
+    expect(statements.some((statement) => statement.includes("UPSERT INTO codex_pet_reviews"))).toBe(false);
   });
 
   it.each([
@@ -333,6 +361,7 @@ function fakeDependencies(
   parameters: Array<Record<string, unknown>> = [],
   options: {
     catalogRows?: Array<[slug: string, updatedAt: string]>;
+    publishRequestedEmail?: boolean;
   } = {},
 ) {
   const execute = async (
@@ -346,6 +375,7 @@ function fakeDependencies(
         status: "preparing",
         attempts: 1,
         leaseOwner: "worker-1",
+        publishRequestedEmail: options.publishRequestedEmail,
       });
     }
     if (statement.includes("SELECT COUNT(*) AS pet_count")) {
@@ -366,7 +396,8 @@ function fakeDependencies(
   };
   return {
     isConfigured: () => true,
-    values: { utf8: (value: string) => value, uint32: (value: number) => value },
+    values: { bool: (value: boolean) => value,
+        utf8: (value: string) => value, uint32: (value: number) => value },
     execute,
     transaction: async <T>(operation: (actual: typeof execute) => Promise<T>) =>
       operation(execute),
@@ -378,11 +409,13 @@ function preparationResult({
   attempts,
   leaseOwner = "",
   expectedActiveGenerationId = "generation-active",
+  publishRequestedEmail,
 }: {
   status: "queued" | "preparing" | "retry" | "manual_review" | "succeeded";
   attempts: number;
   leaseOwner?: string;
   expectedActiveGenerationId?: string;
+  publishRequestedEmail?: boolean;
 }) {
   return { resultSets: [{ rows: [{ items: [
     text("approval-1"),
@@ -401,6 +434,7 @@ function preparationResult({
     text(""),
     text("2026-08-11T00:00:00.000Z"),
     text("2026-08-11T00:00:00.000Z"),
+    ...(publishRequestedEmail === undefined ? [] : [{ boolValue: publishRequestedEmail }]),
   ] }] }] };
 }
 

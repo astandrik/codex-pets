@@ -21,7 +21,8 @@ const approvedPet = {
   tags: ["space"],
   status: "approved" as const,
   ownerName: "Creator",
-  contactEmail: null,
+  contactEmail: "private@example.com",
+  publicAuthorEmail: 'creator"+public@example.com',
   createdAt: "2026-05-01T00:00:00.000Z",
   approvedAt: "2026-05-02T00:00:00.000Z",
   downloadCount: 0,
@@ -58,6 +59,10 @@ describe("GET /embed/[slug]", () => {
       'href="https://pets.example/pets/orbit-otter"',
     );
     expect(body).toContain("Creator");
+    expect(body).toContain(
+      'href="mailto:creator&quot;+public@example.com"',
+    );
+    expect(body).not.toContain("private@example.com");
     expect(body).toContain("space");
   });
 

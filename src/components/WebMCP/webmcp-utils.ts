@@ -22,6 +22,7 @@ export type WebMCPPetInput = Omit<
     | "status"
     | "ownerName"
     | "ownerProfileSlug"
+    | "publicAuthorEmail"
     | "createdAt"
     | "approvedAt"
   >,
@@ -34,10 +35,16 @@ export type AgentPet = Omit<
   WebMCPPetInput,
   | "slug"
   | "petJsonUrl"
+  | "publicAuthorEmail"
   | "spritesheetUrl"
   | "zipUrl"
 > & {
   slug: string;
+  author: {
+    name: string;
+    email: string | null;
+    profileUrl: string | null;
+  };
   pageUrl: string;
   petJsonUrl: string;
   spritesheetUrl: string;
@@ -116,6 +123,11 @@ export function isWebMCPPetInput(value: unknown): value is WebMCPPetInput {
     value.status === "approved" &&
     (value.ownerName === null || typeof value.ownerName === "string") &&
     (
+      value.publicAuthorEmail === undefined ||
+      value.publicAuthorEmail === null ||
+      typeof value.publicAuthorEmail === "string"
+    ) &&
+    (
       value.ownerProfileSlug === undefined ||
       value.ownerProfileSlug === null ||
       typeof value.ownerProfileSlug === "string"
@@ -135,6 +147,13 @@ export function createAgentPet(pet: WebMCPPetInput, origin: string): AgentPet {
     status: pet.status,
     ownerName: pet.ownerName,
     ownerProfileSlug: pet.ownerProfileSlug ?? null,
+    author: {
+      name: pet.ownerName ?? "Anonymous",
+      email: pet.publicAuthorEmail ?? null,
+      profileUrl: pet.ownerProfileSlug
+        ? absoluteSiteUrl(`/users/${pet.ownerProfileSlug}`, origin)
+        : null,
+    },
     createdAt: pet.createdAt,
     approvedAt: pet.approvedAt,
     pageUrl: absoluteSiteUrl(`/pets/${pet.slug}`, origin),

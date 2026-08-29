@@ -24,7 +24,8 @@ const approvedPet = {
   ownerName: "Creator",
   ownerProfileSlug: "creator",
   ownerAvatarUrl: "/api/users/avatars/avatar_123",
-  contactEmail: null,
+  contactEmail: "private@example.com",
+  publicAuthorEmail: "creator+public@example.com",
   createdAt: "2026-05-01T00:00:00.000Z",
   approvedAt: "2026-05-02T00:00:00.000Z",
   downloadCount: 0,
@@ -63,6 +64,7 @@ describe("GET /api/manifest", () => {
           submittedBy: "Creator",
           submittedByUrl: "https://pets.example/users/creator",
           submittedByAvatarUrl: "https://pets.example/api/users/avatars/avatar_123",
+          submittedByEmail: "creator+public@example.com",
           pageUrl: "https://pets.example/pets/boba",
           spritesheetUrl: "https://assets/pets/boba.webp",
           petJsonUrl: "https://assets/pets/boba.json",
@@ -73,6 +75,7 @@ describe("GET /api/manifest", () => {
         },
       ],
     });
+    expect(JSON.stringify(body)).not.toContain("private@example.com");
   });
 
   it("returns a TOON manifest matching the JSON payload", async () => {

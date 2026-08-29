@@ -27,6 +27,7 @@ export type SubmissionRow = {
   ownerName: string | null;
   ownerProfileSlug: string | null;
   contactEmail: string | null;
+  publicEmailRequested: boolean;
 };
 
 type SubmissionsTableProps = {
@@ -74,15 +75,28 @@ export function SubmissionsTable({ rows }: SubmissionsTableProps) {
         id: "owner",
         name: "Submitted by",
         template: (row) => {
-          if (row.ownerProfileSlug) {
-            return (
-              <Link href={`/users/${row.ownerProfileSlug}`}>
-                {row.ownerName ?? row.ownerProfileSlug}
-              </Link>
-            );
-          }
-          return row.ownerName ?? row.contactEmail ?? (
-            <Text color="secondary">anonymous</Text>
+          return (
+            <Flex direction="column" gap={1}>
+              <span>
+                {row.ownerProfileSlug ? (
+                  <Link href={`/users/${row.ownerProfileSlug}`}>
+                    {row.ownerName ?? row.ownerProfileSlug}
+                  </Link>
+                ) : row.ownerName ?? (
+                  <Text color="secondary">anonymous</Text>
+                )}
+              </span>
+              {row.contactEmail ? (
+                <Text variant="caption-2" color="secondary">
+                  Private contact: <a href={`mailto:${row.contactEmail}`}>{row.contactEmail}</a>
+                </Text>
+              ) : null}
+              {row.publicEmailRequested ? (
+                <Label theme="info" size="s">
+                  Public email requested
+                </Label>
+              ) : null}
+            </Flex>
           );
         },
         width: 200,
@@ -100,7 +114,13 @@ export function SubmissionsTable({ rows }: SubmissionsTableProps) {
       {
         id: "actions",
         name: "",
-        template: (row) => <AdminSubmissionActions petId={row.id} />,
+        template: (row) => (
+          <AdminSubmissionActions
+            petId={row.id}
+            publicEmailRequested={row.publicEmailRequested}
+            contactEmail={row.contactEmail}
+          />
+        ),
         width: 220,
       },
     ],
