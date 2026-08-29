@@ -704,12 +704,13 @@ export async function moderatePetWithPreviousStatus(input: {
     const reason =
       nextStatus === "rejected" ? input.reason?.trim() ?? "" : "";
     const publicAuthorEmail =
-      nextStatus === "approved" &&
-      input.publishRequestedEmail &&
-      candidate.publicEmailRequested &&
-      candidate.contactEmail
-        ? candidate.contactEmail
-        : candidate.publicAuthorEmail ?? "";
+      nextStatus !== "approved"
+        ? ""
+        : input.publishRequestedEmail &&
+            candidate.publicEmailRequested &&
+            candidate.contactEmail
+          ? candidate.contactEmail
+          : candidate.publicAuthorEmail ?? "";
 
     await withSession((session) =>
       session.executeQuery(

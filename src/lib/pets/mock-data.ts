@@ -582,12 +582,13 @@ export function moderateMockPet(input: {
     rejectionReason:
       nextStatus === "rejected" ? input.reason?.trim() ?? "" : null,
     publicAuthorEmail:
-      nextStatus === "approved" &&
-      input.publishRequestedEmail &&
-      pet.publicEmailRequested &&
-      pet.contactEmail
-        ? pet.contactEmail
-        : pet.publicAuthorEmail,
+      nextStatus !== "approved"
+        ? null
+        : input.publishRequestedEmail &&
+            pet.publicEmailRequested &&
+            pet.contactEmail
+          ? pet.contactEmail
+          : pet.publicAuthorEmail,
   };
 
   writeMockPet(updatedPet);

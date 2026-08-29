@@ -208,4 +208,51 @@ describe("moderatePetWithPreviousStatus", () => {
       "owner@example.com",
     );
   });
+
+  it("clears a published email when an approved pet is rejected", async () => {
+    let pet: StoredPet = {
+      status: "approved",
+      updatedAt: "2026-08-03T10:00:00.000Z",
+      approvedAt: "2026-08-03T10:00:00.000Z",
+      rejectedAt: "",
+      publicEmailRequested: true,
+      publicAuthorEmail: "owner@example.com",
+    };
+    mocks.executeQuery.mockImplementation(async (statement, params) => {
+      const query = String(statement);
+      if (query.includes("SELECT slug")) return petResult(pet);
+      if (query.includes("UPDATE codex_pets")) {
+        pet = {
+          ...pet,
+          status: textParam(params, "$status") as StoredPet["status"],
+          updatedAt: textParam(params, "$updated_at"),
+          approvedAt: textParam(params, "$approved_at"),
+          rejectedAt: textParam(params, "$rejected_at"),
+          publicAuthorEmail: textParam(params, "$public_author_email"),
+        };
+      }
+      return { resultSets: [] };
+    });
+
+    await expect(
+      moderatePetWithPreviousStatus({
+        petId: "pet_1",
+        reviewerId: "admin_1",
+        decision: "rejected",
+        reason: "not ready",
+      }),
+    ).resolves.toMatchObject({
+      previousStatus: "approved",
+      pet: {
+        status: "rejected",
+        publicEmailRequested: true,
+        publicAuthorEmail: null,
+      },
+    });
+
+    const update = mocks.executeQuery.mock.calls.find(([statement]) =>
+      String(statement).includes("UPDATE codex_pets"),
+    );
+    expect(textParam(update?.[1], "$public_author_email")).toBe("");
+  });
 });

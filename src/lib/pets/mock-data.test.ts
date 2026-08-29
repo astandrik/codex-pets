@@ -130,5 +130,17 @@ describe("mock pet data source", () => {
     expect(approvedWithEmail?.publicAuthorEmail).toBe(
       "creator+tag@example.com",
     );
+
+    const rejected = await moderatePet({
+      petId: created.id,
+      reviewerId: "local-admin",
+      decision: "rejected",
+      reason: "not ready",
+    });
+    expect(rejected).toMatchObject({
+      status: "rejected",
+      publicEmailRequested: true,
+      publicAuthorEmail: null,
+    });
   });
 });

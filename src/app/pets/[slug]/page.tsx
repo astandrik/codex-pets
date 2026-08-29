@@ -220,6 +220,7 @@ export default async function PetPage({ params }: PetPageProps) {
             status: pet.status,
             ownerName,
             ownerProfileSlug,
+            publicAuthorEmail: pet.publicAuthorEmail ?? null,
             createdAt: pet.createdAt,
             approvedAt: pet.approvedAt,
           }}
@@ -305,7 +306,9 @@ export default async function PetPage({ params }: PetPageProps) {
               kind={pet.kind}
               ownerName={ownerName}
               ownerProfileSlug={ownerProfileSlug}
-              publicAuthorEmail={pet.publicAuthorEmail ?? null}
+              publicAuthorEmail={
+                pet.status === "approved" ? pet.publicAuthorEmail ?? null : null
+              }
               createdAt={pet.createdAt}
               approvedAt={pet.approvedAt}
               tags={pet.tags}

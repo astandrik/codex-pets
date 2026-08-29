@@ -51,7 +51,7 @@ export default async function Image({ params }: PetOpenGraphImageProps) {
   const owner = pet.ownerName
     ? `by ${truncateText(pet.ownerName, MAX_OWNER_LENGTH)}`
     : "community pet pack";
-  const ownerEmail = pet.publicAuthorEmail
+  const ownerEmail = pet.status === "approved" && pet.publicAuthorEmail
     ? truncateText(pet.publicAuthorEmail, 48)
     : null;
   const titleFontSize = getTitleFontSize(title);

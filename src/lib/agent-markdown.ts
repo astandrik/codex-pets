@@ -303,12 +303,14 @@ request.
 
 ## Submission attribution
 
-Anonymous multipart submissions with contactEmail must also send
-publicAuthorName (maximum 80 characters). publishContactEmail defaults to false.
-contactEmail remains private; the effective contact or signed-in account address
-appears as publicAuthorEmail only when the submitter opts in and a moderator
-verifies and publishes it. Signed-in submissions always use the profile name and
-cannot replace the account email from multipart fields.
+Anonymous multipart submissions with contactEmail may omit publicAuthorName.
+If publicAuthorName is omitted, it defaults to the contactEmail local part,
+capped at 80 characters. An explicitly empty publicAuthorName is rejected.
+publishContactEmail defaults to false. contactEmail remains private; the
+effective contact or signed-in account address appears as publicAuthorEmail only
+when the submitter opts in and a moderator verifies and publishes it. Signed-in
+submissions always use the profile name and cannot replace the account email
+from multipart fields.
 
 ## Versioning and deprecation
 
