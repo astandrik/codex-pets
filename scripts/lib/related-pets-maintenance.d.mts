@@ -1,6 +1,6 @@
 export const RELATED_PETS_REBUILD_COMMANDS: readonly string[];
 
-export function buildRelatedPetsQueryBackfillCommands(
+export function buildRelatedPetsDerivedBackfillCommands(
   slugs: string[],
 ): string[];
 

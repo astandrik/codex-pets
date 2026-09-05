@@ -140,6 +140,16 @@ describe("related pets rebuild CLI", () => {
     ).toBe("visual_vectors_incomplete");
     expect(
       sanitizeRelatedPetsRebuildFailureReason(
+        new Error("annotations_incomplete"),
+      ),
+    ).toBe("annotations_incomplete");
+    expect(
+      sanitizeRelatedPetsRebuildFailureReason(
+        new Error("annotation_vectors_incomplete"),
+      ),
+    ).toBe("annotation_vectors_incomplete");
+    expect(
+      sanitizeRelatedPetsRebuildFailureReason(
         new Error("private provider detail"),
       ),
     ).toBe("rebuild_failed");

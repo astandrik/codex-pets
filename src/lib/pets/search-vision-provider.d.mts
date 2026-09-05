@@ -1,34 +1,12 @@
 import type { PetVisionCaption } from "./search-vision-contract";
 import type { PetVisionFrame } from "./search-vision-frames";
+import type {
+  StructuredResponseDiagnostic,
+  StructuredResponseFailureReason,
+} from "./responses-structured-provider.mjs";
 
-export type VisionCaptionFailureReason =
-  | "authentication_error"
-  | "content_filtered"
-  | "invalid_request"
-  | "invalid_response"
-  | "malformed_json"
-  | "output_limit"
-  | "provider_error"
-  | "rate_limited"
-  | "refused"
-  | "schema_invalid"
-  | "timeout";
-
-export type VisionCaptionDiagnostic = {
-  api: "responses";
-  stage: string;
-  attempt: number;
-  reason?: VisionCaptionFailureReason;
-  status?: string;
-  httpStatus?: number;
-  incompleteReason?: string;
-  inputTokens?: number;
-  outputTokens?: number;
-  reasoningTokens?: number;
-  clientRequestId: string;
-  requestId?: string;
-  serverTraceId?: string;
-};
+export type VisionCaptionFailureReason = StructuredResponseFailureReason;
+export type VisionCaptionDiagnostic = StructuredResponseDiagnostic;
 
 export class VisionCaptionRequestError extends Error {
   readonly reason: VisionCaptionFailureReason;
@@ -47,23 +25,10 @@ export function createResponsesVisionRequest(input: {
   userPrompt: string;
   responseSchemaName: string;
   responseJsonSchema: object;
+  parseCaption?: (value: unknown) => unknown;
   frames: readonly PetVisionFrame[];
   maxOutputTokens: number;
 }): object;
-
-export function classifyResponsesPayload<T>(
-  payload: unknown,
-  parseCaption: (value: unknown) => T,
-):
-  | { kind: "success"; caption: T; usage: object }
-  | {
-      kind: "failure";
-      reason: VisionCaptionFailureReason;
-      retryable: boolean;
-      stage: string;
-      incompleteReason?: string;
-      usage?: object;
-    };
 
 export function createResponsesVisionCaptionRequester<
   T = PetVisionCaption,
