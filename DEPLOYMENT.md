@@ -35,10 +35,13 @@ runner environment and rejects values that differ from the build configuration
 before `next start`.
 
 `NEXT_PUBLIC_APP_URL` must be an absolute public HTTP(S) URL without
-credentials, query, fragment, localhost, a loopback address, or an unspecified
-bind address. Its normalized pathname must equal `NEXT_PUBLIC_BASE_PATH`. The
+credentials, query, fragment, localhost, loopback, unspecified, multicast, or
+broadcast addresses. Its normalized pathname must equal `NEXT_PUBLIC_BASE_PATH`. The
 current production values are `https://pets.ydb-qdrant.tech` and an empty base
 path; the complete build command is shown below.
+
+DNS resolution and network reachability must be checked during deployment.
+Other special-use IP ranges are outside this validator's contract.
 
 ## Runtime env
 

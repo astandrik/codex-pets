@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { JSDOM } from "jsdom";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const expectedOrigin = "https://pets.example/codex-pets";
@@ -106,15 +109,11 @@ function assert(condition, message) {
   }
 }
 
-function isExpectedPublicUrl(value, pathname) {
+function isExpectedPublicUrl(value) {
   try {
     const url = new URL(value);
     if (url.origin !== expectedOriginUrl.origin) {
       return false;
-    }
-
-    if (pathname) {
-      return url.pathname === pathname;
     }
 
     return url.pathname === basePath || url.pathname.startsWith(`${basePath}/`);
@@ -123,10 +122,10 @@ function isExpectedPublicUrl(value, pathname) {
   }
 }
 
-function containsExpectedPublicUrl(value, pathname) {
+function containsExpectedPublicUrl(value) {
   return Array.from(value.matchAll(/https?:\/\/[^\s"'<>()[\]{}]+/g)).some(
     (match) =>
-      isExpectedPublicUrl(match[0].replace(/[.,;:!?]+$/g, ""), pathname),
+      isExpectedPublicUrl(match[0].replace(/[.,;:!?]+$/g, "")),
   );
 }
 
@@ -169,6 +168,22 @@ async function waitForServer(localOrigin) {
   throw new Error("Docker smoke server did not become ready within 60 seconds.");
 }
 
+export function verifyHtmlMetadata(body, expectedUrl) {
+  const document = JSDOM.fragment(body);
+  assert(
+    document.querySelector('link[rel="canonical"]')?.getAttribute("href") === expectedUrl,
+    "HTML canonical metadata does not use the expected pet URL.",
+  );
+  assert(
+    document.querySelector('meta[property="og:url"]')?.getAttribute("content") === expectedUrl,
+    "HTML OpenGraph metadata does not use the expected pet URL.",
+  );
+  assert(
+    document.querySelector('script[type="application/ld+json"]'),
+    "HTML JSON-LD metadata is missing.",
+  );
+}
+
 async function verifyEndpoint(localOrigin, endpoint) {
   const response = await fetch(`${localOrigin}${basePath}${endpoint.path}`, {
     redirect: "error",
@@ -196,138 +211,137 @@ async function verifyEndpoint(localOrigin, endpoint) {
   }
 
   if (endpoint.html) {
-    assert(body.includes('rel="canonical"'), "HTML canonical metadata is missing.");
-    assert(body.includes('property="og:url"'), "HTML OpenGraph URL is missing.");
-    assert(
-      body.includes('type="application/ld+json"'),
-      "HTML JSON-LD metadata is missing.",
-    );
-    assert(
-      containsExpectedPublicUrl(body, `${basePath}/pets/orbit-otter`),
-      "HTML metadata does not use the expected pet URL.",
-    );
+    verifyHtmlMetadata(body, `${expectedOrigin}${endpoint.path}`);
   }
 }
 
-let failureOutput = "";
-let containerCreated = false;
+async function main() {
+  let failureOutput = "";
+  let containerCreated = false;
 
-try {
-  console.log(`Building isolated image ${image}...`);
-  await run("docker", [
-    "build",
-    "--build-arg",
-    `NEXT_PUBLIC_APP_URL=${expectedOrigin}`,
-    "--build-arg",
-    `NEXT_PUBLIC_BASE_PATH=${basePath}`,
-    "--tag",
-    image,
-    ".",
-  ]);
+  try {
+    console.log(`Building isolated image ${image}...`);
+    await run("docker", [
+      "build",
+      "--build-arg",
+      `NEXT_PUBLIC_APP_URL=${expectedOrigin}`,
+      "--build-arg",
+      `NEXT_PUBLIC_BASE_PATH=${basePath}`,
+      "--tag",
+      image,
+      ".",
+    ]);
 
-  await run("docker", [
-    "run",
-    "--detach",
-    "--rm",
-    "--name",
-    container,
-    "--publish",
-    "127.0.0.1::3000",
-    "--env",
-    "CODEX_PETS_DATA_SOURCE=mock",
-    "--env",
-    "AUTH_MODE=single-user",
-    "--env",
-    "AUTH_SINGLE_USER_EMAIL=local-admin@example.com",
-    image,
-  ]);
-  containerCreated = true;
+    await run("docker", [
+      "run",
+      "--detach",
+      "--rm",
+      "--name",
+      container,
+      "--publish",
+      "127.0.0.1::3000",
+      "--env",
+      "CODEX_PETS_DATA_SOURCE=mock",
+      "--env",
+      "AUTH_MODE=single-user",
+      "--env",
+      "AUTH_SINGLE_USER_EMAIL=local-admin@example.com",
+      image,
+    ]);
+    containerCreated = true;
 
-  const portResult = await run("docker", ["port", container, "3000/tcp"]);
-  const portMatch = portResult.stdout.trim().match(/127\.0\.0\.1:(\d+)$/);
-  assert(portMatch, "Docker did not publish the app on a loopback port.");
-  const localOrigin = `http://127.0.0.1:${portMatch[1]}`;
+    const portResult = await run("docker", ["port", container, "3000/tcp"]);
+    const portMatch = portResult.stdout.trim().match(/127\.0\.0\.1:(\d+)$/);
+    assert(portMatch, "Docker did not publish the app on a loopback port.");
+    const localOrigin = `http://127.0.0.1:${portMatch[1]}`;
 
-  await waitForServer(localOrigin);
-  for (const endpoint of endpoints) {
-    await verifyEndpoint(localOrigin, endpoint);
-  }
+    await waitForServer(localOrigin);
+    for (const endpoint of endpoints) {
+      await verifyEndpoint(localOrigin, endpoint);
+    }
 
-  await run("docker", ["rm", "--force", container]);
-  containerCreated = false;
+    await run("docker", ["rm", "--force", container]);
+    containerCreated = false;
 
-  await run("docker", [
-    "run",
-    "--detach",
-    "--name",
-    container,
-    "--env",
-    "NEXT_PUBLIC_APP_URL=https://runtime.example/codex-pets",
-    "--env",
-    `NEXT_PUBLIC_BASE_PATH=${basePath}`,
-    image,
-  ]);
-  containerCreated = true;
+    await run("docker", [
+      "run",
+      "--detach",
+      "--name",
+      container,
+      "--env",
+      "NEXT_PUBLIC_APP_URL=https://runtime.example/codex-pets",
+      "--env",
+      `NEXT_PUBLIC_BASE_PATH=${basePath}`,
+      image,
+    ]);
+    containerCreated = true;
 
-  const runtimeMismatchWait = await run("docker", ["wait", container], {
-    timeoutMs: 15_000,
-  });
-  const runtimeMismatchLogs = await run(
-    "docker",
-    ["logs", "--tail", "40", container],
-    { allowFailure: true },
-  );
-  const runtimeMismatchExitCode = Number.parseInt(
-    runtimeMismatchWait.stdout.trim(),
-    10,
-  );
-  assert(
-    Number.isInteger(runtimeMismatchExitCode),
-    "Docker wait did not report the runtime-mismatch exit code.",
-  );
+    const runtimeMismatchWait = await run("docker", ["wait", container], {
+      timeoutMs: 15_000,
+    });
+    const runtimeMismatchLogs = await run(
+      "docker",
+      ["logs", "--tail", "40", container],
+      { allowFailure: true },
+    );
+    const runtimeMismatchExitCode = Number.parseInt(
+      runtimeMismatchWait.stdout.trim(),
+      10,
+    );
+    assert(
+      Number.isInteger(runtimeMismatchExitCode),
+      "Docker wait did not report the runtime-mismatch exit code.",
+    );
 
-  failureOutput = keepTail(failureOutput, runtimeMismatchLogs.output);
-  assert(
-    runtimeMismatchExitCode !== 0,
-    "Docker runner accepted public configuration that differs from the build.",
-  );
-  assert(
-    runtimeMismatchLogs.output.includes(
-      "must match the Docker image build configuration",
-    ),
-    "Docker runner did not report the build/runtime configuration mismatch.",
-  );
-  assert(
-    !runtimeMismatchLogs.output.includes("▲ Next.js"),
-    "Docker runner started Next.js after a public configuration mismatch.",
-  );
+    failureOutput = keepTail(failureOutput, runtimeMismatchLogs.output);
+    assert(
+      runtimeMismatchExitCode !== 0,
+      "Docker runner accepted public configuration that differs from the build.",
+    );
+    assert(
+      runtimeMismatchLogs.output.includes(
+        "must match the Docker image build configuration",
+      ),
+      "Docker runner did not report the build/runtime configuration mismatch.",
+    );
+    assert(
+      !runtimeMismatchLogs.output.includes("▲ Next.js"),
+      "Docker runner started Next.js after a public configuration mismatch.",
+    );
 
-  await run("docker", ["rm", "--force", container]);
-  containerCreated = false;
+    await run("docker", ["rm", "--force", container]);
+    containerCreated = false;
 
-  console.log(
-    `Verified ${endpoints.length} canonical-origin surfaces and runtime override rejection in ${container}.`,
-  );
-} catch (error) {
-  if (error instanceof CommandError) {
-    failureOutput = error.output;
-  }
-  if (containerCreated) {
-    const logs = await run("docker", ["logs", "--tail", "40", container], {
+    console.log(
+      `Verified ${endpoints.length} canonical-origin surfaces and runtime override rejection in ${container}.`,
+    );
+  } catch (error) {
+    if (error instanceof CommandError) {
+      failureOutput = error.output;
+    }
+    if (containerCreated) {
+      const logs = await run("docker", ["logs", "--tail", "40", container], {
+        allowFailure: true,
+      });
+      failureOutput = keepTail(failureOutput, logs.output);
+    }
+
+    console.error(error instanceof Error ? error.message : "Docker smoke failed.");
+    const sanitizedLog = sanitizeLog(failureOutput);
+    if (sanitizedLog) {
+      console.error("Sanitized failure log:\n" + sanitizedLog);
+    }
+    process.exitCode = 1;
+  } finally {
+    await run("docker", ["rm", "--force", container], { allowFailure: true });
+    await run("docker", ["image", "rm", "--force", image], {
       allowFailure: true,
     });
-    failureOutput = keepTail(failureOutput, logs.output);
   }
+}
 
-  console.error(error instanceof Error ? error.message : "Docker smoke failed.");
-  const sanitizedLog = sanitizeLog(failureOutput);
-  if (sanitizedLog) {
-    console.error("Sanitized failure log:\n" + sanitizedLog);
-  }
-  process.exitCode = 1;
-} finally {
-  await run("docker", ["rm", "--force", container], { allowFailure: true });
-  await run("docker", ["image", "rm", "--force", image], {
-    allowFailure: true,
-  });
+const isDirectExecution =
+  process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isDirectExecution) {
+  await main();
 }

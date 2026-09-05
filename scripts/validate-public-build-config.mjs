@@ -106,6 +106,9 @@ function parsePublicBuildConfig(configuredAppUrlValue, configuredBasePath) {
   }
 
   const hostname = normalizeHostname(appUrl.hostname);
+  if (!hostname) {
+    throw invalidConfig("NEXT_PUBLIC_APP_URL must contain a nonempty hostname.");
+  }
   const forbiddenHostnameReason = getForbiddenHostnameReason(hostname);
   if (forbiddenHostnameReason) {
     throw invalidConfig(forbiddenHostnameReason);

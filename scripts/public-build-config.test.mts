@@ -55,6 +55,13 @@ describe("public build configuration", () => {
     },
   );
 
+  it.each(["http://.", "http://%2e"])(
+    "rejects an empty normalized hostname in %s",
+    (appUrl) => {
+      expectInvalidAppUrl(appUrl, "must contain a nonempty hostname");
+    },
+  );
+
   it.each(["http://pets.example:0", "https://pets.example:0"])(
     "rejects explicit port zero in URL %s",
     (appUrl) => {
