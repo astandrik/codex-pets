@@ -4,10 +4,16 @@ import { verifyHtmlMetadata } from "./public-origin-image-smoke.mjs";
 
 const expectedUrl = "https://pets.example/codex-pets/pets/orbit-otter";
 
-function metadata({ canonical = expectedUrl, openGraph = expectedUrl } = {}) {
-  return `<link rel="canonical" href="${canonical}">
-    <meta property="og:url" content="${openGraph}">
-    <script type="application/ld+json">${JSON.stringify({ url: expectedUrl })}</script>`;
+function metadata({ canonical = expectedUrl, openGraph = expectedUrl, omit } = {}) {
+  const tags = {
+    canonical: `<link rel="canonical" href="${canonical}">`,
+    openGraph: `<meta property="og:url" content="${openGraph}">`,
+    jsonLd: `<script type="application/ld+json">${JSON.stringify({ url: expectedUrl })}</script>`,
+  };
+  return Object.entries(tags)
+    .filter(([field]) => field !== omit)
+    .map(([, tag]) => tag)
+    .join("\n");
 }
 
 describe("production smoke HTML metadata", () => {
@@ -35,13 +41,9 @@ describe("production smoke HTML metadata", () => {
     ).toThrow();
   });
 
-  it.each([
-    /<link[^>]*>/,
-    /<meta[^>]*>/,
-    /<script[^>]*>.*?<\/script>/,
-  ])("rejects missing metadata %s", (tag) => {
+  it.each(["canonical", "openGraph", "jsonLd"])("rejects missing metadata %s", (omit) => {
     expect(() =>
-      verifyHtmlMetadata(metadata().replace(tag, ""), expectedUrl),
+      verifyHtmlMetadata(metadata({ omit }), expectedUrl),
     ).toThrow();
   });
 });
