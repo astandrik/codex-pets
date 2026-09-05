@@ -156,6 +156,27 @@ describe("public build configuration", () => {
     );
   });
 
+  it.each(["/foo//bar", "/foo///bar", "//foo//bar//"])(
+    "rejects internal repeated slashes in a matching base path: %s",
+    (basePath) => {
+      const environment = {
+        NEXT_PUBLIC_APP_URL: `https://pets.example${basePath}`,
+        NEXT_PUBLIC_BASE_PATH: basePath,
+      };
+      expect(() => validatePublicBuildConfig(environment)).toThrow(
+        "NEXT_PUBLIC_BASE_PATH must not contain repeated slashes",
+      );
+      expect(getValidationError(environment)).not.toContain(basePath);
+    },
+  );
+
+  it.each(["/foo/bar", "//"])("preserves valid base-path normalization: %s", (basePath) => {
+    expect(() => validatePublicBuildConfig({
+      NEXT_PUBLIC_APP_URL: `https://pets.example${basePath}`,
+      NEXT_PUBLIC_BASE_PATH: basePath,
+    })).not.toThrow();
+  });
+
   it("does not expose rejected configuration values in errors", () => {
     const appUrl = "https://user:super-secret@pets.example";
     const message = getValidationError({ NEXT_PUBLIC_APP_URL: appUrl });

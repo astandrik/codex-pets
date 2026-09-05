@@ -115,6 +115,11 @@ function parsePublicBuildConfig(configuredAppUrlValue, configuredBasePath) {
   }
 
   const basePath = normalizeBasePath(configuredBasePath);
+  if (basePath.includes("//")) {
+    throw invalidConfig(
+      "NEXT_PUBLIC_BASE_PATH must not contain repeated slashes.",
+    );
+  }
   if (normalizeBasePath(appUrl.pathname) !== basePath) {
     throw invalidConfig(
       "NEXT_PUBLIC_APP_URL pathname must match NEXT_PUBLIC_BASE_PATH.",
