@@ -3,6 +3,23 @@ import { describe, expect, it, vi } from "vitest";
 const { validatePublicBuildConfig } = await import(
   "./validate-public-build-config.mjs"
 );
+type PublicBuildEnvironment = Parameters<typeof validatePublicBuildConfig>[0];
+
+function expectInvalidAppUrl(appUrl: string | undefined, message: string) {
+  expect(() =>
+    validatePublicBuildConfig({ NEXT_PUBLIC_APP_URL: appUrl }),
+  ).toThrow(message);
+}
+
+function getValidationError(environment: PublicBuildEnvironment) {
+  try {
+    validatePublicBuildConfig(environment);
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  throw new Error("Expected public build configuration validation to fail.");
+}
 
 describe("public build configuration", () => {
   it.each([
@@ -27,27 +44,21 @@ describe("public build configuration", () => {
   it.each([undefined, "", "   "])(
     "requires NEXT_PUBLIC_APP_URL",
     (appUrl) => {
-      expect(() =>
-        validatePublicBuildConfig({ NEXT_PUBLIC_APP_URL: appUrl }),
-      ).toThrow("NEXT_PUBLIC_APP_URL is required");
+      expectInvalidAppUrl(appUrl, "NEXT_PUBLIC_APP_URL is required");
     },
   );
 
   it.each(["not a URL", "/relative", "ftp://pets.example"])(
     "rejects malformed or unsupported URL %s",
     (appUrl) => {
-      expect(() =>
-        validatePublicBuildConfig({ NEXT_PUBLIC_APP_URL: appUrl }),
-      ).toThrow("must be an absolute HTTP(S) URL");
+      expectInvalidAppUrl(appUrl, "must be an absolute HTTP(S) URL");
     },
   );
 
   it.each(["http://pets.example:0", "https://pets.example:0"])(
     "rejects explicit port zero in URL %s",
     (appUrl) => {
-      expect(() =>
-        validatePublicBuildConfig({ NEXT_PUBLIC_APP_URL: appUrl }),
-      ).toThrow("must not use port zero");
+      expectInvalidAppUrl(appUrl, "must not use port zero");
     },
   );
 
@@ -61,9 +72,10 @@ describe("public build configuration", () => {
     "http://[::ffff:127.0.0.1]",
     "http://[::ffff:7f00:1]",
   ])("rejects localhost or loopback URL %s", (appUrl) => {
-    expect(() =>
-      validatePublicBuildConfig({ NEXT_PUBLIC_APP_URL: appUrl }),
-    ).toThrow("must not use localhost or a loopback address");
+    expectInvalidAppUrl(
+      appUrl,
+      "must not use localhost or a loopback address",
+    );
   });
 
   it.each([
@@ -72,9 +84,7 @@ describe("public build configuration", () => {
     "http://[0:0:0:0:0:0:0:0]",
     "http://[::ffff:0.0.0.0]",
   ])("rejects unspecified URL %s", (appUrl) => {
-    expect(() =>
-      validatePublicBuildConfig({ NEXT_PUBLIC_APP_URL: appUrl }),
-    ).toThrow("must not use an unspecified address");
+    expectInvalidAppUrl(appUrl, "must not use an unspecified address");
   });
 
   it.each([
@@ -88,9 +98,10 @@ describe("public build configuration", () => {
     "http://[::ffff:224.0.0.1]",
     "http://[::ffff:255.255.255.255]",
   ])("rejects multicast or broadcast URL %s", (appUrl) => {
-    expect(() =>
-      validatePublicBuildConfig({ NEXT_PUBLIC_APP_URL: appUrl }),
-    ).toThrow("must not use a multicast or broadcast address");
+    expectInvalidAppUrl(
+      appUrl,
+      "must not use a multicast or broadcast address",
+    );
   });
 
   it.each(["http://223.255.255.255", "http://[feff::1]"])(
@@ -116,9 +127,7 @@ describe("public build configuration", () => {
       message: "must not contain a fragment",
     },
   ])("rejects URL metadata: $message", ({ appUrl, message }) => {
-    expect(() =>
-      validatePublicBuildConfig({ NEXT_PUBLIC_APP_URL: appUrl }),
-    ).toThrow(message);
+    expectInvalidAppUrl(appUrl, message);
   });
 
   it.each([
@@ -142,13 +151,7 @@ describe("public build configuration", () => {
 
   it("does not expose rejected configuration values in errors", () => {
     const appUrl = "https://user:super-secret@pets.example";
-
-    let message = "";
-    try {
-      validatePublicBuildConfig({ NEXT_PUBLIC_APP_URL: appUrl });
-    } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
-    }
+    const message = getValidationError({ NEXT_PUBLIC_APP_URL: appUrl });
 
     expect(message).not.toContain(appUrl);
     expect(message).not.toContain("super-secret");
@@ -222,18 +225,12 @@ describe("public build configuration", () => {
   it("does not expose runtime or build configuration values on mismatch", () => {
     const runtimeAppUrl = "https://runtime-secret.example";
     const builtAppUrl = "https://build-secret.example";
-
-    let message = "";
-    try {
-      validatePublicBuildConfig({
-        NEXT_PUBLIC_APP_URL: runtimeAppUrl,
-        NEXT_PUBLIC_BASE_PATH: "",
-        CODEX_PETS_BUILT_PUBLIC_APP_URL: builtAppUrl,
-        CODEX_PETS_BUILT_PUBLIC_BASE_PATH: "",
-      });
-    } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
-    }
+    const message = getValidationError({
+      NEXT_PUBLIC_APP_URL: runtimeAppUrl,
+      NEXT_PUBLIC_BASE_PATH: "",
+      CODEX_PETS_BUILT_PUBLIC_APP_URL: builtAppUrl,
+      CODEX_PETS_BUILT_PUBLIC_BASE_PATH: "",
+    });
 
     expect(message).not.toContain(runtimeAppUrl);
     expect(message).not.toContain(builtAppUrl);

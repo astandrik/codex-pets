@@ -4,12 +4,8 @@ import { fileURLToPath } from "node:url";
 
 function normalizeBasePath(value) {
   const trimmed = typeof value === "string" ? value.trim() : "";
-  if (!trimmed || trimmed === "/") {
-    return "";
-  }
-
-  const normalized = `/${trimmed.replace(/^\/+|\/+$/g, "")}`;
-  return normalized === "/" ? "" : normalized;
+  const pathname = trimmed.replace(/^\/+|\/+$/g, "");
+  return pathname ? `/${pathname}` : "";
 }
 
 function invalidConfig(reason) {
@@ -48,30 +44,28 @@ function getIpv4Bytes(hostname) {
   return ipVersion === 6 ? getMappedIpv4Bytes(hostname) : undefined;
 }
 
-function isLoopbackHostname(hostname) {
+function getForbiddenHostnameReason(hostname) {
   if (hostname === "localhost" || hostname.endsWith(".localhost")) {
-    return true;
+    return "NEXT_PUBLIC_APP_URL must not use localhost or a loopback address.";
   }
 
   const ipv4 = getIpv4Bytes(hostname);
-  return ipv4?.[0] === 127 || hostname === "::1";
-}
-
-function isUnspecifiedHostname(hostname) {
-  const ipv4 = getIpv4Bytes(hostname);
-  return hostname === "::" || (ipv4?.every((byte) => byte === 0) ?? false);
-}
-
-function isMulticastOrBroadcastHostname(hostname) {
-  const ipv4 = getIpv4Bytes(hostname);
-  if (ipv4) {
-    return (
-      (ipv4[0] >= 224 && ipv4[0] <= 239) ||
-      ipv4.every((byte) => byte === 255)
-    );
+  if (ipv4?.[0] === 127 || hostname === "::1") {
+    return "NEXT_PUBLIC_APP_URL must not use localhost or a loopback address.";
   }
 
-  return isIP(hostname) === 6 && hostname.startsWith("ff");
+  if (hostname === "::" || ipv4?.every((byte) => byte === 0)) {
+    return "NEXT_PUBLIC_APP_URL must not use an unspecified address.";
+  }
+
+  if (
+    (ipv4 &&
+      ((ipv4[0] >= 224 && ipv4[0] <= 239) ||
+        ipv4.every((byte) => byte === 255))) ||
+    (isIP(hostname) === 6 && hostname.startsWith("ff"))
+  ) {
+    return "NEXT_PUBLIC_APP_URL must not use a multicast or broadcast address.";
+  }
 }
 
 function parsePublicBuildConfig(configuredAppUrlValue, configuredBasePath) {
@@ -112,22 +106,9 @@ function parsePublicBuildConfig(configuredAppUrlValue, configuredBasePath) {
   }
 
   const hostname = normalizeHostname(appUrl.hostname);
-  if (isLoopbackHostname(hostname)) {
-    throw invalidConfig(
-      "NEXT_PUBLIC_APP_URL must not use localhost or a loopback address.",
-    );
-  }
-
-  if (isUnspecifiedHostname(hostname)) {
-    throw invalidConfig(
-      "NEXT_PUBLIC_APP_URL must not use an unspecified address.",
-    );
-  }
-
-  if (isMulticastOrBroadcastHostname(hostname)) {
-    throw invalidConfig(
-      "NEXT_PUBLIC_APP_URL must not use a multicast or broadcast address.",
-    );
+  const forbiddenHostnameReason = getForbiddenHostnameReason(hostname);
+  if (forbiddenHostnameReason) {
+    throw invalidConfig(forbiddenHostnameReason);
   }
 
   const basePath = normalizeBasePath(configuredBasePath);

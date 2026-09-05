@@ -37,14 +37,8 @@ before `next start`.
 `NEXT_PUBLIC_APP_URL` must be an absolute public HTTP(S) URL without
 credentials, query, fragment, localhost, a loopback address, or an unspecified
 bind address. Its normalized pathname must equal `NEXT_PUBLIC_BASE_PATH`. The
-current production contour is built with:
-
-```bash
-docker build \
-  --build-arg NEXT_PUBLIC_APP_URL=https://pets.ydb-qdrant.tech \
-  --build-arg NEXT_PUBLIC_BASE_PATH= \
-  -t codex-pets:latest .
-```
+current production values are `https://pets.ydb-qdrant.tech` and an empty base
+path; the complete build command is shown below.
 
 ## Runtime env
 

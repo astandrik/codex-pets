@@ -52,8 +52,12 @@ describe("runner image maintenance contract", () => {
       new URL("./public-origin-image-smoke.mjs", import.meta.url),
       "utf8",
     );
-    const negativeControlStart = smokeScript.indexOf(
-      "const runtimeMismatchStart",
+    const mismatchEnvironment = smokeScript.indexOf(
+      "NEXT_PUBLIC_APP_URL=https://runtime.example",
+    );
+    const negativeControlStart = smokeScript.lastIndexOf(
+      'await run("docker"',
+      mismatchEnvironment,
     );
     const negativeControlEnd = smokeScript.indexOf(
       "Verified ${endpoints.length}",

@@ -6,12 +6,8 @@ const root = dirname(fileURLToPath(import.meta.url));
 
 function normalizeBasePath(value: string | undefined): string {
   const trimmed = value?.trim() ?? "";
-  if (!trimmed || trimmed === "/") {
-    return "";
-  }
-
-  const normalized = `/${trimmed.replace(/^\/+|\/+$/g, "")}`;
-  return normalized === "/" ? "" : normalized;
+  const pathname = trimmed.replace(/^\/+|\/+$/g, "");
+  return pathname ? `/${pathname}` : "";
 }
 
 const basePath =

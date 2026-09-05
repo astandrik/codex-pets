@@ -26,15 +26,8 @@ const endpoints = [
 ];
 
 class CommandError extends Error {
-  constructor(command, exitCode, output) {
-    super(`${command} failed with exit code ${exitCode}.`);
-    this.output = output;
-  }
-}
-
-class CommandTimeoutError extends Error {
-  constructor(command, timeoutMs, output) {
-    super(`${command} timed out after ${timeoutMs} ms.`);
+  constructor(message, output) {
+    super(message);
     this.output = output;
   }
 }
@@ -47,7 +40,6 @@ function run(command, args, { allowFailure = false, timeoutMs } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: repositoryRoot,
-      env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -62,12 +54,6 @@ function run(command, args, { allowFailure = false, timeoutMs } = {}) {
         }, timeoutMs)
       : undefined;
 
-    const clearCommandTimeout = () => {
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-    };
-
     child.stdout.on("data", (chunk) => {
       stdout = keepTail(stdout, chunk.toString());
     });
@@ -75,21 +61,28 @@ function run(command, args, { allowFailure = false, timeoutMs } = {}) {
       stderr = keepTail(stderr, chunk.toString());
     });
     child.on("error", (error) => {
-      clearCommandTimeout();
+      clearTimeout(timeout);
       reject(error);
     });
     child.on("close", (exitCode) => {
-      clearCommandTimeout();
+      clearTimeout(timeout);
       const output = keepTail(stdout, stderr);
       if (timedOut) {
-        reject(new CommandTimeoutError(command, timeoutMs, output));
+        reject(
+          new CommandError(
+            `${command} timed out after ${timeoutMs} ms.`,
+            output,
+          ),
+        );
         return;
       }
       if (exitCode === 0 || allowFailure) {
         resolve({ exitCode, stdout, stderr, output });
         return;
       }
-      reject(new CommandError(command, exitCode, output));
+      reject(
+        new CommandError(`${command} failed with exit code ${exitCode}.`, output),
+      );
     });
   });
 }
@@ -263,24 +256,17 @@ try {
   await run("docker", ["rm", "--force", container]);
   containerCreated = false;
 
-  const runtimeMismatchStart = await run(
-    "docker",
-    [
-      "run",
-      "--detach",
-      "--name",
-      container,
-      "--env",
-      "NEXT_PUBLIC_APP_URL=https://runtime.example/codex-pets",
-      "--env",
-      `NEXT_PUBLIC_BASE_PATH=${basePath}`,
-      image,
-    ],
-  );
-  assert(
-    runtimeMismatchStart.stdout.trim(),
-    "Docker did not start the runtime-mismatch negative control.",
-  );
+  await run("docker", [
+    "run",
+    "--detach",
+    "--name",
+    container,
+    "--env",
+    "NEXT_PUBLIC_APP_URL=https://runtime.example/codex-pets",
+    "--env",
+    `NEXT_PUBLIC_BASE_PATH=${basePath}`,
+    image,
+  ]);
   containerCreated = true;
 
   const runtimeMismatchWait = await run("docker", ["wait", container], {
@@ -300,23 +286,19 @@ try {
     "Docker wait did not report the runtime-mismatch exit code.",
   );
 
-  const runtimeMismatch = {
-    exitCode: runtimeMismatchExitCode,
-    output: runtimeMismatchLogs.output,
-  };
-  failureOutput = keepTail(failureOutput, runtimeMismatch.output);
+  failureOutput = keepTail(failureOutput, runtimeMismatchLogs.output);
   assert(
-    runtimeMismatch.exitCode !== 0,
+    runtimeMismatchExitCode !== 0,
     "Docker runner accepted public configuration that differs from the build.",
   );
   assert(
-    runtimeMismatch.output.includes(
+    runtimeMismatchLogs.output.includes(
       "must match the Docker image build configuration",
     ),
     "Docker runner did not report the build/runtime configuration mismatch.",
   );
   assert(
-    !runtimeMismatch.output.includes("▲ Next.js"),
+    !runtimeMismatchLogs.output.includes("▲ Next.js"),
     "Docker runner started Next.js after a public configuration mismatch.",
   );
 
@@ -327,7 +309,7 @@ try {
     `Verified ${endpoints.length} canonical-origin surfaces and runtime override rejection in ${container}.`,
   );
 } catch (error) {
-  if (error instanceof CommandError || error instanceof CommandTimeoutError) {
+  if (error instanceof CommandError) {
     failureOutput = error.output;
   }
   if (containerCreated) {
