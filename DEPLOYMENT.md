@@ -24,6 +24,25 @@ Two production patterns are supported:
 - split edge/app host: a public edge host terminates TLS, runs certbot, and
   proxies to a private app host over HTTPS while preserving `Host`
 
+## Public build configuration
+
+`NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_BASE_PATH` are Docker build arguments,
+not runtime configuration. Next.js embeds both values in the production bundle,
+so changing the canonical origin or base path requires rebuilding the image.
+Do not include either variable in the runtime env file and do not override them
+with `docker run --env`; the image copies its validated build arguments into the
+runner environment and rejects values that differ from the build configuration
+before `next start`.
+
+`NEXT_PUBLIC_APP_URL` must be an absolute public HTTP(S) URL without
+credentials, query, fragment, localhost, loopback, unspecified, multicast, or
+broadcast addresses. Its normalized pathname must equal `NEXT_PUBLIC_BASE_PATH`. The
+current production values are `https://pets.ydb-qdrant.tech` and an empty base
+path; the complete build command is shown below.
+
+DNS resolution and network reachability must be checked during deployment.
+Other special-use IP ranges are outside this validator's contract.
+
 ## Runtime env
 
 Use a runtime env file based on:
@@ -35,9 +54,6 @@ Minimum example:
 ```env
 NODE_ENV=production
 PORT=3000
-
-NEXT_PUBLIC_APP_URL=https://example.com/codex-pets
-NEXT_PUBLIC_BASE_PATH=/codex-pets
 
 # Optional aggregate MCP tool-call metrics through Yandex Metrika Measurement
 # Protocol. Use a dedicated technical Metrika ClientID, not a user identifier.
@@ -280,10 +296,14 @@ Build:
 
 ```bash
 docker build \
-  --build-arg NEXT_PUBLIC_APP_URL=https://example.com/codex-pets \
-  --build-arg NEXT_PUBLIC_BASE_PATH=/codex-pets \
+  --build-arg NEXT_PUBLIC_APP_URL=https://pets.ydb-qdrant.tech \
+  --build-arg NEXT_PUBLIC_BASE_PATH= \
   -t codex-pets:latest .
 ```
+
+For a subpath deployment, pass the same normalized path in both build
+arguments, for example `https://example.com/codex-pets` and `/codex-pets`.
+The image build fails if either value is invalid or they do not match.
 
 Run:
 
