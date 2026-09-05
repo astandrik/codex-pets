@@ -4,11 +4,16 @@ import { verifyHtmlMetadata } from "./public-origin-image-smoke.mjs";
 
 const expectedUrl = "https://pets.example/codex-pets/pets/orbit-otter";
 
-function metadata({ canonical = expectedUrl, openGraph = expectedUrl, omit } = {}) {
+function metadata({
+  canonical = expectedUrl,
+  openGraph = expectedUrl,
+  jsonLd = { "@context": "https://schema.org", "@type": "CreativeWork", url: expectedUrl },
+  omit,
+} = {}) {
   const tags = {
     canonical: `<link rel="canonical" href="${canonical}">`,
     openGraph: `<meta property="og:url" content="${openGraph}">`,
-    jsonLd: `<script type="application/ld+json">${JSON.stringify({ url: expectedUrl })}</script>`,
+    jsonLd: `<script type="application/ld+json">${JSON.stringify(jsonLd)}</script>`,
   };
   return Object.entries(tags)
     .filter(([field]) => field !== omit)
@@ -17,7 +22,7 @@ function metadata({ canonical = expectedUrl, openGraph = expectedUrl, omit } = {
 }
 
 describe("production smoke HTML metadata", () => {
-  it("accepts the expected canonical and OpenGraph URLs", () => {
+  it("accepts the expected canonical, OpenGraph and pet JSON-LD URLs", () => {
     expect(() => verifyHtmlMetadata(metadata(), expectedUrl)).not.toThrow();
   });
 
@@ -45,5 +50,35 @@ describe("production smoke HTML metadata", () => {
     expect(() =>
       verifyHtmlMetadata(metadata({ omit }), expectedUrl),
     ).toThrow();
+  });
+
+  it.each([
+    "https://wrong.example/codex-pets/pets/orbit-otter",
+    "https://pets.example/pets/orbit-otter",
+  ])("rejects a wrong pet JSON-LD URL despite correct HTML metadata: %s", (url) => {
+    expect(() => verifyHtmlMetadata(metadata({
+      jsonLd: { "@type": "CreativeWork", url },
+    }), expectedUrl)).toThrow(/JSON-LD/);
+  });
+
+  it.each([
+    { "@type": "CreativeWork" },
+    { "@type": "WebSite", url: expectedUrl },
+  ])("requires the pet JSON-LD object and its URL: %j", (jsonLd) => {
+    expect(() => verifyHtmlMetadata(metadata({ jsonLd }), expectedUrl)).toThrow(/JSON-LD/);
+  });
+
+  const unrelatedJsonLd = `<script type="application/ld+json">${JSON.stringify({
+    "@type": "WebSite", url: expectedUrl,
+  })}</script>`;
+
+  it("finds the pet after unrelated JSON-LD scripts", () => {
+    expect(() => verifyHtmlMetadata(unrelatedJsonLd + metadata(), expectedUrl)).not.toThrow();
+  });
+
+  it("does not let an unrelated JSON-LD URL mask a wrong pet URL", () => {
+    expect(() => verifyHtmlMetadata(unrelatedJsonLd + metadata({
+      jsonLd: { "@type": "CreativeWork", url: "https://wrong.example/codex-pets/pets/orbit-otter" },
+    }), expectedUrl)).toThrow(/JSON-LD/);
   });
 });

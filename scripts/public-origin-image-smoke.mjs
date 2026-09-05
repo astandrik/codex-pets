@@ -178,9 +178,13 @@ export function verifyHtmlMetadata(body, expectedUrl) {
     document.querySelector('meta[property="og:url"]')?.getAttribute("content") === expectedUrl,
     "HTML OpenGraph metadata does not use the expected pet URL.",
   );
+  const petJsonLd = Array.from(
+    document.querySelectorAll('script[type="application/ld+json"]'),
+    (script) => JSON.parse(script.textContent),
+  ).find((node) => node?.["@type"] === "CreativeWork");
   assert(
-    document.querySelector('script[type="application/ld+json"]'),
-    "HTML JSON-LD metadata is missing.",
+    petJsonLd?.url === expectedUrl,
+    "HTML JSON-LD metadata does not use the expected pet URL.",
   );
 }
 
