@@ -47,6 +47,18 @@ export type RelatedPetAnnotationInput = {
   tags: string[];
 };
 
+export type RelatedPetAnnotationValidationIssue = {
+  path: string;
+  code: string;
+  minimum?: number;
+  maximum?: number;
+};
+
+export class RelatedPetAnnotationValidationError extends Error {
+  readonly issues: RelatedPetAnnotationValidationIssue[];
+  constructor(message: string, issues: RelatedPetAnnotationValidationIssue[]);
+}
+
 export const RELATED_PETS_ANNOTATION_REVISION: string;
 export const RELATED_PETS_ANNOTATION_QUERY_REVISION: string;
 export const RELATED_PETS_ANNOTATION_DOCUMENT_REVISION: string;

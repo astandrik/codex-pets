@@ -70,7 +70,7 @@ describe("AdminSubmissionActions", () => {
         { status: 202 },
       ),
     ));
-    mocks.poll.mockResolvedValue("succeeded");
+    mocks.poll.mockResolvedValue({ status: "succeeded" });
 
     await act(async () => {
       root.render(<AdminSubmissionActions petId="pet-1" publicEmailRequested={false} contactEmail={null} />);
@@ -87,13 +87,16 @@ describe("AdminSubmissionActions", () => {
   });
 
   it("does not report success when preparation needs manual review", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(
       Response.json(
         { status: "preparing", preparationId: "preparation-1" },
         { status: 202 },
       ),
-    ));
-    mocks.poll.mockResolvedValue("manual_review");
+    ).mockResolvedValueOnce(Response.json({ status: "manual_review", failureCode: "schema_invalid" })));
+    const { pollApprovalPreparation } = await vi.importActual<typeof import("./approval-preparation-client")>(
+      "./approval-preparation-client",
+    );
+    mocks.poll.mockImplementationOnce(pollApprovalPreparation);
 
     await act(async () => {
       root.render(<AdminSubmissionActions petId="pet-1" publicEmailRequested={false} contactEmail={null} />);
@@ -107,7 +110,27 @@ describe("AdminSubmissionActions", () => {
     expect(mocks.add).toHaveBeenCalledWith(expect.objectContaining({
       theme: "danger",
       title: "Approval needs attention",
+      content: expect.stringMatching(/AI.*metadata.*validation.*Approve.*schema_invalid/i),
     }));
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["embedding_configuration_missing", /configuration.*before.*Approve/i],
+    ["stale_submission", /Refresh the page.*Approve/i],
+    ["rebuild_failed", /diagnostics.*Approve/i],
+    [null, /Publication preparation stopped/i],
+  ])("explains the next step for %s", async (failureCode, message) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(
+      { status: "preparing", preparationId: "preparation-1" }, { status: 202 },
+    )));
+    mocks.poll.mockResolvedValue({ status: "manual_review", failureCode });
+    await act(async () => {
+      root.render(<AdminSubmissionActions petId="pet-1" publicEmailRequested={false} contactEmail={null} />);
+    });
+    await act(async () => container.querySelector("button")?.click());
+    expect(mocks.add).toHaveBeenCalledWith(expect.objectContaining({ content: expect.stringMatching(message) }));
+    expect(mocks.refresh).not.toHaveBeenCalled();
   });
 
   it("keeps a timed-out preparation observable and resumes it", async () => {
@@ -119,8 +142,8 @@ describe("AdminSubmissionActions", () => {
     );
     vi.stubGlobal("fetch", fetchImpl);
     mocks.poll
-      .mockResolvedValueOnce("timeout")
-      .mockResolvedValueOnce("succeeded");
+      .mockResolvedValueOnce({ status: "timeout" })
+      .mockResolvedValueOnce({ status: "succeeded" });
 
     await act(async () => {
       root.render(<AdminSubmissionActions petId="pet-1" publicEmailRequested={false} contactEmail={null} />);

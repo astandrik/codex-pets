@@ -1,8 +1,6 @@
 export type ApprovalPreparationPollResult =
-  | "succeeded"
-  | "manual_review"
-  | "failed"
-  | "timeout";
+  | { status: "succeeded" | "failed" | "timeout" }
+  | { status: "manual_review"; failureCode: string | null };
 
 type PollOptions = {
   fetchImpl?: typeof fetch;
@@ -41,24 +39,32 @@ export async function pollApprovalPreparation(
     }
     if (!response.ok) {
       if (RETRYABLE_STATUSES.has(response.status)) continue;
-      return "failed";
+      return { status: "failed" };
     }
 
-    let payload: { status?: unknown };
+    let payload: { status?: unknown; failureCode?: unknown };
     try {
-      payload = await response.json() as { status?: unknown };
+      payload = await response.json() as typeof payload;
     } catch {
-      return "failed";
+      return { status: "failed" };
     }
-    if (payload.status === "succeeded") return "succeeded";
-    if (payload.status === "manual_review") return "manual_review";
+    if (payload?.status === "succeeded") return { status: "succeeded" };
+    if (payload?.status === "manual_review") {
+      return {
+        status: "manual_review",
+        failureCode: typeof payload.failureCode === "string" &&
+            /^[a-z][a-z0-9_]{0,63}$/.test(payload.failureCode)
+          ? payload.failureCode
+          : null,
+      };
+    }
     if (
-      payload.status !== "queued" &&
-      payload.status !== "preparing" &&
-      payload.status !== "retry"
+      payload?.status !== "queued" &&
+      payload?.status !== "preparing" &&
+      payload?.status !== "retry"
     ) {
-      return "failed";
+      return { status: "failed" };
     }
   }
-  return "timeout";
+  return { status: "timeout" };
 }

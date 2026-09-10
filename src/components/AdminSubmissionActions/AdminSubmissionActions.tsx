@@ -27,6 +27,28 @@ type AdminSubmissionActionsProps = {
 
 type DialogKind = "approve" | "reject" | "delete" | null;
 
+function approvalFailureMessage(failureCode: string | null): string {
+  let message: string;
+  switch (failureCode) {
+    case "schema_invalid":
+    case "malformed_json":
+      message = "AI-generated search metadata failed validation. Try Approve once more. If this repeats, check the approval diagnostics before retrying.";
+      break;
+    case "embedding_configuration_missing":
+    case "visual_configuration_missing":
+    case "authentication_error":
+      message = "Search preparation is not configured correctly. Check the server configuration before trying Approve again.";
+      break;
+    case "stale_submission":
+    case "stale_catalog":
+      message = "The submission or catalog changed during preparation. Refresh the page before trying Approve again.";
+      break;
+    default:
+      message = "Publication preparation stopped. Check the approval diagnostics before trying Approve again.";
+  }
+  return failureCode ? `${message} Error: ${failureCode}.` : message;
+}
+
 export function AdminSubmissionActions({ petId, publicEmailRequested, contactEmail }: AdminSubmissionActionsProps) {
   const router = useRouter();
   const { add } = useToaster();
@@ -100,8 +122,8 @@ export function AdminSubmissionActions({ petId, publicEmailRequested, contactEma
         window.location.origin,
       );
       url.searchParams.set("preparationId", preparationId);
-      const status = await pollApprovalPreparation(url.href);
-      if (status === "timeout") {
+      const result = await pollApprovalPreparation(url.href);
+      if (result.status === "timeout") {
         add({
           name: `pet-mod-${petId}-preparation`,
           theme: "normal",
@@ -110,14 +132,17 @@ export function AdminSubmissionActions({ petId, publicEmailRequested, contactEma
         });
         return;
       }
-      if (status !== "succeeded") {
+      if (result.status !== "succeeded") {
         setApprovalPreparationId(null);
         add({
           name: `pet-mod-${petId}-preparation`,
           theme: "danger",
-          title: status === "manual_review"
+          title: result.status === "manual_review"
             ? "Approval needs attention"
             : "Approval status check failed",
+          content: result.status === "manual_review"
+            ? approvalFailureMessage(result.failureCode)
+            : "Could not read the approval status. Refresh the page to check whether the pet was published.",
         });
         return;
       }

@@ -42,6 +42,14 @@ const CONFIDENCE_PRIORITY = { none: 0, medium: 1, high: 2 };
 const MAX_EVIDENCE_ITEMS = 4;
 const MAX_RELATION_PROPOSALS = 4;
 
+export class RelatedPetAnnotationValidationError extends Error {
+  constructor(message, issues) {
+    super(message);
+    this.name = "RelatedPetAnnotationValidationError";
+    this.issues = issues.slice(0, 5);
+  }
+}
+
 const evidenceValueSchema = z.enum(EVIDENCE_VALUES);
 const confidenceValueSchema = z.enum(CONFIDENCE_VALUES);
 const relationProposalSchema = z.strictObject({
@@ -627,7 +635,10 @@ function canonicalKey(input, path) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
   if (!value || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)) {
-    throw new Error(`${path} must normalize to a kebab-case identifier.`);
+    throw new RelatedPetAnnotationValidationError(
+      `${path} must normalize to a kebab-case identifier.`,
+      [{ path, code: "invalid_identifier" }],
+    );
   }
   return value;
 }
@@ -645,7 +656,10 @@ function normalizeBoundedString(input, path, minLength, maxLength) {
   if (typeof input !== "string") throw new Error(`${path} must be a string.`);
   const value = normalizeText(input);
   if (value.length < minLength || value.length > maxLength) {
-    throw new Error(`${path} must contain ${minLength}-${maxLength} characters.`);
+    throw new RelatedPetAnnotationValidationError(
+      `${path} must contain ${minLength}-${maxLength} characters.`,
+      [{ path, code: "normalized_length", minimum: minLength, maximum: maxLength }],
+    );
   }
   return value;
 }
@@ -671,15 +685,24 @@ function strictObject(input, path, fields, allowMissing = false) {
 function parseSchema(schema, input, path) {
   const result = schema.safeParse(input);
   if (result.success) return result.data;
+  // Copy only schema-owned paths, codes and bounds; never values or unknown keys.
+  const issues = result.error.issues.slice(0, 5).map((issue) => ({
+    path: issue.path.reduce((path, part) =>
+      typeof part === "number" ? `${path}[${part}]` : `${path}${path ? "." : ""}${part}`,
+    "") || "$",
+    code: issue.code,
+    ...(typeof issue.minimum === "number" ? { minimum: issue.minimum } : {}),
+    ...(typeof issue.maximum === "number" ? { maximum: issue.maximum } : {}),
+  }));
   if (result.error.issues.some((issue) => issue.code === "unrecognized_keys")) {
-    throw new Error(`${path} contains an unknown field.`);
+    throw new RelatedPetAnnotationValidationError(`${path} contains an unknown field.`, issues);
   }
   if (result.error.issues.some((issue) =>
     issue.code === "invalid_type" && issue.input === undefined
   )) {
-    throw new Error(`${path} is missing a required field.`);
+    throw new RelatedPetAnnotationValidationError(`${path} is missing a required field.`, issues);
   }
-  throw new Error(`${path} is invalid.`);
+  throw new RelatedPetAnnotationValidationError(`${path} is invalid.`, issues);
 }
 
 function stableUnique(values) {

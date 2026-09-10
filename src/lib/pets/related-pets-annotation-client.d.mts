@@ -1,6 +1,7 @@
 import type {
   RelatedPetAnnotationInput,
   RelatedPetAnnotationProposal,
+  RelatedPetAnnotationValidationIssue,
 } from "./related-pets-annotation-contract.mjs";
 import type {
   StructuredResponseDiagnostic,
@@ -15,6 +16,7 @@ export type AnnotationDiagnostic = Omit<
 > & {
   api: "chat_completions";
   finishReason?: string;
+  validationIssues?: RelatedPetAnnotationValidationIssue[];
 };
 
 export class RelatedPetAnnotationProviderError extends Error {
