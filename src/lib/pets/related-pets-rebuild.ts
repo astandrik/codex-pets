@@ -66,6 +66,7 @@ export type RelatedPetsRebuildProfile = RelatedPetsV24RankingProfile & {
   textDimensions: number;
   annotationRevision: string;
   annotationProposalRevision: string;
+  acceptedAnnotationProposalRevisions: readonly string[];
   annotationDocumentRevision: string;
   annotationQueryRevision: string;
   annotationDimensions: number;
@@ -85,6 +86,7 @@ type RelatedPetsInputPreparationProfile = Pick<
   RelatedPetsRebuildProfile,
   | "annotationRevision"
   | "annotationProposalRevision"
+  | "acceptedAnnotationProposalRevisions"
   | "annotationDocumentRevision"
   | "annotationQueryRevision"
   | "annotationDimensions"
@@ -878,6 +880,7 @@ function getAnnotationProfile(
 ): {
   annotationRevision: string;
   annotationProposalRevision: string;
+  acceptedAnnotationProposalRevisions: readonly string[];
   annotationDocumentRevision: string;
   annotationQueryRevision: string;
   annotationDimensions: number;
@@ -886,6 +889,8 @@ function getAnnotationProfile(
   if (
     !profile.annotationRevision ||
     !profile.annotationProposalRevision ||
+    !Array.isArray(profile.acceptedAnnotationProposalRevisions) ||
+    profile.acceptedAnnotationProposalRevisions.length === 0 ||
     !profile.annotationDocumentRevision ||
     !profile.annotationQueryRevision ||
     typeof annotationDimensions !== "number" ||
@@ -897,6 +902,8 @@ function getAnnotationProfile(
   return {
     annotationRevision: profile.annotationRevision,
     annotationProposalRevision: profile.annotationProposalRevision,
+    acceptedAnnotationProposalRevisions:
+      profile.acceptedAnnotationProposalRevisions,
     annotationDocumentRevision: profile.annotationDocumentRevision,
     annotationQueryRevision: profile.annotationQueryRevision,
     annotationDimensions,
@@ -1031,6 +1038,8 @@ function validatedAnnotations(input: {
         modelUri: input.modelUri,
         annotationRevision: input.profile.annotationRevision,
         proposalRevision: input.profile.annotationProposalRevision,
+        acceptedProposalRevisions:
+          input.profile.acceptedAnnotationProposalRevisions,
       });
       values.set(row.slug, current.annotation);
       sourceHashes.set(row.slug, current.sourceHash);

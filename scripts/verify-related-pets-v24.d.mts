@@ -15,6 +15,7 @@ export type RelatedPetsV24VerificationService = {
     includeVisual: true;
   }) => Promise<string>;
   listSnapshots: (generationId: string) => Promise<Array<{
+    generationId: string;
     sourceSlug: string;
     rankingRevision: string;
     relatedSlugs: string[];
@@ -29,6 +30,7 @@ export type RelatedPetsV24VerificationService = {
     approvedAt: string | null;
   }>>;
   rankingRevision: string;
+  supportedRankingRevisions?: readonly string[];
   dispose?: () => Promise<void>;
 };
 

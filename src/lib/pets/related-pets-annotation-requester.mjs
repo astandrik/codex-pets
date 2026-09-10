@@ -13,13 +13,10 @@ import {
 import { standardResponseFormat } from "openai/helpers/standard-schema";
 
 import {
-  RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
-  RELATED_PETS_ANNOTATION_SCHEMA_NAME,
-  RELATED_PETS_ANNOTATION_SYSTEM_PROMPT,
-  RELATED_PETS_ANNOTATION_TOKEN_POLICY,
-  RELATED_PETS_ANNOTATION_USER_PROMPT,
   buildRelatedPetAnnotationInput,
+  getRelatedPetAnnotationProposalContract,
   parseRelatedPetAnnotationProposal,
+  RelatedPetAnnotationValidationError,
 } from "./related-pets-annotation-contract.mjs";
 
 const MAX_ATTEMPTS = 3;
@@ -34,34 +31,44 @@ export class AnnotationRequestError extends Error {
   }
 }
 
-export function createAnnotationRequester(options) {
+function createAnnotationResponseFormat(contract, onValidationFailure) {
   const format = standardResponseFormat({
     "~standard": {
       version: 1,
       vendor: "codex-pets",
       validate(value) {
         try {
-          return { value: parseRelatedPetAnnotationProposal(value) };
-        } catch {
+          return {
+            value: parseRelatedPetAnnotationProposal(value, contract.revision),
+          };
+        } catch (error) {
+          if (error instanceof RelatedPetAnnotationValidationError) {
+            onValidationFailure(error.issues);
+          }
           return { issues: [{ message: "Invalid annotation proposal." }] };
         }
       },
     },
-  }, RELATED_PETS_ANNOTATION_SCHEMA_NAME, {
-    schema: RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
+  }, contract.schemaName, {
+    schema: contract.schema,
   });
   if (JSON.stringify(format.json_schema.schema) !==
-    JSON.stringify(RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA)) {
+    JSON.stringify(contract.schema)) {
     throw new Error("The SDK changed the immutable annotation schema.");
   }
-  const policy = RELATED_PETS_ANNOTATION_TOKEN_POLICY;
+  return format;
+}
+
+export function createAnnotationRequester(options) {
+  const contract = getRelatedPetAnnotationProposalContract(options.proposalRevision);
+  const policy = contract.tokenPolicy;
   return async function requestAnnotation(pet) {
     const messages = [
-      { role: "system", content: RELATED_PETS_ANNOTATION_SYSTEM_PROMPT },
+      { role: "system", content: contract.systemPrompt },
       {
         role: "user",
         content: [
-          RELATED_PETS_ANNOTATION_USER_PROMPT,
+          contract.userPrompt,
           buildRelatedPetAnnotationInput(pet),
         ].join("\n\n"),
       },
@@ -78,13 +85,12 @@ export function createAnnotationRequester(options) {
       const outcome = await requestOnce(options, {
         model: options.modelUri,
         messages,
-        response_format: format,
         reasoning_effort: policy.reasoning,
         temperature: 0,
         max_tokens: maxTokens,
         store: false,
         stream: false,
-      }, diagnostics);
+      }, diagnostics, contract);
       options.onDiagnostic({ ...diagnostics, ...outcome.diagnostic });
       if (outcome.kind === "success") return outcome.value;
 
@@ -108,7 +114,11 @@ export function createAnnotationRequester(options) {
   };
 }
 
-async function requestOnce(options, body, diagnostics) {
+async function requestOnce(options, body, diagnostics, contract) {
+  let validationIssues;
+  const format = createAnnotationResponseFormat(contract, (issues) => {
+    validationIssues = issues;
+  });
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -141,7 +151,7 @@ async function requestOnce(options, body, diagnostics) {
     },
   });
   try {
-    const { data } = await client.chat.completions.parse(body, {
+    const { data } = await client.chat.completions.parse({ ...body, response_format: format }, {
       headers: { "x-client-request-id": diagnostics.clientRequestId },
       maxRetries: 0,
       timeout: options.timeoutMs,
@@ -202,7 +212,9 @@ async function requestOnce(options, body, diagnostics) {
     }
     if (error instanceof OpenAIError &&
       error.message.startsWith("Standard Schema validation failed:")) {
-      return failure("schema_invalid", true, "structured_schema");
+      return failure("schema_invalid", true, "structured_schema", {
+        ...(validationIssues ? { validationIssues } : {}),
+      });
     }
     return failure("invalid_response", true, "response_envelope");
   } finally {

@@ -9,7 +9,9 @@ import {
   RELATED_PETS_PAGE_LIMIT,
   RELATED_PETS_SNAPSHOT_DEPTH,
 } from "@/lib/pets/related-pets-limits";
-import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
+import {
+  isSupportedRelatedPetsRankingRevision,
+} from "@/lib/pets/related-pets-profile";
 import {
   getRelatedPetsSnapshot,
   getRelatedPetsState,
@@ -163,8 +165,7 @@ export function createRelatedPetsResolver(
       return heuristic;
     }
     if (
-      state.rankingRevision !==
-      RELATED_PETS_V24_PROFILE.rankingRevision
+      !isSupportedRelatedPetsRankingRevision(state.rankingRevision)
     ) {
       dependencies.log("warn", {
         operation: "state-fallback",
@@ -219,8 +220,8 @@ export function createRelatedPetsResolver(
     if (
       snapshot.generationId !== activeGenerationId ||
       snapshot.sourceSlug !== current.slug ||
-      snapshot.rankingRevision !==
-        RELATED_PETS_V24_PROFILE.rankingRevision ||
+      snapshot.rankingRevision !== state.rankingRevision ||
+      !isSupportedRelatedPetsRankingRevision(snapshot.rankingRevision) ||
       !Array.isArray(snapshot.relatedSlugs)
     ) {
       dependencies.log("warn", {

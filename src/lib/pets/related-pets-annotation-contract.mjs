@@ -16,6 +16,15 @@ export const RELATED_PETS_ANNOTATION_DOCUMENT_REVISION =
   "yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r14";
 export const RELATED_PETS_ANNOTATION_PROPOSAL_REVISION =
   "yandex-qwen3.6-35b-a3b-related-annotation-proposal-2026-08-v11-r2";
+export const RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3 =
+  "yandex-qwen3.6-35b-a3b-related-annotation-proposal-2026-09-v11-r3";
+export const RELATED_PETS_ANNOTATION_WRITE_PROPOSAL_REVISION =
+  RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3;
+export const RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS =
+  Object.freeze([
+    RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+    RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+  ]);
 export const RELATED_PETS_ANNOTATION_MODEL_NAME = "qwen3.6-35b-a3b";
 // The schema identifies the provider proposal, not the resolved annotation.
 export const RELATED_PETS_ANNOTATION_SCHEMA_NAME =
@@ -36,11 +45,26 @@ export const RELATED_PETS_ANNOTATION_SYSTEM_PROMPT =
 export const RELATED_PETS_ANNOTATION_USER_PROMPT =
   "Annotate this pet for deterministic related-item ranking. Do not rank or compare it with other pets.";
 
+const RELATED_PETS_ANNOTATION_SCHEMA_NAME_R3 =
+  "related_pet_annotation_v11_r13";
+const RELATED_PETS_ANNOTATION_SYSTEM_PROMPT_R3 =
+  `${RELATED_PETS_ANNOTATION_SYSTEM_PROMPT} Use lowercase ASCII keys matching ^[a-z0-9]+(?:-[a-z0-9]+)*$ exactly; use null for entity.key when identity is unknown. Do not invent an identity.`;
+const IDENTIFIER_PATTERN_SOURCE = "^[a-z0-9]+(?:-[a-z0-9]+)*$";
+const IDENTIFIER_PATTERN = new RegExp(IDENTIFIER_PATTERN_SOURCE);
+
 const EVIDENCE_VALUES = ["name", "description", "tag", "world_knowledge"];
 const CONFIDENCE_VALUES = ["high", "medium", "none"];
 const CONFIDENCE_PRIORITY = { none: 0, medium: 1, high: 2 };
 const MAX_EVIDENCE_ITEMS = 4;
 const MAX_RELATION_PROPOSALS = 4;
+
+export class RelatedPetAnnotationValidationError extends Error {
+  constructor(message, issues) {
+    super(message);
+    this.name = "RelatedPetAnnotationValidationError";
+    this.issues = issues.slice(0, 5);
+  }
+}
 
 const evidenceValueSchema = z.enum(EVIDENCE_VALUES);
 const confidenceValueSchema = z.enum(CONFIDENCE_VALUES);
@@ -65,6 +89,28 @@ const relatedPetAnnotationProposalSchema = z.strictObject({
   specific_archetypes: relationProposalListSchema,
   themes: relationProposalListSchema,
   media_origins: relationProposalListSchema,
+});
+const identifierValueSchema = z.string().min(1).max(64).regex(IDENTIFIER_PATTERN);
+const relationProposalSchemaR3 = z.strictObject({
+  key: identifierValueSchema,
+  confidence: confidenceValueSchema,
+  evidence: z.array(evidenceValueSchema).min(1).max(MAX_EVIDENCE_ITEMS),
+});
+const relationProposalListSchemaR3 = z.array(relationProposalSchemaR3)
+  .max(MAX_RELATION_PROPOSALS);
+const relatedPetAnnotationProposalSchemaR3 = z.strictObject({
+  entity: z.strictObject({
+    key: identifierValueSchema.nullable(),
+    aliases: z.array(z.string().min(1).max(80)).max(8),
+    confidence: confidenceValueSchema,
+    evidence: z.array(evidenceValueSchema).max(MAX_EVIDENCE_ITEMS),
+  }),
+  franchises: relationProposalListSchemaR3,
+  franchise_families: relationProposalListSchemaR3,
+  collections: relationProposalListSchemaR3,
+  specific_archetypes: relationProposalListSchemaR3,
+  themes: relationProposalListSchemaR3,
+  media_origins: relationProposalListSchemaR3,
 });
 const storedRelatedPetAnnotationProposalSchema = z.strictObject({
   entity: entityProposalSchema,
@@ -144,6 +190,39 @@ export const RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA = {
   },
 };
 
+const relationProposalR3 = {
+  ...relationProposal,
+  properties: {
+    ...relationProposal.properties,
+    key: {
+      ...relationProposal.properties.key,
+      pattern: IDENTIFIER_PATTERN_SOURCE,
+    },
+  },
+};
+const RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA_R3 = {
+  ...RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
+  properties: {
+    ...RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA.properties,
+    entity: {
+      ...RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA.properties.entity,
+      properties: {
+        ...RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA.properties.entity.properties,
+        key: {
+          ...RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA.properties.entity.properties.key,
+          pattern: IDENTIFIER_PATTERN_SOURCE,
+        },
+      },
+    },
+    franchises: relationList(relationProposalR3),
+    franchise_families: relationList(relationProposalR3),
+    collections: relationList(relationProposalR3),
+    specific_archetypes: relationList(relationProposalR3),
+    themes: relationList(relationProposalR3),
+    media_origins: relationList(relationProposalR3),
+  },
+};
+
 const STRONG_BLOCKED_KEYS = new Set([
   "3d",
   "anime",
@@ -202,11 +281,44 @@ const COMPOUND_BLOCKED_ARCHETYPE_TOKENS = new Set([
   "woman",
 ]);
 
-export function parseRelatedPetAnnotationProposal(input) {
+export function getRelatedPetAnnotationProposalContract(
+  revision = RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+) {
+  if (revision === RELATED_PETS_ANNOTATION_PROPOSAL_REVISION) {
+    return {
+      revision,
+      schemaName: RELATED_PETS_ANNOTATION_SCHEMA_NAME,
+      schema: RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
+      systemPrompt: RELATED_PETS_ANNOTATION_SYSTEM_PROMPT,
+      userPrompt: RELATED_PETS_ANNOTATION_USER_PROMPT,
+      tokenPolicy: RELATED_PETS_ANNOTATION_TOKEN_POLICY,
+    };
+  }
+  if (revision === RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3) {
+    return {
+      revision,
+      schemaName: RELATED_PETS_ANNOTATION_SCHEMA_NAME_R3,
+      schema: RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA_R3,
+      systemPrompt: RELATED_PETS_ANNOTATION_SYSTEM_PROMPT_R3,
+      userPrompt: RELATED_PETS_ANNOTATION_USER_PROMPT,
+      tokenPolicy: RELATED_PETS_ANNOTATION_TOKEN_POLICY,
+    };
+  }
+  throw new Error("annotation_proposal_revision_unsupported");
+}
+
+export function parseRelatedPetAnnotationProposal(
+  input,
+  proposalRevision = RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+) {
+  getRelatedPetAnnotationProposalContract(proposalRevision);
   const value = parseSchema(
-    relatedPetAnnotationProposalSchema,
+    proposalRevision === RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3
+      ? relatedPetAnnotationProposalSchemaR3
+      : relatedPetAnnotationProposalSchema,
     input,
     "annotation proposal",
+    proposalRevision === RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
   );
   return {
     entity: normalizeEntityProposal(value.entity),
@@ -351,15 +463,16 @@ export function buildRelatedPetAnnotationText(annotation) {
 }
 
 export function createRelatedPetAnnotationProposalInputHash(input) {
+  const contract = getRelatedPetAnnotationProposalContract(input.proposalRevision);
   const tokenPolicy = input.tokenPolicy ??
-    RELATED_PETS_ANNOTATION_TOKEN_POLICY;
+    contract.tokenPolicy;
   return lengthPrefixedSha256([
-    input.proposalRevision ?? RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+    contract.revision,
     input.modelUri,
-    RELATED_PETS_ANNOTATION_SYSTEM_PROMPT,
-    RELATED_PETS_ANNOTATION_USER_PROMPT,
-    RELATED_PETS_ANNOTATION_SCHEMA_NAME,
-    JSON.stringify(RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA),
+    contract.systemPrompt,
+    contract.userPrompt,
+    contract.schemaName,
+    JSON.stringify(contract.schema),
     tokenPolicy.revision,
     tokenPolicy.api,
     tokenPolicy.reasoning,
@@ -413,11 +526,11 @@ export function parseResolvedRelatedPetAnnotation(input) {
   return parseResolvedAnnotation(input);
 }
 
-function relationList() {
+function relationList(itemSchema = relationProposal) {
   return {
     type: "array",
     maxItems: MAX_RELATION_PROPOSALS,
-    items: relationProposal,
+    items: itemSchema,
   };
 }
 
@@ -627,7 +740,10 @@ function canonicalKey(input, path) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
   if (!value || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)) {
-    throw new Error(`${path} must normalize to a kebab-case identifier.`);
+    throw new RelatedPetAnnotationValidationError(
+      `${path} must normalize to a kebab-case identifier.`,
+      [{ path, code: "invalid_identifier" }],
+    );
   }
   return value;
 }
@@ -645,7 +761,10 @@ function normalizeBoundedString(input, path, minLength, maxLength) {
   if (typeof input !== "string") throw new Error(`${path} must be a string.`);
   const value = normalizeText(input);
   if (value.length < minLength || value.length > maxLength) {
-    throw new Error(`${path} must contain ${minLength}-${maxLength} characters.`);
+    throw new RelatedPetAnnotationValidationError(
+      `${path} must contain ${minLength}-${maxLength} characters.`,
+      [{ path, code: "normalized_length", minimum: minLength, maximum: maxLength }],
+    );
   }
   return value;
 }
@@ -668,18 +787,34 @@ function strictObject(input, path, fields, allowMissing = false) {
   return input;
 }
 
-function parseSchema(schema, input, path) {
+function parseSchema(schema, input, path, strictIdentifiers = false) {
   const result = schema.safeParse(input);
   if (result.success) return result.data;
+  // Copy only schema-owned paths, codes and bounds; never values or unknown keys.
+  const issues = result.error.issues.slice(0, 5).map((issue) => {
+    const issuePath = issue.path.reduce((path, part) =>
+      typeof part === "number" ? `${path}[${part}]` : `${path}${path ? "." : ""}${part}`,
+    "") || "$";
+    if (strictIdentifiers && issue.path.at(-1) === "key" &&
+      ["invalid_format", "too_big", "too_small"].includes(issue.code)) {
+      return { path: issuePath, code: "invalid_identifier" };
+    }
+    return {
+      path: issuePath,
+      code: issue.code,
+      ...(typeof issue.minimum === "number" ? { minimum: issue.minimum } : {}),
+      ...(typeof issue.maximum === "number" ? { maximum: issue.maximum } : {}),
+    };
+  });
   if (result.error.issues.some((issue) => issue.code === "unrecognized_keys")) {
-    throw new Error(`${path} contains an unknown field.`);
+    throw new RelatedPetAnnotationValidationError(`${path} contains an unknown field.`, issues);
   }
   if (result.error.issues.some((issue) =>
     issue.code === "invalid_type" && issue.input === undefined
   )) {
-    throw new Error(`${path} is missing a required field.`);
+    throw new RelatedPetAnnotationValidationError(`${path} is missing a required field.`, issues);
   }
-  throw new Error(`${path} is invalid.`);
+  throw new RelatedPetAnnotationValidationError(`${path} is invalid.`, issues);
 }
 
 function stableUnique(values) {

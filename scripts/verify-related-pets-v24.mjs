@@ -29,7 +29,8 @@ export async function runRelatedPetsV24Verification({
       !state ||
       state.status !== "ready" ||
       !state.activeGenerationId ||
-      state.rankingRevision !== service.rankingRevision
+      !(service.supportedRankingRevisions ?? [service.rankingRevision])
+        .includes(state.rankingRevision)
     ) {
       throw new Error("active_generation_incompatible");
     }
@@ -61,7 +62,8 @@ export async function runRelatedPetsV24Verification({
       return !expected || !actual || !sameOrderedSlugs(expected, actual);
     });
     const integrityFailures = snapshots.filter((snapshot) =>
-      snapshot.rankingRevision !== service.rankingRevision ||
+      snapshot.generationId !== state.activeGenerationId ||
+      snapshot.rankingRevision !== state.rankingRevision ||
       !approvedSlugs.has(snapshot.sourceSlug) ||
       snapshot.relatedSlugs.length !== Math.min(8, approvedSlugs.size - 1) ||
       new Set(snapshot.relatedSlugs).size !== snapshot.relatedSlugs.length ||
@@ -151,6 +153,10 @@ async function loadProductionService() {
     listSnapshots: relatedRepository.listRelatedPetsSnapshots,
     listCandidates: petRepository.listRelatedPetCandidates,
     rankingRevision: profile.RELATED_PETS_V24_RANKING_REVISION,
+    supportedRankingRevisions: [
+      profile.RELATED_PETS_V24_LEGACY_RANKING_REVISION,
+      profile.RELATED_PETS_V24_RANKING_REVISION,
+    ],
     dispose: ydb.destroyYdbDriver,
   };
 }

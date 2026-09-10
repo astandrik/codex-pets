@@ -47,10 +47,25 @@ export type RelatedPetAnnotationInput = {
   tags: string[];
 };
 
+export type RelatedPetAnnotationValidationIssue = {
+  path: string;
+  code: string;
+  minimum?: number;
+  maximum?: number;
+};
+
+export class RelatedPetAnnotationValidationError extends Error {
+  readonly issues: RelatedPetAnnotationValidationIssue[];
+  constructor(message: string, issues: RelatedPetAnnotationValidationIssue[]);
+}
+
 export const RELATED_PETS_ANNOTATION_REVISION: string;
 export const RELATED_PETS_ANNOTATION_QUERY_REVISION: string;
 export const RELATED_PETS_ANNOTATION_DOCUMENT_REVISION: string;
 export const RELATED_PETS_ANNOTATION_PROPOSAL_REVISION: string;
+export const RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3: string;
+export const RELATED_PETS_ANNOTATION_WRITE_PROPOSAL_REVISION: string;
+export const RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS: readonly string[];
 export const RELATED_PETS_ANNOTATION_MODEL_NAME: string;
 export const RELATED_PETS_ANNOTATION_SCHEMA_NAME: string;
 export const RELATED_PETS_ANNOTATION_TOKEN_POLICY: Readonly<{
@@ -64,8 +79,22 @@ export const RELATED_PETS_ANNOTATION_SYSTEM_PROMPT: string;
 export const RELATED_PETS_ANNOTATION_USER_PROMPT: string;
 export const RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA: object;
 
+export type RelatedPetAnnotationProposalContract = {
+  revision: string;
+  schemaName: string;
+  schema: object;
+  systemPrompt: string;
+  userPrompt: string;
+  tokenPolicy: typeof RELATED_PETS_ANNOTATION_TOKEN_POLICY;
+};
+
+export function getRelatedPetAnnotationProposalContract(
+  revision?: string,
+): RelatedPetAnnotationProposalContract;
+
 export function parseRelatedPetAnnotationProposal(
   input: unknown,
+  proposalRevision?: string,
 ): RelatedPetAnnotationProposal;
 export function parseStoredRelatedPetAnnotationProposal(
   input: unknown,

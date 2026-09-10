@@ -1,7 +1,8 @@
 import {
   RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
   RELATED_PETS_ANNOTATION_MODEL_NAME,
-  RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+  RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
+  RELATED_PETS_ANNOTATION_WRITE_PROPOSAL_REVISION,
   RELATED_PETS_ANNOTATION_QUERY_REVISION,
   RELATED_PETS_ANNOTATION_REVISION,
   createRelatedPetAnnotationEmbeddingSourceHash,
@@ -36,6 +37,7 @@ export type RelatedPetAnnotationRefreshResult =
 type Dependencies = {
   annotationRevision: string;
   proposalRevision: string;
+  acceptedProposalRevisions?: readonly string[];
   queryRevision: string;
   documentRevision: string;
   dimensions: number;
@@ -67,6 +69,7 @@ export function createRelatedPetAnnotationRuntime(dependencies: Dependencies) {
       modelUri: dependencies.modelUri,
       annotationRevision: dependencies.annotationRevision,
       proposalRevision: dependencies.proposalRevision,
+      acceptedProposalRevisions: dependencies.acceptedProposalRevisions,
       getAnnotation: dependencies.getAnnotation,
       createProposal: dependencies.createProposal,
       upsertAnnotation: dependencies.upsertAnnotation,
@@ -153,7 +156,9 @@ const annotationEmbeddingClient = semantic
 const productionRuntime = semantic && annotationEmbeddingClient
   ? createRelatedPetAnnotationRuntime({
       annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
-      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+      proposalRevision: RELATED_PETS_ANNOTATION_WRITE_PROPOSAL_REVISION,
+      acceptedProposalRevisions:
+        RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
       queryRevision: RELATED_PETS_ANNOTATION_QUERY_REVISION,
       documentRevision: RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
       dimensions: 768,
@@ -162,6 +167,7 @@ const productionRuntime = semantic && annotationEmbeddingClient
         folderId: semantic.folderId,
         apiKey: semantic.apiKey,
         modelUri: `gpt://${semantic.folderId}/${RELATED_PETS_ANNOTATION_MODEL_NAME}`,
+        proposalRevision: RELATED_PETS_ANNOTATION_WRITE_PROPOSAL_REVISION,
         timeoutMs: 180_000,
       }).createProposal,
       embeddingClient: annotationEmbeddingClient,

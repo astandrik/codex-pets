@@ -3,6 +3,24 @@ import { describe, expect, it, vi } from "vitest";
 import { pollApprovalPreparation } from "./approval-preparation-client";
 
 describe("approval preparation polling", () => {
+  it("retains the failure code needed to explain a stopped preparation", async () => {
+    await expect(pollApprovalPreparation("https://pets.test/status", {
+      fetchImpl: vi.fn().mockResolvedValue(Response.json({
+        status: "manual_review", failureCode: "schema_invalid",
+      })),
+      maxAttempts: 1,
+    })).resolves.toEqual({ status: "manual_review", failureCode: "schema_invalid" });
+  });
+
+  it.each([null, 42, "SECRET_RESPONSE", "invalid code", "a".repeat(65)])(
+    "ignores a malformed failure code: %s", async (failureCode) => {
+      await expect(pollApprovalPreparation("https://pets.test/status", {
+        fetchImpl: vi.fn().mockResolvedValue(Response.json({ status: "manual_review", failureCode })),
+        maxAttempts: 1,
+      })).resolves.toEqual({ status: "manual_review", failureCode: null });
+    },
+  );
+
   it("requests the current status before the first delay", async () => {
     const events: string[] = [];
 
@@ -15,7 +33,7 @@ describe("approval preparation polling", () => {
         events.push("sleep");
       }),
       maxAttempts: 1,
-    })).resolves.toBe("succeeded");
+    })).resolves.toEqual({ status: "succeeded" });
 
     expect(events).toEqual(["fetch"]);
   });
@@ -31,7 +49,7 @@ describe("approval preparation polling", () => {
       fetchImpl,
       sleep: vi.fn().mockResolvedValue(undefined),
       maxAttempts: 4,
-    })).resolves.toBe("succeeded");
+    })).resolves.toEqual({ status: "succeeded" });
   });
 
   it("distinguishes terminal API failures from timeouts", async () => {
@@ -41,12 +59,12 @@ describe("approval preparation polling", () => {
       fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 403 })),
       sleep,
       maxAttempts: 1,
-    })).resolves.toBe("failed");
+    })).resolves.toEqual({ status: "failed" });
     await expect(pollApprovalPreparation("https://pets.test/status", {
       fetchImpl: vi.fn().mockResolvedValue(Response.json({ status: "retry" })),
       sleep,
       maxAttempts: 1,
-    })).resolves.toBe("timeout");
+    })).resolves.toEqual({ status: "timeout" });
   });
 
   it("aborts a hung status request and exhausts the bounded attempts", async () => {
@@ -68,7 +86,7 @@ describe("approval preparation polling", () => {
       new Promise<never>((_resolve, reject) =>
         setTimeout(() => reject(new Error("status fetch remained pending")), 50)
       ),
-    ])).resolves.toBe("timeout");
+    ])).resolves.toEqual({ status: "timeout" });
   });
 
   it("fails malformed or unknown successful responses", async () => {
@@ -78,11 +96,11 @@ describe("approval preparation polling", () => {
       fetchImpl: vi.fn().mockResolvedValue(new Response("not-json")),
       sleep,
       maxAttempts: 1,
-    })).resolves.toBe("failed");
+    })).resolves.toEqual({ status: "failed" });
     await expect(pollApprovalPreparation("https://pets.test/status", {
       fetchImpl: vi.fn().mockResolvedValue(Response.json({ status: "mystery" })),
       sleep,
       maxAttempts: 1,
-    })).resolves.toBe("failed");
+    })).resolves.toEqual({ status: "failed" });
   });
 });

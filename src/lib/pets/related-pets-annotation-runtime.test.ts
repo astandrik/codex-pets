@@ -6,7 +6,10 @@ import {
 } from "@/lib/pets/related-pets-annotation-runtime";
 import {
   RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+  RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+  RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
   buildRelatedPetAnnotationText,
+  createRelatedPetAnnotationEmbeddingSourceHash,
   createRelatedPetAnnotationProposalHash,
   createRelatedPetAnnotationProposalInputHash,
   createRelatedPetAnnotationSourceHash,
@@ -70,40 +73,57 @@ describe("current annotation runtime", () => {
     expect(writes).toEqual(["annotation", "query-current", "document-current"]);
   });
 
-  it("does not call the provider when the stored source is current", async () => {
+  it("reuses an R2 annotation and matching vectors while the writer is R3", async () => {
     const createProposal = vi.fn();
+    const embedPreparedQuery = vi.fn();
+    const embedDocument = vi.fn();
+    const upsertAnnotation = vi.fn();
+    const upsertEmbedding = vi.fn();
     const annotationRevision = "annotation-current";
     const modelUri = "gpt://folder/qwen";
     const annotation = resolveRelatedPetAnnotation({ slug: pet.slug, proposal });
+    const provenance = annotationProvenance({ pet, annotationRevision });
+    const annotationText = buildRelatedPetAnnotationText(annotation);
     const runtime = createRelatedPetAnnotationRuntime({
       annotationRevision,
-      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+      acceptedProposalRevisions: RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
       queryRevision: "query-current",
       documentRevision: "document-current",
       dimensions: 2,
       modelUri,
       createProposal,
       embeddingClient: {
-        embedPreparedQuery: async () => [1, 0],
-        embedDocument: async () => [1, 0],
+        embedPreparedQuery,
+        embedDocument,
       },
       getAnnotation: async () => ({
         slug: pet.slug,
-        ...annotationProvenance({
-          pet,
-          annotationRevision,
-        }),
+        ...provenance,
         proposalJson: JSON.stringify(proposal),
         annotationJson: JSON.stringify(annotation),
-        annotationText: buildRelatedPetAnnotationText(annotation),
+        annotationText,
         updatedAt: "2026-08-11T00:00:00.000Z",
       }),
-      upsertAnnotation: async () => undefined,
-      getEmbeddingMetadata: async () => null,
-      upsertEmbedding: async () => undefined,
+      upsertAnnotation,
+      getEmbeddingMetadata: async (revision) => ({
+        sourceHash: createRelatedPetAnnotationEmbeddingSourceHash({
+          modelRevision: revision,
+          role: revision === "query-current" ? "query" : "document",
+          annotationRevision,
+          annotationSourceHash: provenance.sourceHash,
+          annotationText,
+        }),
+        dimensions: 2,
+      }),
+      upsertEmbedding,
     });
-    await expect(runtime.refresh(pet)).resolves.toBe("vectors-only");
+    await expect(runtime.refresh(pet)).resolves.toBe("unchanged");
     expect(createProposal).not.toHaveBeenCalled();
+    expect(embedPreparedQuery).not.toHaveBeenCalled();
+    expect(embedDocument).not.toHaveBeenCalled();
+    expect(upsertAnnotation).not.toHaveBeenCalled();
+    expect(upsertEmbedding).not.toHaveBeenCalled();
   });
 });
 
