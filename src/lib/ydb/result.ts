@@ -1,5 +1,6 @@
 type YdbCell = {
   bytesValue?: Uint8Array | Buffer;
+  boolValue?: boolean;
   textValue?: string;
   floatValue?: number;
   doubleValue?: number;
@@ -25,6 +26,10 @@ export function uintAt(row: YdbRow, index: number): number {
   const cell = row.items?.[index];
   const value = cell?.uint32Value ?? cell?.uint64Value ?? 0;
   return Number(value);
+}
+
+export function boolAt(row: YdbRow, index: number): boolean {
+  return row.items?.[index]?.boolValue ?? false;
 }
 
 export function floatAt(row: YdbRow, index: number): number {

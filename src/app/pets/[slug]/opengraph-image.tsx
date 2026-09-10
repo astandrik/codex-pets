@@ -51,6 +51,9 @@ export default async function Image({ params }: PetOpenGraphImageProps) {
   const owner = pet.ownerName
     ? `by ${truncateText(pet.ownerName, MAX_OWNER_LENGTH)}`
     : "community pet pack";
+  const ownerEmail = pet.status === "approved" && pet.publicAuthorEmail
+    ? truncateText(pet.publicAuthorEmail, 48)
+    : null;
   const titleFontSize = getTitleFontSize(title);
   const tags = pet.tags.slice(0, 3);
 
@@ -166,6 +169,19 @@ export default async function Image({ params }: PetOpenGraphImageProps) {
             {owner}
             {pet.status !== "approved" ? ` · ${statusLabel(pet.status)}` : ""}
           </div>
+          {ownerEmail ? (
+            <div
+              style={{
+                display: "flex",
+                marginTop: 8,
+                color: "#9da8b6",
+                fontSize: 20,
+                lineHeight: 1.2,
+              }}
+            >
+              {ownerEmail}
+            </div>
+          ) : null}
           {tags.length ? (
             <div
               style={{

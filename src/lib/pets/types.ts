@@ -206,6 +206,8 @@ export type PublicPet = {
   ownerProfileSlug?: string | null;
   ownerAvatarUrl?: string | null;
   contactEmail: string | null;
+  publicEmailRequested?: boolean;
+  publicAuthorEmail?: string | null;
   createdAt: string;
   approvedAt: string | null;
   downloadCount: number;
@@ -213,7 +215,10 @@ export type PublicPet = {
   likeCount: number;
 };
 
-export type PublicPetSummary = Omit<PublicPet, "contactEmail">;
+export type PublicPetSummary = Omit<
+  PublicPet,
+  "contactEmail" | "publicEmailRequested"
+>;
 
 export type PetGenerationRequest = {
   id: string;

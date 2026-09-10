@@ -39,6 +39,7 @@ export function createApprovedPetsCatalogSnapshot(
           ownerName: pet.ownerName,
           ownerProfileSlug: pet.ownerProfileSlug,
           ownerAvatarUrl: pet.ownerAvatarUrl,
+          publicAuthorEmail: pet.publicAuthorEmail ?? null,
           createdAt: pet.createdAt,
           approvedAt: pet.approvedAt,
         })),

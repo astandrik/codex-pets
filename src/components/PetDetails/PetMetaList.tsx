@@ -12,6 +12,7 @@ type PetMetaListProps = Pick<
   | "kind"
   | "ownerName"
   | "ownerProfileSlug"
+  | "publicAuthorEmail"
   | "createdAt"
   | "approvedAt"
   | "tags"
@@ -22,6 +23,7 @@ export function PetMetaList({
   kind,
   ownerName,
   ownerProfileSlug,
+  publicAuthorEmail,
   createdAt,
   approvedAt,
   tags,
@@ -39,6 +41,11 @@ export function PetMetaList({
           ownerName ?? "Anonymous"
         )}
       </DefinitionList.Item>
+      {publicAuthorEmail ? (
+        <DefinitionList.Item name="Email">
+          <a href={`mailto:${publicAuthorEmail}`}>{publicAuthorEmail}</a>
+        </DefinitionList.Item>
+      ) : null}
       <DefinitionList.Item name="Submitted">
         {formatUtcDateTime(createdAt)}
       </DefinitionList.Item>

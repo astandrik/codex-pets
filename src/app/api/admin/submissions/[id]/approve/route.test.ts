@@ -19,6 +19,7 @@ vi.mock("@/lib/pets/related-pets-repository", () => ({
 
 vi.mock("@/lib/pets/repository", () => ({
   getPetForApprovalPreparationById: vi.fn(),
+  getPetPublicEmailModerationState: vi.fn(),
   moderatePet: vi.fn(),
 }));
 
@@ -38,6 +39,7 @@ import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
 import { getRelatedPetsState } from "@/lib/pets/related-pets-repository";
 import {
   getPetForApprovalPreparationById,
+  getPetPublicEmailModerationState,
   moderatePet,
 } from "@/lib/pets/repository";
 import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
@@ -115,6 +117,51 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
     vi.unstubAllEnvs();
   });
 
+  it.each([false, true])("passes moderator confirmation=%s into the version-bound job", async (publishRequestedEmail) => {
+    vi.mocked(getPetForApprovalPreparationById).mockResolvedValue({
+      ...pendingPet, publicEmailRequested: true, contactEmail: "creator+tag@example.com",
+    });
+    vi.mocked(enqueueApprovalPreparation).mockResolvedValue({ ...preparation, publishRequestedEmail });
+    const response = await approve({ publishRequestedEmail });
+    expect(response.status).toBe(202);
+    expect(enqueueApprovalPreparation).toHaveBeenCalledWith(expect.objectContaining({
+      publishRequestedEmail, reviewerId: "admin_1", petUpdatedAt: pendingPet.updatedAt,
+    }));
+    expect(moderatePet).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { publicEmailRequested: false, contactEmail: "creator@example.com" },
+    { publicEmailRequested: true, contactEmail: null },
+  ])("rejects publishing without both opt-in and contact: %j", async (attribution) => {
+    vi.mocked(getPetForApprovalPreparationById).mockResolvedValue({ ...pendingPet, ...attribution });
+    const response = await approve({ publishRequestedEmail: true });
+    expect(response.status).toBe(409);
+    expect(enqueueApprovalPreparation).not.toHaveBeenCalled();
+  });
+
+  it("rejects a changed decision for an already queued approval", async () => {
+    vi.mocked(enqueueApprovalPreparation).mockResolvedValue({ ...preparation, publishRequestedEmail: true });
+    const response = await approve({ publishRequestedEmail: false });
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "approval_email_confirmation_conflict" });
+  });
+
+  it.each(["true", 1, null])("rejects a non-boolean confirmation %j", async (publishRequestedEmail) => {
+    const response = await approve({ publishRequestedEmail });
+    expect(response.status).toBe(400);
+    expect(enqueueApprovalPreparation).not.toHaveBeenCalled();
+  });
+
+  it("applies verified publication in mock mode without the async worker", async () => {
+    vi.mocked(isMockPetsDataSource).mockReturnValue(true);
+    vi.mocked(getPetPublicEmailModerationState).mockResolvedValue({ requested: true, hasContactEmail: true });
+    vi.mocked(moderatePet).mockResolvedValue({ ...pendingPet, publicAuthorEmail: "creator@example.com" });
+    const response = await approve({ publishRequestedEmail: true });
+    expect(response.status).toBe(200);
+    expect(moderatePet).toHaveBeenCalledWith(expect.objectContaining({ publishRequestedEmail: true }));
+  });
+
   it("rejects non-admin requests before loading the pet", async () => {
     vi.mocked(isAdminUser).mockReturnValueOnce(false);
 
@@ -159,6 +206,7 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
         petId: pendingPet.id,
         reviewerId: "admin_1",
         decision: "approved",
+        publishRequestedEmail: false,
       });
       expect(revalidateSitemapCache).toHaveBeenCalledOnce();
       expect(revalidateRelatedPetCandidatesCache).toHaveBeenCalledOnce();
@@ -225,8 +273,8 @@ describe("POST /api/admin/submissions/[id]/approve", () => {
   });
 });
 
-function approve(): Promise<Response> {
-  return POST(new Request("http://localhost"), {
+function approve(body?: Record<string, unknown>): Promise<Response> {
+  return POST(new Request("http://localhost", body ? { method: "POST", body: JSON.stringify(body) } : undefined), {
     params: Promise.resolve({ id: pendingPet.id }),
   });
 }

@@ -400,6 +400,37 @@ describe("catalog page metadata", () => {
 });
 
 describe("site identity metadata", () => {
+  it("includes only the approved author email in pet JSON-LD", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "");
+
+    const { getPetJsonLd } = await import("@/lib/site-metadata");
+    const jsonLd = getPetJsonLd({
+      slug: "boba",
+      displayName: "Boba",
+      description: "Round coding companion.",
+      kind: "creature",
+      tags: ["round"],
+      ownerName: "Creator",
+      ownerProfileSlug: "creator",
+      publicAuthorEmail: "creator+public@example.com",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      approvedAt: "2026-05-02T00:00:00.000Z",
+      zipUrl: "/api/assets/a/package.zip",
+      spritesheetUrl: "/api/assets/a/spritesheet.webp",
+      petJsonUrl: "/api/assets/a/pet.json",
+    });
+
+    expect(jsonLd.creator).toMatchObject({
+      "@type": "Person",
+      name: "Creator",
+      email: "creator+public@example.com",
+    });
+
+    vi.unstubAllEnvs();
+  });
+
   it("keeps global JSON-LD free of unsupported rich-result entities", async () => {
     vi.resetModules();
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");

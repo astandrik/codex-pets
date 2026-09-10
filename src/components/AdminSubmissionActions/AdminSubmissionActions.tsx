@@ -4,8 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Button,
+  Checkbox,
   Dialog,
   DropdownMenu,
+  Flex,
   Text,
   TextArea,
   useToaster,
@@ -19,15 +21,18 @@ import "./AdminSubmissionActions.scss";
 
 type AdminSubmissionActionsProps = {
   petId: string;
+  publicEmailRequested: boolean;
+  contactEmail: string | null;
 };
 
-type DialogKind = "reject" | "delete" | null;
+type DialogKind = "approve" | "reject" | "delete" | null;
 
-export function AdminSubmissionActions({ petId }: AdminSubmissionActionsProps) {
+export function AdminSubmissionActions({ petId, publicEmailRequested, contactEmail }: AdminSubmissionActionsProps) {
   const router = useRouter();
   const { add } = useToaster();
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [reason, setReason] = useState("");
+  const [publishRequestedEmail, setPublishRequestedEmail] = useState(false);
   const [busy, setBusy] = useState(false);
   const [approvalPreparationId, setApprovalPreparationId] = useState<
     string | null
@@ -50,7 +55,17 @@ export function AdminSubmissionActions({ petId }: AdminSubmissionActionsProps) {
     });
   }
 
-  async function approve() {
+  function openApproveDialog() {
+    setPublishRequestedEmail(false);
+    setDialog("approve");
+  }
+
+  function closeApproveDialog() {
+    setPublishRequestedEmail(false);
+    setDialog(null);
+  }
+
+  async function approve(publishRequestedEmail = false) {
     setBusy(true);
     try {
       let preparationId = approvalPreparationId;
@@ -60,7 +75,7 @@ export function AdminSubmissionActions({ petId }: AdminSubmissionActionsProps) {
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reason: "" }),
+            body: JSON.stringify({ publishRequestedEmail }),
           },
         );
         if (!response.ok) {
@@ -78,6 +93,7 @@ export function AdminSubmissionActions({ petId }: AdminSubmissionActionsProps) {
         }
         preparationId = payload.preparationId;
         setApprovalPreparationId(preparationId);
+        closeApproveDialog();
       }
       const url = new URL(
         withBasePath(`/api/admin/submissions/${petId}/approval-preparation`),
@@ -113,6 +129,7 @@ export function AdminSubmissionActions({ petId }: AdminSubmissionActionsProps) {
   }
 
   function completeApproval() {
+    closeApproveDialog();
     trackGoal("pet_review_approve");
     notifySuccess("Pet approved");
     router.refresh();
@@ -165,7 +182,15 @@ export function AdminSubmissionActions({ petId }: AdminSubmissionActionsProps) {
 
   return (
     <div className="admin-actions">
-      <Button view="action" size="m" onClick={approve} loading={busy}>
+      <Button
+        view="action"
+        size="m"
+        onClick={() => {
+          if (approvalPreparationId || !publicEmailRequested) void approve();
+          else openApproveDialog();
+        }}
+        loading={busy}
+      >
         <Check />
         Approve
       </Button>
@@ -189,6 +214,38 @@ export function AdminSubmissionActions({ petId }: AdminSubmissionActionsProps) {
           },
         ]}
       />
+
+      <Dialog
+        open={dialog === "approve"}
+        onClose={closeApproveDialog}
+        size="s"
+      >
+        <Dialog.Header caption="Approve submission" />
+        <Dialog.Body>
+          <Flex direction="column" gap={3}>
+            <Text variant="body-2" color="secondary">
+              The submitter requested publication of their full contact email.
+              You can approve the pet without publishing it.
+            </Text>
+            <Text variant="body-2">
+              {contactEmail ?? "No contact email is stored for this submission."}
+            </Text>
+            <Checkbox
+              checked={publishRequestedEmail}
+              onUpdate={setPublishRequestedEmail}
+              disabled={!contactEmail || busy}
+              content="I verified ownership of this address; publish it"
+            />
+          </Flex>
+        </Dialog.Body>
+        <Dialog.Footer
+          textButtonApply="Approve"
+          textButtonCancel="Cancel"
+          onClickButtonCancel={closeApproveDialog}
+          onClickButtonApply={() => void approve(publishRequestedEmail)}
+          propsButtonApply={{ view: "action", loading: busy }}
+        />
+      </Dialog>
 
       <Dialog
         open={dialog === "reject"}

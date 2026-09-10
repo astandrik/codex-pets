@@ -25,6 +25,7 @@ const approvedPet = {
   ownerProfileSlug: "creator",
   ownerAvatarUrl: "/api/users/avatars/avatar_123",
   contactEmail: "private@example.com",
+  publicAuthorEmail: "creator+public@example.com",
   createdAt: "2026-05-01T00:00:00.000Z",
   approvedAt: "2026-05-02T00:00:00.000Z",
   downloadCount: 0,
@@ -48,6 +49,7 @@ const approvedPetPayload = {
   ownerProfileSlug: "creator",
   ownerProfileUrl: "https://pets.example/users/creator",
   ownerAvatarUrl: "https://pets.example/api/users/avatars/avatar_123",
+  publicAuthorEmail: "creator+public@example.com",
   createdAt: "2026-05-01T00:00:00.000Z",
   approvedAt: "2026-05-02T00:00:00.000Z",
   downloadCount: 0,
@@ -79,6 +81,7 @@ describe("GET /api/pets/[slug]", () => {
     );
     expect(body).toEqual({ pet: approvedPetPayload });
     expect(JSON.stringify(body)).not.toContain("private@example.com");
+    expect(JSON.stringify(body)).toContain("creator+public@example.com");
   });
 
   it("returns a TOON pet detail matching the JSON payload", async () => {

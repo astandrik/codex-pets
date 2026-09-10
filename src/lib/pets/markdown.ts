@@ -51,6 +51,9 @@ export function buildPetMarkdown(
     `- Kind: ${pet.kind}`,
     `- Tags: ${tags}`,
     `- Author: ${author}`,
+    ...(agentPet.author.email
+      ? [`- Author email: ${escapeMarkdownInlineText(agentPet.author.email)}`]
+      : []),
     "",
     "## Install",
     "",

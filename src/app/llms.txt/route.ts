@@ -1,5 +1,5 @@
 import { toPublicUrl } from "@/lib/base-path";
-import { AGENT_WHEN_TO_USE_GUIDANCE } from "@/lib/agent-markdown";
+import { AGENT_WHEN_TO_USE_GUIDANCE, escapeMarkdownInlineText } from "@/lib/agent-markdown";
 import { listApprovedPets } from "@/lib/pets/repository";
 import { PET_SHEETS } from "@/lib/pets/types";
 import { SITE_DESCRIPTION, SITE_NAME } from "@/lib/site-metadata";
@@ -18,12 +18,17 @@ export async function GET(): Promise<Response> {
       pet.tags.length > 0
         ? ` Tags: ${pet.tags.map(formatInlineText).join(", ")}.`
         : "";
-    const author =
-      pet.ownerProfileSlug && pet.ownerName
-        ? ` By [${formatLinkText(pet.ownerName)}](${toPublicUrl(`/users/${pet.ownerProfileSlug}`)}).`
-        : "";
+    const authorName = pet.ownerName
+      ? pet.ownerProfileSlug
+        ? `[${formatLinkText(pet.ownerName)}](${toPublicUrl(`/users/${pet.ownerProfileSlug}`)})`
+        : escapeMarkdownInlineText(formatInlineText(pet.ownerName))
+      : null;
+    const author = authorName ? ` By ${authorName}.` : "";
+    const authorEmail = pet.publicAuthorEmail
+      ? ` Public email: ${escapeMarkdownInlineText(formatInlineText(pet.publicAuthorEmail))}.`
+      : "";
 
-    return `- [${formatLinkText(pet.displayName)}](${toPublicUrl(`/pets/${pet.slug}`)}): Approved ${pet.kind} Codex pet pack.${author}${tags}`;
+    return `- [${formatLinkText(pet.displayName)}](${toPublicUrl(`/pets/${pet.slug}`)}): Approved ${pet.kind} Codex pet pack.${author}${authorEmail}${tags}`;
   });
   const omittedNote =
     pets.length > listedPets.length

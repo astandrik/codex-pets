@@ -132,6 +132,16 @@
     white-space: nowrap;
   }
 
+  &__author-email a {
+    position: relative;
+    z-index: 2;
+    color: inherit;
+
+    &:hover {
+      color: var(--g-color-text-primary);
+    }
+  }
+
   &__author-avatar {
     display: inline-grid;
     flex: 0 0 auto;

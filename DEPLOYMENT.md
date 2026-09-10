@@ -73,6 +73,28 @@ YDB_STATIC_CREDENTIALS_AUTH_ENDPOINT=grpc://ydb-host:2136
 
 ## Schema apply
 
+### Public author email rollout
+
+Before deploying the attribution app or approval worker, apply and read back
+`20260826_001_add_pet_public_author_email` and
+`20260827_001_add_approval_email_confirmation`. Existing tables receive optional
+columns; old pets default to no requested/public email and old approval jobs
+default to no moderator confirmation. Check the migration ledger before using
+the migration runner so unrelated pending migrations are not applied by accident.
+
+Deploy the app and approval worker from the same revision. The worker publishes
+the requested address only with the job's stored moderator confirmation, while
+the pending pet revision and consent still match, in the approval transaction.
+A retry with a different confirmation returns a conflict for an already queued
+job; manual-review requeue can record a new explicit decision.
+
+Production migration, deploy, and the bounded `kesha`/`microwave-cat` alias
+backfill require separate approval. Do not publish historical contact emails.
+Rolling back the app/worker does not require removing the additive columns;
+the older worker will not publish emails from newly confirmed jobs.
+
+### General schema setup
+
 Apply the current schema from:
 
 - [ydb/schema.yql](./ydb/schema.yql)

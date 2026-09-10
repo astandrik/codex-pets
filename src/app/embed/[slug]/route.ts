@@ -113,7 +113,7 @@ export async function GET(
             `<span class="embed-card__kind">${escapeHtml(agentPet.kind)}</span>`,
             `<h1>${escapeHtml(agentPet.name)}</h1>`,
             options.showAuthor
-              ? `<p class="embed-card__author">by ${escapeHtml(agentPet.author.name)}</p>`
+              ? `<p class="embed-card__author">by ${escapeHtml(agentPet.author.name)}${agentPet.author.email ? ` · <a href="mailto:${escapeHtmlAttribute(agentPet.author.email)}">${escapeHtml(agentPet.author.email)}</a>` : ""}</p>`
               : "",
             `<p class="embed-card__description">${escapeHtml(agentPet.description)}</p>`,
             tags.length > 0

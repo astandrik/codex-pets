@@ -89,4 +89,58 @@ describe("mock pet data source", () => {
     ).resolves.toBe(true);
     expect((await getPetBySlug(created.slug))?.status).toBe("deleted");
   });
+
+  it("keeps contact email private until moderator publication is confirmed", async () => {
+    vi.stubEnv("CODEX_PETS_DATA_SOURCE", "mock");
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const created = await createPendingPet({
+      petJson: {
+        id: `mock-public-email-${suffix}`,
+        displayName: "Public Email Pet",
+        description: "A mock pet with opted-in author email.",
+        spritesheetPath: "spritesheet.webp",
+      },
+      ownerId: "",
+      ownerEmail: null,
+      ownerName: "creator+tag",
+      contactEmail: "creator+tag@example.com",
+      publicEmailRequested: true,
+      kind: "creature",
+      tags: ["mock"],
+      zipUrl: "/api/assets/mock/package.zip",
+      petJsonUrl: "/api/assets/mock/pet.json",
+      spritesheetUrl: "/api/assets/mock/spritesheet.webp",
+      spritesheetExt: "webp",
+    });
+
+    const approvedWithoutEmail = await moderatePet({
+      petId: created.id,
+      reviewerId: "local-admin",
+      decision: "approved",
+      publishRequestedEmail: false,
+    });
+    expect(approvedWithoutEmail?.publicAuthorEmail).toBeNull();
+
+    const approvedWithEmail = await moderatePet({
+      petId: created.id,
+      reviewerId: "local-admin",
+      decision: "approved",
+      publishRequestedEmail: true,
+    });
+    expect(approvedWithEmail?.publicAuthorEmail).toBe(
+      "creator+tag@example.com",
+    );
+
+    const rejected = await moderatePet({
+      petId: created.id,
+      reviewerId: "local-admin",
+      decision: "rejected",
+      reason: "not ready",
+    });
+    expect(rejected).toMatchObject({
+      status: "rejected",
+      publicEmailRequested: true,
+      publicAuthorEmail: null,
+    });
+  });
 });

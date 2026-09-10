@@ -118,6 +118,18 @@ export function PetCard({
             </span>
           )}
         </Text>
+        {pet.publicAuthorEmail ? (
+          <Text
+            variant="caption-2"
+            color="secondary"
+            className="pet-card__author-email"
+            ellipsis
+          >
+            <a href={`mailto:${pet.publicAuthorEmail}`}>
+              {pet.publicAuthorEmail}
+            </a>
+          </Text>
+        ) : null}
         <Text variant="body-2" color="secondary" className="pet-card__description">
           {pet.description}
         </Text>

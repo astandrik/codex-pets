@@ -12,8 +12,12 @@ import {
   type WebMCPTool,
 } from "@/components/WebMCP/webmcp-runtime";
 
+type CurrentPetWebMCPInput = Omit<WebMCPPetInput, "publicAuthorEmail"> & {
+  publicAuthorEmail: string | null;
+};
+
 type CurrentPetWebMCPToolProps = {
-  pet: WebMCPPetInput;
+  pet: CurrentPetWebMCPInput;
 };
 
 const EMPTY_SCHEMA = {

@@ -13,6 +13,7 @@ import {
   storeIdempotencyResult,
 } from "@/lib/idempotency";
 import { storePetAssetsInYdb } from "@/lib/pets/assets-repository";
+import { derivePublicAuthorNameFromEmail, validatePublicAuthorName } from "@/lib/pets/author-attribution";
 import { createPendingPet } from "@/lib/pets/repository";
 import { validateUploadedPackage } from "@/lib/pets/package";
 import { normalizeKind, readTags } from "@/lib/pets/validation";
@@ -50,10 +51,25 @@ export async function POST(req: Request): Promise<Response> {
   const zip = formData.get("zip");
   const petjson = formData.get("petjson");
   const sprite = formData.get("sprite");
+  const contactEmail = formData.get("contactEmail");
+  const publicAuthorName = formData.get("publicAuthorName");
   const contactEmailRaw =
-    typeof formData.get("contactEmail") === "string"
-      ? String(formData.get("contactEmail")).trim()
-      : "";
+    typeof contactEmail === "string" ? contactEmail.trim() : "";
+  const publicAuthorNameRaw =
+    typeof publicAuthorName === "string" ? publicAuthorName.trim() : "";
+  const publishContactEmailRaw = formData.get("publishContactEmail");
+  if (
+    publishContactEmailRaw !== null &&
+    publishContactEmailRaw !== "true" &&
+    publishContactEmailRaw !== "false"
+  ) {
+    return jsonApiError("invalid_publish_contact_email", {
+      status: 400,
+      message: "publishContactEmail must be true or false.",
+      field: "publishContactEmail",
+    });
+  }
+  const publishContactEmail = publishContactEmailRaw === "true";
   const ext = formData.get("spritesheetExt");
   if (!(zip instanceof File) || !(petjson instanceof File) || !(sprite instanceof File)) {
     return jsonApiError("missing_files", {
@@ -73,6 +89,33 @@ export async function POST(req: Request): Promise<Response> {
       hint: "Provide a reachable email address or sign in before submitting.",
       field: "contactEmail",
     });
+  }
+  const effectiveContactEmail =
+    principal ? principal.email : normalizedContactEmail?.email ?? null;
+  if (publishContactEmail && !effectiveContactEmail) {
+    return jsonApiError("public_email_requires_contact_email", {
+      status: 400,
+      message: "A contact email is required before requesting publication.",
+      field: "publishContactEmail",
+    });
+  }
+  if (!principal && publicAuthorNameRaw && !effectiveContactEmail) {
+    return jsonApiError("public_author_name_requires_contact_email", {
+      status: 400,
+      message: "A contact email is required before setting a public author name.",
+      field: "publicAuthorName",
+    });
+  }
+
+  let ownerName = principal?.name ?? null;
+  if (!principal && effectiveContactEmail) {
+    const authorName = validatePublicAuthorName(
+      publicAuthorName === null
+        ? derivePublicAuthorNameFromEmail(effectiveContactEmail)
+        : publicAuthorName,
+    );
+    if (!authorName.ok) return jsonValidationError(authorName);
+    ownerName = authorName.value;
   }
 
   const [petJsonBuffer, spritesheetBuffer, zipBuffer] = await Promise.all([
@@ -108,10 +151,9 @@ export async function POST(req: Request): Promise<Response> {
         petJsonBuffer,
         spritesheetBuffer,
         spritesheetExt,
-        effectiveContactEmail:
-          principal?.email?.toLowerCase() ??
-          normalizedContactEmail?.emailLower ??
-          null,
+        effectiveContactEmail: effectiveContactEmail?.toLowerCase() ?? null,
+        publicAuthorName: ownerName,
+        publishContactEmail,
         normalizedKind,
         normalizedTags,
       })
@@ -142,8 +184,9 @@ export async function POST(req: Request): Promise<Response> {
       petJson: validation.value.petJson,
       ownerId: principal?.userId ?? "",
       ownerEmail: principal?.email ?? null,
-      ownerName: principal?.name ?? null,
-      contactEmail: principal?.email ?? normalizedContactEmail?.email ?? null,
+      ownerName,
+      contactEmail: effectiveContactEmail,
+      publicEmailRequested: publishContactEmail,
       kind: normalizedKind,
       tags: normalizedTags,
       zipUrl: assetUrls.zipUrl,
@@ -190,12 +233,16 @@ function hashSubmissionRequest(input: {
   spritesheetBuffer: Buffer;
   spritesheetExt: "webp" | "png";
   effectiveContactEmail: string | null;
+  publicAuthorName: string | null;
+  publishContactEmail: boolean;
   normalizedKind: "creature" | "object" | "character";
   normalizedTags: string[];
 }): string {
   return hashIdempotencyPayload({
     fields: {
       contactEmail: input.effectiveContactEmail,
+      publicAuthorName: input.publicAuthorName,
+      publishContactEmail: input.publishContactEmail,
       kind: input.normalizedKind,
       tags: input.normalizedTags,
       spritesheetExt: input.spritesheetExt,

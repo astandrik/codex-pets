@@ -60,6 +60,7 @@ describe("webmcp-utils", () => {
       status: "approved",
       ownerName: "Creator",
       ownerProfileSlug: "creator",
+      publicAuthorEmail: "creator+public@example.com",
       createdAt: "2026-05-01T00:00:00.000Z",
       approvedAt: "2026-05-02T00:00:00.000Z",
     };
@@ -73,6 +74,11 @@ describe("webmcp-utils", () => {
       status: "approved",
       ownerName: "Creator",
       ownerProfileSlug: "creator",
+      author: {
+        name: "Creator",
+        email: "creator+public@example.com",
+        profileUrl: "https://pets.example/users/creator",
+      },
       createdAt: "2026-05-01T00:00:00.000Z",
       approvedAt: "2026-05-02T00:00:00.000Z",
       pageUrl: "https://pets.example/pets/zero-two-2",

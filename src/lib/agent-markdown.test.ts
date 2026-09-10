@@ -29,6 +29,13 @@ describe("API markdown pagination", () => {
       "Top-level `total` remains the number of pets in the current response",
     );
     expect(markdown).toContain("Requests without page or pageSize");
+    expect(markdown).not.toContain("must also send");
+    expect(markdown).toContain(
+      "If publicAuthorName is omitted, it defaults to the contactEmail local part",
+    );
+    expect(markdown).toContain(
+      "An explicitly empty publicAuthorName is rejected",
+    );
   });
 });
 

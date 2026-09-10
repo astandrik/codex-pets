@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Session } from "ydb-sdk";
 
 import { isYdbConfigured, TypedValues, withSession } from "@/lib/ydb/client";
-import { rowsFromResult, textAt, uintAt } from "@/lib/ydb/result";
+import { boolAt, rowsFromResult, textAt, uintAt } from "@/lib/ydb/result";
 import { TABLES } from "@/lib/ydb/schema";
 
 export type ApprovalPreparationStatus =
@@ -13,6 +13,7 @@ export type ApprovalPreparationStatus =
   | "succeeded";
 
 export type ApprovalPreparation = {
+  publishRequestedEmail?: boolean;
   preparationId: string;
   petId: string;
   petSlug: string;
@@ -52,6 +53,7 @@ type Execute = (
 type Dependencies = {
   isConfigured: () => boolean;
   values: {
+    bool: (value: boolean) => unknown;
     utf8: (value: string) => unknown;
     uint32: (value: number) => unknown;
   };
@@ -101,6 +103,7 @@ export function createApprovalPreparationsRepository(
   return { enqueue, get, claimNext, markFailure, finalize };
 
   async function enqueue(input: {
+    publishRequestedEmail?: boolean;
     petId: string;
     petSlug: string;
     petUpdatedAt: string;
@@ -121,6 +124,7 @@ DECLARE $preparation_id AS Utf8;
 DECLARE $reviewer_id AS Utf8;
 DECLARE $active_generation_id AS Utf8;
 DECLARE $manual_review AS Utf8;
+DECLARE $publish_requested_email AS Bool;
 DECLARE $queued AS Utf8;
 DECLARE $zero AS Uint32;
 DECLARE $empty AS Utf8;
@@ -128,6 +132,7 @@ DECLARE $now AS Utf8;
 
 UPDATE ${TABLES.approvalPreparations}
 SET reviewer_id = $reviewer_id, status = $queued, attempts = $zero,
+    publish_requested_email = $publish_requested_email,
     expected_active_generation_id = $active_generation_id,
     next_attempt_at = $now, prepared_generation_id = $empty,
     lease_owner = $empty, lease_until = $empty, failure_code = $empty,
@@ -141,6 +146,7 @@ WHERE preparation_id = $preparation_id AND status = $manual_review;
               input.expectedActiveGenerationId,
             ),
             $manual_review: dependencies.values.utf8("manual_review"),
+            $publish_requested_email: dependencies.values.bool(input.publishRequestedEmail ?? false),
             $queued: dependencies.values.utf8("queued"),
             $zero: dependencies.values.uint32(0),
             $empty: dependencies.values.utf8(""),
@@ -158,6 +164,7 @@ DECLARE $pet_updated_at AS Utf8;
 DECLARE $reviewer_id AS Utf8;
 DECLARE $ranking_revision AS Utf8;
 DECLARE $expected_active_generation_id AS Utf8;
+DECLARE $publish_requested_email AS Bool;
 DECLARE $empty AS Utf8;
 DECLARE $status AS Utf8;
 DECLARE $attempts AS Uint32;
@@ -167,15 +174,16 @@ INSERT INTO ${TABLES.approvalPreparations}
 (preparation_id, pet_id, pet_slug, pet_updated_at, reviewer_id,
  ranking_revision, expected_active_generation_id, prepared_generation_id,
  status, attempts, next_attempt_at, lease_owner, lease_until, failure_code,
- created_at, updated_at)
+ created_at, updated_at, publish_requested_email)
 VALUES
 ($preparation_id, $pet_id, $pet_slug, $pet_updated_at, $reviewer_id,
  $ranking_revision, $expected_active_generation_id, $empty,
- $status, $attempts, $now, $empty, $empty, $empty, $now, $now);
+ $status, $attempts, $now, $empty, $empty, $empty, $now, $now, $publish_requested_email);
         `,
         {
           $preparation_id: dependencies.values.utf8(preparationId),
           $pet_id: dependencies.values.utf8(input.petId),
+          $publish_requested_email: dependencies.values.bool(input.publishRequestedEmail ?? false),
           $pet_slug: dependencies.values.utf8(input.petSlug),
           $pet_updated_at: dependencies.values.utf8(input.petUpdatedAt),
           $reviewer_id: dependencies.values.utf8(input.reviewerId),
@@ -373,11 +381,13 @@ DECLARE $ready AS Utf8;
 DECLARE $active_generation_id AS Utf8;
 DECLARE $generation_id AS Utf8;
 DECLARE $ranking_revision AS Utf8;
+DECLARE $publish_requested_email AS Bool;
 
 SELECT COUNT(*) AS pet_count
 FROM ${TABLES.pets}
 WHERE id = $pet_id AND slug = $pet_slug AND status = $pending
-  AND updated_at = $pet_updated_at;
+  AND updated_at = $pet_updated_at
+  AND (NOT $publish_requested_email OR (public_email_requested = true AND contact_email != ""));
 
 SELECT COUNT(*) AS state_count
 FROM ${TABLES.relatedState}
@@ -394,6 +404,7 @@ WHERE generation_id = $generation_id
           $pet_slug: dependencies.values.utf8(preparation.petSlug),
           $pending: dependencies.values.utf8("pending"),
           $pet_updated_at: dependencies.values.utf8(preparation.petUpdatedAt),
+          $publish_requested_email: dependencies.values.bool(preparation.publishRequestedEmail ?? false),
           $state_id: dependencies.values.utf8(STATE_ID),
           $ready: dependencies.values.utf8("ready"),
           $active_generation_id: dependencies.values.utf8(
@@ -427,6 +438,7 @@ WHERE generation_id = $generation_id
       }
 
       await execute(finalizeStatement(), {
+        $publish_requested_email: dependencies.values.bool(preparation.publishRequestedEmail ?? false),
         $preparation_id: dependencies.values.utf8(preparation.preparationId),
         $pet_slug: dependencies.values.utf8(preparation.petSlug),
         $pet_updated_at: dependencies.values.utf8(preparation.petUpdatedAt),
@@ -593,7 +605,7 @@ function selectColumns(): string {
   return `preparation_id, pet_id, pet_slug, pet_updated_at, reviewer_id,
 ranking_revision, expected_active_generation_id, prepared_generation_id,
 status, attempts, next_attempt_at, lease_owner, lease_until, failure_code,
-created_at, updated_at`;
+created_at, updated_at, publish_requested_email`;
 }
 
 function preparationFromRow(
@@ -620,6 +632,7 @@ function preparationFromRow(
     failureCode: textAt(row, 13),
     createdAt: textAt(row, 14),
     updatedAt: textAt(row, 15),
+    publishRequestedEmail: boolAt(row, 16),
   };
 }
 
@@ -642,9 +655,12 @@ DECLARE $active_generation_id AS Utf8;
 DECLARE $generation_id AS Utf8;
 DECLARE $ranking_revision AS Utf8;
 DECLARE $succeeded AS Utf8;
+DECLARE $publish_requested_email AS Bool;
 
 UPDATE ${TABLES.pets}
 SET status = $approved, updated_at = $now, approved_at = $now,
+    public_author_email = CASE WHEN $publish_requested_email THEN contact_email
+      ELSE COALESCE(public_author_email, $empty) END,
     rejected_at = $empty, rejection_reason = $empty
 WHERE slug = $pet_slug AND status = $pending AND updated_at = $pet_updated_at;
 

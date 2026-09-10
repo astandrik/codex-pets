@@ -530,7 +530,7 @@ export function buildOpenApiSpec() {
           tags: ["Submissions"],
           summary: "Submit a Codex pet pack for moderation",
           description:
-            "Uploads pet.json, spritesheet.webp or spritesheet.png, and a ZIP containing both files at the root. Approved pets appear in the public registry after moderation.",
+            "Uploads pet.json, spritesheet.webp or spritesheet.png, and a ZIP containing both files at the root. Anonymous submissions with contactEmail default an omitted publicAuthorName to the email local part (up to 80 characters). An explicitly empty name is rejected. contactEmail stays private unless publishContactEmail is true and a moderator verifies and publishes that address.",
           security: publicReadSecurity,
           parameters: [idempotencyKeyHeader],
           requestBody: {
@@ -674,6 +674,7 @@ export function buildOpenApiSpec() {
             kind: kindSchema,
             tags: tagsSchema,
             submittedBy: nullableString,
+            submittedByEmail: { ...nullableString, format: "email" },
             submittedByUrl: nullableString,
             submittedByAvatarUrl: nullableString,
             pageUrl: { type: "string", format: "uri" },
@@ -763,6 +764,7 @@ export function buildOpenApiSpec() {
             ownerProfileSlug: nullableString,
             ownerProfileUrl: nullableString,
             ownerAvatarUrl: nullableString,
+            publicAuthorEmail: { ...nullableString, format: "email" },
             createdAt: { type: "string", format: "date-time" },
             approvedAt: nullableDateTime,
             downloadCount: { type: "integer", minimum: 0 },
@@ -842,7 +844,24 @@ export function buildOpenApiSpec() {
             petjson: { type: "string", format: "binary" },
             sprite: { type: "string", format: "binary" },
             spritesheetExt: { type: "string", enum: ["webp", "png"] },
-            contactEmail: { type: "string", format: "email" },
+            contactEmail: {
+              type: "string",
+              format: "email",
+              description:
+                "Private moderation contact. It is not a public response field.",
+            },
+            publicAuthorName: {
+              type: "string",
+              maxLength: 80,
+              description:
+                "Public alias for anonymous submissions with contactEmail. If omitted, defaults to the email local part, capped at 80 characters; explicitly empty names are rejected. Signed-in submissions always use the account profile name.",
+            },
+            publishContactEmail: {
+              type: "boolean",
+              default: false,
+              description:
+                "Requests publication of the effective contact or account email. Publication still requires moderator verification.",
+            },
             kind: kindSchema,
             tags: {
               type: "string",

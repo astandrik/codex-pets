@@ -34,6 +34,8 @@ vi.mock("@gravity-ui/uikit", () => ({
     Footer: () => null,
   }),
   DropdownMenu: () => null,
+  Checkbox: () => null,
+  Flex: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   Text: () => null,
   TextArea: () => null,
   useToaster: () => ({ add: mocks.add }),
@@ -71,7 +73,7 @@ describe("AdminSubmissionActions", () => {
     mocks.poll.mockResolvedValue("succeeded");
 
     await act(async () => {
-      root.render(<AdminSubmissionActions petId="pet-1" />);
+      root.render(<AdminSubmissionActions petId="pet-1" publicEmailRequested={false} contactEmail={null} />);
     });
     const approve = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent?.includes("Approve"));
@@ -94,7 +96,7 @@ describe("AdminSubmissionActions", () => {
     mocks.poll.mockResolvedValue("manual_review");
 
     await act(async () => {
-      root.render(<AdminSubmissionActions petId="pet-1" />);
+      root.render(<AdminSubmissionActions petId="pet-1" publicEmailRequested={false} contactEmail={null} />);
     });
     const approve = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent?.includes("Approve"));
@@ -121,7 +123,7 @@ describe("AdminSubmissionActions", () => {
       .mockResolvedValueOnce("succeeded");
 
     await act(async () => {
-      root.render(<AdminSubmissionActions petId="pet-1" />);
+      root.render(<AdminSubmissionActions petId="pet-1" publicEmailRequested={false} contactEmail={null} />);
     });
     const approve = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent?.includes("Approve"));

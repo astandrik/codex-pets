@@ -21,6 +21,7 @@ export type HomeHeroPet = Pick<
   | "kind"
   | "ownerName"
   | "ownerProfileSlug"
+  | "publicAuthorEmail"
   | "spritesheetUrl"
 >;
 
@@ -168,6 +169,13 @@ export function HomeHeroPetPicker({
             ) : (
               pet.ownerName
             )}
+          </Text>
+        ) : null}
+        {pet.publicAuthorEmail ? (
+          <Text variant="caption-2" color="secondary">
+            <a href={`mailto:${pet.publicAuthorEmail}`}>
+              {pet.publicAuthorEmail}
+            </a>
           </Text>
         ) : null}
         <Text

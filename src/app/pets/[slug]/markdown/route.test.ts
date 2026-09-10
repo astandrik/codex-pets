@@ -34,6 +34,7 @@ const approvedPet = {
   ownerProfileSlug: "creator",
   ownerAvatarUrl: null,
   contactEmail: "private@example.com",
+  publicAuthorEmail: "creator+public@example.com",
   createdAt: "2026-05-01T00:00:00.000Z",
   approvedAt: "2026-05-02T00:00:00.000Z",
   downloadCount: 3,
@@ -120,6 +121,7 @@ describe("GET /pets/[slug]/markdown", () => {
     expect(body).toContain("https://pets.example/api/pets/kuroa/share");
     expect(body).toContain("https://pets.example/card/kuroa.gif");
     expect(body).not.toContain("private@example.com");
+    expect(body).toContain("Author email: creator\\+public@example.com");
     expect(body).not.toContain("## Related pets");
   });
 
