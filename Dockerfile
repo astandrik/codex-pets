@@ -1,3 +1,6 @@
+ARG NEXT_PUBLIC_APP_URL
+ARG NEXT_PUBLIC_BASE_PATH=
+
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -8,17 +11,23 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
-ARG NEXT_PUBLIC_BASE_PATH=
+ARG NEXT_PUBLIC_APP_URL
+ARG NEXT_PUBLIC_BASE_PATH
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
 
-RUN npm run build
+RUN npm run validate:public-build && npm run build
 
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
+ARG NEXT_PUBLIC_APP_URL
+ARG NEXT_PUBLIC_BASE_PATH
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
+ENV CODEX_PETS_BUILT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+ENV CODEX_PETS_BUILT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
 
 RUN apt-get update \
   -o Acquire::ForceIPv4=true \
@@ -38,4 +47,4 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/.next ./.next
 
 EXPOSE 3000
-CMD ["npm", "run", "start"]
+CMD ["npm", "run", "start:docker"]

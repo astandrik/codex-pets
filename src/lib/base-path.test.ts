@@ -25,4 +25,28 @@ describe("withBasePath", () => {
 
     vi.unstubAllEnvs();
   });
+
+  it("treats a slash-only base path as empty", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "//");
+
+    const { BASE_PATH, withBasePath } = await import("@/lib/base-path");
+    expect(BASE_PATH).toBe("");
+    expect(withBasePath("/submit")).toBe("/submit");
+
+    vi.unstubAllEnvs();
+  });
+});
+
+describe("getPublicOrigin", () => {
+  it("keeps the localhost fallback for development without configuration", async () => {
+    vi.resetModules();
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", undefined);
+
+    const { getPublicOrigin } = await import("@/lib/base-path");
+    expect(getPublicOrigin()).toBe("http://localhost:3000");
+
+    vi.unstubAllEnvs();
+  });
 });
