@@ -16,6 +16,7 @@ export async function refreshRelatedPetAnnotationRecord({
   pet,
   annotationRevision,
   proposalRevision = RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+  acceptedProposalRevisions,
   modelUri,
   getAnnotation,
   findReusableProposal = async () => null,
@@ -38,6 +39,7 @@ export async function refreshRelatedPetAnnotationRecord({
         stored,
         annotationRevision,
         proposalRevision,
+        acceptedProposalRevisions,
         modelUri,
       });
       return { outcome: "unchanged", proposalAction: "unchanged", ...current };
@@ -61,6 +63,7 @@ export async function refreshRelatedPetAnnotationRecord({
     return {
       outcome: "planned",
       proposalAction: "generated",
+      proposalRevision,
       sourceHash: null,
       annotationText: null,
     };
@@ -92,6 +95,7 @@ export async function refreshRelatedPetAnnotationRecord({
     return {
       outcome: "planned",
       proposalAction: "reused",
+      proposalRevision,
       sourceHash,
       annotationText,
     };
@@ -111,6 +115,7 @@ export async function refreshRelatedPetAnnotationRecord({
   return {
     outcome: "updated",
     proposalAction: reusable ? "reused" : "generated",
+    proposalRevision,
     sourceHash,
     annotationText,
   };
@@ -121,6 +126,7 @@ export function validateCurrentRelatedPetAnnotation({
   stored,
   annotationRevision,
   proposalRevision = RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+  acceptedProposalRevisions,
   modelUri,
 }) {
   if (
@@ -131,13 +137,17 @@ export function validateCurrentRelatedPetAnnotation({
   ) {
     throw reasonError("annotation_provenance_missing");
   }
+  const acceptedRevisions = acceptedProposalRevisions ?? [proposalRevision];
+  if (!acceptedRevisions.includes(stored.proposalRevision)) {
+    throw reasonError("annotation_stale");
+  }
+  const storedProposalRevision = stored.proposalRevision;
   const expectedProposalInputHash = createRelatedPetAnnotationProposalInputHash({
     pet,
     modelUri,
-    proposalRevision,
+    proposalRevision: storedProposalRevision,
   });
   if (
-    stored.proposalRevision !== proposalRevision ||
     stored.proposalInputHash !== expectedProposalInputHash
   ) {
     throw reasonError("annotation_stale");
@@ -163,7 +173,7 @@ export function validateCurrentRelatedPetAnnotation({
   const expectedSourceHash = createRelatedPetAnnotationSourceHash({
     slug: pet.slug,
     annotationRevision,
-    proposalRevision,
+    proposalRevision: storedProposalRevision,
     proposalInputHash: expectedProposalInputHash,
     proposalHash,
   });
@@ -172,7 +182,7 @@ export function validateCurrentRelatedPetAnnotation({
   }
   return {
     sourceHash: expectedSourceHash,
-    proposalRevision,
+    proposalRevision: storedProposalRevision,
     proposalInputHash: expectedProposalInputHash,
     proposalHash,
     annotation,

@@ -3,6 +3,7 @@ import { inspect } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
   RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
   RELATED_PETS_ANNOTATION_SYSTEM_PROMPT,
   RELATED_PETS_ANNOTATION_USER_PROMPT,
@@ -100,6 +101,63 @@ describe("related pet annotation client", () => {
       reasoningTokens: 0,
     })]);
     assertSanitized(diagnostics);
+  });
+
+  it("keeps the R3 schema, prompt and parser on the same selected revision", async () => {
+    const r3Proposal = { ...proposal, entity: { ...proposal.entity, key: "vi" } };
+    const fetchImpl = vi.fn(async (...request: Parameters<typeof fetch>) => {
+      void request;
+      return completedResponse(r3Proposal);
+    });
+
+    await expect(createClient({
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+      fetchImpl,
+    }).createProposal(pet)).resolves.toEqual(parseRelatedPetAnnotationProposal(
+      r3Proposal,
+      RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+    ));
+
+    const body = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
+    expect(body.response_format.json_schema).toMatchObject({
+      name: "related_pet_annotation_v11_r13",
+      schema: {
+        properties: {
+          entity: { properties: { key: { pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" } } },
+          themes: { items: { properties: { key: { pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" } } } },
+        },
+      },
+    });
+    expect(body.messages[0].content).toContain("use null for entity.key when identity is unknown");
+  });
+
+  it("rejects an unknown proposal revision without fetching", () => {
+    const fetchImpl = vi.fn(async () => completedResponse(proposal));
+    expect(() => createClient({ proposalRevision: "unknown", fetchImpl }))
+      .toThrow("annotation_proposal_revision_unsupported");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("reports an invalid R3 identifier safely and uses only one schema retry", async () => {
+    const invalid = { ...proposal, entity: { ...proposal.entity, key: "Vi" } };
+    const fetchImpl = vi.fn(async () => completedResponse(invalid));
+    const diagnostics: unknown[] = [];
+    const error = await createClient({
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+      fetchImpl,
+      onDiagnostic: (entry) => diagnostics.push(entry),
+    }).createProposal(pet).catch((value) => value);
+
+    expect(error).toMatchObject({
+      reason: "schema_invalid",
+      cause: {
+        diagnostics: {
+          validationIssues: [{ path: "entity.key", code: "invalid_identifier" }],
+        },
+      },
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    assertSanitized([error, diagnostics]);
   });
 
   it("escalates length only once from 4000 to 8000 and preserves the start limiter", async () => {

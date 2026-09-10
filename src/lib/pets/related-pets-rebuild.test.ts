@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   createRelatedPetDocumentSourceHash,
@@ -21,6 +21,8 @@ import {
 } from "@/lib/pets/related-pets-rebuild";
 import {
   RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+  RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+  RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
   buildRelatedPetAnnotationText,
   createRelatedPetAnnotationEmbeddingSourceHash,
   createRelatedPetAnnotationProposalHash,
@@ -34,8 +36,15 @@ import type {
   RelatedPetsState,
 } from "@/lib/pets/related-pets-repository";
 import type { PublicPet } from "@/lib/pets/types";
+import { createRelatedPetApprovalWorker } from "@/lib/pets/related-pets-approval-worker";
+import type { ApprovalPreparation } from "@/lib/pets/approval-preparations-repository";
 import { RELATED_PETS_V24_FALLBACK_POLICY_REVISION } from "@/lib/pets/related-pets-fallback-policy";
 import { RELATED_PETS_V24_RELATION_POLICY_REVISION } from "@/lib/pets/related-pets-relation-policy";
+import {
+  RELATED_PETS_V24_LEGACY_RANKING_REVISION,
+  RELATED_PETS_V24_RANKING_REVISION,
+  isSupportedRelatedPetsRankingRevision,
+} from "@/lib/pets/related-pets-profile";
 
 const profile: RelatedPetsRebuildProfile = {
   strategy: "sparse-fallback-v24",
@@ -48,6 +57,8 @@ const profile: RelatedPetsRebuildProfile = {
   textMinSimilarity: 0.1,
   annotationRevision: "annotation-current",
   annotationProposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+  acceptedAnnotationProposalRevisions:
+    RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
   annotationQueryRevision: "annotation-query-current",
   annotationDocumentRevision: "annotation-document-current",
   annotationDimensions: 2,
@@ -161,6 +172,7 @@ function visualVectorFor(item: PublicPet, vector: readonly number[] = [1, 0]) {
 function annotationFor(
   item: PublicPet,
   rebuildProfile: RelatedPetsRebuildProfile,
+  proposalRevision = RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
 ): StoredRelatedPetAnnotation {
   const proposal = {
     entity: { key: null, aliases: [], confidence: "none", evidence: [] },
@@ -175,6 +187,7 @@ function annotationFor(
   const proposalInputHash = createRelatedPetAnnotationProposalInputHash({
     pet: item,
     modelUri: annotationModelUri,
+    proposalRevision,
   });
   const proposalHash = createRelatedPetAnnotationProposalHash(proposal);
   return {
@@ -182,11 +195,11 @@ function annotationFor(
     sourceHash: createRelatedPetAnnotationSourceHash({
       slug: item.slug,
       annotationRevision: rebuildProfile.annotationRevision,
-      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+      proposalRevision,
       proposalInputHash,
       proposalHash,
     }),
-    proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+    proposalRevision,
     proposalInputHash,
     proposalHash,
     proposalJson: JSON.stringify(proposal),
@@ -650,6 +663,62 @@ function createHarness(options: {
 }
 
 describe("related pets rebuild service", () => {
+  it("keeps the legacy ranking literal and accepts only legacy/current revisions", () => {
+    expect(RELATED_PETS_V24_RANKING_REVISION).toBe(
+      `${RELATED_PETS_V24_LEGACY_RANKING_REVISION}:annotation-proposal-compat=r2+r3-v1`,
+    );
+    expect(isSupportedRelatedPetsRankingRevision(
+      RELATED_PETS_V24_LEGACY_RANKING_REVISION,
+    )).toBe(true);
+    expect(isSupportedRelatedPetsRankingRevision(
+      RELATED_PETS_V24_RANKING_REVISION,
+    )).toBe(true);
+    expect(isSupportedRelatedPetsRankingRevision("ranking-v-next")).toBe(false);
+  });
+
+  it("prepares complete annotation maps from mixed R2 and R3 rows", () => {
+    const oldPet = pet("old-r2");
+    const newPet = pet("new-r3");
+    const r2 = annotationFor(oldPet, profile);
+    const r3 = annotationFor(
+      newPet,
+      profile,
+      RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+    );
+    const pets = [oldPet, newPet];
+    const prepared = prepareRelatedPetsRankingInputs({
+      pets,
+      textQueryRows: pets.map((item) => rawVector({
+        slug: item.slug,
+        modelRevision: profile.textQueryRevision,
+        sourceHash: createRelatedPetQuerySourceHash(item, profile.textQueryRevision),
+      })),
+      textRows: pets.map((item) => rawVector({
+        slug: item.slug,
+        modelRevision: profile.textRevision,
+        sourceHash: createRelatedPetDocumentSourceHash(item, profile.textRevision),
+      })),
+      annotations: [r2, r3],
+      annotationQueryRows: [r2, r3].map((item) =>
+        annotationVectorFor(item, profile, "query")
+      ),
+      annotationRows: [r2, r3].map((item) =>
+        annotationVectorFor(item, profile, "document")
+      ),
+      annotationModelUri,
+      visualRows: [],
+      captions: [],
+      profile,
+      visualContext: null,
+    });
+
+    expect([...prepared.annotations.keys()]).toEqual(["old-r2", "new-r3"]);
+    expect([...prepared.annotationQueryVectors.keys()]).toEqual(["old-r2", "new-r3"]);
+    expect([...prepared.annotationDocumentVectors.keys()]).toEqual(["old-r2", "new-r3"]);
+    expect(r2.proposalRevision).toBe(RELATED_PETS_ANNOTATION_PROPOSAL_REVISION);
+    expect(r3.proposalRevision).toBe(RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3);
+    expect(r2.sourceHash).not.toBe(r3.sourceHash);
+  });
   it("keeps legacy evaluation input preparation free of V24 annotations", () => {
     const source = pet("source");
     const prepared = prepareRelatedPetsRankingInputs({
@@ -712,6 +781,143 @@ describe("related pets rebuild service", () => {
       "write:pending",
     ]);
     expect(harness.state).toBeNull();
+  });
+
+  it("lets the approval worker publish only a complete current generation over legacy state", async () => {
+    const approvedPets = [pet("source"), pet("peer-a")];
+    const pendingUpdatedAt = "2026-08-03T10:00:00.000Z";
+    const pendingPet = {
+      ...pet("pending", { status: "pending" }),
+      updatedAt: pendingUpdatedAt,
+    };
+    const preparedPendingPet = { ...pendingPet, status: "approved" as const };
+    const allPets = [...approvedPets, preparedPendingPet];
+    const annotations = [
+      ...approvedPets.map((item) => annotationFor(item, profile)),
+      annotationFor(
+        preparedPendingPet,
+        profile,
+        RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+      ),
+    ];
+    const legacyState: RelatedPetsState = {
+      requestedGenerationId: "generation-legacy",
+      activeGenerationId: "generation-legacy",
+      previousGenerationId: null,
+      status: "ready",
+      rankingRevision: "ranking-legacy",
+      failureReason: null,
+      updatedAt: "2026-08-03T09:00:00.000Z",
+    };
+    const harness = createHarness({
+      pets: allPets,
+      approvedPets,
+      annotationRows: annotations,
+      annotationQueryRows: annotations.map((item) =>
+        annotationVectorFor(item, profile, "query")
+      ),
+      annotationDocumentRows: annotations.map((item) =>
+        annotationVectorFor(item, profile, "document")
+      ),
+      initialState: legacyState,
+    });
+    const preparation: ApprovalPreparation = {
+      preparationId: "approval-compat",
+      petId: pendingPet.id,
+      petSlug: pendingPet.slug,
+      petUpdatedAt: pendingPet.updatedAt,
+      reviewerId: "admin-1",
+      rankingRevision: profile.rankingRevision,
+      expectedActiveGenerationId: "generation-legacy",
+      preparedGenerationId: "",
+      status: "preparing",
+      attempts: 1,
+      nextAttemptAt: pendingPet.updatedAt,
+      leaseOwner: "worker-1",
+      leaseUntil: pendingPet.updatedAt,
+      failureCode: "",
+      createdAt: pendingPet.updatedAt,
+      updatedAt: pendingPet.updatedAt,
+    };
+    const finalize = vi.fn(async () => {
+      expect(harness.snapshots).toHaveLength(3);
+      expect(harness.snapshots.every(
+        ({ rankingRevision }) => rankingRevision === profile.rankingRevision,
+      )).toBe(true);
+      expect(harness.state).toEqual(legacyState);
+      return "succeeded" as const;
+    });
+    const worker = createRelatedPetApprovalWorker({
+      claim: async () => preparation,
+      getPet: async () => pendingPet,
+      prepareSignals: async () => undefined,
+      buildGeneration: async ({ generationId, pet: approvedPendingPet }) => {
+        const built = await harness.service.prepareGeneration({
+          generationId,
+          pendingPet: approvedPendingPet,
+          includeVisual: true,
+        });
+        return {
+          inputScope: built.inputScope,
+          expectedInputRevision: built.expectedInputRevision,
+          expectedSnapshotCount: built.coverage.snapshotCount,
+        };
+      },
+      finalize,
+      markFailure: async () => null,
+      cleanupGenerations: async () => true,
+      cleanupInactiveGeneration: async () => true,
+      onSucceeded: async () => undefined,
+      createGenerationId: () => "generation-current",
+      createReviewId: () => "review-current",
+      now: () => new Date("2026-08-03T10:00:00.000Z"),
+    });
+
+    await expect(worker.runOnce("worker-1")).resolves.toBe("succeeded");
+    expect(finalize).toHaveBeenCalledOnce();
+    expect(finalize).toHaveBeenCalledWith(expect.objectContaining({
+      preparedGenerationId: "generation-current",
+      expectedSnapshotCount: 3,
+    }));
+
+    const failingHarness = createHarness({
+      pets: allPets,
+      approvedPets,
+      annotationRows: annotations,
+      initialState: legacyState,
+      writeError: new Error("snapshot write failed"),
+    });
+    const failedFinalize = vi.fn();
+    const failureWorker = createRelatedPetApprovalWorker({
+      claim: async () => preparation,
+      getPet: async () => pendingPet,
+      prepareSignals: async () => undefined,
+      buildGeneration: async ({ generationId, pet: approvedPendingPet }) => {
+        const built = await failingHarness.service.prepareGeneration({
+          generationId,
+          pendingPet: approvedPendingPet,
+          includeVisual: true,
+        });
+        return {
+          inputScope: built.inputScope,
+          expectedInputRevision: built.expectedInputRevision,
+          expectedSnapshotCount: built.coverage.snapshotCount,
+        };
+      },
+      finalize: failedFinalize,
+      markFailure: async () => ({ ...preparation, status: "manual_review" }),
+      cleanupGenerations: async () => false,
+      cleanupInactiveGeneration: async () => true,
+      onSucceeded: async () => undefined,
+      createGenerationId: () => "generation-failed",
+      createReviewId: () => "review-failed",
+      now: () => new Date("2026-08-03T10:00:00.000Z"),
+    });
+
+    await expect(failureWorker.runOnce("worker-1")).resolves.toBe("manual_review");
+    expect(failedFinalize).not.toHaveBeenCalled();
+    expect(failingHarness.state).toEqual(legacyState);
+    expect(pendingPet.status).toBe("pending");
   });
 
   it("exposes the current scoped ranking input revision", async () => {

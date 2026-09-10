@@ -21,6 +21,7 @@ type RefreshInput = {
   pet: RelatedPetAnnotationInput;
   annotationRevision: string;
   proposalRevision?: string;
+  acceptedProposalRevisions?: readonly string[];
   modelUri: string;
   getAnnotation: (
     revision: string,
@@ -54,6 +55,7 @@ export function refreshRelatedPetAnnotationRecord(
 ): Promise<{
   outcome: "unchanged" | "updated";
   proposalAction: "unchanged" | "reused" | "generated";
+  proposalRevision: string;
   sourceHash: string;
   annotationText: string;
 }>;
@@ -62,6 +64,7 @@ export function refreshRelatedPetAnnotationRecord(
 ): Promise<{
   outcome: "unchanged" | "planned";
   proposalAction: "unchanged" | "reused" | "generated";
+  proposalRevision: string;
   sourceHash: string | null;
   annotationText: string | null;
 }>;
@@ -71,6 +74,7 @@ export function validateCurrentRelatedPetAnnotation(input: {
   stored: StoredRelatedPetAnnotationRecord;
   annotationRevision: string;
   proposalRevision?: string;
+  acceptedProposalRevisions?: readonly string[];
   modelUri: string;
 }): {
   sourceHash: string;

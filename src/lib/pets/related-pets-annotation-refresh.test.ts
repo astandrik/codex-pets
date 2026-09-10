@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+  RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+  RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
   buildRelatedPetAnnotationText,
   createRelatedPetAnnotationProposalHash,
   createRelatedPetAnnotationProposalInputHash,
@@ -42,6 +44,54 @@ const proposal = {
 };
 
 describe("related pet annotation provenance refresh", () => {
+  it("keeps a valid R2 row unchanged while the selected writer is R3", async () => {
+    const stored = storedRecord(pet, annotationRevision);
+    const createProposal = vi.fn();
+    const upsertAnnotation = vi.fn();
+
+    await expect(refreshRelatedPetAnnotationRecord({
+      mode: "apply",
+      pet,
+      annotationRevision,
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+      acceptedProposalRevisions: RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
+      modelUri,
+      getAnnotation: async () => stored,
+      createProposal,
+      upsertAnnotation,
+    })).resolves.toMatchObject({
+      outcome: "unchanged",
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+      sourceHash: stored.sourceHash,
+    });
+    expect(createProposal).not.toHaveBeenCalled();
+    expect(upsertAnnotation).not.toHaveBeenCalled();
+  });
+
+  it("validates R3 provenance under its stored revision and rejects unsupported revisions", () => {
+    const currentR3 = storedRecord(
+      pet,
+      annotationRevision,
+      RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+    );
+    expect(validateCurrentRelatedPetAnnotation({
+      pet,
+      annotationRevision,
+      acceptedProposalRevisions: RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
+      modelUri,
+      stored: currentR3,
+    })).toMatchObject({
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+      sourceHash: currentR3.sourceHash,
+    });
+    expect(() => validateCurrentRelatedPetAnnotation({
+      pet,
+      annotationRevision,
+      acceptedProposalRevisions: RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
+      modelUri,
+      stored: { ...currentR3, proposalRevision: "proposal-r4" },
+    })).toThrow("annotation_stale");
+  });
   it("reuses a validated proposal when only the annotation revision changes", async () => {
     const reusable = storedRecord(pet, "annotation-r4");
     const createProposal = vi.fn();
@@ -144,7 +194,11 @@ describe("related pet annotation provenance refresh", () => {
   });
 });
 
-function storedRecord(inputPet: typeof pet, revision: string) {
+function storedRecord(
+  inputPet: typeof pet,
+  revision: string,
+  proposalRevision = RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+) {
   const annotation = resolveRelatedPetAnnotation({
     slug: inputPet.slug,
     proposal,
@@ -152,6 +206,7 @@ function storedRecord(inputPet: typeof pet, revision: string) {
   const proposalInputHash = createRelatedPetAnnotationProposalInputHash({
     pet: inputPet,
     modelUri,
+    proposalRevision,
   });
   const proposalHash = createRelatedPetAnnotationProposalHash(proposal);
   return {
@@ -159,11 +214,11 @@ function storedRecord(inputPet: typeof pet, revision: string) {
     sourceHash: createRelatedPetAnnotationSourceHash({
       slug: inputPet.slug,
       annotationRevision: revision,
-      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+      proposalRevision,
       proposalInputHash,
       proposalHash,
     }),
-    proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+    proposalRevision,
     proposalInputHash,
     proposalHash,
     proposalJson: JSON.stringify(proposal),

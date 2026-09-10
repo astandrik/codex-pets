@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
   RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+  RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+  RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
   RELATED_PETS_ANNOTATION_QUERY_REVISION,
   RELATED_PETS_ANNOTATION_REVISION,
   buildRelatedPetAnnotationText,
@@ -178,6 +180,57 @@ describe("related pet annotation backfill", () => {
       { ...current, proposalHash: "" },
       "different-input-hash",
     )).toThrow("legacy_proposal_provenance_invalid");
+  });
+
+  it("does not invent R3 provenance for a legacy proposal", () => {
+    const legacy = {
+      slug: "vi",
+      sourceHash: "legacy-source",
+      proposalJson: JSON.stringify(proposal),
+      annotationJson: "{}",
+      annotationText: "entity: vi",
+    };
+    expect(() => adoptLegacyRelatedPetAnnotationProposal(
+      legacy,
+      "r3-input-hash",
+      RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+    )).toThrow("legacy_proposal_revision_mismatch");
+    expect(adoptLegacyRelatedPetAnnotationProposal(
+      currentAnnotation(pet),
+      "r3-input-hash",
+      RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+    )).toMatchObject({
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+    });
+  });
+
+  it("reuses an unchanged R2 row without provider or writes under the R3 writer", async () => {
+    const stored = currentAnnotation(pet);
+    const createProposal = vi.fn();
+    const upsertAnnotation = vi.fn();
+    const summary = await runRelatedPetAnnotationBackfill({
+      options: options("apply"),
+      annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+      acceptedProposalRevisions:
+        RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
+      modelUri: annotationModelUri,
+      pets: [pet],
+      getAnnotation: async () => stored,
+      createProposal,
+      upsertAnnotation,
+      log: () => undefined,
+    });
+
+    expect(summary).toMatchObject({
+      scanned: 1,
+      unchanged: 1,
+      updated: 0,
+      proposalReused: 0,
+      proposalGenerated: 0,
+    });
+    expect(createProposal).not.toHaveBeenCalled();
+    expect(upsertAnnotation).not.toHaveBeenCalled();
   });
 
   it("reuses a provenance-matching proposal without a provider call", async () => {

@@ -34,6 +34,7 @@ export function createYandexRelatedPetAnnotationClient(options: {
   folderId: string;
   apiKey: string;
   modelUri: string;
+  proposalRevision?: string;
   timeoutMs: number;
   fetchImpl?: typeof fetch;
   now?: () => number;

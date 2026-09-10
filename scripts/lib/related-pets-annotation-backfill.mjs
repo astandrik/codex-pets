@@ -1,6 +1,7 @@
 import {
   RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
   RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+  RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
   RELATED_PETS_ANNOTATION_QUERY_REVISION,
   createRelatedPetAnnotationProposalHash,
   createRelatedPetAnnotationEmbeddingSourceHash,
@@ -69,6 +70,9 @@ export function assertRelatedPetAnnotationCatalogFingerprint(options, pets) {
 export async function runRelatedPetAnnotationBackfill({
   options,
   annotationRevision,
+  proposalRevision = RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+  acceptedProposalRevisions =
+    RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
   modelUri,
   pets,
   getAnnotation,
@@ -93,6 +97,8 @@ export async function runRelatedPetAnnotationBackfill({
         pet,
         modelUri,
         annotationRevision,
+        proposalRevision,
+        acceptedProposalRevisions,
         getAnnotation,
         findReusableProposal,
         createProposal,
@@ -133,6 +139,7 @@ function extractStringOption(argv, name) {
 export function adoptLegacyRelatedPetAnnotationProposal(
   stored,
   proposalInputHash,
+  proposalRevision = RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
 ) {
   if (!stored?.proposalJson) return null;
   const existingProvenance = [
@@ -145,6 +152,9 @@ export function adoptLegacyRelatedPetAnnotationProposal(
       throw new Error("legacy_proposal_provenance_invalid");
     }
     return stored;
+  }
+  if (proposalRevision !== RELATED_PETS_ANNOTATION_PROPOSAL_REVISION) {
+    throw new Error("legacy_proposal_revision_mismatch");
   }
   return {
     ...stored,
@@ -163,6 +173,8 @@ export async function runRelatedPetAnnotationEmbeddingBackfill({
   role,
   dimensions,
   modelUri,
+  acceptedProposalRevisions =
+    RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
   pets,
   annotations,
   getMetadata,
@@ -193,6 +205,7 @@ export async function runRelatedPetAnnotationEmbeddingBackfill({
           pet,
           stored: storedAnnotation,
           annotationRevision,
+          acceptedProposalRevisions,
           modelUri,
         });
         const sourceHash = createRelatedPetAnnotationEmbeddingSourceHash({

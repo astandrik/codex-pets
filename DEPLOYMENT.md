@@ -251,8 +251,9 @@ After apply, run the read-only parity check:
 npm run related:verify:v24
 ```
 
-It fails unless the active generation uses the exact persisted V24 ranking
-revision, all required inputs cover the approved catalog, every snapshot has
+It fails unless the active generation uses a supported V24 ranking revision,
+every snapshot has the same revision as that active generation, all required
+inputs cover the approved catalog, and every snapshot has
 eight unique approved non-self slugs where possible, and every ordered snapshot
 matches a fresh V24 recomputation. The command does not call AI Studio or write
 YDB.
@@ -276,6 +277,22 @@ active generation are unchanged. The new generation also rotates the
 related-candidate and sitemap cache keys across app and worker processes.
 Failures leave the pet pending and preserve
 the current generation. Keep the worker disabled during a V24 rollback.
+
+Deploy the app and approval worker from the same release. Wait for queued,
+preparing, and retrying approval jobs to finish before replacing the worker.
+New annotation requests use proposal R3; existing valid R2 annotations keep
+their original provenance, hashes, and vectors. This upgrade requires no table
+migration or bulk annotation/vector backfill. Readers accept the legacy ranking
+revision and its `:annotation-proposal-compat=r2+r3-v1` successor; new generations
+use the successor, and a snapshot must match its active state's revision.
+
+Prepare and test a compatible rollback image before enabling the R3 writer.
+That image must retain the R2/R3 readers and both ranking revisions, with
+`RELATED_PETS_ANNOTATION_WRITE_PROPOSAL_REVISION` selecting R2. Once any R3
+annotation has been written, do not restart an older R2-only app or worker:
+roll back both services to the compatible image instead. Run
+`npm run related:verify:v24` before and after the change. An image rollback does
+not undo a pet's approval or restore an earlier ranking generation.
 
 To roll back ordering without discarding derived rows, first disable the
 feature and read the exact `active_generation_id` and

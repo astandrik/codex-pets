@@ -13,12 +13,8 @@ import {
 import { standardResponseFormat } from "openai/helpers/standard-schema";
 
 import {
-  RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
-  RELATED_PETS_ANNOTATION_SCHEMA_NAME,
-  RELATED_PETS_ANNOTATION_SYSTEM_PROMPT,
-  RELATED_PETS_ANNOTATION_TOKEN_POLICY,
-  RELATED_PETS_ANNOTATION_USER_PROMPT,
   buildRelatedPetAnnotationInput,
+  getRelatedPetAnnotationProposalContract,
   parseRelatedPetAnnotationProposal,
   RelatedPetAnnotationValidationError,
 } from "./related-pets-annotation-contract.mjs";
@@ -35,14 +31,16 @@ export class AnnotationRequestError extends Error {
   }
 }
 
-function createAnnotationResponseFormat(onValidationFailure) {
+function createAnnotationResponseFormat(contract, onValidationFailure) {
   const format = standardResponseFormat({
     "~standard": {
       version: 1,
       vendor: "codex-pets",
       validate(value) {
         try {
-          return { value: parseRelatedPetAnnotationProposal(value) };
+          return {
+            value: parseRelatedPetAnnotationProposal(value, contract.revision),
+          };
         } catch (error) {
           if (error instanceof RelatedPetAnnotationValidationError) {
             onValidationFailure(error.issues);
@@ -51,25 +49,26 @@ function createAnnotationResponseFormat(onValidationFailure) {
         }
       },
     },
-  }, RELATED_PETS_ANNOTATION_SCHEMA_NAME, {
-    schema: RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
+  }, contract.schemaName, {
+    schema: contract.schema,
   });
   if (JSON.stringify(format.json_schema.schema) !==
-    JSON.stringify(RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA)) {
+    JSON.stringify(contract.schema)) {
     throw new Error("The SDK changed the immutable annotation schema.");
   }
   return format;
 }
 
 export function createAnnotationRequester(options) {
-  const policy = RELATED_PETS_ANNOTATION_TOKEN_POLICY;
+  const contract = getRelatedPetAnnotationProposalContract(options.proposalRevision);
+  const policy = contract.tokenPolicy;
   return async function requestAnnotation(pet) {
     const messages = [
-      { role: "system", content: RELATED_PETS_ANNOTATION_SYSTEM_PROMPT },
+      { role: "system", content: contract.systemPrompt },
       {
         role: "user",
         content: [
-          RELATED_PETS_ANNOTATION_USER_PROMPT,
+          contract.userPrompt,
           buildRelatedPetAnnotationInput(pet),
         ].join("\n\n"),
       },
@@ -91,7 +90,7 @@ export function createAnnotationRequester(options) {
         max_tokens: maxTokens,
         store: false,
         stream: false,
-      }, diagnostics);
+      }, diagnostics, contract);
       options.onDiagnostic({ ...diagnostics, ...outcome.diagnostic });
       if (outcome.kind === "success") return outcome.value;
 
@@ -115,9 +114,9 @@ export function createAnnotationRequester(options) {
   };
 }
 
-async function requestOnce(options, body, diagnostics) {
+async function requestOnce(options, body, diagnostics, contract) {
   let validationIssues;
-  const format = createAnnotationResponseFormat((issues) => {
+  const format = createAnnotationResponseFormat(contract, (issues) => {
     validationIssues = issues;
   });
   const controller = new AbortController();

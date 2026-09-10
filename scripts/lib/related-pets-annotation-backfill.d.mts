@@ -36,6 +36,7 @@ export function parseRelatedPetAnnotationBackfillArgs(
 export function adoptLegacyRelatedPetAnnotationProposal(
   stored: StoredRelatedPetAnnotation | null,
   proposalInputHash: string,
+  proposalRevision?: string,
 ): StoredRelatedPetAnnotation | null;
 export function createRelatedPetAnnotationCatalogFingerprint(
   pets: readonly RelatedPetAnnotationBackfillPet[],
@@ -47,6 +48,8 @@ export function assertRelatedPetAnnotationCatalogFingerprint(
 export function runRelatedPetAnnotationBackfill(input: {
   options: RelatedPetAnnotationBackfillOptions;
   annotationRevision: string;
+  proposalRevision?: string;
+  acceptedProposalRevisions?: readonly string[];
   modelUri: string;
   pets: readonly RelatedPetAnnotationBackfillPet[];
   getAnnotation: (
@@ -72,6 +75,7 @@ export function runRelatedPetAnnotationEmbeddingBackfill(input: {
   role: "query" | "document";
   dimensions: number;
   modelUri: string | null;
+  acceptedProposalRevisions?: readonly string[];
   pets: readonly RelatedPetAnnotationInput[];
   annotations: readonly StoredRelatedPetAnnotation[];
   getMetadata: (
