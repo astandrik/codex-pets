@@ -39,7 +39,7 @@ const guides = [
 ];
 
 describe.each(guides)("$name guide integration", ({ page, markdown, examples, runDate, limit }) => {
-  it("renders the byline, dated methodology, decision table and actual response examples", async () => {
+  it("renders the dated methodology, responses and ranked examples from the complete snapshot", async () => {
     const container = document.createElement("div");
     container.innerHTML = renderToStaticMarkup(await page());
     expect(container.querySelector(".guide-byline")?.textContent).toContain(GUIDE_AUTHOR_NAME);
@@ -51,11 +51,6 @@ describe.each(guides)("$name guide integration", ({ page, markdown, examples, ru
       expect(blocks).toContain(example.command);
       expect(blocks).toContain(example.responseExcerpt);
     }
-  });
-
-  it("selects ranked examples from the complete approved snapshot", async () => {
-    const container = document.createElement("div");
-    container.innerHTML = renderToStaticMarkup(await page());
     expect(catalog).toHaveBeenCalledTimes(1);
     const links = Array.from(container.querySelectorAll('article a[href^="/pets/"]'));
     expect(links.map((link) => link.getAttribute("href"))).toEqual(

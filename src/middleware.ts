@@ -166,7 +166,6 @@ function mediaRangeMatches(range: string, mediaType: string): boolean {
   return rangeSubtype === "*" && rangeType === mediaTypeType;
 }
 
-
 function withBasePath(pathname: string, basePath?: string): string {
   if (!basePath) {
     return pathname;

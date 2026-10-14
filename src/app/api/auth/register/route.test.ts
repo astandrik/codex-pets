@@ -113,7 +113,6 @@ describe("POST /api/auth/register", () => {
     expect(createSessionForUser).not.toHaveBeenCalled();
   });
 
-
   it.each([null, [], "invalid"])("rejects non-object JSON %j before account work", async (body) => {
     vi.stubEnv("AUTH_MODE", "app-session");
     vi.stubEnv("SESSION_COOKIE_SECRET", "synthetic-cookie-secret");
@@ -128,7 +127,6 @@ describe("POST /api/auth/register", () => {
   });
 
 });
-
 
 function registrationRequest(): Request {
   return new Request("http://localhost/api/auth/register", {

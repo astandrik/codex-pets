@@ -358,8 +358,6 @@ function buildCodexPetsAppHtml(): string {
 </html>`;
 }
 
-
-
 function toPublicRequestUrl(): string {
   return toPublicUrl("/request");
 }

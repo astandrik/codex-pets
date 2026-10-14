@@ -75,7 +75,6 @@ describe("generation serializable transaction contention", () => {
   });
 });
 
-
 describe("production generation store read contracts", () => {
   const now = Date.UTC(2026, 9, 14, 12);
   const id = "b".repeat(64);

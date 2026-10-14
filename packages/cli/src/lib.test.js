@@ -115,12 +115,8 @@ describe("codex-pets cli helpers", () => {
       }
       return rename(from, to);
     });
-    let failure;
-    try {
-      await installPet({ slug: "boba", force: true, baseUrl: "https://pets.test", codexHome, fetchImpl });
-    } catch (error) {
-      failure = error;
-    }
+    const failure = await installPet({ slug: "boba", force: true, baseUrl: "https://pets.test", codexHome, fetchImpl })
+      .catch((error) => error);
     expect(failure).toBeInstanceOf(Error);
     if (rollbackFails) {
       expect(failure).toBeInstanceOf(AggregateError);

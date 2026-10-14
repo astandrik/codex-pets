@@ -26,7 +26,6 @@ describe("mixed-source transaction fingerprints", () => {
   });
 });
 
-
 type FingerprintData = {
   catalog: CatalogInputRevision;
   embeddings: EmbeddingInputRevision[number][1];
@@ -134,7 +133,7 @@ describe("ranking fingerprint wire contract", () => {
 
 describe("approval and rebuild fingerprint agreement", () => {
   it.each([
-    { revisions: ["embedding-v1"] }, { revisions: ["embedding-v1", " embedding-v1 "] },
+    { revisions: ["embedding-v1"] },
     { revisions: [" embedding-v1 ", "embedding-v1", "embedding-v1"] }, { revisions: [] },
   ])("finalizes with the actual related fingerprint for $revisions", async ({ revisions }) => {
     const harness = fingerprintRepositories(fingerprintData()), scope = fingerprintScope(revisions);

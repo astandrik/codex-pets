@@ -606,7 +606,6 @@ function normalizeLimit(value) {
   return Math.min(MAX_LIMIT, Math.max(1, Math.floor(parsed)));
 }
 
-
 function derivePetAssetUrl(spritesheetUrl, filename) {
   try {
     const url = new URL(spritesheetUrl);

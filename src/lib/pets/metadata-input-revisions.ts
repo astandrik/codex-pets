@@ -35,7 +35,6 @@ WHERE ${column} = $revision ORDER BY pet_slug;`, { $revision: values.utf8(revisi
   return result;
 }
 
-
 export type CatalogInputRevision = Array<[slug: string, updatedAt: string]>;
 export type EmbeddingInputRevision = Array<[
   revision: string,

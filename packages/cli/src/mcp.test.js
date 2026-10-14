@@ -56,7 +56,9 @@ describe("codex-pets local MCP data source", () => {
     });
 
     await expect(source.getPet("orbit-otter")).resolves.toEqual({ pet: share.pet });
-    await expect(source.getInstallInstructions("orbit-otter")).resolves.toMatchObject({
+    await expect(source.getInstallInstructions("orbit-otter")).resolves.toEqual({
+      slug: "orbit-otter",
+      name: "Orbit Otter",
       install: { command: "npx @astandrik/codex-pets install orbit-otter --url 'https://pets.test'" },
     });
     await expect(source.getBadgeCode("orbit-otter")).resolves.toEqual({
@@ -94,7 +96,7 @@ describe("codex-pets local MCP data source", () => {
 
   it.each([
     ["getPet", { pet: {}, share: {} }],
-    ["getPet", { ...sharePayload("other") }],
+    ["getPet", sharePayload("other")],
     ["getPet", { ...sharePayload("boba"), pet: { slug: "boba", name: 5 } }],
     ["getInstallInstructions", { pet: { slug: "boba", name: "Boba" }, share: { install: {} } }],
     ["getBadgeCode", { pet: { slug: "boba", name: "Boba" }, share: { badge: { markdown: "x" } } }],
@@ -209,7 +211,6 @@ function jsonResponse(body, status = 200) {
     json: async () => body,
   };
 }
-
 
 describe("MCP protocol boundary", () => {
   it("exposes only read-only tools and maps valid, invalid, missing and failed requests", async () => {

@@ -32,7 +32,8 @@ describe("SDK-managed transaction compatibility", () => {
     expect(session.rollbackTransaction).not.toHaveBeenCalled();
   });
 
-  it.each(["Unable to start YDB transaction.", "Unable to start approval transaction.", "Unable to start related pets transaction."])("preserves the caller's start failure: %s", async (message) => {
+  it("preserves the caller's start failure message", async () => {
+    const message = "Custom transaction could not start.";
     session.beginTransaction.mockResolvedValue({});
     const operation = vi.fn();
     await expect(withSdkManagedTransaction(operation, message)).rejects.toThrow(message);

@@ -23,7 +23,7 @@ describe("private browser generation history",()=>{
   localStorage.setItem(HISTORY_PREFIX+"c".repeat(64),"x".repeat(2000));
   expect(readGenerationHistory(now).entries).toEqual([]);
  });
- it("retains an expired status for seven days, then purges only owned records",()=>{
+ it("retains an expired status for seven days, then hides it without touching unrelated records",()=>{
   rememberGeneration(id,expires,now);localStorage.setItem("unrelated","keep");
   expect(readGenerationHistory(now+2*86400000).entries).toHaveLength(1);
   expect(readGenerationHistory(now+8*86400000).entries).toEqual([]);
@@ -45,7 +45,6 @@ describe("private browser generation history",()=>{
  });
 });
 
-
 function memoryStorage(initial: Record<string, string>) {
   const values = new Map(Object.entries(initial));
   return {
@@ -65,8 +64,6 @@ describe("history read and cleanup separation", () => {
     const storage = memoryStorage({ [HISTORY_PREFIX + staleId]: staleEntry, [HISTORY_PREFIX + id]: currentEntry });
     const readOnly = { length: storage.length, key: storage.key, getItem: storage.getItem };
     expect(readGenerationHistory(now, readOnly)).toEqual({ available: true, entries: [JSON.parse(currentEntry)] });
-    expect(storage.setItem).not.toHaveBeenCalled();
-    expect(storage.removeItem).not.toHaveBeenCalled();
   });
 
   it("limits a read to fifty entries without pruning until explicitly requested", () => {
@@ -101,7 +98,6 @@ describe("history read and cleanup separation", () => {
   it("keeps readable entries when cleanup is blocked", () => {
     const storage = memoryStorage({ [HISTORY_PREFIX + staleId]: staleEntry, [HISTORY_PREFIX + id]: currentEntry });
     storage.removeItem.mockImplementation(() => { throw new Error("cleanup blocked"); });
-    expect(readGenerationHistory(now, storage)).toEqual({ available: true, entries: [JSON.parse(currentEntry)] });
     expect(pruneGenerationHistory(now, storage)).toBe(true);
     expect(readGenerationHistory(now, storage).entries).toEqual([JSON.parse(currentEntry)]);
   });

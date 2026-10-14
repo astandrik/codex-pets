@@ -14,45 +14,41 @@ const ERROR_MESSAGES: Record<string, string> = {
   quota_grant_limit: "The total allowance is too large. Enter a smaller number of attempts.",
   request_id_conflict: "This grant ID was used with different input. Check its receipt before starting another grant.",
 };
+
 function message(body: unknown) {
   const code = body && typeof body === 'object' && 'code' in body && typeof body.code === 'string' ? body.code : '';
   return Object.hasOwn(ERROR_MESSAGES, code) ? ERROR_MESSAGES[code] : "Could not confirm the operation. Retry the same grant to avoid double credit.";
-
 }
+
 function expiry(value: string) {
   return new Date(value).toLocaleString('en-GB', { timeZone: 'Europe/Moscow' }) + ' Moscow time';
 }
+
 async function postQuotaRequest(path: string, body: object) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
   try {
     const response = await fetch(withBasePath(path), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store', signal: controller.signal });
     return { response, body: await response.json() };
-  }
-  finally {
+  } finally {
     clearTimeout(timer);
   }
-
 }
 
-const subscribe = () => () => {
-};
+const subscribe = () => () => {};
+
 export function AdminGenerationQuotas() {
   const ready = useSyncExternalStore(subscribe, () => true, () => false);
   return ready ? <QuotaForm /> : <p>Loading generation limits…</p>;
-
 }
+
 function QuotaForm() {
   const [initial] = useState(() => {
     try {
       return { saved: readPendingQuotaGrant(sessionStorage), error: "" };
-
-    }
-    catch {
+    } catch {
       return { saved: null, error: "Saved grant receipt is unreadable. Check the server audit before creating another grant." };
-
     }
-
   });
   const [ip, setIp] = useState('');
   const [amount, setAmount] = useState(String(initial.saved?.amount ?? 1));
@@ -83,15 +79,12 @@ function QuotaForm() {
       }
       setQuota(result.body.quota);
       setReceipt(null);
-
     } catch {
       if (version === inputVersion.current) setError('Could not read the quota. Check your connection and sign-in.');
-    }
-    finally {
+    } finally {
       running.current = false;
       setBusy(false);
     }
-
   }
   async function grant() {
     if (running.current || !quota || !validAmount || storageError) return;
@@ -110,10 +103,8 @@ function QuotaForm() {
           setRestored(null);
           setPending(null);
           if (result.body.code === 'quota_day_changed') setQuota(null);
-
         }
         return;
-
       }
       if (!result.body.receipt || !result.body.quota) throw Error('unconfirmed_response');
       completeQuotaGrant(sessionStorage, input.requestId);
@@ -121,19 +112,16 @@ function QuotaForm() {
       setQuota(result.body.quota);
       setPending(null);
       setRestored(null);
-
     } catch (error) {
       if (error instanceof Error && error.message === 'pending_grant_mismatch') {
         setError('This does not match the unconfirmed grant. Enter the original IP and retry the same grant.');
         return;
       }
       setError('Could not confirm the grant. Retry the same grant; if the response was lost it will return the original receipt. Browser session storage must be available.');
-    }
-    finally {
+    } finally {
       running.current = false;
       setBusy(false);
     }
-
   }
   function another() {
     try {
@@ -146,7 +134,6 @@ function QuotaForm() {
     setQuota(null);
     setAmount('1');
     setError('');
-
   }
   return <Flex direction="column" gap={4} className="admin-generation-quotas">
     <p>Additional attempts apply only to this IP until midnight Moscow time. The service cap of 200 accepted tasks/day and the $50 spending/reservations limit still apply.</p>

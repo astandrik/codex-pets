@@ -66,7 +66,6 @@ it("gives every queued status read its own timeout window",async()=>{
  expect(ready).toHaveLength(5);expect(element.textContent).not.toContain("Could not refresh");expect(request).toHaveBeenCalledTimes(5);
 });
 
-
 it("keeps valid history visible when expired-record cleanup is blocked", async () => {
   rememberGeneration(id, expiry());
   const staleId = "e".repeat(64), now = Date.now();
