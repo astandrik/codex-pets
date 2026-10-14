@@ -542,3 +542,159 @@ with:
 - certbot installation and renewal ownership
 - the upstream app host IP/DNS
 - nginx reload and rollback commands
+
+## Remote MCP pet generation
+
+The feature is disabled by default. Preserve the previous application image and
+runtime configuration. Publish/enable only after the closed candidate report and
+an explicit manual enable step.
+
+1. Build the existing `runner` target and the new `generation-worker` target from
+   the same Git commit with `VCS_REF` and the production `NEXT_PUBLIC_APP_URL`.
+   The worker contains pinned Node24 and Python3.12, sprite-gen2.44.0, Pillow12.3.0
+   and NumPy2.5.3, installed with required wheel hashes; see vendor/sprite-gen/NOTICE.md.
+   The web image contains no Python runtime or OpenAI credential. No new npm dependency is needed.
+2. Explicitly apply only `node scripts/apply-pet-generation-schema.mjs`, with the
+   existing YDB connection/credentials. This creates the three feature tables
+   with TTL and records the migration. It never runs unrelated migrations.
+   Confirm table shape/TTL and effective read/write access before starting work.
+3. Create a random secret file (at least 32 characters, mode 0600) for
+   `PET_GENERATION_SECRET_FILE`, mounted read-only into the web container. This
+   key protects request hashes and daily IP hashes; preserve it across restarts.
+   The web container does not receive an OpenAI key.
+4. Run one worker on the existing private Docker networks, with the same YDB
+   access as Pets and `PET_GENERATION_OPENAI_KEY_FILE` pointing at a protected
+   read-only OpenAI key file. Set `PET_GENERATION_PROXY_URL=http://172.17.0.1:18089` to the existing
+   AMS CONNECT adapter used by Gravity. The Python child receives only this explicit proxy
+   and cannot fall back to a direct connection. Verify an unauthenticated OpenAI request
+   returns401 from inside the built worker before any paid call. Limit the worker to2CPU/2GiB and use `--tmpfs /tmp:rw,nosuid,noexec,size=384m`.
+   The workspace sweep removes dead-process leftovers and all expired scratch files,
+   including while intake is disabled.
+   `node scripts/pet-generation-worker.mjs --once` processes at most one task.
+5. Set `PET_GENERATION_BUDGET_USD=6` only for the bounded three-task candidate;
+   production defaults to50USD/day. For a closed candidate, bind its HTTP port to loopback and use a separate
+   loopback nginx listener that overwrites `X-Pets-Client-IP` with `$remote_addr`.
+   Enable `PET_GENERATION_ENABLED=true` only in the candidate and its worker.
+   Exercise three synthetic prompts, using one test IP and fresh UUID request
+   IDs. All three accepted tasks consume the real day quota. Do not reset quota
+   rows or retry a paid request after an uncertain outcome.
+6. Inspect actual stored provider usage and cost, all nine animations and all
+   sixteen gaze frames in the browser. Validate ZIP contents, expiry, private
+   headers, no analytics, and the seven existing read tools. Stop public launch
+   if quality, recovery or privacy checks fail.
+7. For the manual public enable, add only the origin nginx settings documented in
+   `deploy/pet-generation-nginx.conf.example`; syntax-check, reload and wait for
+   readback. Preserve `127.0.0.1:3001` and verify spoofed forwarded headers cannot
+   change the quota IP. Switch to the verified web image/config and start one
+   verified worker. Set `PET_GENERATION_ENABLED=true` explicitly in both.
+8. Verify nine remote MCP tools, preview and downloads via origin, AMS and SGP.
+   The npm CLI and browser WebMCP retain their existing catalog-only tools.
+
+To disable intake and the next paid stage, use a shared read-only
+`PET_GENERATION_ENABLE_FILE` with value false in both containers, then drain the worker with SIGTERM
+(allow at least 240 seconds for the current request). Existing status/files stay
+readable in the new web image until expiry. A disabled worker can remain running
+for cleanup; it takes no new jobs. Never clear deduplication or quota records to
+recover a failed job. An abandoned provider call becomes `outcome_unknown` after
+its lease; processing a persisted image can resume without another provider call.
+
+Jobs and image artifacts expire 24 hours after acceptance. HTTP checks enforce
+expiry immediately, even before asynchronous YDB TTL cleanup; the worker also
+cleans expired rows at most once per minute. Deduplication hashes remain seven
+days. The global scheduler row holds only a bounded queue and one lease, without
+prompts or credentials. Do not send task IDs, private URLs or prompt text to
+analytics or ordinary diagnostic output.
+
+### Row-stage recovery and rollback
+
+The three existing tables retain their shapes. Pipeline version2 stores12ordered
+stages in job JSON and `stage-<name>.png` artifacts; legacy records default to version1.
+An owner-fenced intent is committed before each paid call. The worker renews the
+lease every30seconds and confirms image+SHA/usage in one transaction afterward.
+A lost acknowledgement is reconciled by readback; completed stages are never paid again.
+An abandoned call, uncertain checkpoint/retry acknowledgement or lost lease fails
+with outcome_unknown and sets scheduler.pauseReason.
+Captured RemoteDisconnected, IncompleteRead, HTTP500 and HTTP520 image failures allow one
+durable retry of that stage after five seconds. Successful stages are never replayed.
+Once all unresolved stages have matching persisted provider-failure records and the
+failed job, budget and scheduler commit atomically, that terminal job does not pause
+unrelated jobs. Unknown-charge markers remain, and the failed job is never requeued.
+Unclassified failures and mixed provider/storage failures still pause the scheduler.
+This does not fix upstream failures: subsequent jobs may fail and incur unknown costs.
+Deploying this policy and clearing an existing pause require explicit operator approval.
+The permanent budget ledger retains unresolved reservations independent of artifact TTL.
+Do not clear scheduler pauses or reservations until the exact request outcome has been reviewed.
+
+Rollback first disables intake/new paid stages while retaining read routes and TTL cleanup.
+Before a public release, retain the exact closed candidate image as a compatibility reader:
+run it with generation disabled on an unused loopback port and route only `/generated/`
+and `/api/pet-generations/` GET/HEAD through it when reverting the main gallery image.
+Block POST in this rollback location. Reuse the same YDB and HMAC configuration; do not reset
+quotas or copy result data. Test a completed ZIP and status through this configuration first.
+No public enable or new recurring monitor is implied by building/testing the candidate.
+
+Disable access logs for generation routes or mask capability IDs on every serving proxy.
+The prompt form and preview use noindex/no-referrer/no-store; never log provider stderr,
+prompt bodies, image bytes, private links, credentials, or raw environment output.
+
+### Dedicated image SSH transport
+
+`deploy/pets_image_ssh_proxy.py` is a host-side CONNECT proxy for the generation
+worker. It accepts only `api.openai.com:443` and starts one `ssh -W` process per
+TCP connection; it never reconnects or replays application bytes. TLS still ends
+at OpenAI. Keep the existing SSH private key and pinned known-hosts file on the
+host; do not mount the SSH key into the worker.
+
+Install the versioned script under `/opt/codex-pets/ssh-proxy/`, with the selected
+version exposed by `current`. The root-managed `/etc/codex-pets/ssh-proxy.json`
+contains `ssh_command` (an argv array, not a shell command). Preserve the existing
+restricted AMS account, identity path and pinned host-key options, replace the
+old `-L` forwarding with `-W api.openai.com:443`, and explicitly set
+`BatchMode=yes`, `StrictHostKeyChecking=yes`, `ControlMaster=no`, and
+`ControlPath=none`. The configuration contains paths only, never a key value.
+Allow the `nobody` service to read this configuration and the existing identity.
+
+Defaults are `listen_host=172.17.0.1`, `listen_port=18090`, 16 connections,
+4 simultaneous SSH/TLS handshakes, a 15-second handshake limit and a 240-second
+connection lifetime. The application provider timeout is unchanged. The unit
+in `deploy/pets-image-ssh-proxy.service` preserves the existing service isolation.
+Permit the new port only from the private Docker bridge. Leave the shared
+18089 proxy and its persistent tunnel unchanged for other applications.
+
+Set only the generation worker's `PET_GENERATION_PROXY_URL` to
+`http://172.17.0.1:18090`. Both the image renderer and card metadata transport
+accept this dedicated endpoint; the legacy 18089 endpoint remains supported for
+rollback. No provider retries are added by this transport.
+
+Before rollout, run `python3 -m unittest discover -s deploy -p 'test_*.py'`, the
+normal application checks, and native tests of the proxy under the same service
+user. Confirm eleven concurrent cold connections, fresh SSH PIDs, fixed-destination
+rejection, bounded handshakes and process cleanup, using requests without an API
+key. Verify the built worker and proxy together before a paid generation.
+
+Retain the previous worker/container configuration and shared proxy for rollback.
+Drain the worker before replacing it. After acceptance, resume the scheduler only
+under the rollout's explicit authorization, preserving quotas, budget history and
+old failed jobs. A failed paid generation is not automatically submitted again.
+
+### Private HTTP diagnostics for generated images
+
+The generation worker emits one JSON record with operation `pet-generation-http`
+per renderer attempt. It includes a SHA256 task identifier, stage, attempt and
+observation time; HTTP status, expected and received body bytes, byte-count
+exactness, completion, chunked framing and phase; and validated `X-Request-ID`
+and `CF-Ray` values. These records stay in server logs, outside public task/MCP
+responses and job data. Existing Docker log rotation remains in effect.
+
+`expectedBodyBytes: null` means no usable Content-Length (including chunked
+responses). `receivedBodyBytesExact: false` means the count is only a lower bound,
+for example after an I/O failure or an interrupted chunked read. `before_headers`
+means complete response headers were not observed; it does not prove the provider
+received a request. A full 520 body is distinct from an incomplete 200 or 520 body.
+
+Capture is scoped to each pinned CLI subprocess and restores the HTTP methods.
+Private, atomic metadata checkpoints retain headers if the CLI exits during a
+read. Diagnostics never copy response bodies, prompts, credentials, arbitrary
+headers, URLs or raw exception messages. Invalid trace identifiers are omitted
+as null, and diagnostic write/log failures do not trigger another provider call.
+The request, timeout, retry, budget and lease policies are unchanged.

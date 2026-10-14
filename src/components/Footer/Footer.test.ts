@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { Footer } from "@/components/Footer/Footer";
 
 const EXPECTED_GUIDES = [
+  { href: "/guides/ai-pet-generator", label: "AI pet generator" },
   {
     href: "/guides/how-codex-pets-works",
     label: "How Codex Pets works",

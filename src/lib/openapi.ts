@@ -1,3 +1,4 @@
+import { GENERATION_EXPERIMENT_NOTICE } from "@/lib/pets/generation/disclosure";
 import { getPublicOrigin, toPublicUrl, withBasePath } from "@/lib/base-path";
 import { SITE_DESCRIPTION } from "@/lib/site-metadata";
 
@@ -56,7 +57,7 @@ export function buildOpenApiSpec() {
     tags: [
       { name: "Discovery", description: "Machine-readable site and API metadata." },
       { name: "Pets", description: "Approved public Codex pet registry data." },
-      { name: "MCP", description: "Read-only agent tool integration." },
+      { name: "MCP", description: "Catalog tools and quota-limited asynchronous pet generation." },
       { name: "Requests", description: "Public pet generation request workflow." },
       { name: "Submissions", description: "Public pet pack submission workflow." },
     ],
@@ -351,7 +352,7 @@ export function buildOpenApiSpec() {
           tags: ["MCP"],
           summary: "Call the Codex Pets Streamable HTTP MCP server",
           description:
-            "JSON-RPC endpoint for read-only MCP tools: search_pets, get_pet, get_install_instructions, get_badge_code, get_embed_code, get_card_code, and get_pet_request_info.",
+            "JSON-RPC catalog tools plus generate_pet(prompt,displayName?,requestId) and get_pet_generation(generationId). Generation is server-paid, text-only and asynchronous:200accepted tasks/day globally,10/IP by default,Moscow time. Admin grants can add IP attempts until midnight without changing the global cap or spending budget. Admission HTTP429 keeps code=rate_limited and adds limitScope=ip|global and retryAt. Up to12paidimagecalls plus one text/vision metadata request per new task, one active task,5waiting up to30minutes; daily50USD spending/reservations threshold. Reuse requestId after a disconnect; changed content conflicts. Private results expire after24hours and are never published automatically. " + GENERATION_EXPERIMENT_NOTICE,
           security: publicReadSecurity,
           requestBody: {
             required: true,
@@ -366,6 +367,47 @@ export function buildOpenApiSpec() {
             "403": jsonRpcErrorResponse,
             "500": jsonRpcErrorResponse,
           },
+        },
+      },
+      "/api/pet-generations": {
+        post: { operationId: "generatePet", tags: ["MCP"], summary: "Start an anonymous server-paid pet generation",
+          description: "Same quota, idempotency and queue as generate_pet. Requires the same-origin browser Origin header. Twelve image stages, each with at most one delayed retry after a confirmed connection closure, plus one text/vision request for editable card metadata; successful stages are never repeated and metadata is not retried. Private results expire24hours after acceptance. " + GENERATION_EXPERIMENT_NOTICE, security: publicReadSecurity,
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties:false, required:["prompt","requestId"], properties:{ prompt:{type:"string",minLength:1,maxLength:2000}, displayName:{type:"string",minLength:1,maxLength:80}, requestId:{type:"string",format:"uuid"} } } } } },
+          responses: { "202": { description:"Accepted or existing idempotent task with generationId,status,progress and private preview URL.",content:{"application/json":{schema:jsonObject}} }, "400":errorResponse,"403":errorResponse,"409":errorResponse,"413":errorResponse,"429":errorResponse,"503":errorResponse },
+        },
+      },
+      "/api/pet-generations/{id}": {
+        get: { operationId: "getPetGeneration", tags: ["MCP"], summary: "Read an unlisted generation by its private ID", security: publicReadSecurity,
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", pattern: "^[a-f0-9]{64}$" } }],
+          responses: { "200": { description: "Generation status, completedSteps/totalSteps image progress, optional metadata (displayName,description,tags,revision,editable,automaticState,edited), expiry, completed preview/package URLs and optional submission receipt (petId,slug,submittedAt). Failed jobs include error.code, a safe message and hint, and automaticRetry=false. No raw provider diagnostics are exposed. A failed job is a successful status read, not an instruction to start another paid generation.", content: { "application/json": { schema: jsonObject } } }, "404": notFoundResponse, "410": errorResponse, "503": errorResponse },
+        },
+      },
+      "/api/pet-generations/{id}/metadata": {
+        put: { operationId: "editGeneratedPetMetadata", tags: ["Submissions"], summary: "Save name, description and tags before moderation",
+          description: "Explicit same-origin private-capability edit of a completed, unexpired, unsubmitted result. Requires the saved revision. Atomically updates description in pet.json and ZIP and tags in the pending gallery draft; sprite bytes, quota and paid calls do not change. Same-content retries return the saved revision. Conflicts and sealed results return409. Maximum body4096bytes.", security:publicReadSecurity,
+          parameters:[{name:"id",in:"path",required:true,schema:{type:"string",pattern:"^[a-f0-9]{64}$"}}],
+          requestBody:{required:true,content:{"application/json":{schema:{type:"object",additionalProperties:false,required:["description","tags","revision"],properties:{displayName:{type:"string",minLength:1,maxLength:80},description:{type:"string",minLength:1,maxLength:320},tags:{type:"array",maxItems:8,items:{type:"string",minLength:1,maxLength:40}},revision:{type:"integer",minimum:0}}}}}},
+          responses:{"200":{description:"Saved metadata revision; private,no-store.",content:{"application/json":{schema:jsonObject}}},"400":errorResponse,"403":errorResponse,"404":notFoundResponse,"409":errorResponse,"410":errorResponse,"413":errorResponse,"422":errorResponse,"503":errorResponse},
+        },
+      },
+      "/api/pet-generations/{id}/submission": {
+        put: { operationId:"submitGeneratedPetAtChosenSlug",tags:["Submissions"],summary:"Submit a generated pet with its chosen gallery address",
+          description:"Same-origin action. Optional metadataRevision fences the name/description/tags reviewed by the user; a changed revision returns409 before creating a submission. Existing receipt always wins a retry.",security:publicReadSecurity,
+          parameters:[{name:"id",in:"path",required:true,schema:{type:"string",pattern:"^[a-f0-9]{64}$"}}],
+          requestBody:{required:true,content:{"application/json":{schema:{type:"object",additionalProperties:false,required:["slug"],properties:{slug:{type:"string",minLength:1,maxLength:64},metadataRevision:{type:"integer",minimum:0}}}}}},
+          responses:{"201":{description:"New or existing immutable submission receipt.",content:{"application/json":{schema:jsonObject}}},"400":errorResponse,"403":errorResponse,"404":notFoundResponse,"409":errorResponse,"410":errorResponse,"422":errorResponse,"503":errorResponse},
+        },
+        post: {
+          operationId: "submitGeneratedPet", tags: ["Submissions"], summary: "Submit one completed generated pet for moderation",
+          description: "Explicit same-origin browser action before the private result expires. Atomically saves the package without TTL, creates one pending pet and stores a receipt; retries return that receipt. No paid API calls or quota changes. Anyone with the private ID can submit once; the first signed-in submitter owns the submission. Never auto-approves, exposes contacts or replaces existing moderation.", security: publicReadSecurity,
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", pattern: "^[a-f0-9]{64}$" } }],
+          responses: { "201": { description: "New or existing submission receipt: petId,slug,submittedAt. Private, no-store.", content: { "application/json": { schema: jsonObject } } }, "400": errorResponse, "403": errorResponse, "404": notFoundResponse, "409": errorResponse, "410": errorResponse, "422": errorResponse, "503": errorResponse },
+        },
+      },
+      "/api/pet-generations/{id}/files/{file}": {
+        get: { operationId: "getPetGenerationFile", tags: ["MCP"], summary: "Download an unlisted completed generation before expiry", security: publicReadSecurity,
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", pattern: "^[a-f0-9]{64}$" } }, { name: "file", in: "path", required: true, schema: { type: "string", enum: ["pet.json", "spritesheet.webp", "pet.zip"] } }],
+          responses: { "200": { description: "Private generated asset; Cache-Control:no-store; no counters mutated." }, "404": notFoundResponse, "410": errorResponse, "503": errorResponse },
         },
       },
       "/api/manifest": {

@@ -346,6 +346,28 @@ describe("Yandex vision caption client", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it("makes exactly one caption request after a timeout when maxAttempts is one", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi.fn(async (_url: Parameters<typeof fetch>[0], init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+        }));
+      const sleep = vi.fn(async () => undefined);
+      const client = createYandexVisionCaptionClient({
+        folderId: "folder-1", apiKey: "secret-key", modelUri: "gpt://folder-1/qwen3.6-35b-a3b",
+        timeoutMs: 50, maxAttempts: 1, sleep, fetchImpl, onDiagnostic: () => undefined,
+      });
+      const failure = expect(client.createCaption(frames)).rejects.toMatchObject({ reason: "timeout" });
+      await vi.advanceTimersByTimeAsync(1_000);
+      await failure;
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(sleep).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("classifies timeout, refusal, and malformed responses without leaking bodies", async () => {
     vi.useFakeTimers();
     const timeoutClient = createYandexVisionCaptionClient({

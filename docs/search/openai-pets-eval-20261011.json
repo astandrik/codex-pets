@@ -1,0 +1,39 @@
+{
+  "revision": "pets-openai-eval-20261011-v1",
+  "frozenBeforeNewRankings": true,
+  "review": "Source-reviewed public catalog descriptions, names and tags on 2026-10-11; agent-reviewed, not claimed as human-labelled or image-reviewed. Historical 14-case fixture remains informational.",
+  "queries": [
+    {"split":"calibration","query":"Zero Two","category":"exact","relevantSlugs":["zero-two"]},
+    {"split":"calibration","query":"ёжик с узелком в лапках","category":"russian","relevantSlugs":["foggy-hedgehog"]},
+    {"split":"calibration","query":"black gothic dress and blindfold","category":"description","relevantSlugs":["2b-2"]},
+    {"split":"calibration","query":"big green giant in a yellow tunic","category":"description","relevantSlugs":["bolshoy-tyll"]},
+    {"split":"calibration","query":"маленький пушистый зверёк с огромными круглыми ушами","category":"russian","relevantSlugs":["cheburashka"]},
+    {"split":"calibration","query":"blonde woman with an eyepatch","category":"description","relevantSlugs":["fischl-detailed","fischl"]},
+    {"split":"calibration","query":"blue braids punk Arcane girl","category":"description","relevantSlugs":["jinx-2","jinx"]},
+    {"split":"calibration","query":"quantum banana compiler","category":"negative","relevantSlugs":[]},
+    {"split":"calibration","query":"как купить авиабилет и оформить счёт-фактуру","category":"negative","relevantSlugs":[]},
+    {"split":"holdout","query":"Velvet Luma","category":"exact","relevantSlugs":["velvet-luma"]},
+    {"split":"holdout","query":"девушка с розовыми волосами в красном костюме пилота","category":"russian","relevantSlugs":["zero-two-2","zero-two"]},
+    {"split":"holdout","query":"friendly focused blue wolf","category":"description","relevantSlugs":["luna"]},
+    {"split":"holdout","query":"magenta hair oversized punch gauntlets","category":"description","relevantSlugs":["vi"]},
+    {"split":"holdout","query":"золотые доспехи красный плащ и огненный меч","category":"russian","relevantSlugs":["master-of-terra","emperor"]},
+    {"split":"holdout","query":"monochrome hyper muscular man wearing dark jeans","category":"description","relevantSlugs":["gigachad-2"]},
+    {"split":"holdout","query":"pink haired catgirl with blue eyes","category":"description","relevantSlugs":["pink-catgirl"]},
+    {"split":"holdout","query":"tax invoice spreadsheet","category":"negative","relevantSlugs":[]},
+    {"split":"holdout","query":"налоговая декларация бухгалтерский баланс","category":"negative","relevantSlugs":[]}
+  ],
+  "pairs": [
+    {"split":"calibration","left":"zero-two","right":"zero-two-2","relevant":true,"reason":"Same named character, Darling in the Franxx"},
+    {"split":"calibration","left":"fischl","right":"fischl-detailed","relevant":true,"reason":"Same named character"},
+    {"split":"calibration","left":"megumin-3","right":"megumin-detailed","relevant":true,"reason":"Same named character"},
+    {"split":"calibration","left":"cheburashka","right":"master-of-terra","relevant":false,"reason":"Distinct character and subject; no shared identity"},
+    {"split":"calibration","left":"zero-two","right":"foggy-hedgehog","relevant":false,"reason":"Unrelated character and subject"},
+    {"split":"calibration","left":"fischl","right":"gigachad-2","relevant":false,"reason":"Unrelated character and subject"},
+    {"split":"holdout","left":"jinx","right":"jinx-2","relevant":true,"reason":"Same named character"},
+    {"split":"holdout","left":"amber","right":"amber-detailed","relevant":true,"reason":"Same named character"},
+    {"split":"holdout","left":"aqua","right":"aqua-2","relevant":true,"reason":"Same named character; validate annotation identity before scoring"},
+    {"split":"holdout","left":"luna","right":"2b-2","relevant":false,"reason":"Wolf versus android; no shared identity"},
+    {"split":"holdout","left":"vi","right":"cheburashka","relevant":false,"reason":"Unrelated character and subject"},
+    {"split":"holdout","left":"pink-catgirl","right":"primaris","relevant":false,"reason":"Unrelated character and subject"}
+  ]
+}

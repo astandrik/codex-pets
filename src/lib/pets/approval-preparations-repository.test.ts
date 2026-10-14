@@ -7,6 +7,19 @@ import {
 } from "@/lib/pets/approval-preparations-repository";
 
 describe("approval preparation identity and retries", () => {
+
+  it("reads the latest preparation for one pet without enqueuing or resetting it", async () => {
+    let seen = ""; let params: Record<string, unknown> = {};
+    const repository = createApprovalPreparationsRepository({
+      ...fakeDependencies([], []),
+      execute: async (sql, values) => { seen = sql; params = values; return preparationResult({ status: "queued", attempts: 0 }); },
+      transaction: async () => { throw new Error("read must not mutate"); },
+    });
+    expect(await repository.getLatestForPet("pet-1")).toMatchObject({ preparationId: "approval-1", status: "queued", attempts: 0 });
+    expect(seen).toContain("WHERE pet_id = $pet_id ORDER BY created_at DESC, preparation_id DESC LIMIT 1");
+    expect(seen).not.toMatch(/UPDATE|INSERT|DELETE|UPSERT/); expect(params).toEqual({ $pet_id: "pet-1" });
+  });
+
   it("uses the pending revision and ranking revision in its stable identity", () => {
     const input = {
       petId: "pet-1",

@@ -241,6 +241,23 @@ describe("related pet annotation client", () => {
     assertSanitized(error);
   });
 
+  it("makes exactly one request after a timeout when maxAttempts is one", async () => {
+    vi.useFakeTimers();
+    const fetchImpl = vi.fn(async (_url: Parameters<typeof fetch>[0], init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("SECRET_TIMEOUT")));
+      }));
+    const sleep = vi.fn(async () => undefined);
+    const result = createClient({ timeoutMs: 50, maxAttempts: 1, fetchImpl, sleep })
+      .createProposal(pet).catch((value) => value);
+    await vi.advanceTimersByTimeAsync(1_000);
+    const error = await result;
+    expect(error).toMatchObject({ reason: "timeout" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+    assertSanitized(error);
+  });
+
   it("serializes starts but allows in-flight requests to overlap", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { listPetSearchCaptions } from "@/lib/pets/search-captions-repository";
-import { loadPetSearchConfig } from "@/lib/pets/search-config";
+import { createPrivateOpenAIEmbeddingClient } from "@/lib/pets/openai-embedding-client";
+import { loadPetSearchConfig, PET_SEARCH_EMBEDDING_MODELS } from "@/lib/pets/search-config";
 import {
   createPetSearchSourceHash,
   createYandexEmbeddingClient,
@@ -54,7 +55,9 @@ describe.skipIf(!LIVE_EVAL_ENABLED)("live visual pet search evaluation", () => {
       }
       const semanticConfig = config.semantic;
       const visualConfig = config.visual;
-      const embeddingClient = createYandexEmbeddingClient(semanticConfig);
+      const embeddingClient = semanticConfig.privateEmbedding
+        ? createPrivateOpenAIEmbeddingClient({ ...semanticConfig.privateEmbedding, revision: semanticConfig.revision, timeoutMs: semanticConfig.timeoutMs })
+        : createYandexEmbeddingClient({ ...semanticConfig, ...PET_SEARCH_EMBEDDING_MODELS[semanticConfig.embeddingModelId] });
       const split = LIVE_EVAL_SPLIT;
       const selectedFixtures = fixtures.filter(
         (fixture) => fixture.split === split,

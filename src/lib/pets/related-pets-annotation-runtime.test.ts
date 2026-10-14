@@ -1,3 +1,4 @@
+import { OPENAI_ANNOTATION_REVISION, OPENAI_ANNOTATION_PROPOSAL_REVISION, OPENAI_METADATA_MODEL_URI } from "@/lib/pets/metadata-sources";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -68,6 +69,27 @@ describe("current annotation runtime", () => {
 
     await expect(runtime.refresh(pet)).resolves.toBe("annotation-and-vectors");
     expect(writes).toEqual(["annotation", "query-current", "document-current"]);
+  });
+
+  it.each([false, true])("reuses fresh OpenAI over stale Yandex without new metadata calls (reversed=%s)", async (reverse) => {
+    const modelUri = OPENAI_METADATA_MODEL_URI;
+    const proposalInputHash = createRelatedPetAnnotationProposalInputHash({ pet, modelUri, proposalRevision: OPENAI_ANNOTATION_PROPOSAL_REVISION });
+    const proposalHash = createRelatedPetAnnotationProposalHash(proposal);
+    const sourceHash = createRelatedPetAnnotationSourceHash({ slug: pet.slug, annotationRevision: OPENAI_ANNOTATION_REVISION, proposalRevision: OPENAI_ANNOTATION_PROPOSAL_REVISION, proposalInputHash, proposalHash });
+    const annotation = resolveRelatedPetAnnotation({ slug: pet.slug, proposal });
+    const createProposal = vi.fn(); const upsertAnnotation = vi.fn(); const upsertEmbedding = vi.fn();
+    const stored = { slug: pet.slug, annotationRevision: OPENAI_ANNOTATION_REVISION, proposalRevision: OPENAI_ANNOTATION_PROPOSAL_REVISION,
+      proposalInputHash, proposalHash, sourceHash, proposalJson: JSON.stringify(proposal), annotationJson: JSON.stringify(annotation), annotationText: buildRelatedPetAnnotationText(annotation), updatedAt: "time" };
+    const runtime = createRelatedPetAnnotationRuntime({ annotationRevision: "legacy", proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+      queryRevision: "query", documentRevision: "document", dimensions: 2, modelUri: "gpt://folder/qwen", createProposal,
+      embeddingClient: { embedPreparedQuery: async () => [1, 0], embedDocument: async () => [1, 0] },
+      getAnnotation: async () => stored, getAnnotationCandidates: async () => { const rows = [{ ...stored, annotationRevision: "legacy", sourceHash: "stale-yandex" }, stored]; return reverse ? rows.reverse() : rows; }, upsertAnnotation, getEmbeddingMetadata: async () => null, upsertEmbedding });
+    await expect(runtime.refresh(pet)).resolves.toBe("vectors-only");
+    expect(createProposal).not.toHaveBeenCalled(); expect(upsertAnnotation).not.toHaveBeenCalled();
+    expect(upsertEmbedding).toHaveBeenCalledTimes(2);
+    stored.proposalInputHash = "stale";
+    await expect(runtime.refresh(pet)).rejects.toThrow("annotation_stale");
+    expect(createProposal).not.toHaveBeenCalled();
   });
 
   it("does not call the provider when the stored source is current", async () => {

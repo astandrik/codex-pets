@@ -1,3 +1,4 @@
+import { OPENAI_ANNOTATION_REVISION, OPENAI_ANNOTATION_PROPOSAL_REVISION, OPENAI_CAPTION_REVISION, OPENAI_METADATA_MODEL_URI } from "@/lib/pets/metadata-sources";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -48,6 +49,7 @@ const profile: RelatedPetsRebuildProfile = {
   textMinSimilarity: 0.1,
   annotationRevision: "annotation-current",
   annotationProposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+  acceptedAnnotationProposalRevisions: [RELATED_PETS_ANNOTATION_PROPOSAL_REVISION],
   annotationQueryRevision: "annotation-query-current",
   annotationDocumentRevision: "annotation-document-current",
   annotationDimensions: 2,
@@ -1674,5 +1676,39 @@ describe("related pets rebuild service", () => {
         ({ generationId }) => generationId === "generation-newer",
       ),
     ).toBe(true);
+  });
+});
+
+
+describe("mixed metadata provenance in ranking inputs", () => {
+  it.each([false, true])("validates source freshness before choosing rows (reversed=%s)", (reverse) => {
+    const oldPet = pet("old"); const newPet = pet("lumi");
+    const oldAnnotation = annotationFor(oldPet, profile);
+    const newAnnotation = annotationFor(newPet, profile);
+    const proposalInputHash = createRelatedPetAnnotationProposalInputHash({ pet: newPet, modelUri: OPENAI_METADATA_MODEL_URI, proposalRevision: OPENAI_ANNOTATION_PROPOSAL_REVISION });
+    Object.assign(newAnnotation, { annotationRevision: OPENAI_ANNOTATION_REVISION, proposalRevision: OPENAI_ANNOTATION_PROPOSAL_REVISION, proposalInputHash,
+      sourceHash: createRelatedPetAnnotationSourceHash({ slug: newPet.slug, annotationRevision: OPENAI_ANNOTATION_REVISION, proposalRevision: OPENAI_ANNOTATION_PROPOSAL_REVISION, proposalInputHash, proposalHash: newAnnotation.proposalHash }) });
+    const oldCaption = captionFor(oldPet);
+    const newCaption = { ...captionFor(newPet), captionRevision: OPENAI_CAPTION_REVISION, sourceHash: createPetVisionCaptionSourceHash({ captionRevision: OPENAI_CAPTION_REVISION, modelUri: OPENAI_METADATA_MODEL_URI, assetId: "asset-lumi", spritesheetSha256: "a".repeat(64) }) };
+    const annotations = [oldAnnotation, newAnnotation];
+    const captions = [oldCaption, newCaption];
+    const annotationVectors = (role: "query" | "document") => annotations.map(row => rawVector({ slug: row.slug, modelRevision: role === "query" ? profile.annotationQueryRevision : profile.annotationDocumentRevision,
+      sourceHash: createRelatedPetAnnotationEmbeddingSourceHash({ modelRevision: role === "query" ? profile.annotationQueryRevision : profile.annotationDocumentRevision, role, annotationRevision: row.annotationRevision ?? profile.annotationRevision, annotationSourceHash: row.sourceHash, annotationText: row.annotationText }) }));
+    const input = { pets: [oldPet, newPet], profile, annotationModelUri,
+      textRows: [], textQueryRows: [], annotations: [...annotations, { ...annotationFor(newPet, profile), sourceHash: "stale-yandex" }, { ...newAnnotation, slug: oldPet.slug, proposalJson: "malformed" }], annotationRows: annotationVectors("document"), annotationQueryRows: annotationVectors("query"),
+      visualContext, captions: [...captions, { ...captionFor(newPet), sourceHash: "stale-yandex" }, { ...newCaption, slug: oldPet.slug, captionJson: "malformed" }], visualRows: captions.map(row => rawVector({ slug: row.slug, modelRevision: profile.visualRevision,
+        sourceHash: createPetVisualEmbeddingSourceHash({ visualRevision: profile.visualRevision, captionRevision: "captionRevision" in row ? String(row.captionRevision) : visualContext.captionRevision, captionSourceHash: row.sourceHash, captionText: row.captionText }) })) };
+    if (reverse) { input.annotations.reverse(); input.captions.reverse(); }
+    const prepared = prepareRelatedPetsRankingInputs(input);
+    expect([...prepared.annotations.keys()]).toEqual([oldPet.slug, newPet.slug]);
+    expect(prepared.annotationQueryVectors.size).toBe(2);
+    expect(prepared.annotationDocumentVectors.size).toBe(2);
+    expect(prepared.visualVectors.size).toBe(2);
+    newAnnotation.proposalInputHash = "forged";
+    newCaption.sourceHash = "wrong-provider-hash";
+    const invalid = prepareRelatedPetsRankingInputs(input);
+    expect([...invalid.annotations.keys()]).toEqual([oldPet.slug]);
+    expect(invalid.annotationQueryVectors.has(newPet.slug)).toBe(false);
+    expect(invalid.visualVectors.has(newPet.slug)).toBe(false);
   });
 });

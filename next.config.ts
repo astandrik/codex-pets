@@ -55,6 +55,10 @@ const nextConfig: NextConfig = {
   turbopack: {
     root,
   },
+  async headers() {
+    const headers = [{ key: "Cache-Control", value: "private, no-store" }, { key: "Referrer-Policy", value: "no-referrer" }, { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" }];
+    return [{ source: "/generate", headers }, { source: "/my-generations", headers }, { source: "/generated/:path*", headers }];
+  },
   images: {
     remotePatterns: [
       {

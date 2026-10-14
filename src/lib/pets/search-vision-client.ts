@@ -41,6 +41,7 @@ type YandexVisionCaptionClientOptions = {
   apiKey: string;
   modelUri: string;
   timeoutMs: number;
+  maxAttempts?: number;
   fetchImpl?: typeof fetch;
   now?: () => number;
   sleep?: (milliseconds: number) => Promise<void>;

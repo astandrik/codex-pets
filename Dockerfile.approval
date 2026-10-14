@@ -1,0 +1,12 @@
+# Supply the already verified application image by immutable local digest. The
+# worker inherits its exact dependencies and does not serve the old web bundle.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+ARG VCS_REF
+ARG BASE_IMAGE
+LABEL org.opencontainers.image.source="https://github.com/astandrik/codex-pets" \
+      org.opencontainers.image.revision="$VCS_REF" \
+      org.opencontainers.image.base.name="$BASE_IMAGE"
+COPY src ./src
+COPY scripts ./scripts
+CMD ["node", "scripts/related-pet-approval-worker.mjs"]

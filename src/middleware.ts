@@ -12,6 +12,14 @@ import { getPreviewRewritePath } from "@/lib/preview/request";
 export function middleware(request: NextRequest): Response {
   const basePath = request.nextUrl.basePath || BASE_PATH || undefined;
   const pathname = stripBasePath(request.nextUrl.pathname, basePath);
+  if (pathname === "/admin/generation-limits" || pathname.startsWith("/api/admin/generation-quotas") || pathname.startsWith("/generated/") || pathname.startsWith("/api/pet-generations/")) {
+    const response = NextResponse.next();
+    response.headers.set("Cache-Control", "private, no-store");
+    response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+    response.headers.set("Referrer-Policy", "no-referrer");
+    response.headers.set("X-Content-Type-Options", "nosniff");
+    return response;
+  }
   const oauthMetadataPath = getOAuthProtectedResourceRewritePath(pathname, basePath);
   if (oauthMetadataPath) {
     const rewriteUrl = new URL(request.url);

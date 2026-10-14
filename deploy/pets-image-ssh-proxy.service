@@ -1,0 +1,25 @@
+[Unit]
+Description=Pets API-only per-request SSH proxy
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nobody
+Group=nogroup
+ExecStart=/usr/bin/python3 /opt/codex-pets/ssh-proxy/current/pets_image_ssh_proxy.py /etc/codex-pets/ssh-proxy.json
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
+TasksMax=64
+MemoryMax=256M
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

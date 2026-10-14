@@ -1,3 +1,4 @@
+import type { YdbQueryExecutor } from "@/lib/ydb/client";
 import { TypedValues, withSession } from "@/lib/ydb/client";
 import { bytesAt, rowsFromResult, textAt } from "@/lib/ydb/result";
 import { TABLES } from "@/lib/ydb/schema";
@@ -18,13 +19,15 @@ const ASSET_CONTENT_TYPES = new Map<string, string>([
   ["pet.zip", "application/zip"],
 ]);
 
-export async function storePetAssetsInYdb(input: {
+export type PetAssetInput = {
   assetId: string;
   petJsonBuffer: Buffer;
   spritesheetBuffer: Buffer;
   zipBuffer: Buffer;
   spritesheetExt: "webp" | "png";
-}): Promise<{
+};
+
+export async function storePetAssetsInYdb(input: PetAssetInput): Promise<{
   petJsonUrl: string;
   spritesheetUrl: string;
   zipUrl: string;
@@ -33,8 +36,15 @@ export async function storePetAssetsInYdb(input: {
     return storeMockPetAssetFiles(input);
   }
 
-  await withSession((session) =>
-    session.executeQuery(
+  return writePetAssets(input, (sql, params) => withSession(session => session.executeQuery(sql, params)));
+}
+
+export async function insertPetAssetsInTransaction(input: PetAssetInput, execute: YdbQueryExecutor): Promise<void> {
+  await writePetAssets(input, execute, true);
+}
+
+async function writePetAssets(input: PetAssetInput, execute: YdbQueryExecutor, insertOnly = false) {
+  await execute(
       `
 DECLARE $asset_id AS Utf8;
 DECLARE $pet_json_bytes AS String;
@@ -43,7 +53,7 @@ DECLARE $zip_bytes AS String;
 DECLARE $spritesheet_ext AS Utf8;
 DECLARE $created_at AS Utf8;
 
-UPSERT INTO ${TABLES.assets}
+${insertOnly ? "INSERT" : "UPSERT"} INTO ${TABLES.assets}
 (asset_id, pet_json_bytes, spritesheet_bytes, zip_bytes, spritesheet_ext, created_at)
 VALUES ($asset_id, $pet_json_bytes, $spritesheet_bytes, $zip_bytes, $spritesheet_ext, $created_at);
       `,
@@ -55,7 +65,6 @@ VALUES ($asset_id, $pet_json_bytes, $spritesheet_bytes, $zip_bytes, $spritesheet
         $spritesheet_ext: TypedValues.utf8(input.spritesheetExt),
         $created_at: TypedValues.utf8(new Date().toISOString()),
       },
-    ),
   );
 
   return {

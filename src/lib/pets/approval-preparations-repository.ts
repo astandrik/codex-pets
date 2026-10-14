@@ -1,3 +1,4 @@
+import { getAdditionalMetadataInputRevisions } from "@/lib/pets/metadata-input-revisions";
 import { createHash, randomUUID } from "node:crypto";
 import type { Session } from "ydb-sdk";
 
@@ -36,6 +37,8 @@ export type ApprovalRankingInputScope = {
   embeddingModelRevisions: readonly string[];
   captionRevision: string | null;
   annotationRevision?: string | null;
+  additionalCaptionRevisions?: readonly string[];
+  additionalAnnotationRevisions?: readonly string[];
 };
 
 export type ApprovalPreparationFinalizeResult =
@@ -100,7 +103,7 @@ export function nextApprovalPreparationAttemptAt(
 export function createApprovalPreparationsRepository(
   dependencies: Dependencies,
 ) {
-  return { enqueue, get, claimNext, markFailure, finalize };
+  return { enqueue, get, getLatestForPet, claimNext, markFailure, finalize };
 
   async function enqueue(input: {
     publishRequestedEmail?: boolean;
@@ -206,6 +209,17 @@ VALUES
   ): Promise<ApprovalPreparation | null> {
     if (!dependencies.isConfigured()) return null;
     return getWithExecute(dependencies.execute, preparationId);
+  }
+
+  async function getLatestForPet(petId: string): Promise<ApprovalPreparation | null> {
+    if (!dependencies.isConfigured()) return null;
+    const result = await dependencies.execute(`
+DECLARE $pet_id AS Utf8;
+SELECT ${selectColumns()} FROM ${TABLES.approvalPreparations}
+WHERE pet_id = $pet_id ORDER BY created_at DESC, preparation_id DESC LIMIT 1;
+`, { $pet_id: dependencies.values.utf8(petId) });
+    const row = rowsFromResult(result)[0];
+    return row ? preparationFromRow(row) : null;
   }
 
   async function getWithExecute(
@@ -549,6 +563,7 @@ WHERE annotation_revision = $annotation_revision ORDER BY pet_slug;
       ];
     }
     return JSON.stringify({
+      ...(await getAdditionalMetadataInputRevisions(execute, dependencies.values, scope)),
       catalog: JSON.stringify(catalog),
       embeddings: JSON.stringify(embeddings),
       captions: captions === null ? null : JSON.stringify(captions),
@@ -734,6 +749,7 @@ const repository = createApprovalPreparationsRepository({
 
 export const enqueueApprovalPreparation = repository.enqueue;
 export const getApprovalPreparation = repository.get;
+export const getLatestApprovalPreparationForPet = repository.getLatestForPet;
 export const claimNextApprovalPreparation = repository.claimNext;
 export const markApprovalPreparationFailure = repository.markFailure;
 export const finalizeApprovalPreparation = repository.finalize;

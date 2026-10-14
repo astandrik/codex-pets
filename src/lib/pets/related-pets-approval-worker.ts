@@ -1,3 +1,6 @@
+import { petModerationPaused } from "@/lib/pets/moderation-pause";
+import { prepareOpenAIApprovalMetadata } from "@/lib/pets/metadata-worker/approval";
+import { isOpenAIPetsProfile } from "@/lib/pets/openai-embedding-profile";
 import { randomUUID } from "node:crypto";
 
 import { notifyIndexNowOfApprovedPet } from "@/lib/indexnow";
@@ -8,12 +11,14 @@ import type {
 } from "@/lib/pets/approval-preparations-repository";
 import {
   claimNextApprovalPreparation,
+  getApprovalPreparation,
   createApprovalReviewId,
   finalizeApprovalPreparation,
   markApprovalPreparationFailure,
 } from "@/lib/pets/approval-preparations-repository";
 import { refreshPetRelatedAnnotation } from "@/lib/pets/related-pets-annotation-runtime";
 import { refreshApprovedPetRelatedDescriptionEmbeddingsStrict } from "@/lib/pets/related-pets-query-runtime";
+import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
 import { prepareRelatedPetsGeneration } from "@/lib/pets/related-pets-rebuild";
 import {
   cleanupInactiveRelatedPetsGeneration,
@@ -39,13 +44,14 @@ type ApprovalWorkerResult =
   | "manual_review";
 
 type WorkerDependencies<Pet extends PreparedPet> = {
+  rankingRevision: string;
   claim: (input: {
     workerId: string;
     now: string;
     leaseUntil: string;
   }) => Promise<ApprovalPreparation | null>;
   getPet: (petId: string) => Promise<Pet | null>;
-  prepareSignals: (pet: Pet & { status: "approved" }) => Promise<void>;
+  prepareSignals: (pet: Pet & { status: "approved" }, context: { preparation: ApprovalPreparation; workerId: string }) => Promise<void>;
   buildGeneration: (input: {
     generationId: string;
     pet: Pet & { status: "approved" };
@@ -117,6 +123,9 @@ export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(
     let generationId: string | null = null;
     let finalizationOutcomeUncertain = false;
     try {
+      if (preparation.rankingRevision !== dependencies.rankingRevision) {
+        throw preparationFailure("ranking_profile_changed");
+      }
       const pet = await dependencies.getPet(preparation.petId);
       if (
         !pet ||
@@ -127,7 +136,7 @@ export function createRelatedPetApprovalWorker<Pet extends PreparedPet>(
         throw preparationFailure("stale_submission");
       }
       const preparedPet = { ...pet, status: "approved" as const };
-      await dependencies.prepareSignals(preparedPet);
+      await dependencies.prepareSignals(preparedPet, { preparation, workerId });
       generationId = dependencies.createGenerationId();
       const generation = await dependencies.buildGeneration({
         generationId,
@@ -235,7 +244,20 @@ function failureCodeFrom(error: unknown): string {
     : "preparation_failed";
 }
 
-async function prepareProductionSignals(pet: PublicPet): Promise<void> {
+async function prepareProductionSignals(pet: PublicPet, context: { preparation: ApprovalPreparation; workerId: string }): Promise<void> {
+  if (isOpenAIPetsProfile()) {
+    await prepareOpenAIApprovalMetadata(pet, async () => {
+      const current = await getApprovalPreparation(context.preparation.preparationId);
+      const pending = await getPetForApprovalPreparationById(pet.id);
+      const leaseUntil = Date.parse(current?.leaseUntil ?? "");
+      // Provider timeout is three minutes. Never start a call near lease expiry.
+      if (petModerationPaused() || !current || current.status !== "preparing" || current.leaseOwner !== context.workerId ||
+          (!Number.isFinite(leaseUntil) || leaseUntil <= Date.now() + 240_000) || !pending || pending.status !== "pending" ||
+          pending.updatedAt !== context.preparation.petUpdatedAt || pending.slug !== pet.slug) {
+        throw preparationFailure("metadata_lease_or_input_changed");
+      }
+    });
+  }
   const searchStatus = await refreshApprovedPetSearchEmbedding(pet);
   if (searchStatus === "skipped") {
     throw preparationFailure("embedding_configuration_missing");
@@ -254,6 +276,7 @@ async function prepareProductionSignals(pet: PublicPet): Promise<void> {
 }
 
 const productionWorker = createRelatedPetApprovalWorker({
+  rankingRevision: RELATED_PETS_V24_PROFILE.rankingRevision,
   claim: claimNextApprovalPreparation,
   getPet: getPetForApprovalPreparationById,
   prepareSignals: prepareProductionSignals,

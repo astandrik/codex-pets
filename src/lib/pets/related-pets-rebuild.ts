@@ -1,3 +1,6 @@
+import { listPetAnnotationsWithSources, listPetCaptionsWithSources } from "@/lib/pets/metadata-records";
+import { selectFreshAnnotationMetadata, selectFreshCaptionMetadata, groupMetadataBySlug, OPENAI_ANNOTATION_REVISION, OPENAI_CAPTION_REVISION } from "@/lib/pets/metadata-sources";
+import { isOpenAIPetsProfile, OPENAI_PETS_REVISIONS } from "@/lib/pets/openai-embedding-profile";
 import { randomUUID } from "node:crypto";
 
 import { getPetAssetIdFromSpritesheetUrl } from "@/lib/pets/asset-urls";
@@ -6,10 +9,8 @@ import {
   createRelatedPetAnnotationEmbeddingSourceHash,
   type ResolvedRelatedPetAnnotation,
 } from "@/lib/pets/related-pets-annotation-contract.mjs";
-import { validateCurrentRelatedPetAnnotation } from "@/lib/pets/related-pets-annotation-refresh.mjs";
 import type { StoredRelatedPetAnnotation } from "@/lib/pets/related-pets-annotations-repository";
 import {
-  listPetSearchCaptions,
   type StoredPetSearchCaption,
 } from "@/lib/pets/search-captions-repository";
 import {
@@ -27,10 +28,7 @@ import {
 import {
   PET_VISION_CAPTION_REVISION,
   PET_VISUAL_MODEL_REVISION,
-  buildPetVisionCaptionText,
-  createPetVisionCaptionSourceHash,
   createPetVisualEmbeddingSourceHash,
-  parsePetVisionCaptionEnvelope,
 } from "@/lib/pets/search-vision-contract";
 import {
   activateRelatedPetsGeneration,
@@ -66,12 +64,15 @@ export type RelatedPetsRebuildProfile = RelatedPetsV24RankingProfile & {
   textDimensions: number;
   annotationRevision: string;
   annotationProposalRevision: string;
+  acceptedAnnotationProposalRevisions: readonly string[];
   annotationDocumentRevision: string;
   annotationQueryRevision: string;
   annotationDimensions: number;
   visualRevision: string;
   visualCaptionRevision: string;
   visualDimensions: number;
+  additionalCaptionRevisions?: readonly string[];
+  additionalAnnotationRevisions?: readonly string[];
 };
 
 type RelatedPetsInputPreparationProfile = Pick<
@@ -85,6 +86,7 @@ type RelatedPetsInputPreparationProfile = Pick<
   RelatedPetsRebuildProfile,
   | "annotationRevision"
   | "annotationProposalRevision"
+  | "acceptedAnnotationProposalRevisions"
   | "annotationDocumentRevision"
   | "annotationQueryRevision"
   | "annotationDimensions"
@@ -643,6 +645,8 @@ export function createRelatedPetsRebuildService(
         ? dependencies.profile.visualCaptionRevision
         : null,
       annotationRevision: annotationProfile.annotationRevision,
+      ...(dependencies.profile.additionalCaptionRevisions && includeVisualInputs ? { additionalCaptionRevisions: dependencies.profile.additionalCaptionRevisions } : {}),
+      ...(dependencies.profile.additionalAnnotationRevisions ? { additionalAnnotationRevisions: dependencies.profile.additionalAnnotationRevisions } : {}),
     };
   }
 
@@ -878,6 +882,7 @@ function getAnnotationProfile(
 ): {
   annotationRevision: string;
   annotationProposalRevision: string;
+  acceptedAnnotationProposalRevisions: readonly string[];
   annotationDocumentRevision: string;
   annotationQueryRevision: string;
   annotationDimensions: number;
@@ -886,6 +891,8 @@ function getAnnotationProfile(
   if (
     !profile.annotationRevision ||
     !profile.annotationProposalRevision ||
+    !Array.isArray(profile.acceptedAnnotationProposalRevisions) ||
+    profile.acceptedAnnotationProposalRevisions.length === 0 ||
     !profile.annotationDocumentRevision ||
     !profile.annotationQueryRevision ||
     typeof annotationDimensions !== "number" ||
@@ -897,6 +904,8 @@ function getAnnotationProfile(
   return {
     annotationRevision: profile.annotationRevision,
     annotationProposalRevision: profile.annotationProposalRevision,
+    acceptedAnnotationProposalRevisions:
+      profile.acceptedAnnotationProposalRevisions,
     annotationDocumentRevision: profile.annotationDocumentRevision,
     annotationQueryRevision: profile.annotationQueryRevision,
     annotationDimensions,
@@ -962,6 +971,7 @@ export function prepareRelatedPetsRankingInputs(input: {
         values: new Map<string, ResolvedRelatedPetAnnotation>(),
         sourceHashes: new Map<string, string>(),
         texts: new Map<string, string>(),
+        revisions: new Map<string, string>(),
       };
   const annotationQueryVectors = annotationProfile
     ? validatedAnnotationVectors({
@@ -972,6 +982,7 @@ export function prepareRelatedPetsRankingInputs(input: {
         annotationRevision: annotationProfile.annotationRevision,
         sourceHashes: preparedAnnotations.sourceHashes,
         texts: preparedAnnotations.texts,
+        revisions: preparedAnnotations.revisions,
       })
     : new Map<string, readonly number[]>();
   const annotationDocumentVectors = annotationProfile
@@ -983,6 +994,7 @@ export function prepareRelatedPetsRankingInputs(input: {
         annotationRevision: annotationProfile.annotationRevision,
         sourceHashes: preparedAnnotations.sourceHashes,
         texts: preparedAnnotations.texts,
+        revisions: preparedAnnotations.revisions,
       })
     : new Map<string, readonly number[]>();
   const visualVectors = input.visualContext
@@ -1016,30 +1028,26 @@ function validatedAnnotations(input: {
   values: Map<string, ResolvedRelatedPetAnnotation>;
   sourceHashes: Map<string, string>;
   texts: Map<string, string>;
+  revisions: Map<string, string>;
 } {
-  const petsBySlug = new Map(input.pets.map((pet) => [pet.slug, pet]));
   const values = new Map<string, ResolvedRelatedPetAnnotation>();
   const sourceHashes = new Map<string, string>();
   const texts = new Map<string, string>();
-  for (const row of input.rows) {
-    const pet = petsBySlug.get(row.slug);
-    if (!pet) continue;
-    try {
-      const current = validateCurrentRelatedPetAnnotation({
-        pet,
-        stored: row,
-        modelUri: input.modelUri,
-        annotationRevision: input.profile.annotationRevision,
-        proposalRevision: input.profile.annotationProposalRevision,
-      });
-      values.set(row.slug, current.annotation);
-      sourceHashes.set(row.slug, current.sourceHash);
-      texts.set(row.slug, current.annotationText);
-    } catch {
-      // Malformed derived rows are excluded from current coverage.
-    }
+  const revisions = new Map<string, string>();
+  const rowsBySlug = groupMetadataBySlug(input.rows);
+  for (const pet of input.pets) {
+    const fresh = selectFreshAnnotationMetadata(pet, rowsBySlug.get(pet.slug) ?? [], {
+      modelUri: input.modelUri, annotationRevision: input.profile.annotationRevision,
+      proposalRevision: input.profile.annotationProposalRevision,
+      acceptedProposalRevisions: input.profile.acceptedAnnotationProposalRevisions,
+    });
+    if (!fresh) continue;
+    values.set(pet.slug, fresh.annotation.annotation);
+    sourceHashes.set(pet.slug, fresh.annotation.sourceHash);
+    texts.set(pet.slug, fresh.annotation.annotationText);
+    revisions.set(pet.slug, fresh.source.annotationRevision);
   }
-  return { values, sourceHashes, texts };
+  return { values, sourceHashes, texts, revisions };
 }
 
 function validatedAnnotationVectors(input: {
@@ -1050,6 +1058,7 @@ function validatedAnnotationVectors(input: {
   annotationRevision: string;
   sourceHashes: ReadonlyMap<string, string>;
   texts: ReadonlyMap<string, string>;
+  revisions: ReadonlyMap<string, string>;
 }): Map<string, readonly number[]> {
   const vectors = new Map<string, readonly number[]>();
   for (const row of input.rows) {
@@ -1062,7 +1071,7 @@ function validatedAnnotationVectors(input: {
       sourceHash: createRelatedPetAnnotationEmbeddingSourceHash({
         modelRevision: input.revision,
         role: input.role,
-        annotationRevision: input.annotationRevision,
+        annotationRevision: input.revisions.get(row.slug) ?? input.annotationRevision,
         annotationSourceHash,
         annotationText,
       }),
@@ -1106,40 +1115,23 @@ function validatedVisualVectors(input: {
   >;
   context: VisualSourceContext;
 }): Map<string, readonly number[]> {
-  const captionsBySlug = new Map(
-    input.captions.map((caption) => [caption.slug, caption]),
-  );
   const vectors = new Map<string, readonly number[]>();
-
+  const captionsBySlug = groupMetadataBySlug(input.captions);
   for (const row of input.rows) {
     const item = input.petsBySlug.get(row.slug);
-    const caption = captionsBySlug.get(row.slug);
-    if (!item || !caption) continue;
-
+    if (!item) continue;
     try {
       const assetId = getPetAssetIdFromSpritesheetUrl(item.spritesheetUrl);
       if (!assetId) continue;
-      const envelope = parsePetVisionCaptionEnvelope(caption.captionJson);
-      const captionText = buildPetVisionCaptionText(envelope.caption);
-      if (
-        captionText !== caption.captionText ||
-        envelope.source.assetId !== assetId
-      ) {
-        continue;
-      }
-      const captionSourceHash = createPetVisionCaptionSourceHash({
-        captionRevision: input.context.captionRevision,
-        modelUri: input.context.modelUri,
-        assetId,
-        spritesheetSha256: envelope.source.spritesheetSha256,
-      });
-      if (caption.sourceHash !== captionSourceHash) continue;
+      const fresh = selectFreshCaptionMetadata(captionsBySlug.get(item.slug) ?? [], { slug: item.slug, assetId, legacy: input.context });
+      if (!fresh) continue;
+      const { source, captionText, sourceHash: captionSourceHash } = fresh;
       const vector = decodeRelatedPetV24Vector(row, {
         modelRevision: input.profile.visualRevision,
         dimensions: input.profile.visualDimensions,
         sourceHash: createPetVisualEmbeddingSourceHash({
           visualRevision: input.profile.visualRevision,
-          captionRevision: input.context.captionRevision,
+          captionRevision: source.captionRevision,
           captionSourceHash,
           captionText,
         }),
@@ -1173,8 +1165,8 @@ export function getCurrentRelatedPetsVisualSourceContext(): VisualSourceContext 
     process.env.PET_SEARCH_VISION_CAPTION_REVISION?.trim() ||
     PET_VISION_CAPTION_REVISION;
   const configuredVisualRevision =
-    process.env.PET_SEARCH_VISUAL_MODEL_REVISION?.trim() ||
-    PET_VISUAL_MODEL_REVISION;
+    isOpenAIPetsProfile() ? OPENAI_PETS_REVISIONS.visual : (process.env.PET_SEARCH_VISUAL_MODEL_REVISION?.trim() ||
+    PET_VISUAL_MODEL_REVISION);
   const folderId = process.env.YANDEX_AI_STUDIO_FOLDER_ID?.trim();
   if (
     !folderId ||
@@ -1192,6 +1184,8 @@ export function getCurrentRelatedPetsVisualSourceContext(): VisualSourceContext 
 const service = createRelatedPetsRebuildService({
   profile: {
     ...RELATED_PETS_V24_PROFILE,
+    additionalCaptionRevisions: [OPENAI_CAPTION_REVISION],
+    additionalAnnotationRevisions: [OPENAI_ANNOTATION_REVISION],
     visualCaptionRevision:
       PET_VISUAL_MODEL_REVISIONS[
         RELATED_PETS_V24_PROFILE.visualRevision
@@ -1201,13 +1195,8 @@ const service = createRelatedPetsRebuildService({
   isStorageAvailable: isYdbConfigured,
   listApprovedPets: listApprovedPetsForSearch,
   listRawVectors: listRawPetSearchEmbeddings,
-  listCaptions: listPetSearchCaptions,
-  listAnnotations: async (annotationRevision) => {
-    const { listRelatedPetAnnotations } = await import(
-      "@/lib/pets/related-pets-annotations-repository"
-    );
-    return listRelatedPetAnnotations(annotationRevision);
-  },
+  listCaptions: listPetCaptionsWithSources,
+  listAnnotations: listPetAnnotationsWithSources,
   getAnnotationModelUri: () => {
     const folderId = process.env.YANDEX_AI_STUDIO_FOLDER_ID?.trim();
     return folderId

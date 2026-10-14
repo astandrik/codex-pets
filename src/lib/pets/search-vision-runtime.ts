@@ -1,3 +1,5 @@
+import { getPetCaptionCandidates } from "@/lib/pets/metadata-records";
+import { resolveCaptionMetadataSource, selectFreshCaptionMetadata, OPENAI_CAPTION_REVISION } from "@/lib/pets/metadata-sources";
 import { getPetAssetIdFromSpritesheetUrl } from "@/lib/pets/asset-urls";
 import { readPetSpritesheetAsset } from "@/lib/pets/assets-repository";
 import {
@@ -53,6 +55,7 @@ type PetVisionSearchRuntimeDependencies = {
     captionRevision: string,
     slug: string,
   ) => Promise<StoredPetSearchCaption | null>;
+  getCaptionCandidates?: typeof getPetCaptionCandidates;
   upsertCaption: typeof upsertPetSearchCaption;
   getEmbeddingMetadata: (
     modelRevision: string,
@@ -116,15 +119,18 @@ export function createPetVisionSearchRuntime(
       throw new PetVisionIndexingError("asset_error", { cause: error });
     }
 
+    const candidates = options.force ? [] : dependencies.getCaptionCandidates
+      ? await dependencies.getCaptionCandidates(visual.captionRevision, pet.slug)
+      : [await dependencies.getCaption(visual.captionRevision, pet.slug)].filter(row => row !== null);
+    const selected = selectFreshCaptionMetadata(candidates, { slug: pet.slug, assetId,
+      spritesheetSha256: extracted.spritesheetSha256, legacy: visual });
+    const storedCaption = selected?.row ?? candidates.find(row => row.captionRevision === OPENAI_CAPTION_REVISION) ?? candidates[0] ?? null;
+    const source = resolveCaptionMetadataSource(storedCaption?.captionRevision, visual);
     const captionSourceHash = createPetVisionCaptionSourceHash({
-      captionRevision: visual.captionRevision,
-      modelUri: visual.modelUri,
+      ...source,
       assetId,
       spritesheetSha256: extracted.spritesheetSha256,
     });
-    const storedCaption = options.force
-      ? null
-      : await dependencies.getCaption(visual.captionRevision, pet.slug);
     const freshCaption = readFreshCaption({
       storedCaption,
       expectedSourceHash: captionSourceHash,
@@ -135,7 +141,7 @@ export function createPetVisionSearchRuntime(
     if (freshCaption) {
       const visualSourceHash = createPetVisualEmbeddingSourceHash({
         visualRevision: visual.visualRevision,
-        captionRevision: visual.captionRevision,
+        captionRevision: source.captionRevision,
         captionSourceHash,
         captionText: freshCaption.captionText,
       });
@@ -165,6 +171,9 @@ export function createPetVisionSearchRuntime(
       return "vector-only";
     }
 
+    if (source.captionRevision === OPENAI_CAPTION_REVISION) {
+      throw new PetVisionIndexingError("caption_invalid");
+    }
     if (!dependencies.visionClient) {
       throw new PetVisionIndexingError("configuration_missing");
     }
@@ -180,7 +189,7 @@ export function createPetVisionSearchRuntime(
       }),
     );
     await dependencies.upsertCaption({
-      captionRevision: visual.captionRevision,
+      captionRevision: source.captionRevision,
       slug: pet.slug,
       sourceHash: captionSourceHash,
       captionJson,
@@ -195,7 +204,7 @@ export function createPetVisionSearchRuntime(
       slug: pet.slug,
       sourceHash: createPetVisualEmbeddingSourceHash({
         visualRevision: visual.visualRevision,
-        captionRevision: visual.captionRevision,
+        captionRevision: source.captionRevision,
         captionSourceHash,
         captionText,
       }),
@@ -212,6 +221,7 @@ export function createPetVisionSearchRuntime(
 }
 
 type PetVisionIndexingFailureReason =
+  | "caption_invalid"
   | "asset_error"
   | "configuration_missing"
   | "embedding_error"
@@ -273,6 +283,7 @@ const productionRuntime = createPetVisionSearchRuntime({
   readSpritesheet: readPetSpritesheetAsset,
   extractFrames: extractPetVisionFrames,
   getCaption: getPetSearchCaption,
+  getCaptionCandidates: getPetCaptionCandidates,
   upsertCaption: upsertPetSearchCaption,
   getEmbeddingMetadata: getPetSearchEmbeddingMetadata,
   upsertEmbedding: upsertPetSearchEmbedding,

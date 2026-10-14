@@ -6,6 +6,8 @@ import { Suspense, useEffect, useRef } from "react";
 
 import {
   YANDEX_METRIKA_ID,
+  isGeneratedPreviewUrl,
+  setGenerationAnalyticsPrivacy,
   getYandexMetrikaInlineScript,
   trackPageView,
 } from "@/lib/metrics/yandex";
@@ -597,9 +599,12 @@ function YandexMetrikaRouteTracker() {
 }
 
 export default function YandexMetrika() {
+  const pathname = usePathname();
   if (!IS_PRODUCTION) {
     return null;
   }
+
+  if (isGeneratedPreviewUrl(pathname ?? "")) return <GenerationAnalyticsPrivacy privatePage />;
 
   return (
     <>
@@ -619,6 +624,12 @@ export default function YandexMetrika() {
           />
         </div>
       </noscript>
+      <GenerationAnalyticsPrivacy privatePage={false} />
     </>
   );
+}
+
+function GenerationAnalyticsPrivacy({ privatePage }: { privatePage: boolean }) {
+  useEffect(() => { setGenerationAnalyticsPrivacy(privatePage); }, [privatePage]);
+  return null;
 }

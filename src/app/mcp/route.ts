@@ -1,3 +1,4 @@
+import { readGenerationClientIp } from "@/lib/pets/generation/model";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 
 import { isAllowedMcpOrigin } from "@/lib/pets/mcp-origin";
@@ -11,7 +12,7 @@ export async function POST(req: Request): Promise<Response> {
     return jsonRpcError(403, -32000, "Forbidden origin.");
   }
 
-  const server = createCodexPetsMcpServer();
+  const server = createCodexPetsMcpServer(readGenerationClientIp(req.headers));
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,

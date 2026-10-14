@@ -16,7 +16,8 @@ import { Check, EllipsisVertical, TrashBin, Xmark } from "@gravity-ui/icons";
 
 import { withBasePath } from "@/lib/base-path";
 import { trackGoal } from "@/lib/metrics/yandex";
-import { pollApprovalPreparation } from "./approval-preparation-client";
+import { useApprovalProgress } from "./useApprovalProgress";
+import { ApprovalProgressPanel } from "./ApprovalProgressPanel";
 import "./AdminSubmissionActions.scss";
 
 type AdminSubmissionActionsProps = {
@@ -33,10 +34,9 @@ export function AdminSubmissionActions({ petId, publicEmailRequested, contactEma
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [reason, setReason] = useState("");
   const [publishRequestedEmail, setPublishRequestedEmail] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [approvalPreparationId, setApprovalPreparationId] = useState<
-    string | null
-  >(null);
+  const [actionBusy, setBusy] = useState(false);
+  const approval = useApprovalProgress(petId, closeApproveDialog, completeApproval);
+  const busy = actionBusy || approval.busy;
 
   function notifyFailure(action: string, status: number) {
     add({
@@ -63,69 +63,6 @@ export function AdminSubmissionActions({ petId, publicEmailRequested, contactEma
   function closeApproveDialog() {
     setPublishRequestedEmail(false);
     setDialog(null);
-  }
-
-  async function approve(publishRequestedEmail = false) {
-    setBusy(true);
-    try {
-      let preparationId = approvalPreparationId;
-      if (!preparationId) {
-        const response = await fetch(
-          withBasePath(`/api/admin/submissions/${petId}/approve`),
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ publishRequestedEmail }),
-          },
-        );
-        if (!response.ok) {
-          notifyFailure("Approve", response.status);
-          return;
-        }
-        if (response.status !== 202) {
-          completeApproval();
-          return;
-        }
-        const payload = await response.json() as { preparationId?: unknown };
-        if (typeof payload.preparationId !== "string") {
-          notifyFailure("Approve", 500);
-          return;
-        }
-        preparationId = payload.preparationId;
-        setApprovalPreparationId(preparationId);
-        closeApproveDialog();
-      }
-      const url = new URL(
-        withBasePath(`/api/admin/submissions/${petId}/approval-preparation`),
-        window.location.origin,
-      );
-      url.searchParams.set("preparationId", preparationId);
-      const status = await pollApprovalPreparation(url.href);
-      if (status === "timeout") {
-        add({
-          name: `pet-mod-${petId}-preparation`,
-          theme: "normal",
-          title: "Approval continues in background",
-          content: "Use Approve again to resume the status check.",
-        });
-        return;
-      }
-      if (status !== "succeeded") {
-        setApprovalPreparationId(null);
-        add({
-          name: `pet-mod-${petId}-preparation`,
-          theme: "danger",
-          title: status === "manual_review"
-            ? "Approval needs attention"
-            : "Approval status check failed",
-        });
-        return;
-      }
-      setApprovalPreparationId(null);
-      completeApproval();
-    } finally {
-      setBusy(false);
-    }
   }
 
   function completeApproval() {
@@ -186,17 +123,23 @@ export function AdminSubmissionActions({ petId, publicEmailRequested, contactEma
         view="action"
         size="m"
         onClick={() => {
-          if (approvalPreparationId || !publicEmailRequested) void approve();
+          if (approval.hasRequest) void approval.resume();
+          else if (!publicEmailRequested) void approval.approve();
           else openApproveDialog();
         }}
         loading={busy}
+        disabled={busy || approval.progress?.phase === "succeeded"}
       >
         <Check />
-        Approve
+        {approval.progress?.phase === "succeeded" ? "Approved" : approval.hasRequest ? "Check status" : "Approve"}
       </Button>
+      {approval.progress?.phase === "manual_review" && <Button view="outlined" size="m" disabled={busy} onClick={() => {
+        if (publicEmailRequested) openApproveDialog();
+        else void approval.retry();
+      }}>Retry approval</Button>}
       <DropdownMenu
         renderSwitcher={(props) => (
-          <Button {...props} view="outlined" size="m" aria-label="More actions">
+          <Button {...props} view="outlined" size="m" aria-label="More actions" disabled={busy}>
             <EllipsisVertical />
           </Button>
         )}
@@ -215,12 +158,14 @@ export function AdminSubmissionActions({ petId, publicEmailRequested, contactEma
         ]}
       />
 
+      {approval.progress && <ApprovalProgressPanel progress={approval.progress} />}
+
       <Dialog
         open={dialog === "approve"}
         onClose={closeApproveDialog}
         size="s"
       >
-        <Dialog.Header caption="Approve submission" />
+        <Dialog.Header caption={approval.progress?.phase === "manual_review" ? "Retry approval" : "Approve submission"} />
         <Dialog.Body>
           <Flex direction="column" gap={3}>
             <Text variant="body-2" color="secondary">
@@ -242,7 +187,10 @@ export function AdminSubmissionActions({ petId, publicEmailRequested, contactEma
           textButtonApply="Approve"
           textButtonCancel="Cancel"
           onClickButtonCancel={closeApproveDialog}
-          onClickButtonApply={() => void approve(publishRequestedEmail)}
+          onClickButtonApply={() => {
+            if (approval.progress?.phase === "manual_review") void approval.retry(publishRequestedEmail);
+            else void approval.approve(publishRequestedEmail);
+          }}
           propsButtonApply={{ view: "action", loading: busy }}
         />
       </Dialog>

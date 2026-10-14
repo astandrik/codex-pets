@@ -11,11 +11,13 @@ import {
 type InlineScriptOptions = {
   readyState?: DocumentReadyState;
   title?: string;
+  url?: string;
 };
 
 function runInlineScript({
   readyState = "complete",
   title = "Codex Pets",
+  url = "https://pets.example/gallery?tag=otter",
 }: InlineScriptOptions = {}) {
   const insertBefore = vi.fn();
   let domContentLoadedListener: (() => void) | undefined;
@@ -41,9 +43,7 @@ function runInlineScript({
   };
   const context: Record<string, unknown> = {
     document,
-    location: {
-      href: "https://pets.example/gallery?tag=otter",
-    },
+    location: new URL(url),
   };
   context.window = context;
 
@@ -132,7 +132,8 @@ describe("Yandex Metrika inline initialization", () => {
 describe("trackPageView", () => {
   it("dispatches a hit with the supplied page context", () => {
     const ym = vi.fn();
-    vi.stubGlobal("window", { ym });
+    vi.stubGlobal("window", {
+      location: new URL("https://pets.example/"), ym });
 
     trackPageView("https://pets.example/pets/orbit-otter", {
       referer: "https://pets.example/gallery?tag=otter",
@@ -152,7 +153,8 @@ describe("trackPageView", () => {
   });
 
   it("does nothing when the browser counter is unavailable", () => {
-    vi.stubGlobal("window", {});
+    vi.stubGlobal("window", {
+      location: new URL("https://pets.example/"),});
 
     expect(() =>
       trackPageView("https://pets.example/gallery", {}),
@@ -161,6 +163,7 @@ describe("trackPageView", () => {
 
   it("swallows counter failures", () => {
     vi.stubGlobal("window", {
+      location: new URL("https://pets.example/"),
       ym: () => {
         throw new Error("metrics unavailable");
       },

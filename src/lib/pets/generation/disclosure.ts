@@ -1,0 +1,1 @@
+export const GENERATION_EXPERIMENT_NOTICE = "Experimental generation: animations and gaze directions may contain visual errors or look too similar. Review the preview before submitting your pet to moderation. Accepted tasks count toward the limit even if the result is unsuitable; there are no automatic paid retries.";

@@ -1,3 +1,4 @@
+import { OPENAI_CAPTION_REVISION, OPENAI_METADATA_MODEL_URI } from "@/lib/pets/metadata-sources";
 import { describe, expect, it, vi } from "vitest";
 
 import { PET_SEARCH_MODEL_REVISIONS } from "@/lib/pets/search-config";
@@ -240,7 +241,7 @@ describe("approved pet search runtime", () => {
     expect(listCaptions).not.toHaveBeenCalled();
   });
 
-  it("uses one query embedding for parallel text and visual ranks", async () => {
+  it.each([[undefined, false], [undefined, true], [OPENAI_CAPTION_REVISION, false], [OPENAI_CAPTION_REVISION, true]] as const)("uses fresh caption source %s regardless of row order %s", async (sourceRevision, reverse) => {
     const visualConfig = {
       folderId: "folder-1",
       apiKey: "secret",
@@ -264,8 +265,8 @@ describe("approved pet search runtime", () => {
     };
     const captionText = buildPetVisionCaptionText(visualCaption);
     const captionSourceHash = createPetVisionCaptionSourceHash({
-      captionRevision: visualConfig.captionRevision,
-      modelUri: visualConfig.modelUri,
+      captionRevision: sourceRevision ?? visualConfig.captionRevision,
+      modelUri: sourceRevision ? OPENAI_METADATA_MODEL_URI : visualConfig.modelUri,
       assetId: "asset-velvet",
       spritesheetSha256: "a".repeat(64),
     });
@@ -284,7 +285,7 @@ describe("approved pet search runtime", () => {
               slug: "velvet-byte",
               sourceHash: createPetVisualEmbeddingSourceHash({
                 visualRevision: visualConfig.visualRevision,
-                captionRevision: visualConfig.captionRevision,
+                captionRevision: sourceRevision ?? visualConfig.captionRevision,
                 captionSourceHash,
                 captionText,
               }),
@@ -307,10 +308,11 @@ describe("approved pet search runtime", () => {
           embedQuery: queryEmbedding,
         },
         findSimilar,
-        listCaptions: vi.fn(async () => [
+        listCaptions: vi.fn(async () => { const rows = [
           {
             slug: "velvet-byte",
             sourceHash: captionSourceHash,
+            captionRevision: sourceRevision,
             captionJson: JSON.stringify(
               createPetVisionCaptionEnvelope({
                 assetId: "asset-velvet",
@@ -321,7 +323,8 @@ describe("approved pet search runtime", () => {
             captionText,
             updatedAt: "2026-07-22T12:00:00.000Z",
           },
-        ]),
+          { slug: "velvet-byte", captionRevision: sourceRevision ? visualConfig.captionRevision : OPENAI_CAPTION_REVISION, sourceHash: "stale", captionJson: "malformed", captionText: "invalid", updatedAt: "now" },
+        ]; return reverse ? rows.reverse() : rows; }),
       }),
     );
 

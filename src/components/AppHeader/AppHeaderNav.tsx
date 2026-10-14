@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button, Flex, Label } from "@/components/GravityUI/GravityUI";
-import { Plus } from "@gravity-ui/icons";
+import { Plus, Star } from "@gravity-ui/icons";
 
 import { withBasePath } from "@/lib/base-path";
 
@@ -109,6 +109,7 @@ export function AppHeaderNav() {
             Developers
           </Link>
         </li>
+        <li><a href={withBasePath("/my-generations")} {...linkProps("/my-generations")}>My generations</a></li>
         {principal ? (
           <li>
             <HeaderMenu
@@ -148,7 +149,7 @@ export function AppHeaderNav() {
             <HeaderMenu
               label="Admin"
               isActive={
-                isActive("/admin/submissions") || isActive("/admin/requests")
+                isActive("/admin/submissions") || isActive("/admin/requests") || isActive("/admin/generation-limits")
               }
               badge={
                 pendingReviewCount + openRequestCount > 0
@@ -181,6 +182,9 @@ export function AppHeaderNav() {
                 >
                   {openRequestCount}
                 </Label>
+              </Link>
+              <Link href="/admin/generation-limits" prefetch={false} {...menuItemProps("/admin/generation-limits")}>
+                Generation limits
               </Link>
             </HeaderMenu>
           </li>
@@ -230,10 +234,14 @@ export function AppHeaderNav() {
             </Link>
           </>
         )}
+        <Button view="action" size="m" href={withBasePath("/generate")} aria-current={isActive("/generate") ? "page" : undefined}>
+          <Button.Icon><Star /></Button.Icon>
+          Generate a pet
+        </Button>
         <Button view="outlined" size="m" href={withBasePath("/request")}>
           Request
         </Button>
-        <Button view="action" size="m" href={withBasePath("/submit")}>
+        <Button view="outlined" size="m" href={withBasePath("/submit")}>
           <Button.Icon>
             <Plus />
           </Button.Icon>

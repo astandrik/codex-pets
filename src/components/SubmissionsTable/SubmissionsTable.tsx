@@ -135,6 +135,7 @@ export function SubmissionsTable({ rows }: SubmissionsTableProps) {
         </Text>
       </Flex>
       <Table
+        getRowId="id"
         data={rows}
         columns={columns}
         emptyMessage="No submissions to review."

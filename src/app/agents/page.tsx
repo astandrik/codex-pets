@@ -24,7 +24,7 @@ import {
 } from "@/lib/site-metadata";
 
 const AGENTS_DESCRIPTION =
-  "Connect coding agents to Codex Pets through the public read-only MCP endpoint, request discovery, and HTTP registry routes.";
+  "Connect coding agents to Codex Pets through the public MCP endpoint, request discovery, and HTTP registry routes.";
 
 export const metadata: Metadata = {
   title: "Agent Access",
@@ -85,8 +85,8 @@ export default function AgentsPage() {
           </Text>
           <Text variant="body-2" color="secondary" style={{ maxWidth: 760 }}>
             Find, install, and share approved Codex pets from your browser or
-            directly from your AI coding agent. The MCP server and HTTP routes
-            are read-only and return approved public registry data plus request
+            directly from your AI coding agent. The catalog tools and HTTP read routes
+            return approved public registry data plus request
             workflow discovery.
           </Text>
           <Flex gap={2} wrap>
@@ -160,6 +160,14 @@ export default function AgentsPage() {
             <code>get_pet_request_info</code> returns the public request page,
             required fields, and reference image limits without creating a
             request.
+          </li>
+          <li>
+            <code>generate_pet</code> starts a server-paid text-to-pet task with
+            limits of 200 tasks per day globally and 10 per IP.
+          </li>
+          <li>
+            <code>get_pet_generation</code> returns its status, unlisted preview
+            and ZIP. Results expire after 24 hours and are not published automatically.
           </li>
         </ul>
       </section>

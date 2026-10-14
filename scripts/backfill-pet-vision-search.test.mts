@@ -188,6 +188,11 @@ describe("pet vision search backfill", () => {
     for (const [revision, definition] of Object.entries(
       PET_VISUAL_MODEL_REVISIONS,
     )) {
+      if (definition.embeddingModelId === "text-embedding-3-large") {
+        // The Yandex-only script must reject OpenAI revisions; these use the guarded resumable pipeline.
+        expect(PET_VISUAL_BACKFILL_REVISIONS[revision]).toBeUndefined();
+        continue;
+      }
       const runtimeModel =
         PET_SEARCH_EMBEDDING_MODELS[definition.embeddingModelId];
       expect(PET_VISUAL_BACKFILL_REVISIONS[revision]).toEqual({

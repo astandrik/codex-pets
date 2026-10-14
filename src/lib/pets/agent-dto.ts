@@ -22,7 +22,7 @@ export const AGENT_MAX_PET_LIMIT = 60;
 const DEFAULT_SHARE_STATE = "idle";
 const DEFAULT_SHARE_SCALE = 2;
 
-const SAFE_SLUG = /^[a-z0-9][a-z0-9-]{0,47}$/;
+const SAFE_SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const PET_KINDS = new Set<PetKind>(["creature", "object", "character"]);
 
 export type AgentPet = {

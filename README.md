@@ -9,6 +9,36 @@ public detail pages for approved and pending pets.
 
 Public site: https://pets.ydb-qdrant.tech/.
 
+## My generations in this browser
+
+`/my-generations` lists tasks accepted here and available private results explicitly
+opened in the same browser, without signing in. Each entry stores only its private
+capability ID and saved/expiry timestamps in browser storage. Descriptions and
+images are not stored in this history. Keep browser data and private links safe;
+anyone with access to either can open the corresponding result.
+
+Statuses use the existing per-generation GET endpoint, with at most three reads
+at once. Live tasks refresh; ready/failed tasks stop polling. This view never
+creates, retries, cancels or publishes a task. Results still expire 24 hours after
+acceptance. History retains the latest 50 entries for seven days after expiry;
+expired entries cannot be opened. Clearing browser data removes this list, but
+does not reset quotas or cancel tasks. Earlier unknown links cannot be recovered;
+opening an existing available private link adds it to this browser's list.
+
+The history, form and result pages exclude analytics and search indexing. History
+has private/no-store and no-referrer headers. There is no IP-based ownership lookup,
+account synchronization, server-side history enumeration or new database schema.
+
+## Generate a pet through remote MCP
+
+`generate_pet` accepts a text `prompt` (1–2000 characters), optional `displayName` (up to 80 characters), and a fresh random UUID `requestId`. Reuse that requestId with identical content after a disconnected response: no duplicate task or extra quota. Changed content with the same ID is rejected. Keep request and generation IDs private.
+
+Poll `get_pet_generation(generationId)` every 5 seconds. A completed job returns an unlisted preview and downloads: `pet.json`, lossless `spritesheet.webp`, and `pet.zip`. Format v2 is 1536×2288 with 9 animation states and 16 look directions. Results expire 24 hours after acceptance; idempotency hashes remain 7 days. Completed new tasks include editable name/description/tags. The private preview saves description changes atomically into pet.json and ZIP; tags are stored for the gallery submission. Saving is free of provider calls, keeps the sprite bytes unchanged, requires the current metadata revision and is disabled after submission. Existing completed tasks can be edited manually without a new model call. An unavailable or unknown metadata response leaves a usable image package and manual fields; it is never retried automatically, and unknown charges retain their reserve/pause. The tool never publishes into the gallery. Before expiry, use **Submit for review** on the private result page to save a permanent gallery package and one pending submission, or upload the ZIP through `/submit`. Submission retries return the same receipt, including after a lost response. Anyone holding the private link can submit that result once; if signed in, the first submitter owns the submission. Contacts stay private. Approval uses the existing admin workflow; no OpenAI calls or generation-quota changes are made.
+
+The operator funds up to12GPT Image2.5Sunburst/high calls per task through sprite-gen2.44.0:onebase and11rows. New tasks then make at most one gpt-6.1-sol text/vision request through the existing AMS route to draft a natural name, description and tags, using0.50USD coverage within the existing50USD guard. Images are not regenerated. The website form at `/generate` and remote MCP share the same queue. Limits: 200/day globally, 10/IP, one active and five waiting, counted by Moscow calendar day. Shared gateways/NATs share an IP quota. Waiting expires after30minutes; failures consume quota. Unknown network outcomes never trigger paid retries and pause further paid work pending operator review. A50USD/day threshold accounts for measured usage and2USD/task reservations; unresolved reserves carry across midnight. This is a service guard, not a guaranteed provider billing cap. The prompt form and private previews exclude analytics/Webvisor. Errors include `generation_disabled`, `rate_limited` (with `retryAt`), `queue_full`, `request_id_conflict`, `generation_expired`, and `outcome_unknown`.
+
+Generation is disabled by default and available through the website form and remote MCP. The npm CLI and browser WebMCP retain their catalog-only tools. See DEPLOYMENT.md for explicit schema, candidate and manual-enable steps.
+
 ## Stack
 
 - Next.js 16 App Router, React 19, TypeScript strict
@@ -38,7 +68,7 @@ Open `http://localhost:3000`.
 
 ## Agent access
 
-Codex Pets exposes a public read-only MCP server so coding agents can search,
+Codex Pets exposes a public MCP server so coding agents can search,
 inspect, install, and share approved pet packs.
 
 Primary public surfaces:
@@ -410,7 +440,7 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
   scanners that probe predictable API paths.
 - `/developers` and `/docs/api` are indexed developer-resource pages for API,
   OpenAPI, MCP, auth, and webhooks discoverability.
-- `/mcp` is a public read-only Streamable HTTP MCP server for coding agents.
+- `/mcp` is a public Streamable HTTP MCP server with read-only catalog tools and quota-limited generation for coding agents.
   Codex can connect with:
   `codex mcp add codexPets --url https://pets.ydb-qdrant.tech/mcp`.
 - Official MCP Registry name:
@@ -420,7 +450,7 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 - `/.well-known/mcp-registry-auth` exposes the public HTTP domain auth record
   used by `mcp-publisher`.
 - HTTP agent access is the primary public machine contract:
-  - `/mcp` — Streamable HTTP MCP endpoint with read-only tools:
+  - `/mcp` — Streamable HTTP MCP endpoint with catalog tools:
     `search_pets`, `get_pet`, `get_install_instructions`, `get_badge_code`,
     `get_embed_code`, `get_card_code`, and `get_pet_request_info`
   - `/openapi.json` and `/api/openapi.json` — OpenAPI 3.1 public
@@ -502,7 +532,7 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
   pet selection
 - `/guides/codex-pets-vs-vscode-pets` — comparison guide for editor pet use
   cases
-- `/mcp` — public read-only Streamable HTTP MCP endpoint
+- `/mcp` — public Streamable HTTP MCP endpoint
 - `/openapi.json`, `/api/openapi.json` — public OpenAPI specification
 - `/server.json`, `/.well-known/mcp/server.json` — MCP Registry metadata
 - `/api/manifest` — public agent/CLI manifest

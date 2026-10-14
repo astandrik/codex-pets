@@ -127,12 +127,31 @@ function row(overrides: Partial<SubmissionRow> = {}): SubmissionRow {
 }
 
 describe("moderator contact visibility", () => {
+  it("keeps the next pending pet actionable after an approved row is removed", async () => {
+    sessionStorage.clear();
+    const first = row({ id: "first-pet", slug: "first-pet", displayName: "First pet" });
+    const second = row({ id: "second-pet", slug: "second-pet", displayName: "Second pet" });
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(Response.json({ ok: true }));
+    render(<SubmissionsTable rows={[first, second]} />);
+    const approve = [...container.querySelectorAll("button")].find(button => button.textContent === "Approve")!;
+    await act(async () => approve.click());
+    expect(container.textContent).toContain("Pet approved");
+    render(<SubmissionsTable rows={[second]} />);
+    const nextApprove = [...container.querySelectorAll("button")].find(button => button.textContent === "Approve");
+    expect(nextApprove).toBeDefined();
+    expect(nextApprove?.disabled).toBe(false);
+    expect(container.textContent).not.toContain("Pet approved");
+    expect(container.textContent).not.toContain("Check status");
+  });
+
   it("shows private contact for a legacy anonymous row without ownerName", () => {
     render(<SubmissionsTable rows={[row({ ownerName: null })]} />);
     expect(container.textContent).toContain("private-triage@example.com");
   });
 
   it("keeps moderation contact visible with an alias and no publication request", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 404 })).mockResolvedValueOnce(Response.json({ ok: true }));
     render(<SubmissionsTable rows={[row()]} />);
     expect(container.textContent).toContain("Public alias");
     expect(container.textContent).not.toContain("Public email requested");

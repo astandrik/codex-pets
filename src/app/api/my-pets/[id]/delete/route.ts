@@ -1,3 +1,4 @@
+import { petModerationPauseResponse } from "@/lib/pets/moderation-pause";
 import { NextResponse } from "next/server";
 
 import { getCurrentPrincipal } from "@/lib/auth/session";
@@ -13,6 +14,8 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
+  const paused = petModerationPauseResponse();
+  if (paused) return paused;
   const principal = await getCurrentPrincipal();
   if (!principal) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

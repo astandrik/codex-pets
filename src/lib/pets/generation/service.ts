@@ -1,0 +1,536 @@
+import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
+import { readDailyQuota, consumeDailyQuota } from "@/lib/pets/generation/quota-grants";
+import { parsePublicPetSlug } from "@/lib/pets/public-slug";
+import { findAvailablePublicPetSlug, PublicPetSlugUnavailableError } from "@/lib/pets/public-slug-allocation";
+import { createHash, randomUUID } from "node:crypto";
+import JSZip from "jszip";
+import type { AppPrincipal } from "@/lib/auth/session";
+import { assetUrl } from "@/lib/pets/asset-urls";
+import { validateUploadedPackage } from "@/lib/pets/package";
+import { replaceGeneratedDetails, validateGeneratedSheet } from "@/lib/pets/generation/package";
+import { slugify } from "@/lib/pets/validation";
+import { toPublicUrl } from "@/lib/base-path";
+import {
+  DAY, WAIT_MS, LEASE_MS, GENERATION_ID, PROMPT_REVISION, MAX_PARALLEL_IMAGE_ROWS, GenerationError,
+  generationInputSchema, generationDigest, generationEnabled, readGenerationSecret,
+  nextMoscowDay, newGenerationId, schedulerSchema, dedupSchema,
+  rowAttemptLogSchema, ROW_RETRY_DELAY_MS, type RowAttemptLog, stageFailureDiagnosticSchema, type StageFailureDiagnostic, stageCliCauseSchema, type StageCliCause,
+  STAGE_NAMES, type StageName, type GenerationJob, type Scheduler, type ImageUsage,
+} from "@/lib/pets/generation/model";
+import { generationStore, type GenerationStore, type GenerationTransaction } from "@/lib/pets/generation/store";
+
+import { startBudgetTracking, checkStageBudget, recordStageCost, settleBudget } from "@/lib/pets/generation/budget";
+import { readProviderFailure } from "@/lib/pets/generation/provider-failure";
+import { readFailureDiagnostic } from "@/lib/pets/generation/failure-diagnostic";
+import {CARD_METADATA_FALLBACK, normalizeCardMetadata, cardMetadataEditSchema, type CardMetadataFields, type CardMetadataRecord, type PublicCardMetadata} from "@/lib/pets/generation/card-metadata";
+import type {CardMetadataResult} from "@/lib/pets/generation/card-provider";
+import { publicGenerationError } from "@/lib/pets/generation/public-error";
+
+const SCHEDULER_EXPIRY = Date.UTC(2099, 0, 1);
+async function scheduler(tx: GenerationTransaction, now: number): Promise<Scheduler> {
+  const raw = await tx.getLedger("scheduler", now);
+  return raw ? schedulerSchema.parse(JSON.parse(raw)) : { revision: 0, queue: [], active: null };
+}
+async function saveScheduler(tx: GenerationTransaction, state: Scheduler) {
+  state.revision += 1;
+  await tx.putLedger("scheduler", JSON.stringify(state), SCHEDULER_EXPIRY);
+}
+
+async function expireQueue(tx: GenerationTransaction, state: Scheduler, now: number) {
+  const ready: string[] = [];
+  for (const id of state.queue) {
+    const job = await tx.getJob(id);
+    if (!job || job.expiresAt <= now) { await settleBudget(tx, id, now); continue; }
+    if (job.status !== "queued") continue;
+    if (job.createdAt + WAIT_MS <= now) {
+      await tx.putJob({ ...job, status: "failed", error: "queue_timeout", prompt: "" });
+      await settleBudget(tx, id, now);
+    } else ready.push(id);
+  }
+  state.queue = ready;
+}
+
+export function createGenerationService(store: GenerationStore, options: {
+  enabled: () => boolean;
+  secret: () => string;
+  now?: () => number;
+  createId?: () => string;
+  budgetUsd?: () => number;
+  automaticCardMetadata?: () => boolean;
+}) {
+  const clock = options.now ?? Date.now;
+  const createId = options.createId ?? newGenerationId;
+  const budgetUsd = options.budgetUsd ?? (() => 50);
+  async function beginStages(job: GenerationJob, names: StageName[]) {
+    const now = clock();
+    return store.transaction(async tx => {
+      const state = await scheduler(tx, now);
+      const current = await ownedJob(tx, state, job, now);
+      if (!options.enabled()) throw new GenerationError("generation_disabled");
+      if (state.pauseReason) throw new GenerationError("generation_paused");
+      if (names.some(name => current.stages.some(stage => stage.name === name && stage.status === "completed"))) throw new GenerationError("stage_already_completed");
+      const next = STAGE_NAMES.slice(current.stages.length, current.stages.length + names.length);
+      if (current.pipelineVersion !== 2 || current.status !== "generating" || names.length < 1 || names.length > MAX_PARALLEL_IMAGE_ROWS
+        || (current.stages.length === 0 && names.length !== 1)
+        || current.stages.some((stage, index) => stage.status !== "completed" || stage.name !== STAGE_NAMES[index])
+        || names.some((name, index) => name !== next[index])) throw new GenerationError("invalid_stage");
+      await checkStageBudget(tx, job.id, now, budgetUsd());
+      const updated = { ...current, stages: [...current.stages, ...names.map(name => ({ name, status: "inflight" as const, startedAt: now }))] };
+      await tx.putJob(updated);
+      if (state.active) state.active.inflight = true;
+      await saveScheduler(tx, state);
+      return updated;
+    });
+  }
+  return {
+    async generate(input: unknown, clientIp: string | null) {
+      const parsed = generationInputSchema.safeParse(input);
+      if (!parsed.success) throw new GenerationError("invalid_argument");
+      const body = parsed.data;
+      const now = clock();
+      const secret = options.secret();
+      const requestKey = "request:" + generationDigest(secret, "request", body.requestId);
+      const hash = generationDigest(secret, "body", JSON.stringify({ prompt: body.prompt, displayName: body.displayName ?? "Generated pet" }));
+      const id = createId();
+      return store.transaction(async (tx) => {
+        const previous = await tx.getLedger(requestKey, now);
+        if (previous) {
+          const record = dedupSchema.parse(JSON.parse(previous));
+          if (record.hash !== hash || (record.nameProvided!==undefined && record.nameProvided!==(body.displayName!==undefined))) throw new GenerationError("request_id_conflict");
+          const job = await tx.getJob(record.id);
+          if (!job || job.expiresAt <= now) throw new GenerationError("generation_expired");
+          return publicJob(job, now);
+        }
+        if (!options.enabled()) throw new GenerationError("generation_disabled");
+        if (!clientIp) throw new GenerationError("client_ip_unavailable");
+        const state = await scheduler(tx, now);
+        await expireQueue(tx, state, now);
+        if (state.pauseReason) throw new GenerationError("generation_paused");
+        const quota = await readDailyQuota(tx, secret, clientIp, now);
+        if (quota.globalRemaining === 0) throw new GenerationError("rate_limited", nextMoscowDay(now), undefined, "global");
+        if (quota.ipRemaining === 0) throw new GenerationError("rate_limited", nextMoscowDay(now), undefined, "ip");
+        if (state.queue.length >= 5) throw new GenerationError("queue_full");
+        await startBudgetTracking(tx, id, now, budgetUsd());
+        const job: GenerationJob = { id, prompt: body.prompt, displayName: body.displayName ?? "Generated pet", status: "queued", createdAt: now, expiresAt: now + DAY, worker: "", promptRevision: PROMPT_REVISION, pipelineVersion: 2, stages: [], nameSource:body.displayName===undefined?"automatic":"user", ...(options.automaticCardMetadata?.()?{cardMetadata:{policy:1 as const,state:"pending" as const,revision:0,edited:false}}:{}) };
+        await tx.putJob(job);
+        await tx.putLedger(requestKey, JSON.stringify({ hash, id, expiresAt: now + 7 * DAY, nameProvided:body.displayName!==undefined }), now + 7 * DAY);
+        await consumeDailyQuota(tx, secret, clientIp, now, quota);
+        state.queue.push(id);
+        await saveScheduler(tx, state);
+        return publicJob(job, now);
+      });
+    },
+    async get(id: string) {
+      if (!GENERATION_ID.test(id)) throw new GenerationError("invalid_argument");
+      const job = await store.readJob(id);
+      if (!job) throw new GenerationError("not_found");
+      if (job.expiresAt <= clock()) throw new GenerationError("generation_expired");
+      let metadata:PublicCardMetadata|undefined;
+      if(job.cardMetadata){metadata=publicCard(job,job.cardMetadata.fields??{description:CARD_METADATA_FALLBACK,tags:[]});}
+      else if(job.status==="completed"){
+        const bytes=await store.readArtifact(id,"pet.json",clock());
+        if(bytes){try{const value=JSON.parse(bytes.toString("utf8"));if(typeof value.description==="string")metadata=publicCard(job,{description:value.description,tags:[]});}catch{/* Preserve compatibility with legacy records lacking readable metadata. */}}
+      }
+      return publicJob(job, clock(), metadata);
+    },
+    async editMetadata(id:string,input:unknown){
+      if(!GENERATION_ID.test(id))throw new GenerationError("invalid_argument");
+      const parsed=cardMetadataEditSchema.safeParse(input);if(!parsed.success)throw new GenerationError("invalid_argument");
+      let desired:CardMetadataFields;
+      try{desired=normalizeCardMetadata({...(parsed.data.displayName===undefined?{}:{displayName:parsed.data.displayName}),description:parsed.data.description,tags:parsed.data.tags});}catch{throw new GenerationError("invalid_argument");}
+      const same=(fields:CardMetadataFields,displayName:string)=>fields.description===desired.description&&JSON.stringify(fields.tags)===JSON.stringify(desired.tags)&&(desired.displayName===undefined||desired.displayName===displayName);
+      const editable=(job:GenerationJob|null)=>{
+        if(!job)throw new GenerationError("not_found");
+        if(job.expiresAt<=clock())throw new GenerationError("generation_expired");
+        if(job.status!=="completed")throw new GenerationError("generation_not_completed");
+        if(job.submission)throw new GenerationError("metadata_locked");return job;
+      };
+      const snapshot=await store.transaction(async tx=>{
+        const job=editable(await tx.getJob(id)),now=clock();
+        const petJsonBuffer=await tx.getArtifact(id,"pet.json",now),spritesheetBuffer=await tx.getArtifact(id,"spritesheet.webp",now),zipBuffer=await tx.getArtifact(id,"pet.zip",now);
+        if(!petJsonBuffer||!spritesheetBuffer||!zipBuffer)throw new GenerationError("invalid_generated_package");
+        const fields=job.cardMetadata?.fields??{description:JSON.parse(petJsonBuffer.toString("utf8")).description,tags:[]};
+        if((job.cardMetadata?.revision??0)!==parsed.data.revision&&!same(fields,job.displayName))throw new GenerationError("metadata_conflict");
+        return {job,fields,petJsonBuffer,spritesheetBuffer,zipBuffer};
+      });
+      const changed=await replaceGeneratedDetails(snapshot,{description:desired.description,displayName:desired.displayName??snapshot.job.displayName});
+      try{return await store.transaction(async tx=>{
+        const current=editable(await tx.getJob(id));
+        const fields=current.cardMetadata?.fields??snapshot.fields;
+        if(same(fields,current.displayName))return publicCard(current,fields);
+        if((current.cardMetadata?.revision??0)!==parsed.data.revision)throw new GenerationError("metadata_conflict");
+        const card=current.cardMetadata??{policy:1 as const,state:"completed" as const,revision:0,edited:false};
+        const displayName=desired.displayName??current.displayName;
+        const updated={...current,displayName,cardMetadata:{...card,fields:{...desired,displayName},revision:card.revision+1,edited:true}};
+        await tx.putArtifact(id,"pet.json",changed.petJsonBuffer,current.expiresAt);await tx.putArtifact(id,"pet.zip",changed.zipBuffer,current.expiresAt);await tx.putJob(updated);
+        return publicCard(updated,desired);
+      });}catch(error){
+        if(error instanceof GenerationError)throw error;
+        const saved=await store.readJob(id);
+        if(saved&&saved.expiresAt>clock()&&saved.cardMetadata?.fields&&same(saved.cardMetadata.fields,saved.displayName))return publicCard(saved,saved.cardMetadata.fields);
+        throw error;
+      }
+    },
+    async checkSubmissionSlug(id: string, requestedSlug: unknown) {
+      if (!GENERATION_ID.test(id)) throw new GenerationError("invalid_argument");
+      return store.transaction(async tx => {
+        const job = await tx.getJob(id);
+        if (!job) throw new GenerationError("not_found");
+        if (job.expiresAt <= clock()) throw new GenerationError("generation_expired");
+        if (job.status !== "completed") throw new GenerationError("generation_not_completed");
+        if (job.submission) return { available: true, suggestedSlug: job.submission.slug, submission: job.submission };
+        const slug = parsePublicPetSlug(requestedSlug);
+        if (!slug) throw new GenerationError("invalid_public_slug");
+        return findSubmissionSlug(slug, tx);
+      });
+    },
+    async submit(id: string, principal: Pick<AppPrincipal, "userId" | "email" | "name"> | null, requestedSlug?: unknown, expectedMetadataRevision?:number) {
+      if (!GENERATION_ID.test(id)) throw new GenerationError("invalid_argument");
+      const suffix = randomUUID().replace(/-/g, "").slice(0, 22);
+      const assetId = "asset_" + suffix;
+      try {
+        return await store.transaction(async tx => {
+          const now = clock();
+          const job = await tx.getJob(id);
+          if (!job) throw new GenerationError("not_found");
+          if (job.expiresAt <= now) throw new GenerationError("generation_expired");
+          if (job.status !== "completed") throw new GenerationError("generation_not_completed");
+          if (job.submission) return job.submission;
+          if(expectedMetadataRevision!==undefined&&expectedMetadataRevision!==(job.cardMetadata?.revision??0))throw new GenerationError("metadata_conflict");
+          const publicSlug = requestedSlug === undefined ? undefined : parsePublicPetSlug(requestedSlug);
+          if (publicSlug === null) throw new GenerationError("invalid_public_slug");
+          const petJsonBuffer = await tx.getArtifact(id, "pet.json", now);
+          const spritesheetBuffer = await tx.getArtifact(id, "spritesheet.webp", now);
+          const zipBuffer = await tx.getArtifact(id, "pet.zip", now);
+          if (!petJsonBuffer || !spritesheetBuffer || !zipBuffer) throw new GenerationError("invalid_generated_package");
+          try { await validateGeneratedSheet(spritesheetBuffer); } catch { throw new GenerationError("invalid_generated_package"); }
+          const assets = { assetId, petJsonBuffer, spritesheetBuffer, zipBuffer, spritesheetExt: "webp" as const };
+          const validation = await validateUploadedPackage(assets);
+          if (!validation.ok || validation.value.petJson.spriteVersionNumber !== 2) throw new GenerationError("invalid_generated_package");
+          const zip = await JSZip.loadAsync(zipBuffer);
+          if (!(await zip.file("pet.json")!.async("nodebuffer")).equals(petJsonBuffer) || !(await zip.file("spritesheet.webp")!.async("nodebuffer")).equals(spritesheetBuffer)) throw new GenerationError("invalid_generated_package");
+          const base = publicSlug ?? (slugify(validation.value.petJson.id) || "generated-pet") + "-" + suffix;
+          const { suggestedSlug: slug } = await findSubmissionSlug(base, tx);
+          const submission = { petId: "pet_" + suffix, slug, submittedAt: new Date(now).toISOString() };
+          await tx.saveSubmission({ assets, identity: { id: submission.petId, slug: submission.slug, createdAt: submission.submittedAt }, pet: {
+            petJson: validation.value.petJson, ownerId: principal?.userId ?? "", ownerEmail: principal?.email ?? null, ownerName: principal?.name ?? null, contactEmail: principal?.email ?? null,
+            publicEmailRequested: false, kind: "creature", tags: job.cardMetadata?.fields?.tags??[], spritesheetExt: "webp",
+            petJsonUrl: assetUrl(assetId, "pet.json"), spritesheetUrl: assetUrl(assetId, "spritesheet.webp"), zipUrl: assetUrl(assetId, "pet.zip"),
+          } });
+          await tx.putJob({ ...job, submission });
+          return submission;
+        });
+      } catch (error) {
+        // An unknown commit result must be resolved by readback, never a blind copy.
+        if (!(error instanceof GenerationError)) {
+          const job = await store.readJob(id);
+          if (job && job.expiresAt > clock() && job.submission) return job.submission;
+        }
+        throw error;
+      }
+    },
+    async claim(owner: string) {
+      if (!options.enabled()) return null;
+      const now = clock();
+      return store.transaction(async (tx) => {
+        const state = await scheduler(tx, now);
+        const hadPendingWork = Boolean(state.active || state.queue.length);
+        await expireQueue(tx, state, now);
+        if(state.pauseReason){
+          const pending=state.active&&state.active.until<=now?await tx.getJob(state.active.id):null;
+          if(!pending||pending.status!=="processing"||pending.cardMetadata?.state!=="failed")return null;
+        }
+        if (state.active) {
+          if (state.active.until > now) return null;
+          const abandoned = await tx.getJob(state.active.id);
+          if(abandoned&&abandoned.expiresAt>now&&abandoned.status==="processing"&&abandoned.cardMetadata?.state==="inflight"){
+            state.active={id:abandoned.id,owner,until:now+LEASE_MS,inflight:true};
+            const recovered={...abandoned,worker:owner,leaseUntil:now+LEASE_MS};await tx.putJob(recovered);await saveScheduler(tx,state);return recovered;
+          }
+          if (abandoned && abandoned.expiresAt > now && state.active.inflight !== true && (abandoned.status === "processing" || (abandoned.pipelineVersion === 2 && abandoned.status === "generating" && !abandoned.stages.some(stage => stage.status === "inflight")))) {
+            state.active = { id: abandoned.id, owner, until: now + LEASE_MS, inflight: false };
+            const recovered = { ...abandoned, worker: owner, leaseUntil: now + LEASE_MS };
+            await tx.putJob(recovered);
+            await saveScheduler(tx, state);
+            return recovered;
+          }
+          if (!abandoned || abandoned.expiresAt <= now) {
+            const uncertain = state.active.inflight !== false;
+            await settleBudget(tx, state.active.id, now, uncertain);
+            if (uncertain) state.pauseReason = "outcome_unknown";
+          }
+          if (abandoned && abandoned.expiresAt > now && abandoned.status === "generating") {
+            await tx.putJob({ ...abandoned, status: "failed", error: "outcome_unknown", prompt: "",
+              failureDiagnostic:{boundary:"lease",reason:"expired_lease"},
+              stageFailureDiagnostics:abandoned.stages.filter(stage=>stage.status==="inflight").map(stage=>({stage:stage.name,diagnostic:{boundary:"lease",reason:"expired_lease"}})),
+            });
+            await settleBudget(tx, abandoned.id, now, true);
+            state.pauseReason = "outcome_unknown";
+          }
+          state.active = null;
+          if (state.pauseReason) { await saveScheduler(tx, state); return null; }
+        }
+        const id = state.queue.shift();
+        if (!id) { if (hadPendingWork) await saveScheduler(tx, state); return null; }
+        const job = await tx.getJob(id);
+        if (!job) throw new Error("Queued generation is missing");
+        const claimed: GenerationJob = { ...job, status: "generating", worker: owner, leaseUntil: now + LEASE_MS };
+        state.active = { id, owner, until: now + LEASE_MS, inflight: job.pipelineVersion !== 2 };
+        await tx.putJob(claimed);
+        await saveScheduler(tx, state);
+        return claimed;
+      });
+    },
+    async heartbeat(job: GenerationJob) {
+      const now = clock();
+      return store.transaction(async tx => {
+        const state = await scheduler(tx, now);
+        const current = await ownedJob(tx, state, job, now);
+        const updated = { ...current, leaseUntil: now + LEASE_MS };
+        await tx.putJob(updated);
+        state.active = { ...state.active, id: job.id, owner: job.worker, until: now + LEASE_MS };
+        await saveScheduler(tx, state);
+        return updated;
+      });
+    },
+    beginStages,
+    beginStage(job: GenerationJob, name: StageName) {
+      return beginStages(job, [name]);
+    },
+    async authorizeStage(job: GenerationJob, name: StageName) {
+      const now = clock();
+      await store.transaction(async tx => {
+        const state = await scheduler(tx, now);
+        const current = await ownedJob(tx, state, job, now);
+        if (!options.enabled()) throw new GenerationError("generation_disabled");
+        if (state.pauseReason) throw new GenerationError("generation_paused");
+        if (current.status !== "generating" || current.stages.find(stage => stage.name === name)?.status !== "inflight") throw new GenerationError("invalid_stage");
+        await checkStageBudget(tx, job.id, now, budgetUsd());
+      });
+    },
+    async recordRowAttemptFailure(job:GenerationJob,name:StageName,attempt:1|2,error:GenerationError){
+      const now=clock();return store.transaction(async tx=>{
+        const state=await scheduler(tx,now),current=await ownedJob(tx,state,job,now);
+        if(current.status!=="generating"||current.stages.find(stage=>stage.name===name)?.status!=="inflight")throw new GenerationError("invalid_stage");
+        const entry:RowAttemptLog=rowAttemptLogSchema.parse({stage:name,attempt,at:now,code:error.code,diagnostic:error.diagnostic,cliCause:error.cliCause,details:error.details});
+        const logs=current.rowAttemptLogs??[];
+        if(logs.some(item=>item.stage===name&&item.attempt===attempt))return;
+        await tx.putJob({...current,rowAttemptLogs:[...logs,entry]});
+        if(error.code==="outcome_unknown")await recordStageCost(tx,job.id,now,undefined,name);
+      });
+    },
+    async beginRowRetry(job:GenerationJob,name:StageName){
+      const now=clock(),token=randomUUID();return store.transaction(async tx=>{
+        const state=await scheduler(tx,now),current=await ownedJob(tx,state,job,now);
+        if(!options.enabled())throw new GenerationError("generation_disabled");
+        if(state.pauseReason)throw new GenerationError("generation_paused");
+        const first=current.rowAttemptLogs?.find(log=>log.stage===name&&log.attempt===1);
+        if(current.status!=="generating"||current.stages.find(stage=>stage.name===name)?.status!=="inflight"||first?.code!=="outcome_unknown"||!isRetryableImageCause(first.cliCause)||current.rowRetries?.some(retry=>retry.stage===name))throw new GenerationError("invalid_stage");
+        await checkStageBudget(tx,job.id,now,budgetUsd());
+        const retry={stage:name,token,notBefore:now+ROW_RETRY_DELAY_MS,state:"waiting" as const};
+        await tx.putJob({...current,rowRetries:[...(current.rowRetries??[]),retry]});return retry;
+      });
+    },
+    async authorizeRowRetry(job:GenerationJob,name:StageName,token:string){
+      const now=clock();return store.transaction(async tx=>{
+        const state=await scheduler(tx,now),current=await ownedJob(tx,state,job,now);
+        if(!options.enabled())throw new GenerationError("generation_disabled");
+        if(state.pauseReason)throw new GenerationError("generation_paused");
+        const retry=current.rowRetries?.find(item=>item.stage===name);
+        if(current.status!=="generating"||current.stages.find(stage=>stage.name===name)?.status!=="inflight"||!retry||retry.token!==token||retry.state!=="waiting"||retry.notBefore>now)throw new GenerationError("invalid_stage");
+        await checkStageBudget(tx,job.id,now,budgetUsd());
+        await tx.putJob({...current,rowRetries:current.rowRetries!.map(item=>item.stage===name?{...item,state:"started" as const}:item)});
+      });
+    },
+    async saveStage(job: GenerationJob, name: StageName, bytes: Buffer, metadata: { usage?: ImageUsage; generationMs: number }) {
+      const now = clock();
+      if (bytes.length === 0 || bytes.length > 8 * 1024 * 1024) throw new GenerationError("invalid_provider_result");
+      const hash = createHash("sha256").update(bytes).digest("hex");
+      return store.transaction(async tx => {
+        const state = await scheduler(tx, now);
+        const current = await ownedJob(tx, state, job, now);
+        const index = current.stages.findIndex(stage => stage.name === name);
+        if (index < 0) throw new GenerationError("invalid_stage");
+        if (current.stages[index].status === "completed") {
+          if (current.stages[index].sha256 !== hash) throw new GenerationError("stage_conflict");
+          return current;
+        }
+        const stages = [...current.stages];
+        stages[index] = { ...stages[index], ...metadata, status: "completed", sha256: hash };
+        await tx.putArtifact(job.id, "stage-" + name + ".png", bytes, current.expiresAt);
+        await recordStageCost(tx, job.id, now, metadata.usage, name);
+        const updated = { ...current, stages, ...(current.rowRetries?{rowRetries:current.rowRetries.map(item=>item.stage===name?{...item,state:"completed" as const}:item)}:{}) };
+        await tx.putJob(updated);
+        if (state.active) state.active.inflight = stages.some(stage => stage.status === "inflight");
+        await saveScheduler(tx, state);
+        return updated;
+      });
+    },
+    async beginCardMetadata(job:GenerationJob,requestHash:string){
+      const now=clock();return store.transaction(async tx=>{
+        const state=await scheduler(tx,now),current=await ownedJob(tx,state,job,now);
+        if(!options.enabled())throw new GenerationError("generation_disabled");
+        if(state.pauseReason)throw new GenerationError("generation_paused");
+        if(current.status!=="processing"||current.cardMetadata?.state!=="pending"||!/^[a-f0-9]{64}$/.test(requestHash))throw new GenerationError("metadata_already_started");
+        await checkStageBudget(tx,job.id,now,budgetUsd());
+        const updated={...current,cardMetadata:{...current.cardMetadata,state:"inflight" as const,requestHash,startedAt:now}};
+        await tx.putJob(updated);if(state.active)state.active.inflight=true;await saveScheduler(tx,state);return updated;
+      });
+    },
+    async authorizeCardMetadata(job:GenerationJob){
+      const now=clock();return store.transaction(async tx=>{
+        const state=await scheduler(tx,now),current=await ownedJob(tx,state,job,now);
+        if(!options.enabled())throw new GenerationError("generation_disabled");
+        if(state.pauseReason)throw new GenerationError("generation_paused");
+        if(current.status!=="processing"||current.cardMetadata?.state!=="inflight"||current.cardMetadata.requestHash!==job.cardMetadata?.requestHash)throw new GenerationError("metadata_already_started");
+        await checkStageBudget(tx,job.id,now,budgetUsd());
+      });
+    },
+    async saveCardMetadata(job:GenerationJob,result:CardMetadataResult){
+      const fields=normalizeCardMetadata(result.fields),now=clock();
+      if(!/^[a-f0-9]{64}$/.test(result.responseHash)||![result.costUsd,result.inputTokens,result.outputTokens].every(n=>Number.isFinite(n)&&n>=0))throw new GenerationError("metadata_unavailable");
+      return store.transaction(async tx=>{
+        const state=await scheduler(tx,now),current=await ownedJob(tx,state,job,now),card=current.cardMetadata;
+        if(card?.state==="completed"&&card.responseHash===result.responseHash)return current;
+        if(current.status!=="processing"||card?.state!=="inflight"||card.requestHash!==job.cardMetadata?.requestHash)throw new GenerationError("metadata_already_started");
+        await recordStageCost(tx,job.id,now,{costUsd:result.costUsd},"card");
+        const displayName=current.nameSource==="automatic"?(fields.displayName??current.displayName):current.displayName;
+        const updated={...current,displayName,cardMetadata:{...card,state:"completed" as const,fields:{...fields,displayName},responseHash:result.responseHash,usage:{inputTokens:result.inputTokens,outputTokens:result.outputTokens,costUsd:result.costUsd}}};
+        await tx.putJob(updated);if(state.active)state.active.inflight=false;await saveScheduler(tx,state);return updated;
+      });
+    },
+    async failCardMetadata(job:GenerationJob,code:string){
+      const error:NonNullable<CardMetadataRecord["error"]>=code==="provider_rejected"||code==="outcome_unknown"||code==="budget_exhausted"||code==="generation_disabled"?code:"metadata_unavailable";
+      const now=clock();return store.transaction(async tx=>{
+        const state=await scheduler(tx,now),current=await ownedJob(tx,state,job,now),card=current.cardMetadata;
+        if(!card||current.status!=="processing")throw new GenerationError("metadata_already_started");
+        if(card.state==="completed"||card.state==="failed")return current;
+        await recordStageCost(tx,job.id,now,error==="outcome_unknown"?undefined:{costUsd:0},"card");
+        if(error==="outcome_unknown")state.pauseReason="outcome_unknown";
+        const updated={...current,cardMetadata:{...card,state:"failed" as const,error,fields:{description:CARD_METADATA_FALLBACK,tags:[]}}};
+        await tx.putJob(updated);if(state.active)state.active.inflight=false;await saveScheduler(tx,state);return updated;
+      });
+    },
+    async saveSource(job: GenerationJob, bytes: Buffer, metadata: { usage?: ImageUsage; providerRequestId?: string; generationMs: number }) {
+      const now = clock();
+      return store.transaction(async (tx) => {
+        const state = await scheduler(tx, now);
+        const current = await ownedJob(tx, state, job, now);
+        if (current.status === "processing") return current;
+        if (current.status !== "generating") throw new GenerationError("stale_worker");
+        if (current.pipelineVersion === 2 && (current.stages.length !== STAGE_NAMES.length || current.stages.some((stage, index) => stage.status !== "completed" || stage.name !== STAGE_NAMES[index]))) throw new GenerationError("invalid_stage");
+        const processing: GenerationJob = { ...current, ...metadata, status: "processing", leaseUntil: now + LEASE_MS };
+        await tx.putArtifact(job.id, "source.png", bytes, job.expiresAt);
+        await tx.putJob(processing);
+        state.active = { id: job.id, owner: job.worker, until: now + LEASE_MS, inflight: false };
+        await saveScheduler(tx, state);
+        return processing;
+      });
+    },
+    async finish(job: GenerationJob, files: Record<string, Buffer>) {
+      const now = clock();
+      await store.transaction(async (tx) => {
+        const state = await scheduler(tx, now);
+        const current = await ownedJob(tx, state, job, now);
+        if (current.status !== "processing") throw new GenerationError("stale_worker");
+        if(current.cardMetadata&&["pending","inflight"].includes(current.cardMetadata.state))throw new GenerationError("metadata_not_prepared");
+        for (const [kind, bytes] of Object.entries(files)) await tx.putArtifact(job.id, kind, bytes, job.expiresAt);
+        await tx.putJob({ ...current, status: "completed", prompt: "" });
+        await settleBudget(tx, job.id, now);
+        state.active = null;
+        await saveScheduler(tx, state);
+      });
+    },
+    async fail(job: GenerationJob, code: string, providerFailure?: unknown, failureDiagnostic?:unknown, stageDiagnostics:StageFailureDiagnostic[] = [], cliCauses:StageCliCause[] = []) {
+      const now = clock();
+      await store.transaction(async (tx) => {
+        const state = await scheduler(tx, now);
+        const current = await ownedJob(tx, state, job, now);
+        const diagnostic = readProviderFailure(providerFailure);
+        const failure = readFailureDiagnostic(failureDiagnostic);
+        const stages = stageDiagnostics.slice(0,12).flatMap(entry=>{
+          const parsed=stageFailureDiagnosticSchema.safeParse({stage:entry.stage,diagnostic:readFailureDiagnostic(entry.diagnostic)});
+          return parsed.success?[parsed.data]:[];
+        });
+        const causes=cliCauses.slice(0,12).flatMap(entry=>{const parsed=stageCliCauseSchema.safeParse(entry);return parsed.success?[parsed.data]:[];});
+        await tx.putJob({ ...current, status: "failed", error: code, prompt: "",
+          ...(diagnostic ? { providerFailure: diagnostic } : {}),
+          ...(failure ? {failureDiagnostic:failure}:{}),
+          ...(stages.length ? {stageFailureDiagnostics:stages}:{}),
+          ...(causes.length ? {cliFailureCauses:causes}:{}) });
+        await settleBudget(tx, job.id, now, code === "outcome_unknown");
+        const unresolved=current.stages.filter(stage=>stage.status==="inflight");
+        // Only fully recorded provider failures are local to this terminal job.
+        // Missing checkpoints, retry acknowledgements and leases still stop the queue.
+        const terminalProviderFailure=code==="outcome_unknown"&&current.pipelineVersion===2
+          &&current.status==="generating"&&failure?.boundary==="provider_cli"
+          &&unresolved.length>0&&causes.length===unresolved.length
+          &&unresolved.every(stage=>{
+            const matches=causes.filter(entry=>entry.stage===stage.name);
+            const attempts=(current.rowAttemptLogs??[]).filter(log=>log.stage===stage.name);
+            const last=attempts.find(log=>log.attempt===2)??attempts.find(log=>log.attempt===1);
+            const cause=matches[0]?.cause;
+            return matches.length===1&&isRetryableImageCause(cause)
+              &&last?.code==="outcome_unknown"&&last.diagnostic?.boundary==="provider_cli"
+              &&last.cliCause?.kind===cause.kind&&last.cliCause?.httpStatus===cause.httpStatus;
+          });
+        if (code === "outcome_unknown"&&!terminalProviderFailure) state.pauseReason = code;
+        state.active = null;
+        await saveScheduler(tx, state);
+      });
+    },
+  };
+}
+
+async function ownedJob(tx: GenerationTransaction, state: Scheduler, job: GenerationJob, now: number) {
+  const current = await tx.getJob(job.id);
+  if (!current || current.expiresAt <= now || current.worker !== job.worker || state.active?.id !== job.id || state.active.owner !== job.worker || state.active.until <= now) throw new GenerationError("stale_worker");
+  return current;
+}
+
+function publicJob(record: GenerationJob, now: number, metadata?:PublicCardMetadata) {
+  let job = record;
+  if (record.status === "queued" && record.createdAt + WAIT_MS <= now) {
+    job = { ...record, status: "failed", error: "queue_timeout", prompt: "" };
+  }
+  if (record.status === "generating" && record.leaseUntil && record.leaseUntil <= now && (record.pipelineVersion !== 2 || record.stages.some(stage => stage.status === "inflight"))) {
+    job = { ...record, status: "failed", error: "outcome_unknown" };
+  }
+  const root = `/api/pet-generations/${job.id}/files/`;
+  return {
+    generationId: job.id,
+    status: job.status,
+    progress: { completedSteps: job.pipelineVersion === 1 && job.status === "completed" ? 1 : job.stages.filter(stage => stage.status === "completed").length, totalSteps: job.pipelineVersion === 2 ? STAGE_NAMES.length : 1 },
+    expiresAt: new Date(job.expiresAt).toISOString(),
+    pollAfterSeconds: job.status === "queued" || job.status === "generating" || job.status === "processing" ? 5 : undefined,
+    previewUrl: toPublicUrl(`/generated/${job.id}`),
+    submission: job.submission,
+    ...(metadata?{metadata}:{}),
+    ...(job.status === "failed" || job.error ? { error: publicGenerationError(job.error ?? "generation_unavailable", job.providerFailure) } : {}),
+    ...(job.status === "completed" ? { pet: { displayName: job.displayName, spriteVersionNumber: 2 as const, petJsonUrl: toPublicUrl(root + "pet.json"), spritesheetUrl: toPublicUrl(root + "spritesheet.webp"), zipUrl: toPublicUrl(root + "pet.zip") } } : {}),
+  };
+}
+
+export const petGeneration = createGenerationService(generationStore, {
+  enabled: generationEnabled, secret: readGenerationSecret,
+  automaticCardMetadata:()=>true,
+  budgetUsd: () => {
+    const limit = Number(process.env.PET_GENERATION_BUDGET_USD || "50");
+    if (!Number.isFinite(limit) || limit <= 0 || limit > 50) throw new GenerationError("generation_not_configured");
+    return limit;
+  },
+});
+export type PublicGeneration = Awaited<ReturnType<typeof petGeneration.get>>;
+
+
+async function findSubmissionSlug(base: string, tx: GenerationTransaction) {
+  try { return await findAvailablePublicPetSlug(base, slugs => tx.listTakenSlugs(slugs)); }
+  catch (error) {
+    if (error instanceof PublicPetSlugUnavailableError) throw new GenerationError("public_slug_unavailable");
+    throw error;
+  }
+}
+
+function publicCard(job:GenerationJob,fields:CardMetadataFields):PublicCardMetadata{
+  return {...fields,displayName:job.displayName,revision:job.cardMetadata?.revision??0,edited:job.cardMetadata?.edited??false,automaticState:job.cardMetadata?.state??"legacy",editable:job.status==="completed"&&!job.submission};
+}

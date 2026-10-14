@@ -1,0 +1,14 @@
+.generated-pet-publication {
+  display: grid;
+  gap: var(--g-spacing-3);
+  max-width: 48rem;
+  margin-top: var(--g-spacing-5);
+  padding: var(--g-spacing-4);
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: var(--g-border-radius-l);
+
+  p { margin: 0; }
+  label { font-weight: 600; }
+  [role="alert"] { color: var(--g-color-text-danger); }
+  &__url { overflow-wrap: anywhere; }
+}

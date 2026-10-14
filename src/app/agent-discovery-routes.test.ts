@@ -24,7 +24,7 @@ describe("markdown agent discovery routes", () => {
         "MCP endpoint",
         "Developer portal",
         "Codex Pets retrieval brief",
-        "MCP tools are read-only",
+        "MCP catalog tools are read-only",
       ],
     },
     {
@@ -53,7 +53,7 @@ describe("markdown agent discovery routes", () => {
       expected: [
         "codex mcp add codexPets",
         "Agent instructions: when to use Codex Pets",
-        "MCP tools are read-only",
+        "MCP catalog tools are read-only",
       ],
     },
     {

@@ -42,6 +42,7 @@ describe("robots", () => {
         "/codex-pets/admin",
         "/codex-pets/api/admin",
         "/codex-pets/api/",
+        "/codex-pets/my-generations",
       ]),
     );
     expect(result.sitemap).toBe("https://pets.example/codex-pets/sitemap.xml");

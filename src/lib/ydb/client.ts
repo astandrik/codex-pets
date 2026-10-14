@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 
 import type { Session } from "ydb-sdk";
 
+export type YdbQueryExecutor = (sql: string, params: NonNullable<Parameters<Session["executeQuery"]>[1]>) => ReturnType<Session["executeQuery"]>;
+
 const require = createRequire(import.meta.url);
 const sdk = require("ydb-sdk") as typeof import("ydb-sdk");
 
@@ -14,6 +16,8 @@ export const {
   TableDescription,
   Types,
   TypedValues,
+  YdbError,
+  StatusCode,
   getCredentialsFromEnv,
   getDefaultLogger,
 } = sdk;
@@ -102,6 +106,11 @@ export async function withSession<T>(
     SESSION_TIMEOUT_MS,
     SESSION_RETRIES,
   );
+}
+
+export async function withSessionOnce<T>(fn: (session: Session) => Promise<T>): Promise<T> {
+  await readyOrThrow();
+  return getDriver().tableClient.withSession(fn, SESSION_TIMEOUT_MS);
 }
 
 export async function destroyYdbDriver(): Promise<void> {

@@ -3,6 +3,7 @@ import { rowsFromResult, textAt } from "@/lib/ydb/result";
 import { TABLES } from "@/lib/ydb/schema";
 
 export type StoredPetSearchCaption = {
+  captionRevision?: string;
   slug: string;
   sourceHash: string;
   captionJson: string;

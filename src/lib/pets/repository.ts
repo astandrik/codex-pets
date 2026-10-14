@@ -1,3 +1,6 @@
+import { withSerializableTransaction } from "@/lib/ydb/transaction";
+import { findAvailablePublicPetSlug } from "@/lib/pets/public-slug-allocation";
+import type { YdbQueryExecutor } from "@/lib/ydb/client";
 import { TABLES } from "@/lib/ydb/schema";
 import { TypedValues, withSession, isYdbConfigured } from "@/lib/ydb/client";
 import { boolAt, rowsFromResult, textAt, uintAt } from "@/lib/ydb/result";
@@ -547,12 +550,31 @@ export async function createPendingPet(
     throw new Error("Pet id cannot be converted into a public slug.");
   }
 
-  const slug = await resolveUniqueSlug(requestedSlug);
-  const now = new Date().toISOString();
-  const id = `pet_${crypto.randomUUID().replace(/-/g, "").slice(0, 22)}`;
+  const identity = { id: `pet_${crypto.randomUUID().replace(/-/g, "").slice(0, 22)}`, createdAt: new Date().toISOString() };
+  let row: PetRow;
+  try {
+    row = await withSerializableTransaction(async execute => {
+      const { suggestedSlug: slug } = await findAvailablePublicPetSlug(requestedSlug,
+        slugs => listTakenPetSlugsInTransaction(slugs, execute), { maxLength: 48 });
+      return writePendingPet(input, { ...identity, slug }, execute);
+    });
+  } catch (error) {
+    // Reconcile only this call's identity after an unknown commit response.
+    const committed = await getPetById(identity.id);
+    if (!committed || committed.createdAt !== identity.createdAt) throw error;
+    row = committed;
+  }
+  return toPublicPet(row, EMPTY_METRICS, await getOwnerProfileByRow(row));
+}
 
-  await withSession((session) =>
-    session.executeQuery(
+// The caller owns the serializable transaction, including its package and receipt.
+export async function insertPendingPetInTransaction(input: CreatePendingPetInput, identity: { id: string; slug: string; createdAt: string }, execute: YdbQueryExecutor): Promise<void> {
+  await writePendingPet(input, identity, execute);
+}
+
+async function writePendingPet(input: CreatePendingPetInput, identity: { id: string; slug: string; createdAt: string }, execute: YdbQueryExecutor): Promise<PetRow> {
+  const { id, slug, createdAt: now } = identity;
+  await execute(
       `
 DECLARE $slug AS Utf8;
 DECLARE $id AS Utf8;
@@ -577,7 +599,7 @@ DECLARE $updated_at AS Utf8;
 DECLARE $approved_at AS Utf8;
 DECLARE $rejected_at AS Utf8;
 
-UPSERT INTO ${TABLES.pets}
+INSERT INTO ${TABLES.pets}
 (slug, id, display_name, description, spritesheet_url, pet_json_url, zip_url, spritesheet_ext, kind, tags_json, status, owner_id, owner_email, owner_name, contact_email, rejection_reason, created_at, updated_at, approved_at, rejected_at, public_email_requested, public_author_email)
 VALUES ($slug, $id, $display_name, $description, $spritesheet_url, $pet_json_url, $zip_url, $spritesheet_ext, $kind, $tags_json, $status, $owner_id, $owner_email, $owner_name, $contact_email, $rejection_reason, $created_at, $updated_at, $approved_at, $rejected_at, $public_email_requested, $public_author_email);
       `,
@@ -607,7 +629,6 @@ VALUES ($slug, $id, $display_name, $description, $spritesheet_url, $pet_json_url
         $approved_at: TypedValues.utf8(""),
         $rejected_at: TypedValues.utf8(""),
       },
-    ),
   );
 
   const row: PetRow = {
@@ -634,7 +655,7 @@ VALUES ($slug, $id, $display_name, $description, $spritesheet_url, $pet_json_url
     approvedAt: null,
     rejectedAt: null,
   };
-  return toPublicPet(row, EMPTY_METRICS, await getOwnerProfileByRow(row));
+  return row;
 }
 
 export async function getPetPublicEmailModerationState(
@@ -1027,15 +1048,15 @@ export async function getPetForApprovalPreparationById(
     : null;
 }
 
-async function resolveUniqueSlug(base: string): Promise<string> {
-  if (!(await getPetBySlug(base))) return base;
-
-  for (let i = 2; i <= 99; i += 1) {
-    const candidate = `${base}-${i}`.slice(0, 48);
-    if (!(await getPetBySlug(candidate))) return candidate;
-  }
-
-  return `${base.slice(0, 40)}-${crypto.randomUUID().slice(0, 6)}`;
+// Catalog PKs remain reserved for every moderation status, including deleted.
+export async function listTakenPetSlugsInTransaction(slugs: string[], execute: YdbQueryExecutor): Promise<string[]> {
+  const unique = [...new Set(slugs)];
+  if (!unique.length) return [];
+  const declarations = unique.map((_, index) => `DECLARE $slug${index} AS Utf8;`).join("\n");
+  const predicate = unique.map((_, index) => `slug = $slug${index}`).join(" OR ");
+  const params = Object.fromEntries(unique.map((slug, index) => [`$slug${index}`, TypedValues.utf8(slug)]));
+  const result = await execute(`${declarations}\nSELECT slug FROM ${TABLES.pets} WHERE ${predicate};`, params);
+  return rowsFromResult(result).map(row => textAt(row, 0));
 }
 
 async function getMetrics(slug: string): Promise<PetMetrics> {

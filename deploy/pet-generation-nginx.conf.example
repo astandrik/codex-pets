@@ -1,0 +1,13 @@
+# Inside the HTTPS server block for pets.ydb-qdrant.tech only:
+set_real_ip_from 159.223.4.189/32;
+set_real_ip_from 167.172.81.89/32;
+real_ip_header X-Forwarded-For;
+real_ip_recursive on;
+
+# Add this inside the EXISTING proxied location / block, beside its other
+# proxy_set_header directives. A server-level header would not be inherited.
+# proxy_set_header X-Pets-Client-IP $remote_addr;
+
+# Keep application ports bound to loopback. Never forward a client-supplied
+# X-Pets-Client-IP or trust arbitrary X-Forwarded-For senders.
+# Preserve the existing proxy_pass and all unrelated routes.

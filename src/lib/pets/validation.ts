@@ -1,4 +1,4 @@
-import sharp from "sharp";
+import sharp, { type Metadata } from "sharp";
 
 import {
   getPetSheet,
@@ -115,7 +115,7 @@ export async function validateSpriteBuffer(
   buffer: Buffer,
   spriteVersionNumber?: SpriteVersionNumber,
 ): Promise<ValidationResult<{ width: number; height: number }>> {
-  let metadata: sharp.Metadata;
+  let metadata: Metadata;
   try {
     metadata = await sharp(buffer).metadata();
   } catch {

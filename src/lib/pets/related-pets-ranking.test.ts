@@ -5,6 +5,7 @@ import { embeddingToBuffer } from "@/lib/pets/search-embeddings";
 import { RELATED_PETS_V24_FALLBACK_POLICY_REVISION } from "@/lib/pets/related-pets-fallback-policy";
 import {
   RELATED_PETS_V24_PROFILE,
+  isSupportedRelatedPetsRankingRevision,
   RELATED_PETS_V24_RANKING_REVISION,
 } from "@/lib/pets/related-pets-profile";
 import {
@@ -30,8 +31,10 @@ const PROFILE: RelatedPetsV24RankingProfile = {
   visualWeight: 0.5,
 };
 
-const EXPECTED_RANKING_REVISION =
+const EXPECTED_LEGACY_RANKING_REVISION =
   "related-pets-sparse-fallback-v24:depth=8:base=related-pets-franchise-coverage-v23:depth=8:base=related-pets-entity-controlled-v11-r3:depth=8:tail=description-first:gate=qualified-negatives:cal=related-pets-eval-v7:text-min=0.6167421023517932:annotation-min=0.4133420129086638:annotation-weight=1:visual-min=0.8178749331551675:visual-weight=0.25:description=yandex-text-embeddings-v2-768-related-description-document-2026-08-v1:description-query=yandex-text-embeddings-v2-768-related-description-query-2026-08-v3:annotation=yandex-qwen3.6-35b-a3b-related-annotation-2026-08-v11-r14:annotation-proposal=yandex-qwen3.6-35b-a3b-related-annotation-proposal-2026-08-v11-r2:annotation-document=yandex-text-embeddings-v2-768-related-annotation-document-2026-08-v11-r14:annotation-query=yandex-text-embeddings-v2-768-related-annotation-query-2026-08-v11-r14:visual=yandex-text-embeddings-v2-768-pet-vision-qwen3.6-v1:relation-policy=related-pets-relation-policy-2026-08-v24-r2:fallback-policy=related-pets-zero-qualified-empty-top4-shared-topic-visual-v24-r2";
+const EXPECTED_RANKING_REVISION =
+  `${EXPECTED_LEGACY_RANKING_REVISION}:annotation-proposal-compat=r2+r3-v1`;
 
 function candidate(
   slug: string,
@@ -618,6 +621,12 @@ describe("V24 shared-family policy integration", () => {
 });
 
 describe("V24 profile contract", () => {
+  it("accepts existing r2 and compatible r2+r3 generations but rejects unrelated ones", () => {
+    expect(isSupportedRelatedPetsRankingRevision(EXPECTED_LEGACY_RANKING_REVISION)).toBe(true);
+    expect(isSupportedRelatedPetsRankingRevision(EXPECTED_RANKING_REVISION)).toBe(true);
+    expect(isSupportedRelatedPetsRankingRevision("unrelated-generation")).toBe(false);
+  });
+
   it("uses a new immutable family relation-policy revision", () => {
     expect(RELATED_PETS_V24_RELATION_POLICY_REVISION)
       .toBe("related-pets-relation-policy-2026-08-v24-r2");
