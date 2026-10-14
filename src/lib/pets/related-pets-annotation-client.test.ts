@@ -3,6 +3,7 @@ import { inspect } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
   RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
   RELATED_PETS_ANNOTATION_SYSTEM_PROMPT,
   RELATED_PETS_ANNOTATION_USER_PROMPT,
@@ -102,6 +103,63 @@ describe("related pet annotation client", () => {
     assertSanitized(diagnostics);
   });
 
+  it("keeps the R3 schema, prompt and parser on the same selected revision", async () => {
+    const r3Proposal = { ...proposal, entity: { ...proposal.entity, key: "vi" } };
+    const fetchImpl = vi.fn(async (...request: Parameters<typeof fetch>) => {
+      void request;
+      return completedResponse(r3Proposal);
+    });
+
+    await expect(createClient({
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+      fetchImpl,
+    }).createProposal(pet)).resolves.toEqual(parseRelatedPetAnnotationProposal(
+      r3Proposal,
+      RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+    ));
+
+    const body = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
+    expect(body.response_format.json_schema).toMatchObject({
+      name: "related_pet_annotation_v11_r13",
+      schema: {
+        properties: {
+          entity: { properties: { key: { pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" } } },
+          themes: { items: { properties: { key: { pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" } } } },
+        },
+      },
+    });
+    expect(body.messages[0].content).toContain("use null for entity.key when identity is unknown");
+  });
+
+  it("rejects an unknown proposal revision without fetching", () => {
+    const fetchImpl = vi.fn(async () => completedResponse(proposal));
+    expect(() => createClient({ proposalRevision: "unknown", fetchImpl }))
+      .toThrow("annotation_proposal_revision_unsupported");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("reports an invalid R3 identifier safely and uses only one schema retry", async () => {
+    const invalid = { ...proposal, entity: { ...proposal.entity, key: "Vi" } };
+    const fetchImpl = vi.fn(async () => completedResponse(invalid));
+    const diagnostics: unknown[] = [];
+    const error = await createClient({
+      proposalRevision: RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
+      fetchImpl,
+      onDiagnostic: (entry) => diagnostics.push(entry),
+    }).createProposal(pet).catch((value) => value);
+
+    expect(error).toMatchObject({
+      reason: "schema_invalid",
+      cause: {
+        diagnostics: {
+          validationIssues: [{ path: "entity.key", code: "invalid_identifier" }],
+        },
+      },
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    assertSanitized([error, diagnostics]);
+  });
+
   it("escalates length only once from 4000 to 8000 and preserves the start limiter", async () => {
     const bodies: Array<Record<string, unknown>> = [];
     const waits: number[] = [];
@@ -147,6 +205,127 @@ describe("related pet annotation client", () => {
     const fetchImpl = vi.fn(async () => responses.shift()!);
     await expect(createClient({ fetchImpl }).createProposal(pet)).rejects.toMatchObject({ reason: "schema_invalid" });
     expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    [
+      { ...proposal, themes: [{ key: "action", confidence: "high", evidence: [] }] },
+      { path: "themes[0].evidence", code: "too_small", minimum: 1 },
+    ],
+    [
+      { ...proposal, entity: { ...proposal.entity, confidence: "SECRET_RESPONSE" } },
+      { path: "entity.confidence", code: "invalid_value" },
+    ],
+    [
+      { ...proposal, entity: { ...proposal.entity, key: "!!!" } },
+      { path: "entity.key", code: "invalid_identifier" },
+    ],
+    [
+      { ...proposal, themes: [{ key: "кот", confidence: "high", evidence: ["tag"] }] },
+      { path: "themes[0].key", code: "invalid_identifier" },
+    ],
+    [
+      { ...proposal, entity: { ...proposal.entity, key: " ", confidence: "none", evidence: [] } },
+      { path: "entity.key", code: "normalized_length", minimum: 1, maximum: 64 },
+    ],
+    [
+      { ...proposal, entity: { ...proposal.entity, key: "ﬃ".repeat(22) } },
+      { path: "entity.key", code: "normalized_length", minimum: 1, maximum: 64 },
+    ],
+    [
+      { ...proposal, entity: { ...proposal.entity, aliases: ["😀".repeat(80)] } },
+      { path: "entity.aliases[0]", code: "too_big", maximum: 80 },
+    ],
+    [
+      { ...proposal, entity: { ...proposal.entity, aliases: [" "] } },
+      { path: "entity.aliases[0]", code: "normalized_length", minimum: 1, maximum: 80 },
+    ],
+    [
+      { ...proposal, SECRET_FIELD: "SECRET_RESPONSE" },
+      { path: "$", code: "unrecognized_keys" },
+    ],
+  ])("reports safe field constraints for invalid annotation responses", async (value, issue) => {
+    const fetchImpl = vi.fn(async () => completedResponse(value));
+    const diagnostics: unknown[] = [];
+    const error = await createClient({ fetchImpl, onDiagnostic: (entry) => diagnostics.push(entry) })
+      .createProposal(pet).catch((value) => value);
+
+    expect(error).toMatchObject({
+      reason: "schema_invalid",
+      cause: { diagnostics: { validationIssues: [issue] } },
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(diagnostics).toEqual([1, 2].map((attempt) => expect.objectContaining({
+      attempt,
+      stage: "structured_schema",
+      reason: "schema_invalid",
+      validationIssues: [issue],
+    })));
+    assertSanitized([error, diagnostics]);
+    expect(inspect([error, diagnostics], { depth: 10 })).not.toContain("SECRET_FIELD");
+  });
+
+  it("does not carry validation issues into later transport or successful attempts", async () => {
+    const responses = [
+      completedResponse({ ...proposal, extra: true }),
+      new Response(null, { status: 503 }),
+      completedResponse(proposal),
+    ];
+    const diagnostics: unknown[] = [];
+    await expect(createClient({
+      fetchImpl: async () => responses.shift()!,
+      onDiagnostic: (entry) => diagnostics.push(entry),
+    }).createProposal(pet)).resolves.toEqual(parseRelatedPetAnnotationProposal(proposal));
+    expect(diagnostics[0]).toHaveProperty("validationIssues");
+    expect(diagnostics[1]).not.toHaveProperty("validationIssues");
+    expect(diagnostics[2]).not.toHaveProperty("validationIssues");
+  });
+
+  it("keeps concurrent annotation failures isolated", async () => {
+    const diagnostics: unknown[] = [];
+    let releaseFirst: ((response: Response) => void) | undefined;
+    const firstResponse = new Promise<Response>((resolve) => { releaseFirst = resolve; });
+    let requestCount = 0;
+    const client = createClient({
+      fetchImpl: async (_url, init) => {
+        requestCount += 1;
+        if (requestCount === 1) return firstResponse;
+        if (requestCount === 2) {
+          releaseFirst!(completedResponse({ ...proposal, entity: { ...proposal.entity, key: "!!!" } }));
+        }
+        const body = JSON.parse(String(init?.body));
+        return completedResponse(body.messages[1].content.includes("name: Other")
+          ? { ...proposal, themes: [{ key: "action", confidence: "high", evidence: [] }] }
+          : { ...proposal, entity: { ...proposal.entity, key: "!!!" } });
+      },
+      onDiagnostic: (entry) => diagnostics.push(entry),
+    });
+    const outcomes = await Promise.allSettled([
+      client.createProposal(pet),
+      client.createProposal({ ...pet, displayName: "Other" }),
+    ]);
+    for (const [index, path] of ["entity.key", "themes[0].evidence"].entries()) {
+      expect(outcomes[index]).toMatchObject({
+        status: "rejected",
+        reason: { cause: { diagnostics: { validationIssues: [expect.objectContaining({ path })] } } },
+      });
+    }
+    assertSanitized([outcomes, diagnostics]);
+  });
+
+  it("bounds diagnostics and omits unknown property names", async () => {
+    const diagnostics: unknown[] = [];
+    await createClient({
+      fetchImpl: async () => completedResponse({ SECRET_FIELD: "SECRET_RESPONSE" }),
+      onDiagnostic: (entry) => diagnostics.push(entry),
+    }).createProposal(pet).catch(() => undefined);
+    expect(diagnostics).toEqual([1, 2].map((attempt) => expect.objectContaining({
+      attempt,
+      validationIssues: ["entity", "franchises", "franchise_families", "collections", "specific_archetypes"]
+        .map((path) => ({ path, code: "invalid_type" })),
+    })));
+    assertSanitized(diagnostics);
+    expect(JSON.stringify(diagnostics)).not.toContain("SECRET_FIELD");
   });
 
   it.each([

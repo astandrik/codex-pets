@@ -14,7 +14,7 @@ parallel. All sibling calls settle before failure finalization or workspace
 cleanup. Successful rows are retained even if another row fails.
 
 A lost commit acknowledgement is resolved by reading the saved stage and hash.
-A confirmed RemoteDisconnected may receive one delayed retry for the same failed stage, as described below. Other unknown outcomes are never automatically retried. Safe private failure
+Captured RemoteDisconnected, IncompleteRead, HTTP 500 and HTTP 520 failures may receive one delayed retry for the same failed stage, as described below. Other unknown outcomes are not automatically retried. Safe private failure
 diagnostics distinguish process, report, image, checkpoint and lease failures;
 raw prompts, images, provider bodies and stderr are not diagnostic fields.
 
@@ -35,7 +35,7 @@ TTL and midnight. Stage records and request hashes enforce no-replay behavior.
 Clearing historical holds requires an explicit, audited operation; deploying
 code does not erase old accounting evidence. Preserve recorded expenses, daily
 attempt counters, grant receipts, failed jobs and a receipt for any released
-unknown balance. Unknown outcomes still pause the service until reviewed.
+unknown balance. Unclassified outcomes and uncertain storage/lease transitions still pause the service until reviewed.
 
 The card request remains sequential and keeps its existing input-size and
 estimated request-cost bounds; those checks allocate no money from the daily
@@ -59,10 +59,10 @@ This scheduling change removes one image wave compared with six plus five rows;
 it is not a measured production speedup. All eleven calls may already be sent
 when one row fails, so a failed task can pay for five more rows than before.
 
-## One delayed connection-closure retry
+## One delayed provider retry
 
-A failed image stage whose CLI cause is `remote_disconnected` gets at most one
-retry, after five seconds. Successful rows are not called again. The base image
+A failed image stage with a captured RemoteDisconnected, IncompleteRead, HTTP 500
+or HTTP 520 cause gets at most one retry, after five seconds. Successful rows are not called again. The base image
 is also an image stage: the maximum is therefore 24 image calls for 12 stages,
 plus one card-metadata request. Metadata, moderation refusals, malformed output,
 unknown exception types and database/checkpoint errors are not retried.
@@ -77,8 +77,9 @@ remains in force. All writes for a batch share its serial checkpoint queue.
 
 A failed first call can already have been billed. Its unknown accounting marker
 survives even when the second call succeeds; no zero-cost assumption or monetary
-reserve is introduced. A second failure stops the task and preserves the normal
-global guard. Existing terminal failed jobs are never reopened automatically.
+reserve is introduced. A second failure stops the task. Once every unresolved stage has a matching
+persisted provider failure and finalization commits atomically, later tasks can
+continue. Missing records, uncertain writes and lost leases retain the global pause. Existing terminal failed jobs are never reopened automatically.
 
 `rowAttemptLogs` and `rowRetries` are private job fields bounded to 24 failures
 and 12 retry markers. Error text is reduced to fixed technical messages; stack

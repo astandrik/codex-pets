@@ -4,6 +4,7 @@ import type { RelatedPetCandidate } from "@/lib/pets/related-pets";
 import { embeddingToBuffer } from "@/lib/pets/search-embeddings";
 import { RELATED_PETS_V24_FALLBACK_POLICY_REVISION } from "@/lib/pets/related-pets-fallback-policy";
 import {
+  RELATED_PETS_V24_LEGACY_RANKING_REVISION,
   RELATED_PETS_V24_PROFILE,
   isSupportedRelatedPetsRankingRevision,
   RELATED_PETS_V24_RANKING_REVISION,
@@ -632,10 +633,14 @@ describe("V24 profile contract", () => {
       .toBe("related-pets-relation-policy-2026-08-v24-r2");
   });
   it("pins the current ranking revision and unchanged stored-vector revisions", () => {
-    expect(RELATED_PETS_V24_RANKING_REVISION).toBe(EXPECTED_RANKING_REVISION);
+    const expectedRankingRevision =
+      `${EXPECTED_LEGACY_RANKING_REVISION}:annotation-proposal-compat=r2+r3-v1`;
+    expect(RELATED_PETS_V24_LEGACY_RANKING_REVISION)
+      .toBe(EXPECTED_LEGACY_RANKING_REVISION);
+    expect(RELATED_PETS_V24_RANKING_REVISION).toBe(expectedRankingRevision);
     expect(RELATED_PETS_V24_PROFILE).toMatchObject({
       strategy: "sparse-fallback-v24",
-      rankingRevision: EXPECTED_RANKING_REVISION,
+      rankingRevision: expectedRankingRevision,
       textRevision:
         "yandex-text-embeddings-v2-768-related-description-document-2026-08-v1",
       textQueryRevision:

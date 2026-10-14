@@ -44,4 +44,3 @@ export class MemoryStore implements GenerationStore {
     for (const [id, row] of this.ledger) if (row.expiresAt <= now) this.ledger.delete(id);
   }
 }
-

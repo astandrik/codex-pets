@@ -11,6 +11,20 @@ afterEach(() => { act(() => root.unmount()); });
 const progress = (phase: ApprovalProgress["phase"]): ApprovalProgress => ({ phase, startedAt: Date.now() - 180_000,
   checkedAt: Date.now(), connection: "connected", paused: false, snapshot: null });
 describe("truthful approval status", () => {
+  it.each([
+    ["schema_invalid", "Inspect the saved response"],
+    ["embedding_configuration_missing", "Check the server configuration"],
+    ["stale_submission", "Refresh the page"],
+  ])("retains actionable approval guidance for %s", (failureCode, message) => {
+    const state = progress("manual_review");
+    state.snapshot = { preparationId: "approval-1", status: "manual_review", attempts: 1,
+      failureCode, nextAttemptAt: null, createdAt: null, updatedAt: null, leaseUntil: null };
+    act(() => root.render(<ApprovalProgressPanel progress={state} />));
+    expect(container.textContent).toContain(message);
+    expect(container.textContent).toContain("Retry approval");
+    expect(container.textContent).toContain("Check status only reads");
+  });
+
   it("does not mistake a reachable API for a live worker", () => {
     act(() => root.render(<ApprovalProgressPanel progress={progress("queued")} />));
     expect(container.textContent).toContain("worker may be busy or unavailable");

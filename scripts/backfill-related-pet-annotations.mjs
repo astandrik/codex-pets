@@ -5,6 +5,8 @@ import { pathToFileURL } from "node:url";
 import {
   RELATED_PETS_ANNOTATION_MODEL_NAME,
   RELATED_PETS_ANNOTATION_REVISION,
+  RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
+  RELATED_PETS_ANNOTATION_WRITE_PROPOSAL_REVISION,
 } from "../src/lib/pets/related-pets-annotation-contract.mjs";
 import { createYandexRelatedPetAnnotationClient } from "../src/lib/pets/related-pets-annotation-client.mjs";
 import {
@@ -45,6 +47,7 @@ export async function main(argv = process.argv.slice(2)) {
         folderId: provider.folderId,
         apiKey: provider.apiKey,
         modelUri,
+        proposalRevision: RELATED_PETS_ANNOTATION_WRITE_PROPOSAL_REVISION,
         timeoutMs: provider.timeoutMs,
         onDiagnostic: (entry) => console.log(JSON.stringify({
           action: "provider-diagnostic",
@@ -55,6 +58,9 @@ export async function main(argv = process.argv.slice(2)) {
     const summary = await runRelatedPetAnnotationBackfill({
       options,
       annotationRevision: RELATED_PETS_ANNOTATION_REVISION,
+      proposalRevision: RELATED_PETS_ANNOTATION_WRITE_PROPOSAL_REVISION,
+      acceptedProposalRevisions:
+        RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
       modelUri,
       pets,
       getAnnotation: (revision, slug) => getAnnotation(driver, revision, slug),
@@ -154,6 +160,7 @@ async function findReusableProposal(
   return adoptLegacyRelatedPetAnnotationProposal(
     legacy,
     input.proposalInputHash,
+    input.proposalRevision,
   );
 }
 

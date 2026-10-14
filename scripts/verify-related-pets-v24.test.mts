@@ -4,6 +4,7 @@ import { runRelatedPetsV24Verification } from "./verify-related-pets-v24.mjs";
 import type { RelatedPetsV24VerificationService } from "./verify-related-pets-v24.mjs";
 
 const rankingRevision = "ranking-v24";
+const legacyRankingRevision = "ranking-v23";
 const rankings = [
   { sourceSlug: "a", relatedSlugs: ["b", "c"] },
   { sourceSlug: "b", relatedSlugs: ["a", "c"] },
@@ -46,6 +47,7 @@ function service(overrides = {}) {
     }))),
     listCandidates: vi.fn(async () => candidates),
     rankingRevision,
+    supportedRankingRevisions: [legacyRankingRevision, rankingRevision],
     dispose: vi.fn(async () => undefined),
     ...overrides,
   };
@@ -84,6 +86,67 @@ describe("related:verify:v24", () => {
       }),
     ]);
     expect(runtime.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("verifies a legacy active generation against its actual snapshot revision", async () => {
+    const runtime = service({
+      getState: vi.fn(async () => ({
+        status: "ready",
+        activeGenerationId: "generation-v23",
+        rankingRevision: legacyRankingRevision,
+      })),
+      listSnapshots: vi.fn(async () => rankings.map((ranking) => ({
+        ...ranking,
+        generationId: "generation-v23",
+        rankingRevision: legacyRankingRevision,
+        createdAt: "2026-08-15T00:00:00.000Z",
+      }))),
+    });
+
+    await expect(runRelatedPetsV24Verification({
+      loadService: async () => runtime,
+      write: () => undefined,
+    })).resolves.toBe(0);
+  });
+
+  it("rejects a snapshot revision that differs from the active state", async () => {
+    const runtime = service({
+      getState: vi.fn(async () => ({
+        status: "ready",
+        activeGenerationId: "generation-v23",
+        rankingRevision: legacyRankingRevision,
+      })),
+    });
+    const lines: Array<Record<string, unknown>> = [];
+
+    await expect(runRelatedPetsV24Verification({
+      loadService: async () => runtime,
+      write: (line: string) => lines.push(
+        JSON.parse(line) as Record<string, unknown>,
+      ),
+    })).resolves.toBe(1);
+    expect(lines).toEqual([
+      expect.objectContaining({
+        status: "failed",
+        integrityFailures: ["a", "b", "c"],
+      }),
+    ]);
+  });
+
+  it("rejects snapshots from a different generation", async () => {
+    const runtime = service({
+      listSnapshots: vi.fn(async () => rankings.map((ranking) => ({
+        ...ranking,
+        generationId: "generation-other",
+        rankingRevision,
+        createdAt: "2026-08-15T00:00:00.000Z",
+      }))),
+    });
+
+    await expect(runRelatedPetsV24Verification({
+      loadService: async () => runtime,
+      write: () => undefined,
+    })).resolves.toBe(1);
   });
 
   it("fails when one materialized order differs", async () => {

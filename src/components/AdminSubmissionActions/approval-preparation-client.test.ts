@@ -29,6 +29,24 @@ describe("approval preparation polling", () => {
       .toEqual({ status: "preparing", preparationId: null, attempts: null, updatedAt: null, createdAt: null, failureCode: null, leaseUntil: null, nextAttemptAt: null });
   });
 
+  it("retains the failure code needed to explain a stopped preparation", async () => {
+    await expect(pollApprovalPreparation("https://pets.test/status", {
+      fetchImpl: vi.fn().mockResolvedValue(Response.json({
+        status: "manual_review", failureCode: "schema_invalid",
+      })),
+      maxAttempts: 1,
+    })).resolves.toEqual({ status: "manual_review", failureCode: "schema_invalid" });
+  });
+
+  it.each([null, 42, "SECRET_RESPONSE", "invalid code", "a".repeat(65)])(
+    "ignores a malformed failure code: %s", async (failureCode) => {
+      await expect(pollApprovalPreparation("https://pets.test/status", {
+        fetchImpl: vi.fn().mockResolvedValue(Response.json({ status: "manual_review", failureCode })),
+        maxAttempts: 1,
+      })).resolves.toEqual({ status: "manual_review", failureCode: null });
+    },
+  );
+
   it("requests the current status before the first delay", async () => {
     const events: string[] = [];
 
