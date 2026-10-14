@@ -18,6 +18,7 @@ import {
 } from "@gravity-ui/uikit";
 
 import { withBasePath } from "@/lib/base-path";
+import { readJsonResponse } from "@/lib/read-json-response";
 import { trackGoal } from "@/lib/metrics/yandex";
 import {
   derivePublicAuthorNameFromEmail,
@@ -566,9 +567,5 @@ async function submitPetPackage(input: {
     method: "POST",
     body: formData,
   });
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!response.ok) {
-    throw new Error(data.message ?? data.error ?? `Upload failed ${response.status}`);
-  }
+  await readJsonResponse(response, `Upload failed ${response.status}`);
 }

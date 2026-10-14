@@ -13,14 +13,20 @@ export function getPetIdleStripUrl(spritesheetUrl: string): string | null {
 }
 
 export function getPetAssetIdFromSpritesheetUrl(value: string): string | null {
+  return getPetAssetRefFromSpritesheetUrl(value)?.assetId ?? null;
+}
+
+export function getPetAssetRefFromSpritesheetUrl(
+  value: string,
+): { assetId: string; filename: string } | null {
   const pathname = getPathname(value);
   const match = pathname.match(
-    /\/api\/assets\/([^/]+)\/spritesheet\.(?:webp|png)$/,
+    /\/api\/assets\/([^/]+)\/(spritesheet\.(?:webp|png))$/,
   );
   if (!match) return null;
 
   try {
-    return decodeURIComponent(match[1]);
+    return { assetId: decodeURIComponent(match[1]), filename: match[2] };
   } catch {
     return null;
   }

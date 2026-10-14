@@ -23,8 +23,8 @@
     "related:approval-worker": "node ./scripts/related-pet-approval-worker.mjs",
     "related:rebuild": "node --disable-warning=ExperimentalWarning scripts/rebuild-related-pets.mjs",
     "related:verify:v24": "node --disable-warning=ExperimentalWarning scripts/verify-related-pets-v24.mjs",
-    "search:eval:calibrate": "PET_SEARCH_LIVE_EVAL=calibrate vitest run src/lib/pets/search-live-eval.test.ts",
-    "search:eval:holdout": "PET_SEARCH_LIVE_EVAL=holdout vitest run src/lib/pets/search-live-eval.test.ts",
+    "search:eval:calibrate": "PET_SEARCH_LIVE_EVAL=calibrate vitest run src/lib/pets/search/search-live-eval.test.ts",
+    "search:eval:holdout": "PET_SEARCH_LIVE_EVAL=holdout vitest run src/lib/pets/search/search-live-eval.test.ts",
     "seed:dev": "node scripts/seed-dev-data.mjs",
     "seed:dev:reset": "node scripts/seed-dev-data.mjs --reset",
     "generation:worker": "node scripts/pet-generation-worker.mjs"

@@ -32,6 +32,13 @@ describe("private embedding HTTP boundary", () => {
     expect((await send({ input: ["cat"], mode: "migration" })).status).toBe(200);
     expect(request).toHaveBeenCalledTimes(1);
   });
+  it.each(["{", ""])("classifies malformed JSON %j as invalid input", async (body) => {
+    const { url, auth, request } = await setup();
+    const response = await fetch(`${url}/embeddings`, { method: "POST", headers: auth, body });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_request" });
+    expect(request).not.toHaveBeenCalled();
+  });
   it("coalesces live online calls without exposing provider failure content", async () => {
     const { url, auth, request } = await setup(true);
     request.mockRejectedValue(new Error("secret input must never be returned"));

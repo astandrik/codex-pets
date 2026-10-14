@@ -1,12 +1,11 @@
 import { buildApiErrorBody } from "@/lib/api-error";
 import { toPublicUrl } from "@/lib/base-path";
-import { buildPetsPayload } from "@/lib/pets/api-payloads";
+import { readPetsCatalogPage } from "@/lib/pets/catalog-page";
+import { PET_CATALOG_RANKING_HEADER, PET_CATALOG_SNAPSHOT_HEADER } from "@/lib/pets/catalog-snapshot";
 import { parseGalleryFilters } from "@/lib/pets/gallery-filters";
 import {
-  createPetsPaginationMetadata,
   parsePetsApiPagination,
 } from "@/lib/pets/pagination";
-import { searchApprovedPets } from "@/lib/pets/search-runtime";
 import {
   alternateLinkHeader,
   JSON_MEDIA_TYPE,
@@ -37,27 +36,20 @@ export async function GET(req: Request): Promise<Response> {
       },
     );
   }
-  const pagination = paginationResult.pagination;
-
-  const result = await searchApprovedPets({
-    q: filters.query,
-    kind: filters.kind,
-    tags: filters.tags,
-    ...(pagination
-      ? { offset: pagination.offset, limit: pagination.pageSize }
-      : {}),
+  const result = await readPetsCatalogPage({
+    filters,
+    pagination: paginationResult.pagination,
+    snapshotVersion: req.headers.get(PET_CATALOG_SNAPSHOT_HEADER),
+    rankingVersion: req.headers.get(PET_CATALOG_RANKING_HEADER),
   });
-  return toonResponse(
-    buildPetsPayload(
-      result.pets,
-      pagination
-        ? createPetsPaginationMetadata(pagination, result.total)
-        : undefined,
-    ),
-    {
-      headers: {
-        Link: alternate,
-      },
-    },
-  );
+  if (!result.ok) {
+    return toonResponse(buildApiErrorBody(result.code, {
+      message: result.message,
+      hint: result.hint,
+    }), {
+      status: 409,
+      headers: { Link: alternate, ...result.headers },
+    });
+  }
+  return toonResponse(result.payload, { headers: { Link: alternate } });
 }

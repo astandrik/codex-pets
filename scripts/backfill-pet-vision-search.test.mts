@@ -2,23 +2,23 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   embeddingToBuffer as runtimeEmbeddingToBuffer,
-} from "../src/lib/pets/search-embeddings";
+} from "../src/lib/pets/search/search-embeddings";
 import {
   PET_SEARCH_EMBEDDING_MODELS,
   PET_VISION_CAPTION_REVISIONS,
   PET_VISUAL_MODEL_REVISIONS,
-} from "../src/lib/pets/search-config";
+} from "../src/lib/pets/search/search-config";
 import {
   PET_VISION_CAPTION_REVISION,
   PET_VISUAL_MODEL_REVISION,
   buildPetVisionCaptionText as buildRuntimeCaptionText,
   createPetVisionCaptionSourceHash as createRuntimeCaptionHash,
   createPetVisualEmbeddingSourceHash as createRuntimeVisualHash,
-} from "../src/lib/pets/search-vision-contract";
+} from "../src/lib/pets/search/search-vision-contract";
 import {
   PET_VISION_FRAME_POLICY as RUNTIME_FRAME_POLICY,
   extractPetVisionFrames as extractRuntimeFrames,
-} from "../src/lib/pets/search-vision-frames";
+} from "../src/lib/pets/search/search-vision-frames";
 
 const {
   PET_VISION_FRAME_POLICY,

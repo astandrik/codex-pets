@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import sharp from "sharp";
 
 import { readPetAssetFile } from "@/lib/pets/assets-repository";
+import { getPetAssetRefFromSpritesheetUrl } from "@/lib/pets/asset-urls";
 import { getPetBySlug } from "@/lib/pets/repository";
 import { PET_SHEET, type ApprovalStatus } from "@/lib/pets/types";
 import { SITE_NAME, SOCIAL_IMAGE } from "@/lib/site-metadata";
@@ -18,11 +19,6 @@ export const contentType = "image/png";
 
 type PetOpenGraphImageProps = {
   params: Promise<{ slug: string }>;
-};
-
-type AssetRef = {
-  assetId: string;
-  filename: string;
 };
 
 const MAX_TITLE_LENGTH = 34;
@@ -272,7 +268,7 @@ export default async function Image({ params }: PetOpenGraphImageProps) {
 async function getSpriteFrameDataUrl(
   spritesheetUrl: string,
 ): Promise<string | null> {
-  const assetRef = parseAssetRef(spritesheetUrl);
+  const assetRef = getPetAssetRefFromSpritesheetUrl(spritesheetUrl);
   if (!assetRef) return null;
 
   const asset = await readPetAssetFile(assetRef);
@@ -294,31 +290,6 @@ async function getSpriteFrameDataUrl(
     .toBuffer();
 
   return `data:image/png;base64,${frameBuffer.toString("base64")}`;
-}
-
-function parseAssetRef(value: string): AssetRef | null {
-  const pathname = getPathname(value);
-  const match = pathname.match(
-    /\/api\/assets\/([^/]+)\/(spritesheet\.(?:webp|png))$/,
-  );
-  if (!match) return null;
-
-  return {
-    assetId: decodeURIComponent(match[1]),
-    filename: match[2],
-  };
-}
-
-function getPathname(value: string): string {
-  if (!value.startsWith("http://") && !value.startsWith("https://")) {
-    return value;
-  }
-
-  try {
-    return new URL(value).pathname;
-  } catch {
-    return value;
-  }
 }
 
 function truncateText(value: string, maxLength: number): string {

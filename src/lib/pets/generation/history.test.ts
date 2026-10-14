@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import {beforeEach, describe, expect, it, vi} from "vitest";
-import {HISTORY_PREFIX, readGenerationHistory, rememberGeneration, parseHistoryGeneration} from "./history";
+import {afterEach,beforeEach, describe, expect, it, vi} from "vitest";
+import {HISTORY_PREFIX, readGenerationHistory, pruneGenerationHistory, rememberGeneration, parseHistoryGeneration} from "./history";
 const now=Date.parse("2026-10-12T12:00:00Z"), id="a".repeat(64), expires=new Date(now+86400000).toISOString();
 beforeEach(()=>localStorage.clear());
+afterEach(()=>vi.restoreAllMocks());
 describe("private browser generation history",()=>{
  it("persists only private ID and timestamps, deduplicates and survives a new read",()=>{
   expect(rememberGeneration(id,expires,now)).toBe(true);
@@ -42,4 +43,93 @@ describe("private browser generation history",()=>{
   expect(parseHistoryGeneration({...value,generationId:"b".repeat(64)},id)).toBeNull();
   expect(parseHistoryGeneration({...value,progress:{completedSteps:13,totalSteps:12}},id)).toBeNull();
  });
+});
+
+
+function memoryStorage(initial: Record<string, string>) {
+  const values = new Map(Object.entries(initial));
+  return {
+    get length() { return values.size; },
+    key: (index: number) => [...values.keys()][index] ?? null,
+    getItem: vi.fn((key: string) => values.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => { values.set(key, value); }),
+    removeItem: vi.fn((key: string) => { values.delete(key); }),
+  };
+}
+const staleId = "e".repeat(64);
+const staleEntry = JSON.stringify({ generationId: staleId, savedAt: now - 8 * 86400000, expiresAt: now - 7 * 86400000 });
+const currentEntry = JSON.stringify({ generationId: id, savedAt: now, expiresAt: Date.parse(expires) });
+
+describe("history read and cleanup separation", () => {
+  it("reads and filters a storage interface that has no mutation methods", () => {
+    const storage = memoryStorage({ [HISTORY_PREFIX + staleId]: staleEntry, [HISTORY_PREFIX + id]: currentEntry });
+    const readOnly = { length: storage.length, key: storage.key, getItem: storage.getItem };
+    expect(readGenerationHistory(now, readOnly)).toEqual({ available: true, entries: [JSON.parse(currentEntry)] });
+    expect(storage.setItem).not.toHaveBeenCalled();
+    expect(storage.removeItem).not.toHaveBeenCalled();
+  });
+
+  it("limits a read to fifty entries without pruning until explicitly requested", () => {
+    const records = Object.fromEntries(Array.from({ length: 52 }, (_, index) => {
+      const generationId = index.toString(16).padStart(64, "0");
+      return [HISTORY_PREFIX + generationId, JSON.stringify({ generationId, savedAt: now + index, expiresAt: Date.parse(expires) })];
+    }));
+    const storage = memoryStorage(records);
+    const history = readGenerationHistory(now + 53, storage);
+    expect(history.available).toBe(true);
+    expect(history.entries).toHaveLength(50);
+    expect(history.entries[0].savedAt).toBe(now + 51);
+    expect(history.entries.at(-1)?.savedAt).toBe(now + 2);
+    expect(storage.length).toBe(52);
+    expect(storage.removeItem).not.toHaveBeenCalled();
+    expect(storage.setItem).not.toHaveBeenCalled();
+    expect(pruneGenerationHistory(now + 53, storage)).toBe(true);
+    expect(storage.length).toBe(50);
+  });
+
+  it("keeps the exact seven-day boundary and ignores unrelated or malformed records", () => {
+    const malformedKey = HISTORY_PREFIX + "f".repeat(64);
+    const storage = memoryStorage({ [HISTORY_PREFIX + staleId]: staleEntry, unrelated: "keep", [malformedKey]: "not-json" });
+    expect(pruneGenerationHistory(now - 1, storage)).toBe(true);
+    expect(storage.getItem(HISTORY_PREFIX + staleId)).toBe(staleEntry);
+    expect(pruneGenerationHistory(now, storage)).toBe(true);
+    expect(storage.getItem(HISTORY_PREFIX + staleId)).toBeNull();
+    expect(storage.getItem("unrelated")).toBe("keep");
+    expect(storage.getItem(malformedKey)).toBe("not-json");
+  });
+
+  it("keeps readable entries when cleanup is blocked", () => {
+    const storage = memoryStorage({ [HISTORY_PREFIX + staleId]: staleEntry, [HISTORY_PREFIX + id]: currentEntry });
+    storage.removeItem.mockImplementation(() => { throw new Error("cleanup blocked"); });
+    expect(readGenerationHistory(now, storage)).toEqual({ available: true, entries: [JSON.parse(currentEntry)] });
+    expect(pruneGenerationHistory(now, storage)).toBe(true);
+    expect(readGenerationHistory(now, storage).entries).toEqual([JSON.parse(currentEntry)]);
+  });
+
+  it("continues cleanup after one key fails", () => {
+    const secondId = "d".repeat(64), secondKey = HISTORY_PREFIX + secondId;
+    const storage = memoryStorage({ [HISTORY_PREFIX + staleId]: staleEntry, [secondKey]: JSON.stringify({ ...JSON.parse(staleEntry), generationId: secondId }) });
+    const remove = storage.removeItem.getMockImplementation()!;
+    storage.removeItem.mockImplementation((key) => { if (key === HISTORY_PREFIX + staleId) throw new Error("blocked key"); remove(key); });
+    expect(pruneGenerationHistory(now, storage)).toBe(true);
+    expect(storage.getItem(HISTORY_PREFIX + staleId)).toBe(staleEntry);
+    expect(storage.getItem(secondKey)).toBeNull();
+  });
+
+  it("reports a successful save even when only deletion is blocked", () => {
+    const storage = memoryStorage({ [HISTORY_PREFIX + staleId]: staleEntry });
+    storage.removeItem.mockImplementation(() => { throw new Error("cleanup blocked"); });
+    expect(rememberGeneration(id, expires, now, storage)).toBe(true);
+    expect(JSON.parse(storage.getItem(HISTORY_PREFIX + id)!)).toEqual({ generationId: id, savedAt: now, expiresAt: Date.parse(expires) });
+    expect(storage.setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("still reports actual read failures as unavailable", () => {
+    const storage = memoryStorage({ [HISTORY_PREFIX + id]: currentEntry });
+    storage.getItem.mockImplementation(() => { throw new Error("read blocked"); });
+    expect(readGenerationHistory(now, storage)).toEqual({ available: false, entries: [] });
+    expect(pruneGenerationHistory(now, storage)).toBe(false);
+    expect(rememberGeneration(id, expires, now, storage)).toBe(false);
+    expect(storage.setItem).not.toHaveBeenCalled();
+  });
 });

@@ -15,14 +15,14 @@ import {
 import type { PublicUserReference } from "@/lib/auth/repository";
 import type { ApprovalStatus, PetKind, PublicPet } from "@/lib/pets/types";
 import { withBasePath } from "@/lib/base-path";
-import type { RelatedPetCandidate } from "@/lib/pets/related-pets";
+import type { RelatedPetCandidate } from "@/lib/pets/related/related-pets";
 import { slugify, type PetJson } from "@/lib/pets/validation";
 import { statusAfterModeration } from "@/lib/pets/moderation";
 import {
   matchesGalleryFilters,
   normalizeGalleryFilters,
 } from "@/lib/pets/gallery-filters";
-import { deletePetSearchIndexBestEffort } from "@/lib/pets/search-maintenance";
+import { deletePetSearchIndexBestEffort } from "@/lib/pets/search/search-maintenance";
 import {
   createMockPetRecord,
   getMockPetById,

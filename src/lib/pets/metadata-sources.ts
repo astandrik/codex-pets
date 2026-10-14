@@ -46,11 +46,11 @@ export function resolveCaptionMetadataSource(
   throw new Error("caption_source_revision_unsupported");
 }
 
-import type { StoredRelatedPetAnnotation } from "@/lib/pets/related-pets-annotations-repository";
-import type { StoredPetSearchCaption } from "@/lib/pets/search-captions-repository";
-import type { RelatedPetAnnotationInput } from "@/lib/pets/related-pets-annotation-contract.mjs";
-import { validateCurrentRelatedPetAnnotation } from "@/lib/pets/related-pets-annotation-refresh.mjs";
-import { parsePetVisionCaptionEnvelope, buildPetVisionCaptionText, createPetVisionCaptionSourceHash } from "@/lib/pets/search-vision-contract";
+import type { StoredRelatedPetAnnotation } from "@/lib/pets/related/related-pets-annotations-repository";
+import type { StoredPetSearchCaption } from "@/lib/pets/search/search-captions-repository";
+import type { RelatedPetAnnotationInput } from "@/lib/pets/related/related-pets-annotation-contract.mjs";
+import { validateCurrentRelatedPetAnnotation } from "@/lib/pets/related/related-pets-annotation-refresh.mjs";
+import { parsePetVisionCaptionEnvelope, buildPetVisionCaptionText, createPetVisionCaptionSourceHash } from "@/lib/pets/search/search-vision-contract";
 
 export function selectFreshAnnotationMetadata(
   pet: RelatedPetAnnotationInput,

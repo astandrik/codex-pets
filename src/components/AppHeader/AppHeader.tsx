@@ -4,7 +4,7 @@ import { Container, Flex } from "@/components/GravityUI/GravityUI";
 import { AppHeaderNav } from "@/components/AppHeader/AppHeaderNav";
 import "./AppHeader.scss";
 
-export async function AppHeader() {
+export function AppHeader() {
   return (
     <Container as="header" maxWidth="xl" gutters={5} className="app-header">
       <Flex alignItems="center" justifyContent="space-between" gap={4} wrap>

@@ -7,7 +7,7 @@ import {
   RELATED_PETS_ANNOTATION_MODEL_NAME,
   RELATED_PETS_ANNOTATION_QUERY_REVISION,
   RELATED_PETS_ANNOTATION_REVISION,
-} from "../src/lib/pets/related-pets-annotation-contract.mjs";
+} from "../src/lib/pets/related/related-pets-annotation-contract.mjs";
 import {
   createRequestStartLimiter,
   embeddingToBuffer,

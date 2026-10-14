@@ -4,7 +4,7 @@ import {
   RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
   RELATED_PETS_DESCRIPTION_QUERY_REVISION,
   buildRelatedPetDescriptionText,
-} from "../../src/lib/pets/related-pets-semantics.mjs";
+} from "../../src/lib/pets/related/related-pets-semantics.mjs";
 import { createRelatedPetsRebuildRequiredLog } from "./related-pets-maintenance.mjs";
 import {
   parseResumableBackfillArgs,

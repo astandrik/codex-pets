@@ -1,3 +1,4 @@
+import { parsePublicPetLookupSlug } from "@/lib/pets/public-slug";
 import { toPublicUrl } from "@/lib/base-path";
 import {
   getPetIdleStripUrl,
@@ -22,7 +23,6 @@ export const AGENT_MAX_PET_LIMIT = 60;
 const DEFAULT_SHARE_STATE = "idle";
 const DEFAULT_SHARE_SCALE = 2;
 
-const SAFE_SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const PET_KINDS = new Set<PetKind>(["creature", "object", "character"]);
 
 export type AgentPet = {
@@ -182,8 +182,7 @@ export function normalizeAgentSearchFilters(input: {
 }
 
 export function readSafeAgentSlug(value: unknown): string | null {
-  const slug = typeof value === "string" ? value.trim() : "";
-  return SAFE_SLUG.test(slug) ? slug : null;
+  return parsePublicPetLookupSlug(value);
 }
 
 export function readSafeBadgeSlug(file: string): string | null {

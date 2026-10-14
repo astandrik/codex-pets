@@ -1,5 +1,5 @@
-import type { PetVisionCaption } from "../src/lib/pets/search-vision-contract";
-import type { VisionCaptionDiagnostic } from "../src/lib/pets/search-vision-provider.mjs";
+import type { PetVisionCaption } from "../src/lib/pets/search/search-vision-contract";
+import type { VisionCaptionDiagnostic } from "../src/lib/pets/search/search-vision-provider.mjs";
 
 export function main(argv?: string[]): Promise<unknown>;
 

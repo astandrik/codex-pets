@@ -2,9 +2,9 @@ import { petModerationPauseResponse } from "@/lib/pets/moderation-pause";
 import { NextResponse } from "next/server";
 
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
-import { rebuildRelatedPetsBestEffort } from "@/lib/pets/related-pets-rebuild-trigger";
+import { rebuildRelatedPetsBestEffort } from "@/lib/pets/related/related-pets-rebuild-trigger";
 import { softDeletePetByIdWithPreviousStatus } from "@/lib/pets/repository";
-import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
+import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related/related-pets-server";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 export const runtime = "nodejs";

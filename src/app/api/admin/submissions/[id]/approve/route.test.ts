@@ -13,7 +13,7 @@ vi.mock("@/lib/pets/mock-data", () => ({
   isMockPetsDataSource: vi.fn(),
 }));
 
-vi.mock("@/lib/pets/related-pets-repository", () => ({
+vi.mock("@/lib/pets/related/related-pets-repository", () => ({
   getRelatedPetsState: vi.fn(),
 }));
 
@@ -23,7 +23,7 @@ vi.mock("@/lib/pets/repository", () => ({
   moderatePet: vi.fn(),
 }));
 
-vi.mock("@/lib/pets/related-pets-server", () => ({
+vi.mock("@/lib/pets/related/related-pets-server", () => ({
   revalidateRelatedPetCandidatesCache: vi.fn(),
 }));
 
@@ -35,14 +35,14 @@ import { POST } from "@/app/api/admin/submissions/[id]/approve/route";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { enqueueApprovalPreparation } from "@/lib/pets/approval-preparations-repository";
 import { isMockPetsDataSource } from "@/lib/pets/mock-data";
-import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
-import { getRelatedPetsState } from "@/lib/pets/related-pets-repository";
+import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related/related-pets-profile";
+import { getRelatedPetsState } from "@/lib/pets/related/related-pets-repository";
 import {
   getPetForApprovalPreparationById,
   getPetPublicEmailModerationState,
   moderatePet,
 } from "@/lib/pets/repository";
-import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
+import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related/related-pets-server";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 const pendingPet = {

@@ -131,7 +131,7 @@ export function selectGuideExamplePets(
     }));
 }
 
-function compareGuidePets(left: PublicPet, right: PublicPet): number {
+export function compareGuidePets(left: PublicPet, right: PublicPet): number {
   return (
     popularityScore(right) - popularityScore(left) ||
     dateScore(right.approvedAt ?? right.createdAt) -

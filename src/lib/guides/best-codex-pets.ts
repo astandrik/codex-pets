@@ -1,3 +1,4 @@
+import { compareGuidePets } from "@/lib/guides/shared";
 import {
   escapeMarkdownInlineText,
   formatMarkdownInlineList,
@@ -279,23 +280,8 @@ function matchesAnyTag(petTags: string[], sectionTags: readonly string[]): boole
   });
 }
 
-function compareGuidePets(left: PublicPet, right: PublicPet): number {
-  return (
-    popularityScore(right) - popularityScore(left) ||
-    dateScore(right.approvedAt ?? right.createdAt) -
-      dateScore(left.approvedAt ?? left.createdAt) ||
-    left.displayName.localeCompare(right.displayName)
-  );
-}
 
-function popularityScore(pet: PublicPet): number {
-  return pet.likeCount + pet.downloadCount + pet.installCount;
-}
 
-function dateScore(value: string): number {
-  const time = new Date(value).getTime();
-  return Number.isFinite(time) ? time : 0;
-}
 
 function normalizeTag(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appendPublicPetSlugSuffix, parsePublicPetSlug, suggestPublicPetSlug } from "./public-slug";
+import { appendPublicPetSlugSuffix, parsePublicPetLookupSlug, parsePublicPetSlug, suggestPublicPetSlug } from "./public-slug";
 
 describe("human-readable public pet slugs", () => {
   it.each([["Мятня", "myatnya"], ["Ёжик", "yozhik"], ["Йога и чай", "yoga-i-chay"],
@@ -12,6 +12,16 @@ describe("human-readable public pet slugs", () => {
     for (const value of ["", "-a", "a-", "A", "a/b", "a_b", "a b", " a", "a ", "пет", "a".repeat(65), null, 4]) {
       expect(parsePublicPetSlug(value)).toBeNull();
     }
+  });
+  it("reads existing public slugs without relaxing new-slug creation rules", () => {
+    for (const value of ["a".repeat(49), "a".repeat(64), "legacy-"]) {
+      expect(parsePublicPetLookupSlug(` ${value} `)).toBe(value);
+    }
+    for (const value of ["", "../pet", "-pet", "a".repeat(65), null, 4]) {
+      expect(parsePublicPetLookupSlug(value)).toBeNull();
+    }
+    expect(parsePublicPetSlug("legacy-")).toBeNull();
+    expect(parsePublicPetSlug(" pet ")).toBeNull();
   });
   it("reserves room for suffixes and never leaves an edge hyphen after truncation", () => {
     expect(appendPublicPetSlugSuffix("lumi", "2")).toBe("lumi-2");

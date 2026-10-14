@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { YdbError, StatusCode } from "@/lib/ydb/client";
+import { YdbError, StatusCode, TypedValues } from "@/lib/ydb/client";
 
 const session = vi.hoisted(() => ({ beginTransaction: vi.fn(), executeQuery: vi.fn(), rollbackTransaction: vi.fn(), commitTransaction: vi.fn() }));
 vi.mock("@/lib/ydb/client", async (original) => ({
@@ -72,5 +72,101 @@ describe("generation serializable transaction contention", () => {
     const operation = vi.fn().mockResolvedValue("accepted");
     await expect(generationStore.transaction(operation)).rejects.toBeInstanceOf(Conflict);
     expect(operation).toHaveBeenCalledTimes(5);
+  });
+});
+
+
+describe("production generation store read contracts", () => {
+  const now = Date.UTC(2026, 9, 14, 12);
+  const id = "b".repeat(64);
+  const currentJob = {
+    id, prompt: "synthetic private prompt", displayName: "Synthetic", status: "queued" as const,
+    createdAt: now, expiresAt: now + 60_000, worker: "", promptRevision: "test",
+    pipelineVersion: 2, stages: [],
+  };
+  const textResult = (text: string) => ({ resultSets: [{ rows: [{ items: [{ textValue: text }] }] }] });
+
+  it("round-trips current jobs through the real serialized SDK boundary", async () => {
+    const { generationStore } = await import("@/lib/pets/generation/store");
+    await generationStore.transaction((tx) => tx.putJob(currentJob));
+    const [, params] = session.executeQuery.mock.calls[0];
+    const serialized = params.$payload.value.textValue;
+    expect(JSON.parse(serialized)).toEqual(currentJob);
+    expect(params.$expires).toEqual(TypedValues.timestamp(new Date(currentJob.expiresAt)));
+    session.executeQuery.mockResolvedValueOnce(textResult(serialized));
+    await expect(generationStore.readJob(id)).resolves.toEqual(currentJob);
+  });
+
+  it("normalizes legacy rows without pipeline, worker or stage fields", async () => {
+    const { generationStore } = await import("@/lib/pets/generation/store");
+    const legacy: Partial<typeof currentJob> = { ...currentJob };
+    delete legacy.pipelineVersion;
+    delete legacy.stages;
+    delete legacy.worker;
+    session.executeQuery.mockResolvedValueOnce(textResult(JSON.stringify(legacy)));
+    await expect(generationStore.readJob(id)).resolves.toEqual({
+      ...legacy, pipelineVersion: 1, stages: [], worker: "",
+    });
+  });
+
+  it("distinguishes missing jobs from malformed persisted data", async () => {
+    const { generationStore } = await import("@/lib/pets/generation/store");
+    await expect(generationStore.readJob(id)).resolves.toBeNull();
+    session.executeQuery.mockResolvedValueOnce(textResult("not-json"));
+    await expect(generationStore.readJob(id)).rejects.toBeInstanceOf(SyntaxError);
+    session.executeQuery.mockResolvedValueOnce(textResult(JSON.stringify({ id })));
+    await expect(generationStore.readJob(id)).rejects.toThrow();
+  });
+
+  it("decodes binary artifacts and sends an exclusive expiry cutoff", async () => {
+    const { generationStore } = await import("@/lib/pets/generation/store");
+    session.executeQuery.mockResolvedValueOnce({ resultSets: [{ rows: [{ items: [{ bytesValue: Uint8Array.from([0, 255, 17]) }] }] }] });
+    await expect(generationStore.readArtifact(id, "pet.zip", now)).resolves.toEqual(Buffer.from([0, 255, 17]));
+    const [sql, params] = session.executeQuery.mock.calls[0];
+    expect(sql).toMatch(/expires_at\s*>\s*\$now/);
+    expect(params.$now).toEqual(TypedValues.timestamp(new Date(now)));
+    expect(params.$id).toEqual(TypedValues.utf8(id));
+    expect(params.$kind).toEqual(TypedValues.utf8("pet.zip"));
+    await expect(generationStore.readArtifact(id, "pet.zip", now)).resolves.toBeNull();
+  });
+
+  it("reads ledger payloads in the transaction with the same expiry boundary", async () => {
+    const { generationStore } = await import("@/lib/pets/generation/store");
+    session.executeQuery.mockResolvedValueOnce(textResult('{"revision":2}'));
+    await expect(generationStore.transaction((tx) => tx.getLedger("scheduler", now))).resolves.toBe('{"revision":2}');
+    const [sql, params, control] = session.executeQuery.mock.calls[0];
+    expect(sql).toContain("codex_pet_generation_quotas");
+    expect(sql).toMatch(/expires_at\s*>\s*\$now/);
+    expect(params.$now).toEqual(TypedValues.timestamp(new Date(now)));
+    expect(control).toEqual({ txId: "tx-1" });
+    await expect(generationStore.transaction((tx) => tx.getLedger("absent", now))).resolves.toBeNull();
+  });
+
+  it("cleans exactly the three generation tables at an inclusive expiry cutoff", async () => {
+    const { generationStore, GENERATION_TABLES } = await import("@/lib/pets/generation/store");
+    await generationStore.cleanup(now);
+    const calls = session.executeQuery.mock.calls;
+    expect(calls).toHaveLength(3);
+    for (const [index, table] of Object.values(GENERATION_TABLES).entries()) {
+      expect(calls[index][0]).toContain(`DELETE FROM ${table} WHERE expires_at <= $now`);
+      expect(calls[index][1].$now).toEqual(TypedValues.timestamp(new Date(now)));
+    }
+  });
+
+  it("enforces service expiry even while a serialized row still exists in YDB", async () => {
+    const { generationStore } = await import("@/lib/pets/generation/store");
+    const { createGenerationService } = await import("@/lib/pets/generation/service");
+    session.executeQuery.mockResolvedValue(textResult(JSON.stringify(currentJob)));
+    let clock = now;
+    const secret = vi.fn(() => "synthetic-secret");
+    const service = createGenerationService(generationStore, {
+      enabled: () => false, secret, now: () => clock,
+    });
+    const result = await service.get(id);
+    expect(result).toMatchObject({ generationId: id, status: "queued", expiresAt: new Date(currentJob.expiresAt).toISOString() });
+    expect(JSON.stringify(result)).not.toContain(currentJob.prompt);
+    clock = currentJob.expiresAt;
+    await expect(service.get(id)).rejects.toMatchObject({ code: "generation_expired" });
+    expect(secret).not.toHaveBeenCalled();
   });
 });

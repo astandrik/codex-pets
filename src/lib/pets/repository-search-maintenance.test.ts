@@ -4,7 +4,7 @@ const maintenanceMocks = vi.hoisted(() => ({
   deletePetSearchIndexBestEffort: vi.fn(async () => true),
 }));
 
-vi.mock("@/lib/pets/search-maintenance", () => maintenanceMocks);
+vi.mock("@/lib/pets/search/search-maintenance", () => maintenanceMocks);
 
 describe("pet repository search maintenance", () => {
   beforeEach(() => {

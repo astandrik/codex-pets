@@ -12,7 +12,7 @@ import {
 
 import { PetCard } from "@/components/PetCard/PetCard";
 import { withBasePath } from "@/lib/base-path";
-import type { PublicPetPayload } from "@/lib/pets/api-payloads";
+import { isPublicPetPayload, type PublicPetPayload } from "@/lib/pets/api-payloads";
 import {
   PET_CATALOG_RANKING_HEADER,
   PET_CATALOG_SNAPSHOT_HEADER,
@@ -469,20 +469,20 @@ function isPetsPageResponse(
   value: unknown,
   expectedPage: number,
 ): value is PetsPageResponse {
-  if (!value || typeof value !== "object") return false;
-
-  const response = value as Partial<PetsPageResponse>;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const response = value as Record<string, unknown>;
+  if (!response.pagination || typeof response.pagination !== "object" || Array.isArray(response.pagination)) {
+    return false;
+  }
+  const pagination = response.pagination as Record<string, unknown>;
   return (
     Number.isInteger(response.total) &&
     Array.isArray(response.pets) &&
-    response.pets.every(
-      (pet) => pet && typeof pet === "object" && typeof pet.slug === "string",
-    ) &&
-    Boolean(response.pagination) &&
-    response.pagination?.page === expectedPage &&
-    Number.isInteger(response.pagination.pageSize) &&
-    Number.isInteger(response.pagination.totalItems) &&
-    Number.isInteger(response.pagination.totalPages) &&
-    typeof response.pagination.hasNextPage === "boolean"
+    response.pets.every(isPublicPetPayload) &&
+    pagination.page === expectedPage &&
+    Number.isInteger(pagination.pageSize) &&
+    Number.isInteger(pagination.totalItems) &&
+    Number.isInteger(pagination.totalPages) &&
+    typeof pagination.hasNextPage === "boolean"
   );
 }

@@ -6,6 +6,7 @@ import {
   buildApiUrl,
   DEFAULT_BASE_URL,
   normalizeBaseUrl,
+  readPetLookupSlug,
   toAbsoluteUrl,
 } from "./lib.js";
 import { CODEX_PETS_CLI_VERSION } from "./version.js";
@@ -17,7 +18,6 @@ const READ_ONLY_TOOL = {
   openWorldHint: false,
 };
 
-const SAFE_SLUG = /^[a-z0-9][a-z0-9-]{0,47}$/;
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 60;
 const DEFAULT_SHARE_SCALE = 2;
@@ -62,7 +62,7 @@ export function createRemoteCodexPetsDataSource(options = {}) {
       return { pet: share.pet };
     },
     async getInstallInstructions(slug) {
-      const share = await fetchSharePayload(fetchImpl, baseUrl, slug);
+      const share = await fetchSharePayload(fetchImpl, baseUrl, slug, "install");
       return {
         slug: share.pet.slug,
         name: share.pet.name,
@@ -70,7 +70,7 @@ export function createRemoteCodexPetsDataSource(options = {}) {
       };
     },
     async getBadgeCode(slug) {
-      const share = await fetchSharePayload(fetchImpl, baseUrl, slug);
+      const share = await fetchSharePayload(fetchImpl, baseUrl, slug, "badge");
       return {
         slug: share.pet.slug,
         name: share.pet.name,
@@ -78,7 +78,7 @@ export function createRemoteCodexPetsDataSource(options = {}) {
       };
     },
     async getEmbedCode(slug) {
-      const share = await fetchSharePayload(fetchImpl, baseUrl, slug);
+      const share = await fetchSharePayload(fetchImpl, baseUrl, slug, "embed");
       return {
         slug: share.pet.slug,
         name: share.pet.name,
@@ -86,7 +86,7 @@ export function createRemoteCodexPetsDataSource(options = {}) {
       };
     },
     async getCardCode(slug) {
-      const share = await fetchSharePayload(fetchImpl, baseUrl, slug);
+      const share = await fetchSharePayload(fetchImpl, baseUrl, slug, "card");
       return {
         slug: share.pet.slug,
         name: share.pet.name,
@@ -152,7 +152,7 @@ export function createCodexPetsLocalMcpServer(options = {}) {
       inputSchema: slugSchema,
       annotations: READ_ONLY_TOOL,
     },
-    async (args) => runTool(() => dataSource.getPet(readSlug(args.slug))),
+    async (args) => runTool(() => dataSource.getPet(readPetLookupSlug(args.slug))),
   );
 
   server.registerTool(
@@ -165,7 +165,7 @@ export function createCodexPetsLocalMcpServer(options = {}) {
       annotations: READ_ONLY_TOOL,
     },
     async (args) =>
-      runTool(() => dataSource.getInstallInstructions(readSlug(args.slug))),
+      runTool(() => dataSource.getInstallInstructions(readPetLookupSlug(args.slug))),
   );
 
   server.registerTool(
@@ -177,7 +177,7 @@ export function createCodexPetsLocalMcpServer(options = {}) {
       inputSchema: slugSchema,
       annotations: READ_ONLY_TOOL,
     },
-    async (args) => runTool(() => dataSource.getBadgeCode(readSlug(args.slug))),
+    async (args) => runTool(() => dataSource.getBadgeCode(readPetLookupSlug(args.slug))),
   );
 
   server.registerTool(
@@ -189,7 +189,7 @@ export function createCodexPetsLocalMcpServer(options = {}) {
       inputSchema: slugSchema,
       annotations: READ_ONLY_TOOL,
     },
-    async (args) => runTool(() => dataSource.getEmbedCode(readSlug(args.slug))),
+    async (args) => runTool(() => dataSource.getEmbedCode(readPetLookupSlug(args.slug))),
   );
 
   server.registerTool(
@@ -201,7 +201,7 @@ export function createCodexPetsLocalMcpServer(options = {}) {
       inputSchema: slugSchema,
       annotations: READ_ONLY_TOOL,
     },
-    async (args) => runTool(() => dataSource.getCardCode(readSlug(args.slug))),
+    async (args) => runTool(() => dataSource.getCardCode(readPetLookupSlug(args.slug))),
   );
 
   server.registerTool(
@@ -257,7 +257,7 @@ function normalizeManifestPet(pet, baseUrl) {
     throw new Error("Manifest pet tags must be an array.");
   }
   return {
-    slug: readSlug(pet.slug),
+    slug: readPetLookupSlug(pet.slug),
     displayName: String(pet.displayName),
     description: String(pet.description),
     kind: normalizeKind(pet.kind),
@@ -334,7 +334,7 @@ function createAgentPetFromManifest(pet, baseUrl) {
   const previewImageUrl = derivePetAssetUrl(pet.spritesheetUrl, "preview.webp");
   const idleStripUrl = derivePetAssetUrl(pet.spritesheetUrl, "idle-strip.webp");
   const mcpUrl = buildPublicUrl(baseUrl, "/mcp");
-  const installCommand = `npx @astandrik/codex-pets install ${pet.slug}`;
+  const installCommand = buildInstallCommand(pet.slug, baseUrl);
 
   return {
     slug: pet.slug,
@@ -363,10 +363,10 @@ function createAgentPetFromManifest(pet, baseUrl) {
       codex: {
         command: installCommand,
         mcpServer: {
-          addCommand: `codex mcp add codexPets --url ${mcpUrl}`,
+          addCommand: `codex mcp add codexPets --url ${quoteShellArgument(mcpUrl)}`,
           configToml: [
             "[mcp_servers.codexPets]",
-            `url = "${mcpUrl}"`,
+            `url = ${JSON.stringify(mcpUrl)}`,
           ].join("\n"),
         },
       },
@@ -464,7 +464,17 @@ function buildPetRequestInfo(baseUrl) {
   };
 }
 
-async function fetchSharePayload(fetchImpl, baseUrl, slug) {
+const nonEmptyText = z.string().min(1);
+const installSchema = z.object({ command: nonEmptyText }).passthrough();
+const shareSectionSchemas = {
+  install: installSchema,
+  badge: z.object({ markdown: nonEmptyText, html: nonEmptyText }).passthrough(),
+  card: z.object({ markdown: nonEmptyText, html: nonEmptyText }).passthrough(),
+  embed: z.object({ iframe: nonEmptyText, url: nonEmptyText }).passthrough(),
+};
+
+async function fetchSharePayload(fetchImpl, baseUrl, value, section) {
+  const slug = readPetLookupSlug(value);
   const response = await fetchJson(
     fetchImpl,
     buildApiUrl(baseUrl, `/api/pets/${encodeURIComponent(slug)}/share`),
@@ -474,10 +484,65 @@ async function fetchSharePayload(fetchImpl, baseUrl, slug) {
   if (response?.error === "not_found") {
     throw new Error(`Pet not found in gallery: ${slug}`);
   }
-  if (!response?.pet || !response?.share) {
+  const envelope = z.object({
+    pet: z.object({ slug: z.literal(slug), name: nonEmptyText, install: installSchema.optional() }).passthrough(),
+    share: z.record(z.string(), z.unknown()),
+  }).passthrough().safeParse(response);
+  if (!envelope.success || (section && !shareSectionSchemas[section].safeParse(response.share[section]).success)) {
     throw new Error(`Share response for ${slug} is malformed.`);
   }
-  return response;
+  if (baseUrl === DEFAULT_BASE_URL) return response;
+
+  const command = buildInstallCommand(slug, baseUrl);
+  return {
+    ...response,
+    pet: {
+      ...response.pet,
+      ...(response.pet.installCommand !== undefined ? { installCommand: command } : {}),
+      ...(response.pet.install ? { install: contextualizeInstall(response.pet.install, command, baseUrl) } : {}),
+    },
+    share: {
+      ...response.share,
+      ...(installSchema.safeParse(response.share.install).success
+        ? { install: contextualizeInstall(response.share.install, command, baseUrl) }
+        : {}),
+    },
+  };
+}
+
+function quoteShellArgument(value) {
+  return "'" + value.replace(/'/g, "'\"'\"'") + "'";
+}
+
+function buildInstallCommand(slug, baseUrl) {
+  const command = `npx @astandrik/codex-pets install ${slug}`;
+  return baseUrl === DEFAULT_BASE_URL ? command : `${command} --url ${quoteShellArgument(baseUrl)}`;
+}
+
+function contextualizeInstall(install, command, baseUrl) {
+  const result = { ...install, command };
+  for (const agent of ["codex", "cursor", "claudeCode"]) {
+    if (install[agent] && typeof install[agent].command === "string") {
+      result[agent] = { ...install[agent], command };
+    }
+  }
+  if (result.codex?.mcpServer) {
+    const mcpUrl = buildPublicUrl(baseUrl, "/mcp");
+    result.codex.mcpServer = {
+      ...result.codex.mcpServer,
+      addCommand: `codex mcp add codexPets --url ${quoteShellArgument(mcpUrl)}`,
+      configToml: `[mcp_servers.codexPets]\nurl = ${JSON.stringify(mcpUrl)}`,
+    };
+  }
+  if (Array.isArray(install.manual?.steps)) {
+    result.manual = {
+      ...install.manual,
+      steps: install.manual.steps.map((step) => step === `Install with ${install.command} when the npm CLI is available.`
+        ? `Install with ${command} when the npm CLI is available.`
+        : step),
+    };
+  }
+  return result;
 }
 
 async function fetchJson(fetchImpl, url, label, allowNotFound = false) {
@@ -541,13 +606,6 @@ function normalizeLimit(value) {
   return Math.min(MAX_LIMIT, Math.max(1, Math.floor(parsed)));
 }
 
-function readSlug(value) {
-  const slug = typeof value === "string" ? value.trim() : "";
-  if (!SAFE_SLUG.test(slug)) {
-    throw new Error("Invalid pet slug.");
-  }
-  return slug;
-}
 
 function derivePetAssetUrl(spritesheetUrl, filename) {
   try {

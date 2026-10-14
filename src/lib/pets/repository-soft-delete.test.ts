@@ -14,7 +14,7 @@ vi.mock("@/lib/ydb/client", () => ({
   withSession: mocks.withSession,
 }));
 
-vi.mock("@/lib/pets/search-maintenance", () => ({
+vi.mock("@/lib/pets/search/search-maintenance", () => ({
   deletePetSearchIndexBestEffort: mocks.deletePetSearchIndexBestEffort,
 }));
 

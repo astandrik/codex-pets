@@ -9,16 +9,17 @@ vi.mock("@/lib/pets/repository", () => ({
   softDeletePetByIdWithPreviousStatus: vi.fn(),
 }));
 
-vi.mock("@/lib/pets/search-provider-runtime", () => ({
-  petSearchRuntimeConfig: {
+vi.mock("@/lib/pets/search/search-provider-runtime", () => {
+  const petSearchRuntimeConfig = {
     semantic: {
       revision: "yandex-text-embeddings-v2-768-2026-07",
       dimensions: 768,
     },
-  },
-}));
+  };
+  return { getPetSearchProviders: () => ({ petSearchRuntimeConfig }) };
+});
 
-vi.mock("@/lib/pets/related-pets-rebuild", () => ({
+vi.mock("@/lib/pets/related/related-pets-rebuild", () => ({
   invalidateRelatedPets: vi.fn(),
   rebuildRelatedPets: vi.fn(),
 }));
@@ -27,15 +28,15 @@ vi.mock("@/lib/sitemap-cache", () => ({
   revalidateSitemapCache: vi.fn(),
 }));
 
-vi.mock("@/lib/pets/related-pets-server", () => ({
+vi.mock("@/lib/pets/related/related-pets-server", () => ({
   revalidateRelatedPetCandidatesCache: vi.fn(),
 }));
 
 import { POST } from "@/app/api/admin/submissions/[id]/delete/route";
 import { getCurrentPrincipal, isAdminUser } from "@/lib/auth/session";
 import { softDeletePetByIdWithPreviousStatus } from "@/lib/pets/repository";
-import { rebuildRelatedPets } from "@/lib/pets/related-pets-rebuild";
-import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related-pets-server";
+import { rebuildRelatedPets } from "@/lib/pets/related/related-pets-rebuild";
+import { revalidateRelatedPetCandidatesCache } from "@/lib/pets/related/related-pets-server";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 describe("POST /api/admin/submissions/[id]/delete", () => {

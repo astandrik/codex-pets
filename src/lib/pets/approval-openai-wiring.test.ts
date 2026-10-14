@@ -13,16 +13,16 @@ vi.mock("@/lib/pets/approval-preparations-repository", () => ({
 }));
 vi.mock("@/lib/pets/repository", () => ({ getPetForApprovalPreparationById: mocks.getPet }));
 vi.mock("@/lib/pets/metadata-worker/approval", () => ({ prepareOpenAIApprovalMetadata: mocks.metadata }));
-vi.mock("@/lib/pets/search-runtime", () => ({ refreshApprovedPetSearchEmbedding: mocks.search }));
-vi.mock("@/lib/pets/related-pets-query-runtime", () => ({ refreshApprovedPetRelatedDescriptionEmbeddingsStrict: mocks.related }));
-vi.mock("@/lib/pets/related-pets-annotation-runtime", () => ({ refreshPetRelatedAnnotation: mocks.annotation }));
-vi.mock("@/lib/pets/search-vision-runtime", () => ({ refreshApprovedPetVisionSearch: mocks.vision }));
-vi.mock("@/lib/pets/related-pets-rebuild", () => ({ prepareRelatedPetsGeneration: mocks.build }));
-vi.mock("@/lib/pets/related-pets-repository", () => ({ cleanupRelatedPetsGenerations: async () => true, cleanupInactiveRelatedPetsGeneration: async () => true }));
+vi.mock("@/lib/pets/search/search-runtime", () => ({ refreshApprovedPetSearchEmbedding: mocks.search }));
+vi.mock("@/lib/pets/related/related-pets-query-runtime", () => ({ refreshApprovedPetRelatedDescriptionEmbeddingsStrict: mocks.related }));
+vi.mock("@/lib/pets/related/related-pets-annotation-runtime", () => ({ refreshPetRelatedAnnotation: mocks.annotation }));
+vi.mock("@/lib/pets/search/search-vision-runtime", () => ({ refreshApprovedPetVisionSearch: mocks.vision }));
+vi.mock("@/lib/pets/related/related-pets-rebuild", () => ({ prepareRelatedPetsGeneration: mocks.build }));
+vi.mock("@/lib/pets/related/related-pets-repository", () => ({ cleanupRelatedPetsGenerations: async () => true, cleanupInactiveRelatedPetsGeneration: async () => true }));
 vi.mock("@/lib/indexnow", () => ({ notifyIndexNowOfApprovedPet: async () => ({ status: "skipped" }) }));
 
-import { runRelatedPetApprovalWorkerOnce } from "@/lib/pets/related-pets-approval-worker";
-import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
+import { runRelatedPetApprovalWorkerOnce } from "@/lib/pets/related/related-pets-approval-worker";
+import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related/related-pets-profile";
 const pet = { id: "pet_fixture", slug: "fixture", status: "pending", updatedAt: "2026-10-11T10:00:00Z" };
 const preparation = { preparationId: "approval_fixture", petId: pet.id, petSlug: pet.slug, petUpdatedAt: pet.updatedAt,
   rankingRevision: RELATED_PETS_V24_PROFILE.rankingRevision, status: "preparing", leaseOwner: "worker-fixture",

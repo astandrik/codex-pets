@@ -933,7 +933,7 @@ function getOpenApiServerUrl(): string {
 
 const slugSchema = {
   type: "string",
-  pattern: "^[a-z0-9][a-z0-9-]{0,47}$",
+  pattern: "^[a-z0-9][a-z0-9-]{0,63}$",
 } as const;
 
 const kindSchema = {

@@ -22,7 +22,7 @@ Source tree for the `codex-pets` Next.js app: App Router pages, API routes, clie
 | `components/WebMCP/CurrentPetWebMCPTool.tsx` | approved pet detail page WebMCP tool |
 | `lib/pets/repository.ts` | YDB-backed persistence for pets, uploads, reviews, metrics |
 | `lib/pets/assets-repository.ts` | YDB-backed binary asset storage and retrieval |
-| `lib/pets/related-pets-repository.ts` | YDB-backed derived related-ranking generations and snapshots |
+| `lib/pets/related/related-pets-repository.ts` | YDB-backed derived related-ranking generations and snapshots |
 | `lib/auth/session.ts` | internal auth resolution and admin check |
 | `lib/metrics/yandex.ts` | Yandex counter ID and goal tracking |
 

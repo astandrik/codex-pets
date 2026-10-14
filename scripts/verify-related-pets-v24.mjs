@@ -132,16 +132,16 @@ async function loadProductionService() {
   const [rebuildRuntime, relatedRepository, petRepository, profile, ydb] =
     await Promise.all([
       import(pathToFileURL(
-        path.join(sourceRoot, "lib/pets/related-pets-rebuild.ts"),
+        path.join(sourceRoot, "lib/pets/related/related-pets-rebuild.ts"),
       ).href),
       import(pathToFileURL(
-        path.join(sourceRoot, "lib/pets/related-pets-repository.ts"),
+        path.join(sourceRoot, "lib/pets/related/related-pets-repository.ts"),
       ).href),
       import(pathToFileURL(
         path.join(sourceRoot, "lib/pets/repository.ts"),
       ).href),
       import(pathToFileURL(
-        path.join(sourceRoot, "lib/pets/related-pets-profile.ts"),
+        path.join(sourceRoot, "lib/pets/related/related-pets-profile.ts"),
       ).href),
       import(pathToFileURL(path.join(sourceRoot, "lib/ydb/client.ts")).href),
     ]);

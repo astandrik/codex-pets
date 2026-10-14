@@ -9,7 +9,7 @@ import {
 
 import { storeRelatedPetAttribution } from "@/lib/metrics/related-pet-attribution";
 import { trackGoal } from "@/lib/metrics/yandex";
-import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
+import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related/related-pets-limits";
 
 type RelatedPetsAnalyticsProps = {
   children: ReactNode;

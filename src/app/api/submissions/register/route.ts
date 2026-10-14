@@ -208,7 +208,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const responseBody = { ok: true, pet };
   if (idempotency.key && requestHash && idempotencyClaim) {
-    const stored = await storeIdempotencyResult({
+    await storeIdempotencyResult({
       route: routeScope,
       key: idempotency.key,
       requestHash,
@@ -216,9 +216,6 @@ export async function POST(req: Request): Promise<Response> {
       statusCode: 201,
       responseBody,
     });
-    if (!stored) {
-      return NextResponse.json(responseBody, { status: 201 });
-    }
   }
 
   return NextResponse.json(responseBody, { status: 201 });

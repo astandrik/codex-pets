@@ -68,6 +68,15 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+Run the local checks before submitting changes:
+
+```bash
+npm run lint
+npx tsc --noEmit --incremental false
+npm test
+CODEX_PETS_DATA_SOURCE=mock NEXT_TELEMETRY_DISABLED=1 npm run build
+```
+
 ## Agent access
 
 Codex Pets exposes a public MCP server so coding agents can search,
@@ -393,7 +402,7 @@ The first rollback is `PET_SEARCH_VISUAL_MODE=off`; use
 `PET_SEARCH_MODE=lexical` to disable the text-semantic contour too. The additive
 caption and embeddings tables may remain.
 The checked-in eval queries live in
-`src/lib/pets/search-eval-fixtures.json` with frozen `calibration` and
+`src/lib/pets/search/search-eval-fixtures.json` with frozen `calibration` and
 `holdout` splits. Calibration evaluates all observed visual scores against
 weights `0.25`, `0.50`, `0.75`, and `1.00`; the holdout command requires a
 committed revision-bound profile and must not be used for tuning. Live eval

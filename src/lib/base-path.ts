@@ -45,3 +45,13 @@ export function getPublicOrigin(): string {
 export function toPublicUrl(path: string): string {
   return `${getPublicOrigin()}${withBasePath(path)}`;
 }
+
+export function stripBasePath(pathname: string, basePath?: string): string {
+  if (!basePath || pathname === basePath) {
+    return pathname === basePath ? "/" : pathname;
+  }
+
+  return pathname.startsWith(`${basePath}/`)
+    ? pathname.slice(basePath.length) || "/"
+    : pathname;
+}

@@ -1,17 +1,25 @@
 import { listPetAnnotationsWithSources, listPetCaptionsWithSources } from "@/lib/pets/metadata-records";
 import { selectFreshAnnotationMetadata, selectFreshCaptionMetadata, groupMetadataBySlug } from "@/lib/pets/metadata-sources";
-import { decodeRelatedPetV24Vector } from "@/lib/pets/related-pets-ranking";
+import { decodeRelatedPetV24Vector } from "@/lib/pets/related/related-pets-ranking";
 import { createHash } from "node:crypto";
-import { buildPetSearchDocument, buildRelatedPetDocument, buildRelatedPetQuery, createPetSearchSourceHash,
-  createRelatedPetDocumentSourceHash, createRelatedPetQuerySourceHash } from "@/lib/pets/search-embeddings";
+import {
+  buildPetSearchDocument,
+  createPetSearchSourceHash,
+} from "@/lib/pets/search/search-embeddings";
+import {
+  buildRelatedPetDocument,
+  buildRelatedPetQuery,
+  createRelatedPetDocumentSourceHash,
+  createRelatedPetQuerySourceHash,
+} from "@/lib/pets/related/related-pets-embeddings";
 import { OPENAI_PETS_REVISIONS, OPENAI_EMBEDDING_DIMENSIONS } from "@/lib/pets/openai-embedding-profile";
-import { LEGACY_RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
+import { LEGACY_RELATED_PETS_V24_PROFILE } from "@/lib/pets/related/related-pets-profile";
 import { listApprovedPetsForSearch } from "@/lib/pets/repository";
-import { createRelatedPetAnnotationEmbeddingSourceHash, RELATED_PETS_ANNOTATION_MODEL_NAME } from "@/lib/pets/related-pets-annotation-contract.mjs";
-import { createPetVisualEmbeddingSourceHash, PET_VISION_CAPTION_REVISION } from "@/lib/pets/search-vision-contract";
+import { createRelatedPetAnnotationEmbeddingSourceHash, RELATED_PETS_ANNOTATION_MODEL_NAME } from "@/lib/pets/related/related-pets-annotation-contract.mjs";
+import { createPetVisualEmbeddingSourceHash, PET_VISION_CAPTION_REVISION } from "@/lib/pets/search/search-vision-contract";
 import { getPetAssetIdFromSpritesheetUrl } from "@/lib/pets/asset-urls";
 import { readPetSpritesheetAsset } from "@/lib/pets/assets-repository";
-import { listRawPetSearchEmbeddings, upsertPetSearchEmbedding } from "@/lib/pets/search-embeddings-repository";
+import { listRawPetSearchEmbeddings, upsertPetSearchEmbedding } from "@/lib/pets/search/search-embeddings-repository";
 
 export type OpenAIIndexInput = { slug: string; modelRevision: string; sourceHash: string; text: string };
 export async function collectOpenAIIndexInputs(): Promise<OpenAIIndexInput[]> {

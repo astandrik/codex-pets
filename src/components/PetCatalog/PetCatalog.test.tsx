@@ -395,6 +395,36 @@ describe("PetCatalog", () => {
     unmountCatalog(rendered);
   });
 
+  it.each([
+    ["missing tags", { tags: undefined }],
+    ["non-array tags", { tags: "space" }],
+    ["non-string tag", { tags: [42] }],
+    ["missing name", { displayName: undefined }],
+    ["invalid metric", { downloadCount: "1" }],
+    ["invalid nullable owner", { ownerName: 42 }],
+    ["invalid status", { status: "unknown" }],
+  ])("rejects a page with %s without replacing existing cards", async (_label, invalidFields) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({
+      total: 1,
+      pets: [{ ...createPet("second"), ...invalidFields }],
+      pagination: { page: 2, pageSize: 1, totalItems: 2, totalPages: 2, hasNextPage: false },
+    })));
+    const rendered = renderCatalog();
+    try {
+      await act(async () => {
+        rendered.container.querySelector<HTMLButtonElement>('button[data-action="load-more"]')?.click();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(rendered.container.querySelectorAll("[data-pet-slug]")).toHaveLength(1);
+      expect(rendered.container.querySelector('[data-pet-slug="first"]')).not.toBeNull();
+      expect(rendered.container.querySelector('[data-pet-slug="second"]')).toBeNull();
+      expect(rendered.container.querySelector('button[data-action="retry"]')).not.toBeNull();
+    } finally {
+      unmountCatalog(rendered);
+    }
+  });
+
   it("uses the Load more button and retries through the same page loader", async () => {
     const fetchMock = vi
       .fn()

@@ -8,7 +8,13 @@ import { CODEX_PETS_CLI_VERSION } from "./version.js";
 export const DEFAULT_BASE_URL = "https://pets.ydb-qdrant.tech";
 
 const SPRITESHEET_RE = /^spritesheet\.(webp|png)$/;
-const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
+const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+export function readPetLookupSlug(value) {
+  const slug = typeof value === "string" ? value.trim() : "";
+  if (!SLUG_RE.test(slug)) throw new Error("Invalid pet slug.");
+  return slug;
+}
 
 export function parseArgs(argv) {
   const args = [...argv];
@@ -118,10 +124,7 @@ export async function fetchManifest(baseUrl, fetchImpl = globalThis.fetch) {
 }
 
 export function findManifestPet(manifest, slug) {
-  if (!SLUG_RE.test(slug)) {
-    throw new Error(`Invalid pet slug: ${slug}`);
-  }
-
+  slug = readPetLookupSlug(slug);
   const pet = manifest.pets.find((item) => item?.slug === slug);
   if (!pet) {
     throw new Error(`Pet not found in gallery: ${slug}`);
@@ -138,7 +141,7 @@ export async function listPets(options = {}) {
 export async function installPet(options) {
   const baseUrl = resolveBaseUrl(options);
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
-  const slug = options.slug;
+  const slug = readPetLookupSlug(options.slug);
   const codexHome = path.resolve(options.codexHome ?? resolveCodexHome());
   const petsDir = path.join(codexHome, "pets");
   const targetDir = path.join(petsDir, slug);
@@ -162,21 +165,44 @@ export async function installPet(options) {
 
   await fs.mkdir(petsDir, { recursive: true });
   const tempDir = await fs.mkdtemp(path.join(petsDir, `.tmp-${slug}-`));
-  let installed = false;
+  const replacementDir = path.join(tempDir, "replacement");
+  const previousDir = path.join(tempDir, "previous");
+  let preservePrevious = false;
 
   try {
-    await fs.writeFile(path.join(tempDir, "pet.json"), petJsonBuffer);
-    await fs.writeFile(path.join(tempDir, spriteFilename), spritesheetBuffer);
+    await fs.mkdir(replacementDir, { mode: 0o700 });
+    await fs.writeFile(path.join(replacementDir, "pet.json"), petJsonBuffer);
+    await fs.writeFile(path.join(replacementDir, spriteFilename), spritesheetBuffer);
 
-    if (options.force) {
-      await fs.rm(targetDir, { recursive: true, force: true });
+    if (options.force && (await pathExists(targetDir))) {
+      await fs.rename(targetDir, previousDir);
+      preservePrevious = true;
     }
 
-    await fs.rename(tempDir, targetDir);
-    installed = true;
+    try {
+      await fs.rename(replacementDir, targetDir);
+    } catch (publishError) {
+      if (preservePrevious) {
+        try {
+          await fs.rename(previousDir, targetDir);
+          preservePrevious = false;
+        } catch (restoreError) {
+          throw new AggregateError(
+            [publishError, restoreError],
+            `Pet replacement and rollback failed. Previous pack is preserved at ${previousDir}.`,
+          );
+        }
+      }
+      throw publishError;
+    }
+    preservePrevious = false;
   } finally {
-    if (!installed) {
-      await fs.rm(tempDir, { recursive: true, force: true });
+    if (!preservePrevious) {
+      try {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      } catch {
+        (options.warn ?? console.warn)(`Could not remove installation staging directory: ${tempDir}`);
+      }
     }
   }
 
@@ -294,6 +320,9 @@ function resolveBaseUrl(options = {}) {
 }
 
 function normalizeManifestPet(pet) {
+  if (!pet || typeof pet !== "object" || Array.isArray(pet)) {
+    throw new Error("Manifest pet must be an object.");
+  }
   const fields = ["slug", "displayName", "spritesheetUrl", "petJsonUrl"];
   for (const field of fields) {
     if (typeof pet[field] !== "string" || !pet[field].trim()) {
@@ -302,7 +331,7 @@ function normalizeManifestPet(pet) {
   }
   spritesheetFilenameFromUrl(pet.spritesheetUrl);
   return {
-    slug: pet.slug,
+    slug: readPetLookupSlug(pet.slug),
     displayName: pet.displayName,
     spritesheetUrl: pet.spritesheetUrl,
     petJsonUrl: pet.petJsonUrl,

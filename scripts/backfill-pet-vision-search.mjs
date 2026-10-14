@@ -20,7 +20,7 @@ import {
   parseVisionBackfillArgs,
   runPetVisionSearchBackfill,
 } from "./lib/pet-vision-search-backfill.mjs";
-import { createResponsesVisionCaptionRequester } from "../src/lib/pets/search-vision-provider.mjs";
+import { createResponsesVisionCaptionRequester } from "../src/lib/pets/search/search-vision-provider.mjs";
 
 const require = createRequire(import.meta.url);
 const {

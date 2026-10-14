@@ -1,12 +1,26 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 import {
   RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
   RELATED_PETS_ANNOTATION_QUERY_REVISION,
-} from "../src/lib/pets/related-pets-annotation-contract.mjs";
+} from "../src/lib/pets/related/related-pets-annotation-contract.mjs";
 
 describe("runner image maintenance contract", () => {
+  it("loads evaluation modules before rejecting missing arguments without provider access", () => {
+    const output = execFileSync(process.execPath, ["--input-type=module", "-e", `
+      globalThis.fetch = () => { throw new Error("unexpected_network"); };
+      try { await import("./scripts/evaluate-pets-openai.mjs"); }
+      catch (error) { console.log(error.message); }
+    `], {
+      encoding: "utf8",
+      timeout: 10_000,
+      env: { PATH: process.env.PATH, NODE_ENV: "test" },
+    });
+    expect(output.trim()).toBe("Explicit split, fixture and output paths required");
+  });
+
   it("packages the annotation requester and uses current vector revisions", () => {
     const packageJson = JSON.parse(
       readFileSync(new URL("../package.json", import.meta.url), "utf8"),
@@ -22,7 +36,7 @@ describe("runner image maintenance contract", () => {
     const dockerfile = readFileSync(new URL("../Dockerfile", import.meta.url), "utf8");
     expect(dockerfile).toContain("COPY --from=builder /app/src ./src");
     expect(readFileSync(
-      new URL("../src/lib/pets/related-pets-annotation-client.mjs", import.meta.url),
+      new URL("../src/lib/pets/related/related-pets-annotation-client.mjs", import.meta.url),
       "utf8",
     )).toContain('./related-pets-annotation-requester.mjs');
   });
@@ -76,7 +90,7 @@ describe("runner image maintenance contract", () => {
       "node --disable-warning=ExperimentalWarning scripts/verify-related-pets-v24.mjs",
     );
     expect(dockerignore).not.toContain("related-pets-live-eval.test.ts");
-    expect(dockerignore).toContain("!src/lib/pets/search-live-eval.test.ts");
+    expect(dockerignore).toContain("!src/lib/pets/search/search-live-eval.test.ts");
   });
 
   it("documents the fail-closed preparation default in runtime examples", () => {

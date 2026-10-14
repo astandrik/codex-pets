@@ -35,7 +35,7 @@ vi.mock("@/lib/pets/repository", () => ({
     petsRepositoryMocks.listApprovedPetSitemapEntries,
 }));
 
-vi.mock("@/lib/pets/related-pets-repository", () => ({
+vi.mock("@/lib/pets/related/related-pets-repository", () => ({
   getRelatedPetsState: relatedRepositoryMocks.getRelatedPetsState,
 }));
 

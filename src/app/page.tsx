@@ -21,7 +21,7 @@ import {
   parseCatalogPage,
 } from "@/lib/pets/pagination";
 import { getApprovedPetsCatalogSnapshot } from "@/lib/pets/catalog-snapshot-server";
-import { searchApprovedPets } from "@/lib/pets/search-runtime";
+import { searchApprovedPets } from "@/lib/pets/search/search-runtime";
 import type { PublicPet, PublicPetSummary } from "@/lib/pets/types";
 import {
   buildCatalogPageMetadata,

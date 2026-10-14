@@ -5,11 +5,11 @@ import {
   RELATED_PETS_ANNOTATION_QUERY_REVISION,
   createRelatedPetAnnotationProposalHash,
   createRelatedPetAnnotationEmbeddingSourceHash,
-} from "../../src/lib/pets/related-pets-annotation-contract.mjs";
+} from "../../src/lib/pets/related/related-pets-annotation-contract.mjs";
 import {
   refreshRelatedPetAnnotationRecord,
   validateCurrentRelatedPetAnnotation,
-} from "../../src/lib/pets/related-pets-annotation-refresh.mjs";
+} from "../../src/lib/pets/related/related-pets-annotation-refresh.mjs";
 import { createRelatedPetsRebuildRequiredLog } from "./related-pets-maintenance.mjs";
 import {
   parseResumableBackfillArgs,

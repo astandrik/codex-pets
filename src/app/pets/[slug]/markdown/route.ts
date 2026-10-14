@@ -1,7 +1,7 @@
 import { markdownResponse } from "@/lib/agent-markdown";
-import { RELATED_PETS_MARKDOWN_LIMIT } from "@/lib/pets/related-pets-limits";
+import { RELATED_PETS_MARKDOWN_LIMIT } from "@/lib/pets/related/related-pets-limits";
 import { buildPetMarkdown } from "@/lib/pets/markdown";
-import { getApprovedResolvedRelatedPets } from "@/lib/pets/related-pets-server";
+import { getApprovedResolvedRelatedPets } from "@/lib/pets/related/related-pets-server";
 import { getApprovedPetBySlug } from "@/lib/pets/repository";
 
 export const runtime = "nodejs";

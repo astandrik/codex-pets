@@ -3,22 +3,24 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  buildRelatedPetDocument as buildRuntimeRelatedDocument,
-  buildRelatedPetQuery as buildRuntimeRelatedQuery,
   buildPetSearchDocument as buildRuntimeDocument,
-  createRelatedPetDocumentSourceHash as createRuntimeRelatedDocumentHash,
-  createRelatedPetQuerySourceHash as createRuntimeRelatedQueryHash,
   createPetSearchSourceHash as createRuntimeHash,
   embeddingToBuffer as runtimeEmbeddingToBuffer,
-} from "../src/lib/pets/search-embeddings";
+} from "../src/lib/pets/search/search-embeddings";
+import {
+  buildRelatedPetDocument as buildRuntimeRelatedDocument,
+  buildRelatedPetQuery as buildRuntimeRelatedQuery,
+  createRelatedPetDocumentSourceHash as createRuntimeRelatedDocumentHash,
+  createRelatedPetQuerySourceHash as createRuntimeRelatedQueryHash,
+} from "../src/lib/pets/related/related-pets-embeddings";
 import {
   PET_SEARCH_EMBEDDING_MODELS,
   PET_SEARCH_MODEL_REVISIONS,
-} from "../src/lib/pets/search-config";
+} from "../src/lib/pets/search/search-config";
 import {
   RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
   RELATED_PETS_DESCRIPTION_QUERY_REVISION,
-} from "../src/lib/pets/related-pets-semantics.mjs";
+} from "../src/lib/pets/related/related-pets-semantics.mjs";
 
 const packageScripts = (JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
@@ -38,6 +40,7 @@ const {
 } = await import("./lib/pet-search-backfill.mjs");
 const {
   PET_SEARCH_BACKFILL_REVISIONS,
+  requirePetSearchBackfillRevision,
   createEmbeddingRequest,
 } = await import("./lib/pet-search-provider-config.mjs");
 const { RELATED_PETS_REBUILD_COMMANDS } = await import(
@@ -53,6 +56,16 @@ const pet = {
 };
 
 describe("pet search embeddings backfill", () => {
+  it.each(["toString", "constructor", "__proto__", undefined, "unknown"])("rejects unsupported revision keys before provider setup: %s", (revision) => {
+    expect(() => requirePetSearchBackfillRevision(revision)).toThrow("supported additive search revision");
+  });
+
+  it("resolves a supported revision to its declared dimensions and model", () => {
+    expect(requirePetSearchBackfillRevision("yandex-text-search-2026-07")).toEqual({
+      dimensions: 256, documentModelPath: "text-search-doc/latest", requestDimensions: null,
+    });
+  });
+
   it("keeps legacy and v2 provider definitions in runtime parity", () => {
     for (const [revision, definition] of Object.entries(
       PET_SEARCH_MODEL_REVISIONS,

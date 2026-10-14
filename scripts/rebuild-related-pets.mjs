@@ -162,7 +162,7 @@ async function loadProductionService() {
 
   const runtime = await import(
     pathToFileURL(
-      path.join(sourceRoot, "lib/pets/related-pets-rebuild.ts"),
+      path.join(sourceRoot, "lib/pets/related/related-pets-rebuild.ts"),
     ).href
   );
   const { destroyYdbDriver } = await import(

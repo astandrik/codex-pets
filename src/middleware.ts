@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { BASE_PATH } from "@/lib/base-path";
+import { BASE_PATH, stripBasePath } from "@/lib/base-path";
 import { appendAgentLinkHeaders } from "@/lib/agent-link-headers";
 import { getIndexNowKeyFileName } from "@/lib/indexnow";
 import {
@@ -166,15 +166,6 @@ function mediaRangeMatches(range: string, mediaType: string): boolean {
   return rangeSubtype === "*" && rangeType === mediaTypeType;
 }
 
-function stripBasePath(pathname: string, basePath?: string): string {
-  if (!basePath || pathname === basePath) {
-    return pathname === basePath ? "/" : pathname;
-  }
-
-  return pathname.startsWith(`${basePath}/`)
-    ? pathname.slice(basePath.length) || "/"
-    : pathname;
-}
 
 function withBasePath(pathname: string, basePath?: string): string {
   if (!basePath) {

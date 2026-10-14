@@ -1,12 +1,12 @@
 import { withBasePath } from "@/lib/base-path";
 import { buildPetInstallCommand } from "@/lib/pets/install-command";
+import { parsePublicPetLookupSlug } from "@/lib/pets/public-slug";
 import type { PetKind, PublicPet } from "@/lib/pets/types";
 
 export const WEBMCP_DEFAULT_PET_LIMIT = 10;
 export const WEBMCP_MAX_PET_LIMIT = 60;
 
 const PET_KINDS = new Set<PetKind>(["creature", "object", "character"]);
-const SAFE_SLUG = /^[a-z0-9][a-z0-9-]{0,47}$/;
 
 export type WebMCPPetInput = Omit<
   Pick<
@@ -100,11 +100,7 @@ export function normalizeLimit(value: unknown): number {
 }
 
 export function readSafeSlugInput(input: unknown): string | null {
-  const slug = isRecord(input) && typeof input.slug === "string"
-    ? input.slug.trim()
-    : "";
-
-  return SAFE_SLUG.test(slug) ? slug : null;
+  return isRecord(input) ? parsePublicPetLookupSlug(input.slug) : null;
 }
 
 export function isWebMCPPetInput(value: unknown): value is WebMCPPetInput {

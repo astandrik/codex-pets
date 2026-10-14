@@ -14,6 +14,7 @@ import {
 } from "@gravity-ui/uikit";
 
 import { withBasePath } from "@/lib/base-path";
+import { readJsonResponse } from "@/lib/read-json-response";
 import { trackGoal } from "@/lib/metrics/yandex";
 import "./PetRequestForm.scss";
 
@@ -80,13 +81,7 @@ export function PetRequestForm({
         headers: body instanceof FormData ? undefined : { "Content-Type": "application/json" },
         body,
       });
-      const text = await response.text();
-      const data = text ? JSON.parse(text) : {};
-      if (!response.ok) {
-        throw new Error(
-          data.message ?? data.error ?? `Request failed ${response.status}`,
-        );
-      }
+      await readJsonResponse(response);
 
       trackGoal("pet_generation_request_success", {
         kind,
