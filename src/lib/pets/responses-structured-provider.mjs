@@ -8,12 +8,13 @@ import OpenAI, {
 } from "openai";
 import { standardTextFormat } from "openai/helpers/standard-schema";
 
+import { resolveMetadataMaxAttempts } from "./metadata-attempts.mjs";
+
 export const RESPONSES_ENDPOINT =
   "https://ai.api.cloud.yandex.net/v1/responses";
 
 const INITIAL_MAX_OUTPUT_TOKENS = 8_000;
 const RETRY_MAX_OUTPUT_TOKENS = 16_000;
-const MAX_ATTEMPTS = 3;
 const MAX_RETRY_AFTER_MS = 60_000;
 
 export class StructuredResponseRequestError extends Error {
@@ -55,6 +56,7 @@ export function createResponsesStructuredRequest(input) {
 }
 
 export function createResponsesStructuredRequester(options) {
+  const maxAttempts = resolveMetadataMaxAttempts(options.maxAttempts);
   const now = options.now ?? Date.now;
   const sleep = options.sleep ?? sleepFor;
   const createRequestId = options.randomUUID ?? randomUUID;
@@ -78,7 +80,7 @@ export function createResponsesStructuredRequester(options) {
     let structuredOutputRetryUsed = false;
     let lastError = null;
 
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       await reserveStart();
       const clientRequestId = createRequestId();
       const outcome = await requestOnce({
@@ -112,7 +114,7 @@ export function createResponsesStructuredRequester(options) {
         outcome.reason,
         diagnostics,
       );
-      if (!outcome.retryable || attempt >= MAX_ATTEMPTS) throw lastError;
+      if (!outcome.retryable || attempt >= maxAttempts) throw lastError;
 
       if (outcome.reason === "output_limit") {
         if (maxOutputTokens >= retryMaxOutputTokens) throw lastError;

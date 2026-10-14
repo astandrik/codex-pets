@@ -6,8 +6,8 @@ export const MCP_REGISTRY_SERVER_NAME =
   "tech.ydb-qdrant.pets/codex-pets-ydb-qdrant";
 export const MCP_REGISTRY_SERVER_TITLE = "Codex Pets Registry";
 export const MCP_REGISTRY_SERVER_DESCRIPTION =
-  "Search, preview, install community Codex pet packs, and discover the pet request flow.";
-export const MCP_REGISTRY_SERVER_VERSION = "1.0.0";
+  "Search and preview community Codex pets, or generate an unlisted animated pet from text.";
+export const MCP_REGISTRY_SERVER_VERSION = "1.1.0";
 export const MCP_REGISTRY_AUTH_RECORD =
   "v=MCPv1; k=ed25519; p=hf1UAXtYZTedJy3YtpjRYpB6IZRoZKEyzHJ+Wc/uxrc=";
 export const GLAMA_CONNECTOR_SCHEMA_URL =
@@ -89,7 +89,7 @@ export function buildMcpServerCard(): McpServerCard {
     serverUrl,
     endpoint: serverUrl,
     instructions:
-      "Use this read-only MCP server to search approved Codex pet packs, fetch one approved pet, and generate install, badge, card, or embed snippets. Do not use it for private requests, account actions, moderation, deletes, downloads, or metrics mutations.",
+      "Use the catalog tools to search approved pets and get install/share snippets. generate_pet starts a server-paid, quota-limited image task; get_pet_generation reads its private result. No tool publishes pets or performs moderation/account actions.",
     tools: [
       {
         name: "search_pets",
@@ -119,6 +119,8 @@ export function buildMcpServerCard(): McpServerCard {
         name: "get_pet_request_info",
         description: "Describe the public new-pet request workflow.",
       },
+      { name: "generate_pet", description: "Start a server-paid text-to-pet task, limited to 200/day globally and 10/IP." },
+      { name: "get_pet_generation", description: "Read task status and unlisted preview/ZIP links, available for 24 hours." },
     ],
     resources: [
       {

@@ -3,6 +3,7 @@ import { rowsFromResult, textAt } from "@/lib/ydb/result";
 import { TABLES } from "@/lib/ydb/schema";
 
 export type StoredRelatedPetAnnotation = {
+  annotationRevision?: string;
   slug: string;
   sourceHash: string;
   proposalRevision: string;

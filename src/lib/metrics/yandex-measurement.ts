@@ -28,7 +28,9 @@ export type McpToolCallPayload = {
     | "get_badge_code"
     | "get_embed_code"
     | "get_card_code"
-    | "get_pet_request_info";
+    | "get_pet_request_info"
+    | "generate_pet"
+    | "get_pet_generation";
   status: McpToolCallStatus;
   kind?: "all" | "creature" | "object" | "character";
   hasQuery?: boolean;

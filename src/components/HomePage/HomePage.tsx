@@ -3,6 +3,7 @@ import {
   Card,
   Container,
   Flex,
+  Label,
   Text,
 } from "@/components/GravityUI/GravityUI";
 import {
@@ -21,6 +22,7 @@ import {
   ASK_AI_PRODUCT_NAME,
 } from "@/components/AskAI/ask-ai-content";
 import { BEST_CODEX_PETS_GUIDE_PATH } from "@/lib/guides/best-codex-pets";
+import { AI_PET_GENERATOR_PATH } from "@/lib/guides/ai-pet-generator";
 import {
   HomeHeroPetPicker,
   type HomeHeroPet,
@@ -85,7 +87,7 @@ export function HomePage({
                     color="secondary"
                     className="home-hero__lead"
                   >
-                    Browse community-made animated pet packs for Codex, preview
+                    Browse community-made pets or generate your own from a description. Preview
                     every animation state, and download a ZIP that drops into{" "}
                     <code>~/.codex/pets/&lt;slug&gt;</code>.
                   </Text>
@@ -93,17 +95,18 @@ export function HomePage({
                     <Button
                       view="action"
                       size="l"
-                      href={withBasePath("/submit")}
+                      href={withBasePath("/generate")}
                     >
-                      <Plus />
-                      Submit a pet
+                      <Star />
+                      Generate a pet
                     </Button>
                     <Button
                       view="outlined"
                       size="l"
-                      href={withBasePath("/request")}
+                      href={withBasePath("/submit")}
                     >
-                      Request a pet
+                      <Plus />
+                      Submit a pet
                     </Button>
                     <Button
                       view="outlined"
@@ -121,6 +124,15 @@ export function HomePage({
                       Best Codex pets guide
                       <ArrowRight />
                     </Button>
+                  </Flex>
+                  <Flex direction="column" gap={2} alignItems="flex-start" className="home-hero__generation">
+                    <Label theme="warning">Experimental AI generation</Label>
+                    <Text variant="body-2" color="secondary">
+                      No account needed. Describe a character, preview its animations,
+                      and download a v2 pet pack. Results expire 24 hours after your
+                      task is accepted. Check the animations and look directions before sharing.
+                    </Text>
+                    <a href={withBasePath(AI_PET_GENERATOR_PATH)}>How generation works, limits and publishing →</a>
                   </Flex>
                 </Flex>
                 <div

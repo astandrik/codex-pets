@@ -1,6 +1,7 @@
+import { listPetCaptionsWithSources } from "@/lib/pets/metadata-records";
+import { selectFreshCaptionMetadata, groupMetadataBySlug } from "@/lib/pets/metadata-sources";
 import { getPetAssetIdFromSpritesheetUrl } from "@/lib/pets/asset-urls";
 import {
-  listPetSearchCaptions,
   type StoredPetSearchCaption,
 } from "@/lib/pets/search-captions-repository";
 import type { PetSearchConfig } from "@/lib/pets/search-config";
@@ -31,10 +32,7 @@ import {
   petSearchRuntimeConfig,
 } from "@/lib/pets/search-provider-runtime";
 import {
-  buildPetVisionCaptionText,
-  createPetVisionCaptionSourceHash,
   createPetVisualEmbeddingSourceHash,
-  parsePetVisionCaptionEnvelope,
 } from "@/lib/pets/search-vision-contract";
 import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 import type { ApprovalStatus, PublicPet } from "@/lib/pets/types";
@@ -245,36 +243,21 @@ export function filterCurrentVisualMatches<T extends ApprovedSearchPet>(input: {
   storedCaptions: readonly StoredPetSearchCaption[];
   visualConfig: NonNullable<PetSearchConfig["visual"]>;
 }): { slug: string; score: number }[] {
-  const captionsBySlug = new Map(
-    input.storedCaptions.map((caption) => [caption.slug, caption]),
-  );
-
+  const captionsBySlug = groupMetadataBySlug(input.storedCaptions);
   return input.storedMatches.flatMap((match) => {
     const pet = input.candidates.get(match.slug);
-    const caption = captionsBySlug.get(match.slug);
-    if (pet?.status !== "approved" || !caption) return [];
-
+    if (pet?.status !== "approved") return [];
     const assetId = getPetAssetIdFromSpritesheetUrl(pet.spritesheetUrl);
     if (!assetId) return [];
-
-    const envelope = parsePetVisionCaptionEnvelope(caption.captionJson);
-    const captionText = buildPetVisionCaptionText(envelope.caption);
-    if (captionText !== caption.captionText) {
-      throw new Error("Stored visual caption is not canonical.");
-    }
-    if (envelope.source.assetId !== assetId) return [];
-
-    const captionSourceHash = createPetVisionCaptionSourceHash({
-      captionRevision: input.visualConfig.captionRevision,
-      modelUri: input.visualConfig.modelUri,
-      assetId,
-      spritesheetSha256: envelope.source.spritesheetSha256,
+    const fresh = selectFreshCaptionMetadata(captionsBySlug.get(pet.slug) ?? [], {
+      slug: pet.slug, assetId, legacy: input.visualConfig, throwOnMalformed: true,
     });
-    if (caption.sourceHash !== captionSourceHash) return [];
+    if (!fresh) return [];
+    const { source, captionText, sourceHash: captionSourceHash } = fresh;
 
     const visualSourceHash = createPetVisualEmbeddingSourceHash({
       visualRevision: input.visualConfig.visualRevision,
-      captionRevision: input.visualConfig.captionRevision,
+      captionRevision: source.captionRevision,
       captionSourceHash,
       captionText,
     });
@@ -311,7 +294,7 @@ const runtime = createApprovedPetSearchRuntime<PublicPet>({
   listApprovedPets: listApprovedPetsForSearch,
   embeddingClient: petSearchEmbeddingClient,
   findSimilar: findSimilarPetEmbeddings,
-  listCaptions: listPetSearchCaptions,
+  listCaptions: listPetCaptionsWithSources,
   getMetadata: getPetSearchEmbeddingMetadata,
   upsert: upsertPetSearchEmbedding,
 });

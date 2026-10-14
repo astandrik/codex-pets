@@ -26,7 +26,8 @@
     "search:eval:calibrate": "PET_SEARCH_LIVE_EVAL=calibrate vitest run src/lib/pets/search-live-eval.test.ts",
     "search:eval:holdout": "PET_SEARCH_LIVE_EVAL=holdout vitest run src/lib/pets/search-live-eval.test.ts",
     "seed:dev": "node scripts/seed-dev-data.mjs",
-    "seed:dev:reset": "node scripts/seed-dev-data.mjs --reset"
+    "seed:dev:reset": "node scripts/seed-dev-data.mjs --reset",
+    "generation:worker": "node scripts/pet-generation-worker.mjs"
   },
   "dependencies": {
     "@gravity-ui/icons": "^2.16.0",
@@ -36,11 +37,11 @@
     "@toon-format/toon": "^2.2.0",
     "@yandex-cloud/nodejs-sdk": "^2.9.0",
     "jszip": "^3.10.1",
-    "next": "16.0.10",
+    "next": "16.4.0",
     "openai": "7.4.0",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
-    "sharp": "^0.34.5",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "sharp": "0.35.5",
     "ydb-sdk": "^5.11.1",
     "zod": "^4.4.3"
   },
@@ -49,7 +50,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.0.10",
+    "eslint-config-next": "16.4.0",
     "jsdom": "^29.1.1",
     "sass": "^1.94.2",
     "typescript": "^5",

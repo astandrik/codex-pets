@@ -37,6 +37,7 @@ export function createResponsesVisionCaptionRequester<
   apiKey: string;
   modelUri: string;
   timeoutMs: number;
+  maxAttempts?: number;
   systemPrompt: string;
   userPrompt: string;
   responseSchemaName: string;

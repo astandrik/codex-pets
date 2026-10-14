@@ -59,3 +59,7 @@ next-env.d.ts
 # private host-specific notes
 /private/
 /telegram-preview-root-cause.md
+
+# Python renderer cache
+__pycache__/
+*.pyc

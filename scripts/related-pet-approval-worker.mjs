@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import { mkdirSync } from "node:fs";
 import { register } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -42,6 +44,24 @@ export function createApprovalWorkerId({ hostname, pid, randomId }) {
 }
 
 async function main() {
+  const ledgerDirectory = process.env.PET_APPROVAL_METADATA_DIR;
+  if (process.env.PET_EMBEDDING_PROFILE === "openai-large-v1") {
+    if (!ledgerDirectory || !path.isAbsolute(ledgerDirectory)) throw new Error("metadata_directory_missing");
+    if (process.env.PET_APPROVAL_LOCK_HELD !== "true") {
+      mkdirSync(ledgerDirectory, { recursive: true, mode: 0o700 });
+      return new Promise((resolve, reject) => {
+        // OS lock survives process failures correctly and is shared by every container
+        // mounting this ledger. A second worker must not read/modify paid receipts.
+        const child = spawn("flock", ["--nonblock", "--no-fork", path.join(ledgerDirectory, "worker.lock"),
+          process.execPath, ...process.argv.slice(1)], {
+          stdio: "inherit", env: { ...process.env, PET_APPROVAL_LOCK_HELD: "true" },
+        });
+        for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => child.kill(signal));
+        child.once("error", reject);
+        child.once("exit", (code) => resolve(code ?? 1));
+      });
+    }
+  }
   const scriptsRoot = path.dirname(fileURLToPath(import.meta.url));
   const sourceRoot = path.resolve(scriptsRoot, "../src");
   register(new URL("./lib/related-pets-typescript-loader.mjs", import.meta.url), {
@@ -53,6 +73,9 @@ async function main() {
       path.join(sourceRoot, "lib/pets/related-pets-approval-worker.ts"),
     ).href
   );
+  const { petModerationPaused } = await import(
+    pathToFileURL(path.join(sourceRoot, "lib/pets/moderation-pause.ts")).href
+  );
   return runApprovalWorkerLoop({
     once: process.argv.includes("--once"),
     workerId: createApprovalWorkerId({
@@ -60,7 +83,7 @@ async function main() {
       pid: process.pid,
       randomId: randomUUID(),
     }),
-    runOnce: runRelatedPetApprovalWorkerOnce,
+    runOnce: (workerId) => petModerationPaused() ? Promise.resolve("idle") : runRelatedPetApprovalWorkerOnce(workerId),
   });
 }
 

@@ -1,3 +1,4 @@
+import { getAdditionalMetadataInputRevisions } from "@/lib/pets/metadata-input-revisions";
 import type { Session } from "ydb-sdk";
 
 import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
@@ -29,6 +30,8 @@ export type RelatedPetsRankingInputScope = {
   embeddingModelRevisions: readonly string[];
   captionRevision: string | null;
   annotationRevision?: string | null;
+  additionalCaptionRevisions?: readonly string[];
+  additionalAnnotationRevisions?: readonly string[];
 };
 
 export type RecoverPreviousRelatedPetsGenerationInput = {
@@ -184,6 +187,7 @@ LIMIT 1;
     scope: RelatedPetsRankingInputScope,
   ): Promise<string> {
     return JSON.stringify({
+      ...(await getAdditionalMetadataInputRevisions(execute, dependencies.values, scope)),
       catalog: await getCatalogRevisionWithExecute(execute),
       embeddings: await getEmbeddingRevisionWithExecute(
         execute,
@@ -1060,8 +1064,13 @@ export const requestRelatedPetsBuild = repository.requestBuild;
 export const writeRelatedPetsSnapshot = repository.writeSnapshot;
 export const activateRelatedPetsGeneration = repository.activateGeneration;
 export const markRelatedPetsGenerationFailed = repository.markGenerationFailed;
-export const cleanupRelatedPetsGenerations = repository.cleanupGenerations;
-export const cleanupInactiveRelatedPetsGeneration =
-  repository.cleanupInactiveGeneration;
+export async function cleanupRelatedPetsGenerations(input: { expectedGenerationId: string }): Promise<boolean> {
+  if (process.env.PET_RELATED_PRESERVE_GENERATIONS === "true") return true;
+  return repository.cleanupGenerations(input);
+}
+export async function cleanupInactiveRelatedPetsGeneration(input: { expectedGenerationId: string }): Promise<boolean> {
+  if (process.env.PET_RELATED_PRESERVE_GENERATIONS === "true") return true;
+  return repository.cleanupInactiveGeneration(input);
+}
 export const recoverPreviousRelatedPetsGeneration =
   repository.recoverPreviousGeneration;

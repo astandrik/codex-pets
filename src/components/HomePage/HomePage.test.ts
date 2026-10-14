@@ -62,6 +62,17 @@ describe("HomePage visible content", () => {
     );
   });
 
+  it("makes generation discoverable without exposing private result links", () => {
+    const container = renderHomePage();
+    const firstAction = container.querySelector(".home-hero__actions a");
+    expect(firstAction?.getAttribute("href")).toBe("/generate");
+    expect(firstAction?.textContent).toContain("Generate a pet");
+    expect(container.querySelector('a[href="/guides/ai-pet-generator"]')).not.toBeNull();
+    expect(container.textContent).toContain("Experimental AI generation");
+    expect(container.querySelector('a[href^="/generated/"]')).toBeNull();
+    expect(renderHomePage({ showLandingContent: false }).querySelector(".home-hero__generation")).toBeNull();
+  });
+
   it("links the hero to the catalog rendered on the same page", () => {
     const container = renderHomePage();
 

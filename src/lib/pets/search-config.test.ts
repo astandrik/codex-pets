@@ -2,14 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   loadPetSearchConfig,
-  PET_SEARCH_MODEL_REVISIONS,
-  PET_VISUAL_MODEL_REVISIONS,
 } from "@/lib/pets/search-config";
 import { PET_VISION_CAPTION_REVISION } from "@/lib/pets/search-vision-contract";
 
-const supportedRevision = Object.keys(PET_SEARCH_MODEL_REVISIONS)[0] ?? "";
+const supportedRevision = "yandex-text-search-2026-07";
 const supportedVisualRevision =
-  Object.keys(PET_VISUAL_MODEL_REVISIONS)[0] ?? "";
+  "yandex-text-search-2026-07-pet-vision-v1";
 const v2TextRevision =
   "yandex-text-embeddings-v2-768-2026-07";
 const v2VisualRevision =
@@ -271,5 +269,22 @@ describe("pet search runtime configuration", () => {
       visual: null,
       visualFallbackReason: "visual_configuration_missing",
     });
+  });
+});
+
+describe("explicit OpenAI profile", () => {
+  it("uses only the private embedding token; old Yandex credentials are not read", () => {
+    const config = loadPetSearchConfig({
+      PET_EMBEDDING_PROFILE: "openai-large-v1", PET_SEARCH_MODE: "hybrid", PET_SEARCH_VISUAL_MODE: "hybrid",
+      PET_EMBEDDING_SERVICE_URL: "http://pets-embeddings:8090/embeddings", PET_EMBEDDING_SERVICE_TOKEN_FILE: "/private-service-key",
+      YANDEX_AI_STUDIO_FOLDER_ID: "folder", YANDEX_AI_STUDIO_API_KEY_FILE: "/caption-key", PET_SEARCH_EMBEDDING_TIMEOUT_MS: "5000",
+    }, (path) => { expect(path).toBe("/private-service-key"); return "private-service-only"; });
+    expect(config.semantic).toMatchObject({ dimensions: 3072, embeddingModelId: "text-embedding-3-large", timeoutMs: 5000,
+      apiKey: "", privateEmbedding: { token: "private-service-only" } });
+    expect(config.visual?.dimensions).toBe(3072); expect(config.visualFallbackReason).toBeNull();
+    expect(config.visual?.modelUri).toBe("gpt://folder/qwen3.6-35b-a3b");
+  });
+  it("never sends an OpenAI revision through the Yandex client if the profile was omitted", () => {
+    expect(() => loadPetSearchConfig({ PET_SEARCH_MODEL_REVISION: "openai-text-embedding-3-large-3072-pets-20261011-v1-search-document" }, vi.fn())).toThrow("openai_embedding_profile_required");
   });
 });

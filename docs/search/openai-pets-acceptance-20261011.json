@@ -1,0 +1,228 @@
+{
+  "model": "text-embedding-3-large",
+  "dimensions": 3072,
+  "fixtureHash": "7c35d0c455a70a84cfed992840d666adaa56256a9643b93af30c54815ab87b33",
+  "corpusFingerprint": "651999414287d1fccbaea894582b1a2034e6ca78dadca0960dddf04b438a6c66",
+  "profile": {
+    "searchMinSimilarity": 0.2,
+    "searchVisualMinSimilarity": 0.18,
+    "textMinSimilarity": 0.44,
+    "annotationMinSimilarity": 0.45,
+    "visualMinSimilarity": 0.66,
+    "searchVisualWeight": 0.25,
+    "annotationWeight": 0.5,
+    "visualWeight": 0.25
+  },
+  "coverage": {
+    "search": 161,
+    "descriptionDocument": 161,
+    "descriptionQuery": 161,
+    "annotationDocument": 161,
+    "annotationQuery": 161,
+    "visual": 161
+  },
+  "calibration": {
+    "passed": true,
+    "searchNdcgAt5": 0.8482147642791695,
+    "lexicalNdcgAt5": 0.42857142857142855,
+    "relatedRecallAt4": 1
+  },
+  "holdout": {
+    "passed": true,
+    "searchNdcgAt5": 0.8357635579335364,
+    "lexicalNdcgAt5": 0.42857142857142855,
+    "exactNameMrrAt5": 1,
+    "negativeSafe": true,
+    "relatedRecallAt4": 1,
+    "baselineRelatedRecallAt4": 1,
+    "providerLatencyMs": {
+      "p50": 463.6814140000006,
+      "p95": 1204.101807000001
+    },
+    "nativeSearchLatencyMs": {
+      "p50": 79.80879500000083,
+      "p95": 90.72357899999952
+    }
+  },
+  "usage": {
+    "requests": 39,
+    "completed": 39,
+    "unresolved": 0,
+    "tokens": 122882,
+    "actualUSD": 0.01597466,
+    "committedUSD": 0.01597466,
+    "cachedInputs": 660
+  },
+  "sensitivity": {
+    "validatorRevision": "raw-cosine-separation-v1",
+    "passed": true,
+    "fixtureHash": "7c35d0c455a70a84cfed992840d666adaa56256a9643b93af30c54815ab87b33",
+    "corpusFingerprint": "651999414287d1fccbaea894582b1a2034e6ca78dadca0960dddf04b438a6c66",
+    "baselineFingerprint": "3335853de2f7a0d4552c4a8959be1602af4c5f1f86e3e3289d32e67e81534488",
+    "oldActiveGeneration": "07599e2d-8682-4ec4-a8d0-c27b1a354083",
+    "results": {
+      "calibration": {
+        "channels": {
+          "text": {
+            "positiveCount": 3,
+            "negativeCount": 3,
+            "minPositive": 0.6999180639959172,
+            "maxNegative": 0.43291127698065524,
+            "margin": 0.2670067870152619,
+            "passed": true
+          },
+          "annotation": {
+            "positiveCount": 3,
+            "negativeCount": 3,
+            "minPositive": 0.8281481652922086,
+            "maxNegative": 0.44773014787515286,
+            "margin": 0.3804180174170557,
+            "passed": true
+          },
+          "visual": {
+            "positiveCount": 3,
+            "negativeCount": 3,
+            "minPositive": 0.8492555935223702,
+            "maxNegative": 0.650566632513407,
+            "margin": 0.19868896100896327,
+            "passed": true
+          }
+        },
+        "controls": {
+          "kind": "cyclic_score_assignment_not_vector_reembedding",
+          "cyclic": [
+            {
+              "shift": 1,
+              "channelsRejected": [
+                "text",
+                "annotation",
+                "visual"
+              ]
+            },
+            {
+              "shift": 2,
+              "channelsRejected": [
+                "text",
+                "annotation",
+                "visual"
+              ]
+            },
+            {
+              "shift": 3,
+              "channelsRejected": [
+                "text",
+                "annotation",
+                "visual"
+              ]
+            },
+            {
+              "shift": 4,
+              "channelsRejected": [
+                "text",
+                "annotation",
+                "visual"
+              ]
+            },
+            {
+              "shift": 5,
+              "channelsRejected": [
+                "text",
+                "annotation",
+                "visual"
+              ]
+            }
+          ],
+          "collapsedSignalRejected": true,
+          "reversedSignalRejected": true,
+          "detectsPermutationInEveryChannel": true
+        },
+        "passed": true
+      },
+      "holdout": {
+        "channels": {
+          "text": {
+            "positiveCount": 3,
+            "negativeCount": 3,
+            "minPositive": 0.6955652910364747,
+            "maxNegative": 0.482251649184369,
+            "margin": 0.21331364185210566,
+            "passed": true
+          },
+          "annotation": {
+            "positiveCount": 3,
+            "negativeCount": 3,
+            "minPositive": 0.8175341825667508,
+            "maxNegative": 0.4709498833336815,
+            "margin": 0.3465842992330693,
+            "passed": true
+          },
+          "visual": {
+            "positiveCount": 3,
+            "negativeCount": 3,
+            "minPositive": 0.8392680730326694,
+            "maxNegative": 0.7052189883457369,
+            "margin": 0.13404908468693244,
+            "passed": true
+          }
+        },
+        "controls": {
+          "kind": "cyclic_score_assignment_not_vector_reembedding",
+          "cyclic": [
+            {
+              "shift": 1,
+              "channelsRejected": [
+                "text",
+                "annotation",
+                "visual"
+              ]
+            },
+            {
+              "shift": 2,
+              "channelsRejected": [
+                "text",
+                "annotation",
+                "visual"
+              ]
+            },
+            {
+              "shift": 3,
+              "channelsRejected": [
+                "text",
+                "annotation",
+                "visual"
+              ]
+            },
+            {
+              "shift": 4,
+              "channelsRejected": [
+                "text",
+                "annotation",
+                "visual"
+              ]
+            },
+            {
+              "shift": 5,
+              "channelsRejected": [
+                "text",
+                "annotation",
+                "visual"
+              ]
+            }
+          ],
+          "collapsedSignalRejected": true,
+          "reversedSignalRejected": true,
+          "detectsPermutationInEveryChannel": true
+        },
+        "passed": true
+      }
+    },
+    "limits": "Small frozen same-character versus unrelated-pair sample. This tests raw embeddings independently of identity policy; it is not a general semantic/fallback benchmark or a statistically powered model comparison."
+  },
+  "limits": [
+    "18 synthetic/source-reviewed queries and 12 pairs, agent-reviewed not a human-labelled benchmark",
+    "Same-character recall also depends on the retained identity policy; raw score margins and permutation controls checked separately",
+    "Russian pink-haired pilot query has a relevant result only at rank5; no holdout threshold retuning",
+    "Old Yandex online provider timed out; search comparison is against lexical fallback, not a working Yandex semantic baseline",
+    "This file accepts source profile only; live release and Lumi approval require separate recorded acceptance"
+  ]
+}

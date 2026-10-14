@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
+import {
+  RELATED_PETS_V24_LEGACY_RANKING_REVISION,
+  RELATED_PETS_V24_PROFILE,
+} from "@/lib/pets/related-pets-profile";
 import {
   createRelatedPetsResolver,
   logRelatedPetsResolverDiagnostic,
@@ -112,6 +115,62 @@ describe("createRelatedPetsResolver", () => {
       generationStatus: "ready",
       durationMs: 7,
     });
+  });
+
+  it.each([
+    [
+      "legacy/legacy",
+      RELATED_PETS_V24_LEGACY_RANKING_REVISION,
+      RELATED_PETS_V24_LEGACY_RANKING_REVISION,
+      ["b", "d", "e", "a", "c"],
+    ],
+    [
+      "current/current",
+      RELATED_PETS_V24_PROFILE.rankingRevision,
+      RELATED_PETS_V24_PROFILE.rankingRevision,
+      ["b", "d", "e", "a", "c"],
+    ],
+    [
+      "legacy/current",
+      RELATED_PETS_V24_LEGACY_RANKING_REVISION,
+      RELATED_PETS_V24_PROFILE.rankingRevision,
+      ["e", "a", "b", "c", "d"],
+    ],
+    [
+      "current/legacy",
+      RELATED_PETS_V24_PROFILE.rankingRevision,
+      RELATED_PETS_V24_LEGACY_RANKING_REVISION,
+      ["e", "a", "b", "c", "d"],
+    ],
+    [
+      "unknown/unknown",
+      "ranking-v-next",
+      "ranking-v-next",
+      ["e", "a", "b", "c", "d"],
+    ],
+  ])("handles the %s state/snapshot revision pair atomically", async (
+    _name,
+    stateRevision,
+    snapshotRevision,
+    expectedOrder,
+  ) => {
+    const deps = dependencies({
+      getState: vi.fn(async () => ({
+        ...readyState,
+        rankingRevision: stateRevision,
+      })),
+      getSnapshot: vi.fn(async () => ({
+        ...readySnapshot,
+        rankingRevision: snapshotRevision,
+      })),
+    });
+
+    const result = await createRelatedPetsResolver(deps)(current);
+
+    expect(result.map(({ slug }) => slug)).toEqual(expectedOrder);
+    if (stateRevision === "ranking-v-next") {
+      expect(deps.getSnapshot).not.toHaveBeenCalled();
+    }
   });
 
   it("caps heuristic fallback and snapshot hydration at eight", async () => {

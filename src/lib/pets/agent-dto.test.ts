@@ -123,6 +123,22 @@ describe("agent DTO", () => {
     });
   });
 
+  it("accepts generated and 64-character slugs without widening the slug alphabet", async () => {
+    const { readSafeAgentSlug, readSafeBadgeSlug, readSafeCardSlug } = await import("@/lib/pets/agent-dto");
+    const lumiSlug = "generated-5b600685367151da-c403f5c2bb2447ecacd554";
+    expect(lumiSlug).toHaveLength(49);
+    for (const slug of [lumiSlug, "a".repeat(64), `${"a".repeat(63)}-`]) {
+      expect(readSafeAgentSlug(slug)).toBe(slug);
+      expect(readSafeBadgeSlug(`${slug}.svg`)).toBe(slug);
+      expect(readSafeCardSlug(`${slug}.gif`)).toBe(slug);
+    }
+    for (const slug of ["a".repeat(65), "../admin", "pet/name", "pet%2fname", "%2e%2e%2fadmin", "pet%252fname", "https://pets.example/pets/lumi", "//pets.example/lumi", "lumi?x=1", "lumi#fragment", "Lumi", "lumi_pet", "-lumi", "питомец"]) {
+      expect(readSafeAgentSlug(slug)).toBeNull();
+      expect(readSafeBadgeSlug(`${slug}.svg`)).toBeNull();
+      expect(readSafeCardSlug(`${slug}.gif`)).toBeNull();
+    }
+  });
+
   it("parses safe slugs for pets and badge files", async () => {
     const { readSafeAgentSlug, readSafeBadgeSlug, readSafeCardSlug } = await import(
       "@/lib/pets/agent-dto"

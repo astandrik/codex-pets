@@ -79,7 +79,7 @@ describe("POST /mcp", () => {
 
     expect(body.result.serverInfo).toMatchObject({
       name: "codex-pets-registry",
-      version: "1.0.0",
+      version: "1.1.0",
     });
   });
 
@@ -102,6 +102,8 @@ describe("POST /mcp", () => {
       "get_embed_code",
       "get_card_code",
       "get_pet_request_info",
+      "generate_pet",
+      "get_pet_generation",
     ]);
     expect(tools[0].annotations.readOnlyHint).toBe(true);
     expect(
@@ -116,7 +118,7 @@ describe("POST /mcp", () => {
     ).toContain("Prefer this over get_pet");
     expect(
       tools.find((tool) => tool.name === "get_pet_request_info")?.description,
-    ).toContain("no MCP tool exposes those operations");
+    ).toContain("these manual workflows are separate from generate_pet and get_pet_generation");
   });
 
   it("exposes MCP Apps UI metadata on compatible read tools", async () => {
@@ -273,6 +275,22 @@ describe("POST /mcp", () => {
       status: "success",
       slug: "orbit-otter",
     });
+  });
+
+  it("returns approved Lumi for its real 49-character generated slug", async () => {
+    const slug = "generated-5b600685367151da-c403f5c2bb2447ecacd554";
+    const lumi = { ...approvedPet, id: "pet_c403f5c2bb2447ecacd554", slug, displayName: "Lumi" };
+    repositoryMocks.getApprovedPetBySlug.mockResolvedValue(lumi);
+    const body = await callMcp({
+      id: 49,
+      method: "tools/call",
+      params: { name: "get_pet", arguments: { slug } },
+    });
+    expect(repositoryMocks.getApprovedPetBySlug).toHaveBeenCalledExactlyOnceWith(slug);
+    expect(body.result.isError).toBeUndefined();
+    expect(body.result.structuredContent.pet).toMatchObject({ slug, name: "Lumi", displayName: "Lumi" });
+    expect(JSON.stringify(body.result.structuredContent)).not.toContain("private@example.com");
+    expect(metricsMocks.trackMcpToolCall).toHaveBeenCalledWith({ tool: "get_pet", status: "success", slug });
   });
 
   it("returns structured tool errors and tracks invalid arguments", async () => {

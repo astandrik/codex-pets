@@ -5,6 +5,7 @@ import {
   RELATED_PETS_DESCRIPTION_QUERY_REVISION,
   buildRelatedPetDescriptionText,
 } from "@/lib/pets/related-pets-semantics.mjs";
+import { OPENAI_PETS_REVISIONS } from "@/lib/pets/openai-embedding-profile";
 import { normalizeSearchQuery } from "@/lib/pets/search-ranking";
 import type { PetKind } from "@/lib/pets/types";
 
@@ -44,13 +45,15 @@ export class EmbeddingProviderError extends Error {
   }
 }
 
-export type YandexEmbeddingClient = {
+export type EmbeddingClient = {
   revision: string;
   dimensions: number;
   embedQuery: (text: string) => Promise<number[]>;
   embedPreparedQuery: (text: string) => Promise<number[]>;
   embedDocument: (text: string) => Promise<number[]>;
 };
+
+export type YandexEmbeddingClient = EmbeddingClient;
 
 type YandexEmbeddingClientOptions = {
   folderId: string;
@@ -84,7 +87,8 @@ export function buildRelatedPetQuery(
   pet: PetSearchDocumentInput,
   modelRevision: string,
 ): string {
-  if (modelRevision === RELATED_PETS_DESCRIPTION_QUERY_REVISION) {
+  if (modelRevision === RELATED_PETS_DESCRIPTION_QUERY_REVISION ||
+      modelRevision === OPENAI_PETS_REVISIONS.descriptionQuery) {
     return buildRelatedPetDescriptionText(pet);
   }
   const tags = normalizedPetTags(pet.tags);
@@ -97,7 +101,8 @@ export function buildRelatedPetDocument(
   pet: PetSearchDocumentInput,
   modelRevision: string,
 ): string {
-  if (modelRevision === RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION) {
+  if (modelRevision === RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION ||
+      modelRevision === OPENAI_PETS_REVISIONS.descriptionDocument) {
     return buildRelatedPetDescriptionText(pet);
   }
   return buildPetSearchDocument(pet);
@@ -152,6 +157,44 @@ export function createYandexEmbeddingClient(
   options: YandexEmbeddingClientOptions,
 ): YandexEmbeddingClient {
   const fetchImpl = options.fetchImpl ?? fetch;
+  return createEmbeddingClient({
+    ...options,
+    request: async (kind, text, signal) => {
+      const modelPath = kind === "query"
+        ? (options.queryModelPath ?? "text-search-query/latest")
+        : (options.documentModelPath ?? "text-search-doc/latest");
+      const response = await fetchImpl(EMBEDDING_ENDPOINT, {
+        method: "POST",
+        headers: {
+          Authorization: `Api-Key ${options.apiKey}`,
+          "Content-Type": "application/json",
+          "x-folder-id": options.folderId,
+        },
+        body: JSON.stringify({
+          modelUri: `emb://${options.folderId}/${modelPath}`,
+          text,
+          ...(options.requestDimensions ? { dim: String(options.requestDimensions) } : {}),
+        }),
+        signal,
+      });
+      if (!response.ok) {
+        throw new EmbeddingProviderError(
+          response.status === 429 ? "rate_limited" : "provider_error",
+          `Embedding provider returned HTTP ${response.status}.`,
+        );
+      }
+      return readEmbedding(await response.json());
+    },
+  });
+}
+
+type EmbeddingClientOptions = Pick<YandexEmbeddingClientOptions,
+  "revision" | "dimensions" | "timeoutMs" | "maxConcurrent" |
+  "requestsPerMinute" | "queryCacheSize" | "queryCacheTtlMs" | "now"> & {
+    request: (kind: "doc" | "query", text: string, signal: AbortSignal) => Promise<number[]>;
+  };
+
+export function createEmbeddingClient(options: EmbeddingClientOptions): EmbeddingClient {
   const now = options.now ?? Date.now;
   const dimensions = options.dimensions ?? DEFAULT_DIMENSIONS;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -217,37 +260,7 @@ export function createYandexEmbeddingClient(
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const modelPath =
-        kind === "query"
-          ? (options.queryModelPath ?? "text-search-query/latest")
-          : (options.documentModelPath ?? "text-search-doc/latest");
-      const requestBody = {
-        modelUri: `emb://${options.folderId}/${modelPath}`,
-        text,
-        ...(options.requestDimensions
-          ? { dim: String(options.requestDimensions) }
-          : {}),
-      };
-      const response = await fetchImpl(EMBEDDING_ENDPOINT, {
-        method: "POST",
-        headers: {
-          Authorization: `Api-Key ${options.apiKey}`,
-          "Content-Type": "application/json",
-          "x-folder-id": options.folderId,
-        },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new EmbeddingProviderError(
-          response.status === 429 ? "rate_limited" : "provider_error",
-          `Embedding provider returned HTTP ${response.status}.`,
-        );
-      }
-
-      const payload: unknown = await response.json();
-      const embedding = readEmbedding(payload);
+      const embedding = await options.request(kind, text, controller.signal);
       if (
         embedding.length !== dimensions ||
         embedding.some((value) => !Number.isFinite(value))

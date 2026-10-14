@@ -6,6 +6,7 @@ const MARKDOWN_TWIN_PATHS = new Map<string, string>([
   ["/terms", "/terms.md"],
   ["/developers", "/developers.md"],
   ["/docs/api", "/docs/api.md"],
+  ["/guides/ai-pet-generator", "/guides/ai-pet-generator.md"],
   [
     "/guides/how-codex-pets-works",
     "/guides/how-codex-pets-works.md",

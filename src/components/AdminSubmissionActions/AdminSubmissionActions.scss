@@ -4,6 +4,22 @@
   flex-wrap: wrap;
   align-items: center;
 
+  &__progress {
+    flex-basis: 100%;
+    max-width: 28rem;
+    padding: var(--g-spacing-3);
+    background: var(--g-color-base-generic);
+    border-radius: var(--g-border-radius-m);
+    font-size: var(--g-text-body-1-font-size);
+    overflow-wrap: anywhere;
+
+    p { margin: 0 0 var(--g-spacing-2); }
+    p:last-child { margin-bottom: 0; }
+  }
+
+  &__progress-title { font-weight: 600; }
+  &__progress-time { color: var(--g-color-text-secondary); }
+
   &__hint {
     margin-bottom: var(--spacing-sm);
   }

@@ -1,3 +1,4 @@
+import { OPENAI_CAPTION_REVISION, OPENAI_METADATA_MODEL_URI } from "@/lib/pets/metadata-sources";
 import { describe, expect, it, vi } from "vitest";
 
 import type { PetSearchConfig } from "@/lib/pets/search-config";
@@ -99,6 +100,20 @@ function dependencies(overrides: Record<string, unknown> = {}) {
 }
 
 describe("pet vision search indexing runtime", () => {
+  it.each([false, true])("reuses fresh OpenAI over stale Yandex caption (reversed=%s)", async (reverse) => {
+    const sourceHash = createPetVisionCaptionSourceHash({ captionRevision: OPENAI_CAPTION_REVISION, modelUri: OPENAI_METADATA_MODEL_URI, assetId: "asset-123", spritesheetSha256: "a".repeat(64) });
+    const stored = { slug: pet.slug, captionRevision: OPENAI_CAPTION_REVISION, sourceHash, captionJson, captionText, updatedAt: "time" };
+    const deps = dependencies({ getCaption: async () => stored, getCaptionCandidates: async () => { const rows = [{ ...stored, captionRevision: config.visual!.captionRevision, sourceHash: "stale-yandex" }, stored]; return reverse ? rows.reverse() : rows; } });
+    const runtime = createPetVisionSearchRuntime(deps);
+    await expect(runtime.refresh(pet)).resolves.toBe("vector-only");
+    expect(deps.visionClient.createCaption).not.toHaveBeenCalled(); expect(deps.upsertCaption).not.toHaveBeenCalled();
+    expect(deps.upsertEmbedding).toHaveBeenCalledWith(expect.objectContaining({ sourceHash: createPetVisualEmbeddingSourceHash({ visualRevision: config.visual!.visualRevision, captionRevision: OPENAI_CAPTION_REVISION, captionSourceHash: sourceHash, captionText }) }));
+    stored.sourceHash = "stale";
+    await expect(runtime.refresh(pet)).rejects.toMatchObject({ reason: "caption_invalid" });
+    expect(deps.visionClient.createCaption).not.toHaveBeenCalled();
+  });
+
+
   it("reports successful visual indexing to an optional completion callback", async () => {
     const deps = dependencies({
       getCaption: vi.fn(async () => ({

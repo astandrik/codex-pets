@@ -74,6 +74,7 @@ describe("sitemap", () => {
       ]);
 
       const entries = await sitemap();
+      expect(entries.some(entry => entry.url.includes("/my-generations"))).toBe(false);
 
       expect(cacheMocks.unstableCache).toHaveBeenCalledWith(
         expect.any(Function),
@@ -108,6 +109,9 @@ describe("sitemap", () => {
       expect(urls).toContain(
         "https://pets.example/codex-pets/guides/how-codex-pets-works",
       );
+      expect(urls).toContain("https://pets.example/codex-pets/guides/ai-pet-generator");
+      expect(urls).not.toContain("https://pets.example/codex-pets/generate");
+      expect(urls.some(url => url.includes("/generated/"))).toBe(false);
       expect(urls).not.toContain("https://pets.example/codex-pets/pets");
       expect(
         petsRepositoryMocks.listApprovedPetSitemapEntries,

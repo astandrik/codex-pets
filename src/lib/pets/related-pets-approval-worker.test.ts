@@ -63,6 +63,46 @@ describe("related pet approval worker", () => {
     ]);
   });
 
+  it("stops an obsolete ranking preparation before any paid signal or generation", async () => {
+    const obsolete = { ...preparation, rankingRevision: "previous-revision", attempts: 3 };
+    const getPet = vi.fn(async () => pet);
+    const prepareSignals = vi.fn(async () => undefined);
+    const buildGeneration = vi.fn(async () => generation);
+    const finalize = vi.fn(async () => "succeeded" as const);
+    const onSucceeded = vi.fn(async () => undefined);
+    const cleanupGenerations = vi.fn(async () => true);
+    const cleanupInactiveGeneration = vi.fn(async () => true);
+    const markFailure = vi.fn(async (input: { failureCode: string }) => ({
+      ...obsolete,
+      status: "manual_review" as const,
+      failureCode: input.failureCode,
+    }));
+    const worker = createRelatedPetApprovalWorker(dependencies({
+      claim: async () => obsolete,
+      getPet,
+      prepareSignals,
+      buildGeneration,
+      finalize,
+      onSucceeded,
+      markFailure,
+      cleanupGenerations,
+      cleanupInactiveGeneration,
+    }));
+
+    await expect(worker.runOnce("worker-1")).resolves.toBe("manual_review");
+    expect(markFailure).toHaveBeenCalledExactlyOnceWith({
+      preparationId: obsolete.preparationId,
+      workerId: "worker-1",
+      failureCode: "ranking_profile_changed",
+      retryable: false,
+      now,
+    });
+    for (const operation of [getPet, prepareSignals, buildGeneration, finalize,
+      onSucceeded, cleanupGenerations, cleanupInactiveGeneration]) {
+      expect(operation).not.toHaveBeenCalled();
+    }
+  });
+
   it("uses a thirty minute lease", async () => {
     const claim = vi.fn(async () => preparation);
     const worker = createRelatedPetApprovalWorker(dependencies({ claim }));
@@ -485,6 +525,7 @@ function dependencies(
   overrides: Partial<Parameters<typeof createRelatedPetApprovalWorker>[0]> = {},
 ): Parameters<typeof createRelatedPetApprovalWorker>[0] {
   return {
+    rankingRevision: "current-revision",
     claim: async () => preparation,
     getPet: async () => pet,
     prepareSignals: async () => undefined,

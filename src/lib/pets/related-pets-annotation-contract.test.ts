@@ -7,6 +7,7 @@ import type { RelatedPetAnnotationProposal } from "@/lib/pets/related-pets-annot
 import {
   RELATED_PETS_ANNOTATION_DOCUMENT_REVISION,
   RELATED_PETS_ANNOTATION_PROPOSAL_REVISION,
+  RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
   RELATED_PETS_ANNOTATION_QUERY_REVISION,
   RELATED_PETS_ANNOTATION_REVISION,
   RELATED_PETS_ANNOTATION_RESPONSE_JSON_SCHEMA,
@@ -61,6 +62,24 @@ const proposal = {
 };
 
 describe("current related pet annotation contract", () => {
+  it("keeps r2 parsing compatible and validates r3 identifier keys", () => {
+    expect(parseRelatedPetAnnotationProposal(proposal).entity?.key).toBe("vi");
+    const r3 = {
+      ...proposal,
+      entity: { ...proposal.entity, key: "vi" },
+      franchises: [relation("arcane", "high", ["description"])],
+      franchise_families: [],
+      specific_archetypes: [],
+      themes: [],
+      media_origins: [],
+    };
+    expect(parseRelatedPetAnnotationProposal(r3, RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3).entity?.key).toBe("vi");
+    expect(() => parseRelatedPetAnnotationProposal({
+      ...r3,
+      entity: { ...r3.entity, key: "Invalid Key" },
+    }, RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3)).toThrow();
+  });
+
   it("keeps the corrected annotation family and audited overrides immutable", () => {
     expect([
       RELATED_PETS_ANNOTATION_REVISION,

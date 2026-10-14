@@ -1,3 +1,4 @@
+import { registerPetGenerationTools } from "@/lib/pets/generation/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   registerAppResource,
@@ -25,7 +26,7 @@ import { searchApprovedPets } from "@/lib/pets/search-runtime";
 type McpToolName = McpToolCallPayload["tool"];
 type SlugMcpToolName = Exclude<
   McpToolName,
-  "search_pets" | "get_pet_request_info"
+  "search_pets" | "get_pet_request_info" | "generate_pet" | "get_pet_generation"
 >;
 
 type McpToolResult = {
@@ -90,7 +91,7 @@ const searchInputSchema = {
   ).optional(),
 };
 
-export function createCodexPetsMcpServer(): McpServer {
+export function createCodexPetsMcpServer(clientIp: string | null = null): McpServer {
   const server = new McpServer({
     name: "codex-pets-registry",
     version: MCP_REGISTRY_SERVER_VERSION,
@@ -251,7 +252,7 @@ export function createCodexPetsMcpServer(): McpServer {
     {
       title: "Get pet request info",
       description:
-        "Use when the user wants to request a new Codex pet or understand the public request form fields and reference image limits. Do not use to create, submit, update, or inspect private generation requests; no MCP tool exposes those operations. Use search_pets or get_pet for existing approved pets.",
+        "Use when the user wants to request a new Codex pet or understand the public request form fields and reference image limits. Do not use to create, submit, update, or inspect private generation requests; these manual workflows are separate from generate_pet and get_pet_generation. Use search_pets or get_pet for existing approved pets.",
       inputSchema: {},
       annotations: READ_ONLY_TOOL,
     },
@@ -263,6 +264,8 @@ export function createCodexPetsMcpServer(): McpServer {
       return toolResult(buildPetRequestInfo());
     },
   );
+
+  registerPetGenerationTools(server, clientIp);
 
   return server;
 }

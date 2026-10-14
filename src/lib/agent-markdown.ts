@@ -114,7 +114,9 @@ available at /server.json and /.well-known/mcp/server.json. The MCP server card
 is available at /.well-known/mcp/server-card.json. The MCP Apps resource URI is
 ui://codex-pets/pet-browser.html.
 
-MCP tools are read-only. search_pets discovers approved public pets by query,
+MCP catalog tools are read-only. generate_pet starts a server-paid image task; get_pet_generation reads its private result. Generation is text-only, limited to 200 tasks/day globally and 10/IP (Moscow time), with one worker. Supply a unique random UUID requestId and reuse it for retries. Results expire after 24 hours and are not published automatically.
+
+ search_pets discovers approved public pets by query,
 kind, tags, author, and compatibility. get_pet fetches one sanitized approved
 pet card. get_install_instructions returns CLI and manual install steps without
 incrementing metrics. get_badge_code returns README badge snippets.
@@ -126,8 +128,7 @@ Do not use MCP for account creation, login, admin moderation, approval, rejectio
 delete actions, private generation request inspection, upload submission,
 download counter mutation, install counter mutation, likes, or any operation that
 would change public data. Those actions are intentionally outside the public MCP
-contract. When a user needs to submit or request a pet, direct them to the
-human-facing form and explain the required fields.
+contract. For automatic text-to-pet generation, use generate_pet and poll get_pet_generation. For manual requests or moderated publication, direct the user to the human-facing form.
 
 Authentication guidance is simple. Public read endpoints do not require
 credentials. Browser account flows use an app session cookie. Trusted deployments
@@ -142,7 +143,7 @@ manifest.
 
 Pricing guidance is simple. Codex Pets is a free community registry. Public
 registry pages, JSON endpoints, TOON mirrors, markdown discovery resources, and
-the read-only MCP server have no paid plans, invoices, quotas, or SLA. Submissions
+the MCP catalog tools have no paid plans, invoices, catalog quotas, or SLA. Submissions
 and generation requests are moderated.
 
 Versioning guidance: the current unversioned public endpoints are stable v1
@@ -202,6 +203,8 @@ export function buildIndexMarkdown(): string {
 # Codex Pets
 
 Codex Pets is a moderated gallery of Codex-compatible animated pet packs. Use it to browse approved pets, preview animation spritesheets, download ZIP packages, and install pets with the npm CLI.
+
+You can also generate an animated v2 pet from a text description without an account. Generation is experimental and service-funded, with daily limits, private 24-hour results and separate gallery moderation. Read the [AI pet generator guide](${toPublicUrl("/guides/ai-pet-generator")}) before starting at ${toPublicUrl("/generate")}.
 
 ## Agent resources
 
@@ -334,7 +337,7 @@ export function buildAuthMarkdown(): string {
 
 ## Public read endpoints
 
-Public read endpoints, markdown docs, OpenAPI, llms.txt, sitemap, manifest routes, pet search routes, and the read-only MCP server do not require authentication.
+Public read endpoints, markdown docs, OpenAPI, llms.txt, sitemap, manifest routes, pet search routes, and the MCP catalog tools do not require authentication.
 
 ## AppSessionCookie
 
@@ -360,7 +363,7 @@ export function buildPricingMarkdown(): string {
 
 Codex Pets is a free community registry for approved public Codex pet packs.
 Public registry pages, JSON endpoints, TOON mirrors, markdown discovery resources,
-and the read-only MCP server have no paid plans, invoices, quotas, or commercial
+and the MCP catalog tools have no paid plans, invoices, catalog quotas, or commercial
 terms.
 
 ## Best-effort public APIs
@@ -387,7 +390,7 @@ export function buildTermsMarkdown(): string {
 ## Free community registry
 
 Codex Pets is a free community registry. Public read endpoints and the public
-read-only MCP server expose approved pet data without authentication, paid plans,
+MCP catalog tools expose approved pet data without authentication, paid plans,
 or SLA. There is no SLA for public APIs or MCP tools.
 
 ## Public agent access
@@ -444,7 +447,7 @@ export function buildAgentsMarkdown(): string {
   return `
 # Codex Pets Agent Access
 
-Connect AI coding agents to Codex Pets through the public read-only MCP server and HTTP registry routes.
+Connect AI coding agents to Codex Pets through the public MCP server and HTTP registry routes.
 
 ## Quickstart
 
@@ -462,9 +465,11 @@ curl -s "${toPublicUrl("/api/pets")}?q=space&kind=creature"
 - get_badge_code: return README badge snippets.
 - get_embed_code: return iframe embed snippets.
 - get_card_code: return animated README card snippets.
-- get_pet_request_info: describe the public request workflow without creating a request.
+- get_pet_request_info: describe the manual request workflow without creating a request.
+- generate_pet: start one server-paid, quota-limited text-to-pet task.
+- get_pet_generation: read task status and private preview/ZIP links.
 
-MCP tools are read-only and return approved public registry data.
+MCP catalog tools are read-only and return approved public registry data. generate_pet starts a quota-limited, server-paid image task; get_pet_generation returns private24-hour preview and ZIP links.
 
 ${AGENT_WHEN_TO_USE_GUIDANCE.trim()}
 `;

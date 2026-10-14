@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { isOpenAIPetsProfile, OPENAI_EMBEDDING_DIMENSIONS, OPENAI_EMBEDDING_MODEL, OPENAI_PETS_CALIBRATION, OPENAI_PETS_REVISIONS } from "@/lib/pets/openai-embedding-profile";
+import { validatePrivateEmbeddingEndpoint, type PrivateEmbeddingConfig } from "@/lib/pets/openai-embedding-client";
 
 import type { PetSearchMode } from "@/lib/pets/search-service";
 import {
@@ -14,6 +16,10 @@ const MIN_VISION_TIMEOUT_MS = 1_000;
 const MAX_VISION_TIMEOUT_MS = 300_000;
 
 export const PET_SEARCH_MODEL_REVISIONS = {
+  [OPENAI_PETS_REVISIONS.search]: {
+    embeddingModelId: OPENAI_EMBEDDING_MODEL,
+    minSemanticScore: OPENAI_PETS_CALIBRATION.searchMinSimilarity,
+  },
   "yandex-text-search-2026-07": {
     embeddingModelId: "yandex-text-search-v1-256",
     minSemanticScore: 0.31,
@@ -25,6 +31,12 @@ export const PET_SEARCH_MODEL_REVISIONS = {
 } as const;
 
 export const PET_SEARCH_EMBEDDING_MODELS = {
+  [OPENAI_EMBEDDING_MODEL]: {
+    dimensions: OPENAI_EMBEDDING_DIMENSIONS,
+    queryModelPath: OPENAI_EMBEDDING_MODEL,
+    documentModelPath: OPENAI_EMBEDDING_MODEL,
+    requestDimensions: OPENAI_EMBEDDING_DIMENSIONS,
+  },
   "yandex-text-search-v1-256": {
     dimensions: 256,
     queryModelPath: "text-search-query/latest",
@@ -60,6 +72,11 @@ export const PET_VISION_CAPTION_REVISIONS = {
 } as const;
 
 export const PET_VISUAL_MODEL_REVISIONS = {
+  [OPENAI_PETS_REVISIONS.visual]: {
+    embeddingModelId: OPENAI_EMBEDDING_MODEL,
+    captionRevision: PET_VISION_CAPTION_REVISION,
+    profile: { minSemanticScore: OPENAI_PETS_CALIBRATION.searchVisualMinSimilarity, weight: OPENAI_PETS_CALIBRATION.searchVisualWeight },
+  },
   [PET_VISUAL_MODEL_REVISION]: {
     embeddingModelId: "yandex-text-search-v1-256",
     captionRevision: PET_VISION_CAPTION_REVISION,
@@ -94,6 +111,7 @@ export type PetVisualSearchFallbackReason =
   | "visual_caption_invalid";
 
 export type PetSearchSemanticConfig = {
+  privateEmbedding?: PrivateEmbeddingConfig;
   folderId: string;
   apiKey: string;
   revision: keyof typeof PET_SEARCH_MODEL_REVISIONS;
@@ -104,6 +122,7 @@ export type PetSearchSemanticConfig = {
 };
 
 export type PetSearchVisualConfig = {
+  privateEmbedding?: PrivateEmbeddingConfig;
   folderId: string;
   apiKey: string;
   captionRevision: keyof typeof PET_VISION_CAPTION_REVISIONS;
@@ -131,16 +150,20 @@ export function loadPetSearchConfig(
   environment: Environment = process.env,
   readTextFile: ReadTextFile = (path) => readFileSync(path, "utf8"),
 ): PetSearchConfig {
+  const openai = isOpenAIPetsProfile(environment);
   const mode = readMode(environment.PET_SEARCH_MODE);
   const visualMode = readVisualMode(environment.PET_SEARCH_VISUAL_MODE);
   const textRevisionValue =
-    environment.PET_SEARCH_MODEL_REVISION?.trim() ?? "";
+    openai ? OPENAI_PETS_REVISIONS.search : (environment.PET_SEARCH_MODEL_REVISION?.trim() ?? "");
   const captionRevisionValue =
     environment.PET_SEARCH_VISION_CAPTION_REVISION?.trim() ||
     PET_VISION_CAPTION_REVISION;
   const visualRevisionValue =
-    environment.PET_SEARCH_VISUAL_MODEL_REVISION?.trim() ||
-    PET_VISUAL_MODEL_REVISION;
+    openai ? OPENAI_PETS_REVISIONS.visual : (environment.PET_SEARCH_VISUAL_MODEL_REVISION?.trim() ||
+    PET_VISUAL_MODEL_REVISION);
+  if (!openai && (textRevisionValue === OPENAI_PETS_REVISIONS.search || visualRevisionValue === OPENAI_PETS_REVISIONS.visual)) {
+    throw new Error("openai_embedding_profile_required");
+  }
   const visualConfiguredExplicitly =
     visualMode !== "off" ||
     Boolean(environment.PET_SEARCH_VISION_CAPTION_REVISION?.trim()) ||
@@ -163,11 +186,9 @@ export function loadPetSearchConfig(
   const folderId = environment.YANDEX_AI_STUDIO_FOLDER_ID?.trim() ?? "";
   const apiKeyFile =
     environment.YANDEX_AI_STUDIO_API_KEY_FILE?.trim() ?? "";
-  const credentialFailure = readCredentialFailure(
-    folderId,
-    apiKeyFile,
-    readTextFile,
-  );
+  const credentialFailure = openai
+    ? { apiKey: "", reason: null }
+    : readCredentialFailure(folderId, apiKeyFile, readTextFile);
   const apiKey = credentialFailure.apiKey;
 
   const semantic = createSemanticConfig({
@@ -175,6 +196,7 @@ export function loadPetSearchConfig(
     folderId,
     apiKey,
     textRevisionValue,
+    requireCredentials: !openai,
     timeoutMs: readBoundedTimeout(
       environment.PET_SEARCH_EMBEDDING_TIMEOUT_MS,
       DEFAULT_EMBEDDING_TIMEOUT_MS,
@@ -187,6 +209,7 @@ export function loadPetSearchConfig(
     apiKey,
     captionRevisionValue,
     visualRevisionValue,
+    requireCredentials: !openai,
     visionTimeoutMs: readBoundedTimeout(
       environment.PET_SEARCH_VISION_TIMEOUT_MS,
       DEFAULT_VISION_TIMEOUT_MS,
@@ -194,6 +217,16 @@ export function loadPetSearchConfig(
       MAX_VISION_TIMEOUT_MS,
     ),
   });
+
+  if (openai) {
+    const endpoint = validatePrivateEmbeddingEndpoint(environment.PET_EMBEDDING_SERVICE_URL ?? "");
+    const tokenFile = environment.PET_EMBEDDING_SERVICE_TOKEN_FILE;
+    const token = tokenFile ? readTextFile(tokenFile).trim() : "";
+    if (!token || !semantic.config || !visual) throw new Error("openai_embedding_configuration_missing");
+    const privateEmbedding = { endpoint, token };
+    semantic.config.privateEmbedding = privateEmbedding;
+    visual.privateEmbedding = privateEmbedding;
+  }
 
   return {
     mode,
@@ -219,6 +252,7 @@ function createSemanticConfig(input: {
   folderId: string;
   apiKey: string;
   textRevisionValue: string;
+  requireCredentials: boolean;
   timeoutMs: number;
 }): {
   config: PetSearchSemanticConfig | null;
@@ -230,7 +264,7 @@ function createSemanticConfig(input: {
   if (!isSupportedTextRevision(input.textRevisionValue)) {
     return { config: null, reason: "unsupported_model_revision" };
   }
-  if (!input.folderId || !input.apiKey) {
+  if (input.requireCredentials && (!input.folderId || !input.apiKey)) {
     return {
       config: null,
       reason: input.mode === "lexical" ? null : "configuration_missing",
@@ -259,11 +293,11 @@ function createVisualConfig(input: {
   apiKey: string;
   captionRevisionValue: string;
   visualRevisionValue: string;
+  requireCredentials: boolean;
   visionTimeoutMs: number;
 }): PetSearchVisualConfig | null {
   if (
-    !input.folderId ||
-    !input.apiKey ||
+    (input.requireCredentials && (!input.folderId || !input.apiKey)) ||
     !isSupportedCaptionRevision(input.captionRevisionValue) ||
     !isSupportedVisualRevision(input.visualRevisionValue)
   ) {

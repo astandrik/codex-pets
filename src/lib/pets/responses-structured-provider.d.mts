@@ -55,6 +55,7 @@ export function createResponsesStructuredRequester<Input, Output>(options: {
   apiKey: string;
   modelUri: string;
   timeoutMs: number;
+  maxAttempts?: number;
   systemPrompt: string;
   responseSchemaName: string;
   responseJsonSchema: object;

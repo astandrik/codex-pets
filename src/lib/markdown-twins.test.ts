@@ -15,6 +15,7 @@ describe("markdown twins", () => {
     expect(getMarkdownTwinPath("/guides/how-codex-pets-works")).toBe(
       "/guides/how-codex-pets-works.md",
     );
+    expect(getMarkdownTwinPath("/guides/ai-pet-generator")).toBe("/guides/ai-pet-generator.md");
     expect(getMarkdownTwinPath("/guides/example")).toBeNull();
   });
 

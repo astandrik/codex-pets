@@ -24,8 +24,8 @@ describe("GET /server.json", () => {
       name: "tech.ydb-qdrant.pets/codex-pets-ydb-qdrant",
       title: "Codex Pets Registry",
       description:
-        "Search, preview, install community Codex pet packs, and discover the pet request flow.",
-      version: "1.0.0",
+        "Search and preview community Codex pets, or generate an unlisted animated pet from text.",
+      version: "1.1.0",
       websiteUrl: "https://pets.example/",
       remotes: [
         {
@@ -70,12 +70,14 @@ describe("GET /server.json", () => {
       endpoint: "https://pets.example/mcp",
       serverUrl: "https://pets.example/mcp",
       description:
-        "Search, preview, install community Codex pet packs, and discover the pet request flow.",
-      version: "1.0.0",
-      instructions: expect.stringContaining("read-only"),
+        "Search and preview community Codex pets, or generate an unlisted animated pet from text.",
+      version: "1.1.0",
+      instructions: expect.stringContaining("server-paid"),
       tools: expect.arrayContaining([
         expect.objectContaining({ name: "search_pets" }),
         expect.objectContaining({ name: "get_pet" }),
+        expect.objectContaining({ name: "generate_pet" }),
+        expect.objectContaining({ name: "get_pet_generation" }),
       ]),
       resources: expect.arrayContaining([
         expect.objectContaining({ url: "https://pets.example/llms.txt" }),

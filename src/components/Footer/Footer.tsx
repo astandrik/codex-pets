@@ -9,6 +9,10 @@ const GRAVITY_UI_URL = "https://github.com/gravity-ui/uikit";
 const YDB_URL = "https://ydb.tech/";
 const LEARN_LINKS = [
   {
+    href: "/guides/ai-pet-generator",
+    label: "AI pet generator",
+  },
+  {
     href: "/guides/how-codex-pets-works",
     label: "How Codex Pets works",
   },

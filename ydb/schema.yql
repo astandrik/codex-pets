@@ -274,3 +274,17 @@ CREATE TABLE codex_schema_migrations (
   applied_at Utf8 NOT NULL,
   PRIMARY KEY (id)
 );
+
+-- Explicit migration: 20261009_001_add_pet_generation. Never created at app startup.
+CREATE TABLE codex_pet_generation_jobs (
+  id Utf8 NOT NULL, payload Utf8 NOT NULL, expires_at Timestamp NOT NULL,
+  PRIMARY KEY (id)
+) WITH (TTL = Interval("PT0S") ON expires_at);
+CREATE TABLE codex_pet_generation_artifacts (
+  id Utf8 NOT NULL, kind Utf8 NOT NULL, bytes String NOT NULL, expires_at Timestamp NOT NULL,
+  PRIMARY KEY (id, kind)
+) WITH (TTL = Interval("PT0S") ON expires_at);
+CREATE TABLE codex_pet_generation_quotas (
+  record_key Utf8 NOT NULL, payload Utf8 NOT NULL, expires_at Timestamp NOT NULL,
+  PRIMARY KEY (record_key)
+) WITH (TTL = Interval("PT0S") ON expires_at);
