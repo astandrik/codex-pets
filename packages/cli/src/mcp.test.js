@@ -10,6 +10,10 @@ import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_BASE_URL, normalizeBaseUrl } from "./lib.js";
 import { createCodexPetsLocalMcpServer, createRemoteCodexPetsDataSource } from "./mcp.js";
 
+const expectedCustomInstallCommand = process.platform === "win32"
+  ? 'npx @astandrik/codex-pets install orbit-otter --url ^"https://pets.test^"'
+  : "npx @astandrik/codex-pets install orbit-otter --url 'https://pets.test'";
+
 describe("codex-pets local MCP data source", () => {
   it("searches manifest pets and builds agent-friendly output", async () => {
     const fetchImpl = createFetch({
@@ -41,7 +45,7 @@ describe("codex-pets local MCP data source", () => {
       slug: "orbit-otter",
       name: "Orbit Otter",
       compatibleWith: ["codex"],
-      installCommand: "npx @astandrik/codex-pets install orbit-otter --url 'https://pets.test'",
+      installCommand: expectedCustomInstallCommand,
     });
     expect(result.pets[0].badge.svgUrl).toBe("https://pets.test/badge/orbit-otter.svg");
     expect(result.pets[0].embed.url).toContain("/embed/orbit-otter?");
@@ -62,7 +66,7 @@ describe("codex-pets local MCP data source", () => {
     await expect(source.getInstallInstructions("orbit-otter")).resolves.toEqual({
       slug: "orbit-otter",
       name: "Orbit Otter",
-      install: { command: "npx @astandrik/codex-pets install orbit-otter --url 'https://pets.test'" },
+      install: { command: expectedCustomInstallCommand },
     });
     await expect(source.getBadgeCode("orbit-otter")).resolves.toEqual({
       slug: "orbit-otter",
