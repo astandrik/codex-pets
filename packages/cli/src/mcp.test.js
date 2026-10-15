@@ -1,4 +1,7 @@
 import { execFileSync } from "node:child_process";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
@@ -109,7 +112,7 @@ describe("codex-pets local MCP data source", () => {
     await expect(source[method]("boba")).rejects.toThrow("Share response for boba is malformed");
   });
 
-  it.each([DEFAULT_BASE_URL, "https://pets.test/gallery", "https://pets.test/$(echo)'quoted"])("keeps gallery identity in every install command: %s", async (baseUrl) => {
+  it.each([DEFAULT_BASE_URL, "https://pets.test/gallery", "https://pets.test/a&b|c^(d);$(echo)'quoted/%CODEX_PETS_QUOTE_TEST%/!CODEX_PETS_QUOTE_TEST!/%20"])("keeps gallery identity in every install command: %s", async (baseUrl) => {
     const normalized = normalizeBaseUrl(baseUrl);
     const install = {
       command: "npx @astandrik/codex-pets install boba",
@@ -131,19 +134,30 @@ describe("codex-pets local MCP data source", () => {
     const expected = ["npx", "@astandrik/codex-pets", "install", "boba"];
     if (normalized !== DEFAULT_BASE_URL) expected.push("--url", normalized);
     const candidates = [search.installCommand, search.install, detail.installCommand, detail.install, instructions];
-    for (const candidate of candidates) {
-      const commands = typeof candidate === "string" ? [candidate] : [candidate.command, candidate.codex.command, candidate.cursor.command, candidate.claudeCode.command];
-      for (const command of commands) {
-        if (process.platform !== "win32") {
-          const args = execFileSync("sh", ["-c", `set -- ${command}; printf '%s\\0' "$@"`], { encoding: "utf8" }).split("\0").slice(0, -1);
-          expect(args).toEqual(expected);
-        }
+    const commands = candidates.flatMap((candidate) => typeof candidate === "string"
+      ? [candidate]
+      : [candidate.command, candidate.codex.command, candidate.cursor.command, candidate.claudeCode.command]);
+    expect([...new Set(commands)]).toEqual([search.installCommand]);
+    const mcpCommand = search.install.codex.mcpServer.addCommand;
+    if (normalized !== DEFAULT_BASE_URL) {
+      expect(detail.install.codex.mcpServer.addCommand).toBe(mcpCommand);
+      expect(instructions.codex.mcpServer.addCommand).toBe(mcpCommand);
+    }
+    const shell = await createCommandRecorder();
+    try {
+      expect(shell.run(search.installCommand)).toEqual(expected);
+      expect(shell.run(mcpCommand)).toEqual(["codex", "mcp", "add", "codexPets", "--url", `${normalized}/mcp`]);
+      if (process.platform === "win32" && baseUrl === "https://pets.test/gallery") {
+        const oldArgument = shell.run(`npx @astandrik/codex-pets install boba --url '${normalized}'`).at(-1);
+        expect(oldArgument).toBe(`'${normalized}'`);
+        expect(() => normalizeBaseUrl(oldArgument)).toThrow();
       }
+    } finally {
+      await shell.cleanup();
     }
     expect(instructions.cursor.note).toBe("preserved");
     if (normalized !== DEFAULT_BASE_URL) {
       expect(instructions.manual.steps[1]).toContain(instructions.command);
-      expect(instructions.codex.mcpServer.addCommand).toContain("--url '");
     }
   });
 
@@ -247,3 +261,34 @@ describe("MCP protocol boundary", () => {
     }
   });
 });
+
+async function createCommandRecorder() {
+  const directory = await mkdtemp(path.join(tmpdir(), "codex-pets-quote-"));
+  try {
+    const recorder = path.join(directory, "arguments.cjs");
+    await writeFile(recorder, "process.stdout.write(JSON.stringify(process.argv.slice(2)));\n");
+    const windows = process.platform === "win32";
+    for (const command of ["npx", "codex"]) {
+      const script = windows
+        ? `@echo off\r\n"%CODEX_PETS_TEST_NODE%" "%CODEX_PETS_TEST_ARGS%" ${command} %*\r\n`
+        : `#!/bin/sh\nexec "$CODEX_PETS_TEST_NODE" "$CODEX_PETS_TEST_ARGS" ${command} "$@"\n`;
+      await writeFile(path.join(directory, command + (windows ? ".cmd" : "")), script, { mode: 0o700 });
+    }
+    const env = { ...process.env, CODEX_PETS_TEST_NODE: process.execPath, CODEX_PETS_TEST_ARGS: recorder, CODEX_PETS_QUOTE_TEST: "unexpected-expansion" };
+    const pathKey = Object.keys(env).find((key) => key.toLowerCase() === "path") ?? "PATH";
+    env[pathKey] = `${directory}${path.delimiter}${env[pathKey] ?? ""}`;
+    return {
+      run(command) {
+        const args = windows ? ["/d", "/v:off", "/s", "/c", `"${command}"`] : ["-c", command];
+        const output = execFileSync(windows ? process.env.ComSpec ?? "cmd.exe" : "sh", args, {
+          cwd: directory, env, encoding: "utf8", timeout: 10_000, windowsVerbatimArguments: windows,
+        });
+        return JSON.parse(output.trim());
+      },
+      cleanup: () => rm(directory, { recursive: true, force: true }),
+    };
+  } catch (error) {
+    await rm(directory, { recursive: true, force: true });
+    throw error;
+  }
+}

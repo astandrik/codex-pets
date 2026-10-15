@@ -511,7 +511,23 @@ async function fetchSharePayload(fetchImpl, baseUrl, value, section) {
 }
 
 function quoteShellArgument(value) {
-  return "'" + value.replace(/'/g, "'\"'\"'") + "'";
+  if (process.platform !== "win32") {
+    return "'" + value.replace(/'/g, "'\"'\"'") + "'";
+  }
+
+  let quoted = '"';
+  let backslashes = 0;
+  for (const character of value) {
+    if (character === "\\") {
+      backslashes += 1;
+      continue;
+    }
+    quoted += "\\".repeat(character === '"' ? backslashes * 2 + 1 : backslashes) + character;
+    backslashes = 0;
+  }
+  quoted += "\\".repeat(backslashes * 2) + '"';
+  // cmd.exe consumes carets before the program parses its quoted arguments.
+  return quoted.replace(/[()[\]%!^"`<>&|;, *?]/g, "^$&");
 }
 
 function buildInstallCommand(slug, baseUrl) {
