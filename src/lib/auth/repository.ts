@@ -1,9 +1,11 @@
+import { EmailAlreadyExistsError } from "@/lib/auth/errors";
 import { randomBytes } from "node:crypto";
 import type { Session } from "ydb-sdk";
 
 import { TypedValues, isYdbConfigured, withSession } from "@/lib/ydb/client";
 import { rowsFromResult, textAt } from "@/lib/ydb/result";
 import { TABLES } from "@/lib/ydb/schema";
+import { withSdkManagedTransaction } from "@/lib/ydb/transaction";
 import {
   MOCK_LOCAL_ADMIN_AVATAR_ID,
   avatarUrlFromId,
@@ -60,7 +62,6 @@ export type PublicUserReference = Pick<
   "userId" | "displayName" | "profileSlug" | "avatarUrl"
 >;
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PROFILE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/;
 const SESSION_TTL_DAYS = 30;
 const PROFILE_SLUG_CREATE_ATTEMPTS = 100;
@@ -87,7 +88,13 @@ export function normalizeEmail(value: string): {
   emailLower: string;
 } | null {
   const email = value.trim();
-  if (!email || !EMAIL_PATTERN.test(email)) {
+  const at = email.indexOf("@");
+  // The legacy grammar permits dots in both domain segments.
+  const dot = email.indexOf(".", at + 2);
+  if (
+    at < 1 || at !== email.lastIndexOf("@") ||
+    dot === -1 || dot === email.length - 1 || /\s/.test(email)
+  ) {
     return null;
   }
   return { email, emailLower: email.toLowerCase() };
@@ -99,9 +106,9 @@ export function normalizeProfileSlug(value: string): string | null {
     .toLowerCase()
     .replace(/['`]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    .replace(/^-|-$/g, "")
     .slice(0, 40)
-    .replace(/-+$/g, "");
+    .replace(/-$/, "");
 
   if (!PROFILE_SLUG_PATTERN.test(slug) || RESERVED_PROFILE_SLUGS.has(slug)) {
     return null;
@@ -337,7 +344,7 @@ export async function updateUserProfile(input: {
   }
 
   const now = new Date().toISOString();
-  const updated = await withSerializableTransaction(async (session, txControl) => {
+  const updated = await withAuthTransaction(async (session, txControl) => {
     const current = await getUserByIdInTransaction(session, txControl, input.userId);
     if (!current) return null;
 
@@ -532,29 +539,10 @@ LIMIT 1;
 
 type TxControl = { txId: string };
 
-async function withSerializableTransaction<T>(
-  fn: (session: Session, txControl: TxControl) => Promise<T>,
+function withAuthTransaction<T>(
+  operation: (session: Session, txControl: TxControl) => Promise<T>,
 ): Promise<T> {
-  return withSession(async (session) => {
-    const tx = await session.beginTransaction({ serializableReadWrite: {} });
-    if (!tx.id) {
-      throw new Error("Unable to start YDB transaction.");
-    }
-    const txControl = { txId: tx.id };
-
-    try {
-      const result = await fn(session, txControl);
-      await session.commitTransaction(txControl);
-      return result;
-    } catch (error) {
-      try {
-        await session.rollbackTransaction(txControl);
-      } catch {
-        // The transaction may already be aborted or committed by YDB.
-      }
-      throw error;
-    }
-  });
+  return withSdkManagedTransaction(operation, "Unable to start YDB transaction.");
 }
 
 async function tryCreateUserWithProfileSlug(input: {
@@ -567,14 +555,14 @@ async function tryCreateUserWithProfileSlug(input: {
   profileSlug: string;
 }): Promise<AuthUser | null> {
   try {
-    return await withSerializableTransaction(async (session, txControl) => {
+    return await withAuthTransaction(async (session, txControl) => {
       const existing = await getUserByIdInTransaction(
         session,
         txControl,
         input.userId,
       );
       if (existing) {
-        throw new Error("An account with this email already exists.");
+        throw new EmailAlreadyExistsError();
       }
 
       const now = new Date().toISOString();

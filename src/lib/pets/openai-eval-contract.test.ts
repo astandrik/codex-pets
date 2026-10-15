@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assertPositivePairIdentities } from "@/lib/pets/openai-eval-contract";
-import { RELATED_PETS_V24_RELATION_POLICY_REVISION } from "@/lib/pets/related-pets-relation-policy";
-import type { ResolvedRelatedPetAnnotation } from "@/lib/pets/related-pets-annotation-contract.mjs";
+import { RELATED_PETS_V24_RELATION_POLICY_REVISION } from "@/lib/pets/related/related-pets-relation-policy";
+import type { ResolvedRelatedPetAnnotation } from "@/lib/pets/related/related-pets-annotation-contract.mjs";
 const empty: ResolvedRelatedPetAnnotation = { schemaVersion: 1, entity: null, aliases: [], franchises: [], franchiseFamilies: [], collections: [], specificArchetypes: [], themes: [], mediaOrigins: [] };
 describe("frozen pair identity gate", () => {
   it("applies the existing production Arcane/League family policy before the same hard gate", () => {

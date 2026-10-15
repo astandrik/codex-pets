@@ -32,8 +32,8 @@ async function main() {
     data: { sourceRootUrl: new URL("../src/", import.meta.url).href } });
   const { destroyYdbDriver } = await import("../src/lib/ydb/client.ts");
   try {
-    const { runMetadataRepair } = await import("../src/lib/pets/metadata-worker/runtime.ts");
-    console.log(JSON.stringify(await runMetadataRepair(options.mode, options.petId, directory)));
+    const { runLumiMetadataRepair } = await import("../src/lib/pets/metadata-worker/lumi-repair.ts");
+    console.log(JSON.stringify(await runLumiMetadataRepair(options.mode, options.petId, directory)));
   } finally { await destroyYdbDriver(); }
 }
 

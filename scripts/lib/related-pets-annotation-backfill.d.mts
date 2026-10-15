@@ -1,7 +1,7 @@
 import type {
   RelatedPetAnnotationInput,
   RelatedPetAnnotationProposal,
-} from "../../src/lib/pets/related-pets-annotation-contract.mjs";
+} from "../../src/lib/pets/related/related-pets-annotation-contract.mjs";
 import type {
   ResumableBackfillOptions,
   ResumableBackfillSummary,

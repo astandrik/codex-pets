@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/ydb/client", () => ({
   isYdbConfigured: vi.fn(() => true),
@@ -40,12 +40,16 @@ vi.mock("@/lib/sitemap-cache", () => ({
 }));
 
 import { POST } from "@/app/api/auth/register/route";
+import { createUser, createSessionForUser } from "@/lib/auth/repository";
+import { EmailAlreadyExistsError } from "@/lib/auth/errors";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
 
 describe("POST /api/auth/register", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
+
+  afterEach(() => vi.unstubAllEnvs());
 
   it("does not revalidate sitemap cache for invalid JSON", async () => {
     vi.stubEnv("AUTH_MODE", "app-session");
@@ -87,4 +91,46 @@ describe("POST /api/auth/register", () => {
 
     vi.unstubAllEnvs();
   });
+
+  it("returns the existing 409 contract for an email conflict during creation", async () => {
+    vi.stubEnv("AUTH_MODE", "app-session");
+    vi.mocked(createUser).mockRejectedValueOnce(new EmailAlreadyExistsError());
+    const response = await POST(registrationRequest());
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "email_taken", message: "An account with this email already exists.",
+    });
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(createSessionForUser).not.toHaveBeenCalled();
+    expect(revalidateSitemapCache).not.toHaveBeenCalled();
+  });
+
+  it("keeps unrelated creation failures distinct from an email conflict", async () => {
+    vi.stubEnv("AUTH_MODE", "app-session");
+    const failure = new Error("synthetic storage failure");
+    vi.mocked(createUser).mockRejectedValueOnce(failure);
+    await expect(POST(registrationRequest())).rejects.toBe(failure);
+    expect(createSessionForUser).not.toHaveBeenCalled();
+  });
+
+  it.each([null, [], "invalid"])("rejects non-object JSON %j before account work", async (body) => {
+    vi.stubEnv("AUTH_MODE", "app-session");
+    vi.stubEnv("SESSION_COOKIE_SECRET", "synthetic-cookie-secret");
+    const response = await POST(new Request("http://localhost/api/auth/register", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_json" });
+    expect(createUser).not.toHaveBeenCalled();
+    expect(createSessionForUser).not.toHaveBeenCalled();
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
 });
+
+function registrationRequest(): Request {
+  return new Request("http://localhost/api/auth/register", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "user@example.com", password: "long-enough-password", displayName: "User" }),
+  });
+}

@@ -13,6 +13,7 @@ import {
 } from "@gravity-ui/uikit";
 
 import { withBasePath } from "@/lib/base-path";
+import { readJsonResponse } from "@/lib/read-json-response";
 import "./ProfileForm.scss";
 
 type ProfileFormProps = {
@@ -366,12 +367,7 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!response.ok) {
-    throw new Error(data.message ?? data.error ?? `Request failed ${response.status}`);
-  }
-  return data as T;
+  return (await readJsonResponse(response)) as T;
 }
 
 async function postForm<T>(url: string, body: FormData): Promise<T> {
@@ -379,22 +375,12 @@ async function postForm<T>(url: string, body: FormData): Promise<T> {
     method: "PATCH",
     body,
   });
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!response.ok) {
-    throw new Error(data.message ?? data.error ?? `Request failed ${response.status}`);
-  }
-  return data as T;
+  return (await readJsonResponse(response)) as T;
 }
 
 async function deleteJson<T>(url: string): Promise<T> {
   const response = await fetch(url, { method: "DELETE" });
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!response.ok) {
-    throw new Error(data.message ?? data.error ?? `Request failed ${response.status}`);
-  }
-  return data as T;
+  return (await readJsonResponse(response)) as T;
 }
 
 function createProfileFormData(input: {

@@ -2,22 +2,22 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { StoredRelatedPetAnnotation } from "@/lib/pets/related-pets-annotations-repository";
-import type { StoredPetSearchCaption } from "@/lib/pets/search-captions-repository";
-import { PET_VISION_FRAME_POLICY } from "@/lib/pets/search-vision-frames";
+import type { StoredRelatedPetAnnotation } from "@/lib/pets/related/related-pets-annotations-repository";
+import type { StoredPetSearchCaption } from "@/lib/pets/search/search-captions-repository";
+import { PET_VISION_FRAME_POLICY } from "@/lib/pets/search/search-vision-frames";
 import { prepareOpenAIApprovalMetadata } from "@/lib/pets/metadata-worker/approval";
 
 const mocks = vi.hoisted(() => ({ request: vi.fn(), annotation: null as StoredRelatedPetAnnotation | null,
   caption: null as StoredPetSearchCaption | null, extract: vi.fn(), putAnnotation: vi.fn(), putCaption: vi.fn() }));
 vi.mock("@/lib/openai-ams", () => ({ createAMSOpenAIJSONTransport: () => mocks.request }));
 vi.mock("@/lib/pets/assets-repository", () => ({ readPetSpritesheetAsset: async () => ({ buffer: Buffer.from("fixture") }) }));
-vi.mock("@/lib/pets/search-vision-frames", async (original) => ({
-  ...await original<typeof import("@/lib/pets/search-vision-frames")>(), extractPetVisionFrames: mocks.extract,
+vi.mock("@/lib/pets/search/search-vision-frames", async (original) => ({
+  ...await original<typeof import("@/lib/pets/search/search-vision-frames")>(), extractPetVisionFrames: mocks.extract,
 }));
-vi.mock("@/lib/pets/related-pets-annotations-repository", () => ({
+vi.mock("@/lib/pets/related/related-pets-annotations-repository", () => ({
   getRelatedPetAnnotation: async () => mocks.annotation, upsertRelatedPetAnnotation: mocks.putAnnotation,
 }));
-vi.mock("@/lib/pets/search-captions-repository", () => ({
+vi.mock("@/lib/pets/search/search-captions-repository", () => ({
   getPetSearchCaption: async () => mocks.caption, upsertPetSearchCaption: mocks.putCaption,
 }));
 const pet = { id: "pet_synthetic_bus", slug: "synthetic-bus", displayName: "Synthetic bus", description: "A cartoon bus",

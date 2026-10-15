@@ -65,3 +65,32 @@ it("gives every queued status read its own timeout window",async()=>{
  const ready=[...element.querySelectorAll(".my-generations__item")].filter(row=>row.textContent?.includes("Ready"));
  expect(ready).toHaveLength(5);expect(element.textContent).not.toContain("Could not refresh");expect(request).toHaveBeenCalledTimes(5);
 });
+
+it("keeps valid history visible when expired-record cleanup is blocked", async () => {
+  rememberGeneration(id, expiry());
+  const staleId = "e".repeat(64), now = Date.now();
+  localStorage.setItem(HISTORY_PREFIX + staleId, JSON.stringify({ generationId: staleId, savedAt: now - 8 * 86400000, expiresAt: now - 7 * 86400000 }));
+  vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => { throw new Error("cleanup blocked"); });
+  request.mockResolvedValue(reply("completed"));
+  await render();
+  expect(element.textContent).toContain("Synthetic fox");
+  expect(element.textContent).not.toContain("Browser storage is unavailable");
+  expect(request).toHaveBeenCalledTimes(1);
+});
+
+it("prunes expired records only after the history DOM is committed", async () => {
+  rememberGeneration(id, expiry());
+  const staleId = "e".repeat(64), now = Date.now();
+  localStorage.setItem(HISTORY_PREFIX + staleId, JSON.stringify({ generationId: staleId, savedAt: now - 8 * 86400000, expiresAt: now - 7 * 86400000 }));
+  const remove = Storage.prototype.removeItem;
+  const committedAtRemoval: boolean[] = [];
+  vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (this: Storage, key: string) {
+    committedAtRemoval.push(element.querySelector(".my-generations") !== null);
+    return remove.call(this, key);
+  });
+  request.mockResolvedValue(reply("completed"));
+  await render();
+  expect(committedAtRemoval.length).toBeGreaterThan(0);
+  expect(committedAtRemoval.every(Boolean)).toBe(true);
+  expect(localStorage.getItem(HISTORY_PREFIX + staleId)).toBeNull();
+});

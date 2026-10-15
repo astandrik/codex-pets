@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   assetUrl,
   getPetAssetIdFromSpritesheetUrl,
+  getPetAssetRefFromSpritesheetUrl,
   getPetIdleStripUrl,
   getPetPreviewUrl,
 } from "@/lib/pets/asset-urls";
@@ -44,6 +45,15 @@ describe("asset URLs", () => {
     ).toBeNull();
     expect(getPetPreviewUrl("/api/assets/asset_123/pet.zip")).toBeNull();
     expect(getPetIdleStripUrl("/api/assets/asset_123/pet.zip")).toBeNull();
+  });
+
+  it("preserves the filename needed by image readers and rejects malformed IDs", () => {
+    expect(getPetAssetRefFromSpritesheetUrl("https://pets.example/base/api/assets/asset%20two/spritesheet.png"))
+      .toEqual({ assetId: "asset two", filename: "spritesheet.png" });
+    expect(getPetAssetRefFromSpritesheetUrl("/api/assets/asset/spritesheet.webp"))
+      .toEqual({ assetId: "asset", filename: "spritesheet.webp" });
+    expect(getPetAssetRefFromSpritesheetUrl("/api/assets/%broken/spritesheet.webp")).toBeNull();
+    expect(getPetAssetIdFromSpritesheetUrl("/api/assets/%broken/spritesheet.webp")).toBeNull();
   });
 
   it("extracts decoded asset IDs from relative and absolute spritesheet URLs", () => {

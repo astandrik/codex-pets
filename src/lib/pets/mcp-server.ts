@@ -1,3 +1,4 @@
+import { buildPetRequestInfo } from "@/lib/pets/agent-request-info";
 import { registerPetGenerationTools } from "@/lib/pets/generation/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
@@ -21,7 +22,7 @@ import {
 } from "@/lib/metrics/yandex-measurement";
 import { getApprovedPetBySlug } from "@/lib/pets/repository";
 import { MCP_REGISTRY_SERVER_VERSION } from "@/lib/pets/mcp-registry";
-import { searchApprovedPets } from "@/lib/pets/search-runtime";
+import { searchApprovedPets } from "@/lib/pets/search/search-runtime";
 
 type McpToolName = McpToolCallPayload["tool"];
 type SlugMcpToolName = Exclude<
@@ -261,7 +262,7 @@ export function createCodexPetsMcpServer(clientIp: string | null = null): McpSer
         tool: "get_pet_request_info",
         status: "success",
       });
-      return toolResult(buildPetRequestInfo());
+      return toolResult(buildPetRequestInfo(toPublicRequestUrl()));
     },
   );
 
@@ -355,53 +356,6 @@ function buildCodexPetsAppHtml(): string {
   </main>
 </body>
 </html>`;
-}
-
-function buildPetRequestInfo(): Record<string, unknown> {
-  return {
-    request: {
-      pageUrl: toPublicRequestUrl(),
-      method: "Open the public request page and submit the form there.",
-      privacy:
-        "Pet generation requests are private to admins. Completed pets are linked manually after upload.",
-      fields: [
-        {
-          name: "contactEmail",
-          required: true,
-          description: "Contact email for follow-up about the request.",
-        },
-        {
-          name: "prompt",
-          required: true,
-          maxLength: 2000,
-          description:
-            "Short brief describing the character, object, mood, colors, and must-have details.",
-        },
-        {
-          name: "kind",
-          required: false,
-          values: ["creature", "object", "character"],
-          default: "creature",
-        },
-        {
-          name: "requesterName",
-          required: false,
-          maxLength: 80,
-        },
-        {
-          name: "displayNameHint",
-          required: false,
-          maxLength: 80,
-        },
-        {
-          name: "referenceImage",
-          required: false,
-          contentTypes: ["image/png", "image/jpeg", "image/webp"],
-          maxBytes: 5242880,
-        },
-      ],
-    },
-  };
 }
 
 function toPublicRequestUrl(): string {

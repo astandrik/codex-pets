@@ -1,3 +1,5 @@
+import { stripBasePath } from "@/lib/base-path";
+
 type HeaderReader = Pick<Headers, "get">;
 
 type PreviewRequestContext = {
@@ -80,14 +82,4 @@ function getRequestIp(headers: HeaderReader): string | null {
 
   const realIp = headers.get("x-real-ip")?.trim();
   return realIp || null;
-}
-
-function stripBasePath(pathname: string, basePath?: string): string {
-  if (!basePath || pathname === basePath) {
-    return pathname === basePath ? "/" : pathname;
-  }
-
-  return pathname.startsWith(`${basePath}/`)
-    ? pathname.slice(basePath.length) || "/"
-    : pathname;
 }

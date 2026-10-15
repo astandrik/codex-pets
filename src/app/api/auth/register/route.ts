@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { createUser, createSessionForUser, getUserByEmail, normalizeEmail } from "@/lib/auth/repository";
+import {
+  createUser,
+  createSessionForUser,
+  getUserByEmail,
+  normalizeEmail,
+  type AuthUser,
+} from "@/lib/auth/repository";
+import { EmailAlreadyExistsError } from "@/lib/auth/errors";
 import { hashPassword, validatePasswordStrength } from "@/lib/auth/password";
 import { applySessionCookie } from "@/lib/auth/session-cookie";
 import { revalidateSitemapCache } from "@/lib/sitemap-cache";
@@ -19,7 +26,11 @@ export async function POST(req: Request): Promise<Response> {
 
   let body: { email?: unknown; password?: unknown; displayName?: unknown };
   try {
-    body = (await req.json()) as typeof body;
+    const value: unknown = await req.json();
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+    }
+    body = value as Record<string, unknown>;
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
@@ -46,10 +57,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const existing = await getUserByEmail(normalized.email);
   if (existing) {
-    return NextResponse.json(
-      { error: "email_taken", message: "An account with this email already exists." },
-      { status: 409 },
-    );
+    return emailTakenResponse();
   }
 
   const passwordHash = await hashPassword(password);
@@ -58,11 +66,17 @@ export async function POST(req: Request): Promise<Response> {
     normalized.email.split("@")[0] ||
     normalized.emailLower;
 
-  const user = await createUser({
-    email: normalized.email,
-    passwordHash,
-    displayName: displayName.slice(0, 80),
-  });
+  let user: AuthUser;
+  try {
+    user = await createUser({
+      email: normalized.email,
+      passwordHash,
+      displayName: displayName.slice(0, 80),
+    });
+  } catch (error) {
+    if (error instanceof EmailAlreadyExistsError) return emailTakenResponse();
+    throw error;
+  }
   const session = await createSessionForUser(user.userId);
 
   const response = NextResponse.json({ ok: true }, { status: 201 });
@@ -72,4 +86,11 @@ export async function POST(req: Request): Promise<Response> {
   });
   revalidateSitemapCache();
   return response;
+}
+
+function emailTakenResponse(): Response {
+  return NextResponse.json(
+    { error: "email_taken", message: "An account with this email already exists." },
+    { status: 409 },
+  );
 }

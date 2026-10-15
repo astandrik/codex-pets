@@ -133,18 +133,8 @@ function getNextMetadataContent(
   recordIndex: number,
   target: PageViewMetadataElement,
 ): string | null {
-  for (let index = recordIndex + 1; index < records.length; index += 1) {
-    const nextRecord = records[index];
-    if (
-      nextRecord.type === "attributes" &&
-      nextRecord.attributeName === "content" &&
-      nextRecord.target === target
-    ) {
-      return nextRecord.oldValue;
-    }
-  }
-
-  return target.getAttribute("content");
+  const nextOldValue = getFirstMetadataAttributeOldValue(records, recordIndex, target);
+  return nextOldValue === undefined ? target.getAttribute("content") : nextOldValue;
 }
 
 function getFirstMetadataAttributeOldValue(

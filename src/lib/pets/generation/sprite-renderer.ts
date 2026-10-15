@@ -56,7 +56,12 @@ export const spriteRenderer: SpriteRenderer = {
   async cleanupExpired(now) { await cleanupSpriteWorkspaces(tmpdir(), now); },
   async open(job, saved) {
     const keyFile = process.env.PET_GENERATION_OPENAI_KEY_FILE?.trim();
-    const key = keyFile ? readFileSync(keyFile, "utf8").trim() : "";
+    let key: string;
+    try {
+      key = keyFile ? readFileSync(keyFile, "utf8").trim() : "";
+    } catch {
+      throw new GenerationError("provider_not_configured");
+    }
     if (!key) throw new GenerationError("provider_not_configured");
     const env = spritegenEnvironment(key);
     const directory = await mkdtemp(path.join(tmpdir(), "pets-row-worker-"));
@@ -79,16 +84,27 @@ export const spriteRenderer: SpriteRenderer = {
           logSpriteHttpDiagnostic(stderr, {generationId: job.id, stage: name, attempt});
         }
       };
+      const readReply = (stdout: string) => {
+        try {
+          return parseSpritegenReply(stdout);
+        } catch (error) {
+          if (error instanceof GenerationError && action !== "generate" && error.code === "outcome_unknown") {
+            throw new GenerationError("invalid_sprite_extraction", undefined, error.providerFailure, undefined,
+              error.diagnostic, error.cliCause, error.details);
+          }
+          throw error;
+        }
+      };
       try {
         const args = [script, directory, action, ...(name ? [name] : [])];
         const { stdout, stderr } = await execute(python, args, { env, timeout: 230_000, maxBuffer: 256 * 1024 });
         logHttp(stderr);
-        return parseSpritegenReply(stdout);
+        return readReply(stdout);
       } catch (error) {
-        if (error instanceof GenerationError) throw action !== "generate" && error.code === "outcome_unknown" ? new GenerationError("invalid_sprite_extraction",undefined,error.providerFailure,undefined,error.diagnostic,error.cliCause,error.details) : error;
+        if (error instanceof GenerationError) throw error;
         if (error && typeof error === "object" && "stderr" in error) logHttp(error.stderr);
         // Only a structured allowlisted error is consumed; private stderr is never logged.
-        if (error && typeof error === "object" && "stdout" in error && typeof error.stdout === "string" && error.stdout.trim()) return parseSpritegenReply(error.stdout);
+        if (error && typeof error === "object" && "stdout" in error && typeof error.stdout === "string" && error.stdout.trim()) return readReply(error.stdout);
         throw new GenerationError(action === "generate" ? "outcome_unknown" : "invalid_sprite_extraction",undefined,undefined,undefined,processFailureDiagnostic(error,Date.now()-started));
       }
     }

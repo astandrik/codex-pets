@@ -5,6 +5,7 @@ import {
   readPetAssetFile,
   readPetSpritesheetAsset,
 } from "@/lib/pets/assets-repository";
+import { PetAssetNotFoundError } from "@/lib/pets/asset-errors";
 import { ASSET_CACHE_CONTROL } from "@/lib/pets/asset-urls";
 import { PET_SHEET, PET_STATES } from "@/lib/pets/types";
 
@@ -79,6 +80,9 @@ export async function GET(
       file,
       error: error instanceof Error ? error.message : String(error),
     });
-    return NextResponse.json({ error: "not_found" }, { status: 404 });
+    if (error instanceof PetAssetNotFoundError) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    return NextResponse.json({ error: "asset_unavailable" }, { status: 500 });
   }
 }

@@ -1,5 +1,5 @@
-import type { ResolvedRelatedPetAnnotation } from "@/lib/pets/related-pets-annotation-contract.mjs";
-import { applyRelatedPetsRelationPolicy } from "@/lib/pets/related-pets-relation-policy";
+import type { ResolvedRelatedPetAnnotation } from "@/lib/pets/related/related-pets-annotation-contract.mjs";
+import { applyRelatedPetsRelationPolicy } from "@/lib/pets/related/related-pets-relation-policy";
 
 export function assertPositivePairIdentities(
   annotations: ReadonlyMap<string, ResolvedRelatedPetAnnotation>,

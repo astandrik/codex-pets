@@ -1,5 +1,5 @@
 import type { PetKind } from "@/lib/pets/types";
-import { normalizeSearchQuery } from "@/lib/pets/search-ranking";
+import { normalizeSearchQuery } from "@/lib/pets/search/search-ranking";
 
 export const MAX_GALLERY_TAGS = 8;
 

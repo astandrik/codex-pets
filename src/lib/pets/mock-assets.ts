@@ -1,3 +1,4 @@
+import { PetAssetNotFoundError } from "@/lib/pets/asset-errors";
 import JSZip from "jszip";
 import sharp from "sharp";
 
@@ -86,7 +87,7 @@ export async function readMockPetAssetFile(input: {
     };
   }
 
-  throw new Error("Unsupported mock asset file.");
+  throw new PetAssetNotFoundError("Unsupported mock asset file.");
 }
 
 export async function readMockPetSpritesheetAsset(input: {
@@ -117,7 +118,7 @@ export async function readMockPetSpritesheetAsset(input: {
 function getKnownMockPet(assetId: string): MockPetRecord {
   const pet = getMockPetByAssetId(assetId);
   if (!pet) {
-    throw new Error("Mock asset not found.");
+    throw new PetAssetNotFoundError("Mock asset not found.");
   }
   return pet;
 }
@@ -132,7 +133,7 @@ function readStoredMockAssetFile(
   const spritesheetFilename = `spritesheet.${asset.spritesheetExt}`;
   const contentType = ASSET_CONTENT_TYPES.get(filename);
   if (!contentType) {
-    throw new Error("Unsupported mock asset file.");
+    throw new PetAssetNotFoundError("Unsupported mock asset file.");
   }
 
   if (filename === "pet.json") {
@@ -145,7 +146,7 @@ function readStoredMockAssetFile(
     return { buffer: Buffer.from(asset.spritesheetBuffer), contentType };
   }
 
-  throw new Error("Mock asset variant mismatch.");
+  throw new PetAssetNotFoundError("Mock asset variant mismatch.");
 }
 
 function buildPetJsonBuffer(pet: MockPetRecord): Buffer {

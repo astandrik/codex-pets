@@ -1,4 +1,6 @@
-import { StatusCode, YdbError, withSessionOnce, type YdbQueryExecutor } from "@/lib/ydb/client";
+import type { Session } from "ydb-sdk";
+
+import { StatusCode, YdbError, withSession, withSessionOnce, type YdbQueryExecutor } from "@/lib/ydb/client";
 
 // Callbacks may contain only replay-safe database work, never provider calls.
 export async function withSerializableTransaction<T>(operation: (execute: YdbQueryExecutor) => Promise<T>): Promise<T> {
@@ -24,4 +26,29 @@ export async function withSerializableTransaction<T>(operation: (execute: YdbQue
       await new Promise(resolve => setTimeout(resolve, 20 * 2 ** attempt));
     }
   }
+}
+
+// Preserve the older SDK-managed session/commit retry contract for existing
+// repositories. Do not replace this with ABORTED replay without a caller audit.
+export async function withSdkManagedTransaction<T>(
+  operation: (session: Session, control: { txId: string }) => Promise<T>,
+  startError: string,
+): Promise<T> {
+  return withSession(async (session) => {
+    const transaction = await session.beginTransaction({ serializableReadWrite: {} });
+    if (!transaction.id) throw new Error(startError);
+    const control = { txId: transaction.id };
+    try {
+      const result = await operation(session, control);
+      await session.commitTransaction(control);
+      return result;
+    } catch (error) {
+      try {
+        await session.rollbackTransaction(control);
+      } catch {
+        // YDB may already have aborted or committed this transaction.
+      }
+      throw error;
+    }
+  });
 }

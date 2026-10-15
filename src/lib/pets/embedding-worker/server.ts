@@ -41,7 +41,14 @@ export function createEmbeddingServer(options: {
         if (size > 524_288) { response.writeHead(413).end('{"error":"too_large"}'); return; }
         chunks.push(chunk);
       }
-      const parsed = requestSchema.safeParse(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      let body: unknown;
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      } catch {
+        response.writeHead(400).end('{"error":"invalid_request"}');
+        return;
+      }
+      const parsed = requestSchema.safeParse(body);
       if (!parsed.success) { response.writeHead(400).end('{"error":"invalid_request"}'); return; }
       const { input, mode } = parsed.data;
       if (mode === "migration") { response.end(JSON.stringify(await options.ledger.embed(input))); return; }

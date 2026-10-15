@@ -7,8 +7,8 @@ import {
   RELATED_PETS_ANNOTATION_REVISION,
   RELATED_PETS_ANNOTATION_SUPPORTED_PROPOSAL_REVISIONS,
   RELATED_PETS_ANNOTATION_WRITE_PROPOSAL_REVISION,
-} from "../src/lib/pets/related-pets-annotation-contract.mjs";
-import { createYandexRelatedPetAnnotationClient } from "../src/lib/pets/related-pets-annotation-client.mjs";
+} from "../src/lib/pets/related/related-pets-annotation-contract.mjs";
+import { createYandexRelatedPetAnnotationClient } from "../src/lib/pets/related/related-pets-annotation-client.mjs";
 import {
   adoptLegacyRelatedPetAnnotationProposal,
   assertRelatedPetAnnotationCatalogFingerprint,

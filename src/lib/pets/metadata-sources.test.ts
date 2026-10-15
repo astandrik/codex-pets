@@ -8,10 +8,10 @@ import {
   RELATED_PETS_ANNOTATION_PROPOSAL_REVISION_R3,
   getRelatedPetAnnotationProposalContract, parseRelatedPetAnnotationProposal,
   parseStoredRelatedPetAnnotationProposal,
-} from "@/lib/pets/related-pets-annotation-contract.mjs";
-import { createYandexRelatedPetAnnotationClient } from "@/lib/pets/related-pets-annotation-client.mjs";
+} from "@/lib/pets/related/related-pets-annotation-contract.mjs";
+import { createYandexRelatedPetAnnotationClient } from "@/lib/pets/related/related-pets-annotation-client.mjs";
 import { assertAnnotationSourceIdentity } from "@/lib/pets/metadata-source-identities.mjs";
-import { OPENAI_RELATED_PETS_PROFILE, OPENAI_RELATED_PETS_PRE_METADATA_REVISION, RELATED_PETS_V24_RANKING_REVISION, isSupportedRelatedPetsRankingRevision } from "@/lib/pets/related-pets-profile";
+import { OPENAI_RELATED_PETS_PROFILE, OPENAI_RELATED_PETS_PRE_METADATA_REVISION, RELATED_PETS_V24_RANKING_REVISION, isSupportedRelatedPetsRankingRevision } from "@/lib/pets/related/related-pets-profile";
 
 const empty = { entity: { key: null, aliases: [], confidence: "none", evidence: [] }, franchises: [], franchise_families: [], collections: [], specific_archetypes: [], themes: [], media_origins: [] };
 describe("truthful mixed metadata sources", () => {

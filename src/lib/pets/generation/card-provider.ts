@@ -3,7 +3,7 @@ import {readFileSync} from "node:fs";
 import {createAMSOpenAIJSONTransport} from "@/lib/openai-ams";
 import {OPENAI_METADATA_MODEL} from "@/lib/pets/metadata-source-identities.mjs";
 import {METADATA_MAX_OUTPUT_TOKENS,metadataReserveUSD,parseMetadataResponse} from "@/lib/pets/metadata-worker/ledger";
-import {extractPetVisionFrames} from "@/lib/pets/search-vision-frames";
+import {extractPetVisionFrames} from "@/lib/pets/search/search-vision-frames";
 import {validateGeneratedSheet} from "@/lib/pets/generation/package";
 import {GenerationError,type GenerationJob} from "@/lib/pets/generation/model";
 import {CARD_METADATA_MAX_ESTIMATED_MICRO_USD,normalizeCardMetadata,type CardMetadataFields} from "@/lib/pets/generation/card-metadata";

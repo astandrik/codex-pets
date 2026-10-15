@@ -66,6 +66,21 @@ describe("PATCH /api/auth/profile", () => {
     expect(revalidateSitemapCache).not.toHaveBeenCalled();
   });
 
+  it.each([null, [], 42, true, "profile"])("rejects a non-object JSON body %j before writing", async (body) => {
+    authMocks.getCurrentPrincipal.mockResolvedValueOnce({ userId: "user@example.com", role: "user" });
+    repositoryMocks.getUserById.mockResolvedValueOnce(createExistingUser());
+    const response = await PATCH(new Request("http://localhost/api/auth/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_json" });
+    expect(repositoryMocks.updateUserProfile).not.toHaveBeenCalled();
+    expect(avatarMocks.storeUserAvatar).not.toHaveBeenCalled();
+    expect(revalidateSitemapCache).not.toHaveBeenCalled();
+  });
+
   it("updates public profile fields for the current user", async () => {
     authMocks.getCurrentPrincipal.mockResolvedValueOnce({
       userId: "user@example.com",

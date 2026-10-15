@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildApiUrl,
+  findManifestPet,
   installPet,
   listPets,
   parseArgs,
@@ -75,6 +76,60 @@ describe("codex-pets cli helpers", () => {
         petJsonUrl: "/api/assets/a/pet.json",
       },
     ]);
+  });
+
+  it.each([null, [], 3, "pet"])("rejects malformed manifest entries with context: %j", async (entry) => {
+    const fetchImpl = createFetch({
+      "GET https://pets.test/api/manifest": jsonResponse({ pets: [entry] }),
+    });
+    await expect(listPets({ baseUrl: "https://pets.test", fetchImpl }))
+      .rejects.toThrow("Manifest pet");
+  });
+
+  it.each(["a".repeat(49), "a".repeat(64), "legacy-"])("accepts a public lookup slug: %s", (slug) => {
+    expect(findManifestPet({ pets: [manifestPet(slug)] }, ` ${slug} `).slug).toBe(slug);
+  });
+
+  it.each(["../boba", "a".repeat(65), "", null])("rejects invalid install slugs before HTTP: %j", async (slug) => {
+    const fetchImpl = vi.fn();
+    await expect(installPet({ slug, codexHome: await makeTempDir(), fetchImpl }))
+      .rejects.toThrow("Invalid pet slug");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("preserves the previous pack if publishing fails (rollback fails: %s)", async (rollbackFails) => {
+    const codexHome = await makeTempDir();
+    const targetDir = path.join(codexHome, "pets", "boba");
+    await fs.mkdir(targetDir, { recursive: true });
+    await fs.writeFile(path.join(targetDir, "pet.json"), "old");
+    const fetchImpl = createFetch({
+      "GET https://pets.test/api/manifest": jsonResponse({ pets: [manifestPet("boba")] }),
+      "GET https://pets.test/api/assets/a/pet.json": bufferResponse(petJson("spritesheet.webp")),
+      "GET https://pets.test/api/assets/a/spritesheet.webp": bufferResponse("new"),
+    });
+    const rename = fs.rename.bind(fs);
+    let attempts = 0;
+    vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+      if (to === targetDir && (++attempts === 1 || rollbackFails)) {
+        throw new Error("injected rename failure");
+      }
+      return rename(from, to);
+    });
+    const failure = await installPet({ slug: "boba", force: true, baseUrl: "https://pets.test", codexHome, fetchImpl })
+      .catch((error) => error);
+    expect(failure).toBeInstanceOf(Error);
+    if (rollbackFails) {
+      expect(failure).toBeInstanceOf(AggregateError);
+      const staging = (await fs.readdir(path.dirname(targetDir))).find((name) => name.startsWith(".tmp-boba-"));
+      const previous = path.join(path.dirname(targetDir), staging, "previous");
+      expect(failure.message).toContain(previous);
+      expect(await fs.readFile(path.join(previous, "pet.json"), "utf8")).toBe("old");
+    } else {
+      expect(failure.message).toBe("injected rename failure");
+      expect(await fs.readFile(path.join(targetDir, "pet.json"), "utf8")).toBe("old");
+      expect(await fs.readdir(path.dirname(targetDir))).toEqual(["boba"]);
+    }
+    expect(fetchImpl.mock.calls.every(([, init]) => init?.method !== "POST")).toBe(true);
   });
 
   it("installs pet.json and spritesheet from relative manifest urls", async () => {
@@ -172,6 +227,7 @@ describe("codex-pets cli helpers", () => {
     await expect(
       fs.readFile(path.join(codexHome, "pets", "boba", "spritesheet.webp"), "utf8"),
     ).resolves.toBe("new");
+    expect(await fs.readdir(path.join(codexHome, "pets"))).toEqual(["boba"]);
     expect(result.metricRecorded).toBe(false);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("metrics"));
   });

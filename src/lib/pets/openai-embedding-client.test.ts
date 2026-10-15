@@ -2,8 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import { createPrivateOpenAIEmbeddingClient, validatePrivateEmbeddingEndpoint } from "@/lib/pets/openai-embedding-client";
 import { validateAMSProxy } from "@/lib/pets/embedding-worker/transport";
 import { OPENAI_PETS_REVISIONS, OPENAI_EMBEDDING_MODEL, isOpenAIPetsProfile } from "@/lib/pets/openai-embedding-profile";
-import { buildPetSearchDocument, buildRelatedPetDocument, buildRelatedPetQuery } from "@/lib/pets/search-embeddings";
-import { buildRelatedPetDescriptionText } from "@/lib/pets/related-pets-semantics.mjs";
+import {
+  buildPetSearchDocument,
+} from "@/lib/pets/search/search-embeddings";
+import {
+  buildRelatedPetDocument,
+  buildRelatedPetQuery,
+} from "@/lib/pets/related/related-pets-embeddings";
+import { buildRelatedPetDescriptionText } from "@/lib/pets/related/related-pets-semantics.mjs";
 const endpoint = "http://pets-embeddings:8090/embeddings";
 describe("private OpenAI embedding contract", () => {
   it("keeps intended full description templates when model revision changes", () => {

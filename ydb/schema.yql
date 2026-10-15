@@ -192,21 +192,6 @@ CREATE TABLE codex_password_reset_tokens (
   PRIMARY KEY (token_hash)
 );
 
-CREATE TABLE codex_pet_upload_sessions (
-  id Utf8 NOT NULL,
-  owner_id Utf8 NOT NULL,
-  pet_id_hint Utf8 NOT NULL,
-  slug_hint Utf8 NOT NULL,
-  zip_url Utf8 NOT NULL,
-  pet_json_url Utf8 NOT NULL,
-  spritesheet_url Utf8 NOT NULL,
-  spritesheet_ext Utf8 NOT NULL,
-  created_at Utf8 NOT NULL,
-  expires_at Utf8 NOT NULL,
-  consumed_at Utf8 NOT NULL,
-  PRIMARY KEY (id)
-);
-
 CREATE TABLE codex_pet_reviews (
   id Utf8 NOT NULL,
   pet_id Utf8 NOT NULL,

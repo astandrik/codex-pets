@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { applyOpenAIIndex, describeOpenAIIndexInputs } from "@/lib/pets/openai-reindex";
-import { embeddingToBuffer } from "@/lib/pets/search-embeddings";
+import { embeddingToBuffer } from "@/lib/pets/search/search-embeddings";
 import { OPENAI_PETS_REVISIONS } from "@/lib/pets/openai-embedding-profile";
-import type { StoredRawPetSearchEmbedding } from "@/lib/pets/search-embeddings-repository";
+import type { StoredRawPetSearchEmbedding } from "@/lib/pets/search/search-embeddings-repository";
 const store = vi.hoisted(() => ({ rows: new Map<string, StoredRawPetSearchEmbedding>(), loseAck: false }));
-vi.mock("@/lib/pets/search-embeddings-repository", () => ({
+vi.mock("@/lib/pets/search/search-embeddings-repository", () => ({
   listRawPetSearchEmbeddings: async (revision: string) => [...store.rows.values()].filter((r) => r.modelRevision === revision),
   upsertPetSearchEmbedding: async (row: Omit<StoredRawPetSearchEmbedding, "embedding"> & { embedding: number[] }) => {
     store.rows.set(`${row.modelRevision}/${row.slug}`, { ...row, embedding: embeddingToBuffer(row.embedding) });

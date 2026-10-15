@@ -10,6 +10,25 @@ export type PublicPetPayload = Omit<
   ownerProfileUrl: string | null;
 };
 
+export function isPublicPetPayload(value: unknown): value is PublicPetPayload {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const pet = value as Record<string, unknown>;
+  return (
+    [pet.id, pet.slug, pet.displayName, pet.description, pet.spritesheetUrl,
+      pet.petJsonUrl, pet.zipUrl, pet.createdAt].every((field) => typeof field === "string") &&
+    (pet.spritesheetExt === "webp" || pet.spritesheetExt === "png") &&
+    (pet.kind === "creature" || pet.kind === "object" || pet.kind === "character") &&
+    (pet.status === "approved" || pet.status === "pending" || pet.status === "rejected" || pet.status === "deleted") &&
+    Array.isArray(pet.tags) && pet.tags.every((tag) => typeof tag === "string") &&
+    [pet.ownerName, pet.ownerProfileUrl, pet.approvedAt]
+      .every((field) => field === null || typeof field === "string") &&
+    [pet.ownerProfileSlug, pet.ownerAvatarUrl, pet.publicAuthorEmail]
+      .every((field) => field == null || typeof field === "string") &&
+    [pet.downloadCount, pet.installCount, pet.likeCount]
+      .every((field) => typeof field === "number" && Number.isFinite(field))
+  );
+}
+
 export function buildManifestPayload(
   pets: PublicPet[],
   generatedAt = new Date().toISOString(),

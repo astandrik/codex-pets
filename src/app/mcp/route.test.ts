@@ -16,7 +16,7 @@ vi.mock("@/lib/pets/repository", () => ({
   getApprovedPetBySlug: repositoryMocks.getApprovedPetBySlug,
 }));
 
-vi.mock("@/lib/pets/search-runtime", () => ({
+vi.mock("@/lib/pets/search/search-runtime", () => ({
   searchApprovedPets: searchMocks.searchApprovedPets,
 }));
 

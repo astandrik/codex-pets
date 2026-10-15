@@ -1,4 +1,4 @@
-import { createEmbeddingClient, EmbeddingProviderError } from "@/lib/pets/search-embeddings";
+import { createEmbeddingClient, EmbeddingProviderError } from "@/lib/pets/search/search-embeddings";
 import { OPENAI_EMBEDDING_DIMENSIONS, OPENAI_EMBEDDING_MODEL } from "@/lib/pets/openai-embedding-profile";
 
 export type PrivateEmbeddingConfig = {

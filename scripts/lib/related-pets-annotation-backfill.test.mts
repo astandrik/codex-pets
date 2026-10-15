@@ -12,7 +12,7 @@ import {
   createRelatedPetAnnotationProposalInputHash,
   createRelatedPetAnnotationSourceHash,
   resolveRelatedPetAnnotation,
-} from "../../src/lib/pets/related-pets-annotation-contract.mjs";
+} from "../../src/lib/pets/related/related-pets-annotation-contract.mjs";
 import {
   adoptLegacyRelatedPetAnnotationProposal,
   createRelatedPetAnnotationCatalogFingerprint,

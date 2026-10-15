@@ -12,6 +12,14 @@ export function parsePublicPetSlug(value: unknown): string | null {
     /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(value) ? value : null;
 }
 
+export function parsePublicPetLookupSlug(value: unknown): string | null {
+  const slug = typeof value === "string" ? value.trim() : "";
+  // Existing catalog entries can retain a trailing hyphen from legacy slug truncation.
+  return slug.length <= MAX_PUBLIC_SLUG_LENGTH && /^[a-z0-9][a-z0-9-]*$/.test(slug)
+    ? slug
+    : null;
+}
+
 export function suggestPublicPetSlug(name: string): string {
   return Array.from(name.normalize("NFC").toLowerCase(), (letter) => TRANSLITERATION[letter] ?? letter).join("")
     .normalize("NFKD").replace(/\p{M}/gu, "").replace(/[^a-z0-9]+/g, "-")

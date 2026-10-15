@@ -70,7 +70,7 @@ async function main() {
   });
   const { runRelatedPetApprovalWorkerOnce } = await import(
     pathToFileURL(
-      path.join(sourceRoot, "lib/pets/related-pets-approval-worker.ts"),
+      path.join(sourceRoot, "lib/pets/related/related-pets-approval-worker.ts"),
     ).href
   );
   const { petModerationPaused } = await import(

@@ -6,6 +6,19 @@ describe("buildOpenApiSpec", () => {
     vi.unstubAllEnvs();
   });
 
+  it.each(["a".repeat(48), "a".repeat(49), "a".repeat(64), "a".repeat(65), "legacy-"])("documents the runtime public slug bound: %s", async (slug) => {
+    const { buildOpenApiSpec } = await import("@/lib/openapi");
+    const { parsePublicPetLookupSlug } = await import("@/lib/pets/public-slug");
+    const spec = buildOpenApiSpec();
+    for (const schema of [
+      spec.components.schemas.PublicPet.properties.slug,
+      spec.components.schemas.ManifestPet.properties.slug,
+      spec.paths["/api/pets/{slug}"].get.parameters[0].schema,
+    ]) {
+      expect(new RegExp(schema.pattern).test(slug)).toBe(parsePublicPetLookupSlug(slug) !== null);
+    }
+  });
+
   it("builds the public Codex Pets OpenAPI contract without admin routes", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example/codex-pets");
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/codex-pets");

@@ -34,3 +34,36 @@ WHERE ${column} = $revision ORDER BY pet_slug;`, { $revision: values.utf8(revisi
   }
   return result;
 }
+
+export type CatalogInputRevision = Array<[slug: string, updatedAt: string]>;
+export type EmbeddingInputRevision = Array<[
+  revision: string,
+  rows: Array<[slug: string, sourceHash: string, dimensions: number, updatedAt: string]>,
+]>;
+export type MetadataInputRevision = [
+  revision: string,
+  rows: Array<[slug: string, sourceHash: string, updatedAt: string]>,
+];
+
+export function normalizeEmbeddingModelRevisions(revisions: readonly string[]): string[] {
+  return [...new Set(revisions.map((revision) => revision.trim()).filter(Boolean))].sort();
+}
+
+// Existing generations store nested JSON strings with this field order.
+export function serializeRankingInputRevision(parts: {
+  additionalCaptions?: string[];
+  additionalAnnotations?: string[];
+  catalog: CatalogInputRevision;
+  embeddings: EmbeddingInputRevision;
+  captions: MetadataInputRevision | null;
+  annotations?: MetadataInputRevision;
+}): string {
+  return JSON.stringify({
+    additionalCaptions: parts.additionalCaptions,
+    additionalAnnotations: parts.additionalAnnotations,
+    catalog: JSON.stringify(parts.catalog),
+    embeddings: JSON.stringify(parts.embeddings),
+    captions: parts.captions === null ? null : JSON.stringify(parts.captions),
+    annotations: parts.annotations === undefined ? undefined : JSON.stringify(parts.annotations),
+  });
+}

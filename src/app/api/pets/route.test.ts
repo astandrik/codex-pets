@@ -8,7 +8,7 @@ const repositoryMocks = vi.hoisted(() => ({
   listApprovedPetsForSearch: vi.fn(),
 }));
 
-vi.mock("@/lib/pets/search-runtime", () => ({
+vi.mock("@/lib/pets/search/search-runtime", () => ({
   searchApprovedPets: searchMocks.searchApprovedPets,
 }));
 vi.mock("@/lib/pets/repository", () => ({
@@ -83,6 +83,7 @@ describe("GET /api/pets", () => {
     vi.resetModules();
     vi.unstubAllEnvs();
     repositoryMocks.listApprovedPetsForSearch.mockResolvedValue([approvedPet]);
+    searchMocks.searchApprovedPets.mockResolvedValue({ pets: [], total: 0 });
   });
 
   it("returns approved pets as JSON and advertises the TOON alternate", async () => {
@@ -162,8 +163,10 @@ describe("GET /api/pets", () => {
     });
   });
 
-  it("rejects a continuation request from a different catalog snapshot", async () => {
-    const { GET } = await import("@/app/api/pets/route");
+  it.each(["JSON", "TOON"] as const)("rejects a continuation request from a different catalog snapshot (%s)", async (format) => {
+    const { GET } = format === "JSON"
+      ? await import("@/app/api/pets/route")
+      : await import("@/app/api/pets.toon/route");
 
     const response = await GET(
       new Request("https://pets.example/api/pets?page=2&pageSize=24", {
@@ -174,14 +177,16 @@ describe("GET /api/pets", () => {
     );
 
     expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({
+    expect(response.headers.get("X-Codex-Pets-Catalog-Snapshot")).toBeTruthy();
+    const body = format === "TOON" ? decode(await response.text()) : await response.json();
+    expect(body).toMatchObject({
       error: "catalog_snapshot_changed",
       code: "catalog_snapshot_changed",
     });
     expect(searchMocks.searchApprovedPets).not.toHaveBeenCalled();
   });
 
-  it("rejects a continuation request from a different ranked result", async () => {
+  it.each(["JSON", "TOON"] as const)("rejects a continuation request from a different ranked result (%s)", async (format) => {
     const { createApprovedPetsCatalogSnapshot } = await import(
       "@/lib/pets/catalog-snapshot-server"
     );
@@ -198,7 +203,9 @@ describe("GET /api/pets", () => {
       durationMs: 800,
       rankingVersion: "ranking-after-fallback",
     });
-    const { GET } = await import("@/app/api/pets/route");
+    const { GET } = format === "JSON"
+      ? await import("@/app/api/pets/route")
+      : await import("@/app/api/pets.toon/route");
 
     const response = await GET(
       new Request(
@@ -213,10 +220,36 @@ describe("GET /api/pets", () => {
     );
 
     expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({
+    expect(response.headers.get("X-Codex-Pets-Catalog-Ranking")).toBe("ranking-after-fallback");
+    const body = format === "TOON" ? decode(await response.text()) : await response.json();
+    expect(body).toMatchObject({
       error: "catalog_ranking_changed",
       code: "catalog_ranking_changed",
     });
+  });
+
+  it.each(["JSON", "TOON"] as const)("continues a matching catalog and ranking (%s)", async (format) => {
+    const { createApprovedPetsCatalogSnapshot } = await import("@/lib/pets/catalog-snapshot-server");
+    const snapshot = createApprovedPetsCatalogSnapshot([approvedPet]);
+    searchMocks.searchApprovedPets.mockResolvedValueOnce({
+      pets: [approvedPet], total: 25, rankingVersion: "stable-ranking",
+    });
+    const { GET } = format === "JSON"
+      ? await import("@/app/api/pets/route")
+      : await import("@/app/api/pets.toon/route");
+    const response = await GET(new Request("https://pets.example/api/pets?q=space&page=2&pageSize=24", {
+      headers: {
+        "X-Codex-Pets-Catalog-Snapshot": snapshot.version,
+        "X-Codex-Pets-Catalog-Ranking": "stable-ranking",
+      },
+    }));
+    expect(response.status).toBe(200);
+    const body = format === "TOON" ? decode(await response.text()) : await response.json();
+    expect(body).toMatchObject({ pets: [{ slug: approvedPet.slug }], pagination: { page: 2 } });
+    expect(searchMocks.searchApprovedPets).toHaveBeenCalledWith(
+      { q: "space", kind: "all", tags: [], offset: 24, limit: 24 },
+      { catalog: snapshot.pets },
+    );
   });
 
   it("returns an empty successful API page beyond the result set", async () => {

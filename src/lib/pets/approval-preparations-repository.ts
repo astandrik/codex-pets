@@ -1,10 +1,13 @@
-import { getAdditionalMetadataInputRevisions } from "@/lib/pets/metadata-input-revisions";
+import {
+  getAdditionalMetadataInputRevisions, normalizeEmbeddingModelRevisions, serializeRankingInputRevision,
+  type CatalogInputRevision, type EmbeddingInputRevision, type MetadataInputRevision,
+} from "@/lib/pets/metadata-input-revisions";
 import { createHash, randomUUID } from "node:crypto";
-import type { Session } from "ydb-sdk";
 
 import { isYdbConfigured, TypedValues, withSession } from "@/lib/ydb/client";
 import { boolAt, rowsFromResult, textAt, uintAt } from "@/lib/ydb/result";
 import { TABLES } from "@/lib/ydb/schema";
+import { withSdkManagedTransaction } from "@/lib/ydb/transaction";
 
 export type ApprovalPreparationStatus =
   | "queued"
@@ -489,15 +492,12 @@ WHERE status = $status ORDER BY slug;
       `,
       { $status: dependencies.values.utf8("approved") },
     );
-    const catalog = rowsFromResult(catalogResult).map((row) => [
+    const catalog = rowsFromResult(catalogResult).map((row): CatalogInputRevision[number] => [
       textAt(row, 0),
       textAt(row, 1),
     ]);
-    const embeddings = [];
-    const revisions = [...new Set(scope.embeddingModelRevisions)]
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .toSorted();
+    const embeddings: EmbeddingInputRevision = [];
+    const revisions = normalizeEmbeddingModelRevisions(scope.embeddingModelRevisions);
     for (const revision of revisions) {
       const result = await execute(
         `
@@ -518,7 +518,7 @@ WHERE model_revision = $model_revision ORDER BY pet_slug;
         ]),
       ]);
     }
-    let captions: unknown = null;
+    let captions: MetadataInputRevision | null = null;
     if (scope.captionRevision) {
       const result = await execute(
         `
@@ -538,7 +538,7 @@ WHERE caption_revision = $caption_revision ORDER BY pet_slug;
         ]),
       ];
     }
-    let annotations: unknown = undefined;
+    let annotations: MetadataInputRevision | undefined;
     if (scope.annotationRevision) {
       const result = await execute(
         `
@@ -562,14 +562,12 @@ WHERE annotation_revision = $annotation_revision ORDER BY pet_slug;
         ]),
       ];
     }
-    return JSON.stringify({
+    return serializeRankingInputRevision({
       ...(await getAdditionalMetadataInputRevisions(execute, dependencies.values, scope)),
-      catalog: JSON.stringify(catalog),
-      embeddings: JSON.stringify(embeddings),
-      captions: captions === null ? null : JSON.stringify(captions),
-      ...(annotations === undefined
-        ? {}
-        : { annotations: JSON.stringify(annotations) }),
+      catalog,
+      embeddings,
+      captions,
+      annotations,
     });
   }
 
@@ -700,38 +698,16 @@ WHERE preparation_id = $preparation_id;
   `;
 }
 
-type TxControl = { txId: string };
-
-async function withSerializableTransaction<T>(
-  operation: (execute: Execute) => Promise<T>,
-): Promise<T> {
-  return withSession(async (session: Session) => {
-    const transaction = await session.beginTransaction({
-      serializableReadWrite: {},
-    });
-    if (!transaction.id) {
-      throw new Error("Unable to start approval transaction.");
-    }
-    const txControl: TxControl = { txId: transaction.id };
+function withApprovalTransaction<T>(operation: (execute: Execute) => Promise<T>): Promise<T> {
+  return withSdkManagedTransaction((session, txControl) => {
     const execute: Execute = (statement, params) =>
       session.executeQuery(
         statement,
         params as NonNullable<Parameters<typeof session.executeQuery>[1]>,
         txControl,
       );
-    try {
-      const result = await operation(execute);
-      await session.commitTransaction(txControl);
-      return result;
-    } catch (error) {
-      try {
-        await session.rollbackTransaction(txControl);
-      } catch {
-        // YDB can abort the transaction before the explicit rollback.
-      }
-      throw error;
-    }
-  });
+    return operation(execute);
+  }, "Unable to start approval transaction.");
 }
 
 const repository = createApprovalPreparationsRepository({
@@ -744,7 +720,7 @@ const repository = createApprovalPreparationsRepository({
         params as NonNullable<Parameters<typeof session.executeQuery>[1]>,
       ),
     ),
-  transaction: withSerializableTransaction,
+  transaction: withApprovalTransaction,
 });
 
 export const enqueueApprovalPreparation = repository.enqueue;

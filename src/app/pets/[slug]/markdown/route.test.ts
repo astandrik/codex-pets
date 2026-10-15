@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related-pets-profile";
+import { RELATED_PETS_V24_PROFILE } from "@/lib/pets/related/related-pets-profile";
 
 const repositoryMocks = vi.hoisted(() => ({
   getApprovedPetBySlug: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock("next/cache", () => ({
   unstable_cache: (callback: unknown) => callback,
 }));
 vi.mock("@/lib/pets/repository", () => repositoryMocks);
-vi.mock("@/lib/pets/related-pets-repository", () => relatedSnapshotMocks);
+vi.mock("@/lib/pets/related/related-pets-repository", () => relatedSnapshotMocks);
 
 const approvedPet = {
   id: "pet_kuroa",

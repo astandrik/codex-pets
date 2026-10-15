@@ -4,7 +4,7 @@ import { unstable_cache } from "next/cache";
 import { toPublicUrl } from "@/lib/base-path";
 import { buildGalleryHref } from "@/lib/pets/gallery-filters";
 import { CATALOG_PAGE_SIZE } from "@/lib/pets/pagination";
-import { getRelatedPetsState } from "@/lib/pets/related-pets-repository";
+import { getRelatedPetsState } from "@/lib/pets/related/related-pets-repository";
 import { listApprovedPetSitemapEntries } from "@/lib/pets/repository";
 import {
   SITEMAP_CACHE_TAG,

@@ -1,6 +1,6 @@
 <!-- FOR AI AGENTS - Human readability is a side effect, not a goal -->
 <!-- Managed by agent: keep sections and order; edit content, not structure -->
-<!-- Last updated: 2026-05-14 | Last verified: 2026-05-14 -->
+<!-- Last updated: 2026-10-14 | Last verified: 2026-05-14 -->
 
 # AGENTS.md
 
@@ -32,6 +32,8 @@ src/components/WebMCP/ -> client-only read-only WebMCP tool registration
 src/lib/auth/     -> internal auth helpers and admin checks
 src/lib/metrics/  -> Yandex Metrika counter and goal helpers
 src/lib/pets/     -> pet types, validation, package parsing, repository logic
+src/lib/pets/search/ -> text/vision search providers, ranking, persistence, and evaluations
+src/lib/pets/related/ -> related-pet annotations, ranking, snapshots, and rebuilds
 src/lib/ydb/      -> YDB driver wrapper, query result parsing, table names
 src/styles/       -> global SCSS variables, mixins, utilities, overrides
 public/           -> static assets such as favicon
@@ -58,6 +60,8 @@ DEPLOYMENT.md     -> production deployment runbook
 | ZIP package validation | `validateUploadedPackage` | `src/lib/pets/package.ts` |
 | Binary asset storage | `storePetAssetsInYdb`, `readPetAssetFile` | `src/lib/pets/assets-repository.ts` |
 | Agent/WebMCP output shaping | `createAgentPet`, `normalizeSearchCodexPetsInput` | `src/components/WebMCP/webmcp-utils.ts` |
+| Client JSON responses | `readJsonResponse` | `src/lib/read-json-response.ts` |
+| Existing public slug lookup | `parsePublicPetLookupSlug` | `src/lib/pets/public-slug.ts` |
 | Analytics goals | `trackGoal` | `src/lib/metrics/yandex.ts` |
 | YDB session access | `withSession`, `readyOrThrow` | `src/lib/ydb/client.ts` |
 | YDB result decoding | `rowsFromResult`, `textAt`, `uintAt`, `bytesAt` | `src/lib/ydb/result.ts` |
@@ -99,7 +103,7 @@ DEPLOYMENT.md     -> production deployment runbook
 ## Codebase State
 - YDB tables are created manually from `ydb/schema.yql`; the app assumes they already exist.
 - Persistence is native `ydb-sdk`, not Postgres, not Drizzle.
-- Timestamps in YDB are currently stored as `Utf8`, not native `Timestamp`.
+- Catalog/profile timestamps use `Utf8`; generation jobs, artifacts, and quotas use native `Timestamp` for `expires_at` and TTL. See `ydb/schema.yql`.
 - Asset binaries are stored in YDB, not on local disk or external object storage.
 - There is no dedicated `/api/health` endpoint yet.
 - `robots.txt` is static; `sitemap.xml` and `llms.txt` are dynamic.
@@ -115,7 +119,7 @@ DEPLOYMENT.md     -> production deployment runbook
 | auth mode | `app-session`, `single-user`, or `proxy-basic` from env |
 | pending submission | pet stored in `codex_pets` with `status = pending` |
 | deleted pet | pet with `status = deleted`; hidden from owner/public lists and detail route |
-| atlas | required 8x9 spritesheet at `1536x1872` |
+| atlas | v1: 8x9 at `1536x1872`; v2: 8x11 at `1536x2288`; see `getPetSheet` in `src/lib/pets/types.ts` |
 | tenant | YDB database path from `YDB_PETS_DATABASE`, e.g. `/local/qdrant` |
 | WebMCP | experimental browser `navigator.modelContext` tools for read-only agent access |
 

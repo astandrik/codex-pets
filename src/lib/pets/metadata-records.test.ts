@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getPetAnnotationCandidates, getPetCaptionCandidates, listPetAnnotationsWithSources, listPetCaptionsWithSources } from "@/lib/pets/metadata-records";
 import { OPENAI_ANNOTATION_REVISION, OPENAI_CAPTION_REVISION } from "@/lib/pets/metadata-sources";
-import { RELATED_PETS_ANNOTATION_REVISION } from "@/lib/pets/related-pets-annotation-contract.mjs";
-import { PET_VISION_CAPTION_REVISION } from "@/lib/pets/search-vision-contract";
+import { RELATED_PETS_ANNOTATION_REVISION } from "@/lib/pets/related/related-pets-annotation-contract.mjs";
+import { PET_VISION_CAPTION_REVISION } from "@/lib/pets/search/search-vision-contract";
 const mocks=vi.hoisted(()=>({annotationGet:vi.fn(),annotationList:vi.fn(),captionGet:vi.fn(),captionList:vi.fn()}));
-vi.mock("@/lib/pets/related-pets-annotations-repository",()=>({getRelatedPetAnnotation:mocks.annotationGet,listRelatedPetAnnotations:mocks.annotationList}));
-vi.mock("@/lib/pets/search-captions-repository",()=>({getPetSearchCaption:mocks.captionGet,listPetSearchCaptions:mocks.captionList}));
+vi.mock("@/lib/pets/related/related-pets-annotations-repository",()=>({getRelatedPetAnnotation:mocks.annotationGet,listRelatedPetAnnotations:mocks.annotationList}));
+vi.mock("@/lib/pets/search/search-captions-repository",()=>({getPetSearchCaption:mocks.captionGet,listPetSearchCaptions:mocks.captionList}));
 beforeEach(()=>vi.resetAllMocks());
 describe("additive source selection",()=>{
   it("returns physical candidates without deciding freshness",async()=>{

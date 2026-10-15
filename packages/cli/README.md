@@ -64,3 +64,7 @@ Example MCP client config:
   }
 }
 ```
+
+Generated install and MCP-add commands target Windows Command Prompt (`cmd.exe`)
+on Windows and a POSIX shell on other platforms. The gallery URL is passed as a
+literal argument, including its path and percent-encoded characters.

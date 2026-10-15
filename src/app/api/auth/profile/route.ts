@@ -224,7 +224,19 @@ async function parseProfileRequest(
   }
 
   try {
-    return (await req.json()) as ProfileRequestBody;
+    const value: unknown = await req.json();
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+    }
+    const body = value as Record<string, unknown>;
+    return {
+      displayName: body.displayName,
+      profileSlug: body.profileSlug,
+      bio: body.bio,
+      websiteUrl: body.websiteUrl,
+      githubUrl: body.githubUrl,
+      linkedinUrl: body.linkedinUrl,
+    };
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }

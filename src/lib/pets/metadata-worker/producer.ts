@@ -7,17 +7,13 @@ import {
   createRelatedPetAnnotationProposalInputHash, createRelatedPetAnnotationSourceHash,
   getRelatedPetAnnotationProposalContract, listUnresolvedStrongRelations,
   parseRelatedPetAnnotationProposal, resolveRelatedPetAnnotation, type RelatedPetAnnotationInput,
-} from "@/lib/pets/related-pets-annotation-contract.mjs";
+} from "@/lib/pets/related/related-pets-annotation-contract.mjs";
 import {
   PET_VISION_SYSTEM_PROMPT, PET_VISION_USER_PROMPT, PET_VISION_RESPONSE_JSON_SCHEMA,
   parsePetVisionCaption, buildPetVisionCaptionText, createPetVisionCaptionEnvelope, createPetVisionCaptionSourceHash,
-} from "@/lib/pets/search-vision-contract";
-import { PET_VISION_FRAME_POLICY, type ExtractedPetVisionFrames } from "@/lib/pets/search-vision-frames";
+} from "@/lib/pets/search/search-vision-contract";
+import { PET_VISION_FRAME_POLICY, type ExtractedPetVisionFrames } from "@/lib/pets/search/search-vision-frames";
 import { METADATA_BUDGET_USD, METADATA_MAX_OUTPUT_TOKENS, metadataHash, metadataReserveUSD, type MetadataRequest } from "@/lib/pets/metadata-worker/ledger";
-
-export const LUMI_METADATA_PET_ID = "pet_c403f5c2bb2447ecacd554";
-export const LUMI_METADATA_SLUG = "generated-5b600685367151da-c403f5c2bb2447ecacd554";
-export const LUMI_SPRITESHEET_SHA256 = "353b3143b8d2e48501e555fa6be11bbf9e822cb50969f3cf4bf3b7c11184b940";
 export type MetadataPet = RelatedPetAnnotationInput & { id: string; status: string };
 type Content = { type: "input_text"; text: string } | { type: "input_image"; image_url: string; detail: "high" };
 
@@ -37,15 +33,6 @@ function budgetedRequest(stage: MetadataRequest["stage"], body: ReturnType<typeo
     part.type === "input_image" ? { ...part, image_url: "" } : part) }] };
   const inputTokenBound = Buffer.byteLength(JSON.stringify(textBody)) + 1024 + images * 16_384;
   return { stage, body, inputTokenBound, reservedUSD: metadataReserveUSD(inputTokenBound) };
-}
-
-export function prepareMetadataInputs(pet: MetadataPet, assetId: string, extracted: ExtractedPetVisionFrames) {
-  if (pet.id !== LUMI_METADATA_PET_ID || pet.slug !== LUMI_METADATA_SLUG ||
-      !["pending", "approved"].includes(pet.status) || extracted.spriteVersion !== 2 ||
-      extracted.spritesheetSha256 !== LUMI_SPRITESHEET_SHA256 || extracted.frames.length !== 4) {
-    throw new Error("metadata_target_mismatch");
-  }
-  return prepareApprovalMetadataInputs(pet, assetId, extracted);
 }
 
 export function prepareApprovalMetadataInputs(pet: MetadataPet, assetId: string, extracted: ExtractedPetVisionFrames) {
@@ -78,7 +65,7 @@ export function prepareApprovalMetadataInputs(pet: MetadataPet, assetId: string,
   return { annotation, caption, contextHash, totalReserveUSD };
 }
 
-export function parseOpenAIAnnotation(value: unknown, slug = LUMI_METADATA_SLUG) {
+export function parseOpenAIAnnotation(value: unknown, slug: string) {
   const proposal = parseRelatedPetAnnotationProposal(value, OPENAI_ANNOTATION_PROPOSAL_REVISION);
   if (listUnresolvedStrongRelations({ slug, proposal }).length) {
     throw new Error("metadata_unresolved_strong_relation");

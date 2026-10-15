@@ -1,4 +1,4 @@
-import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related-pets-limits";
+import { RELATED_PETS_SNAPSHOT_DEPTH } from "@/lib/pets/related/related-pets-limits";
 
 export type RelatedPetContext = {
   sourceSlug: string;

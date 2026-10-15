@@ -3,7 +3,7 @@
 import {useEffect,useState,useSyncExternalStore} from "react";
 import {Button,Label,Text} from "@gravity-ui/uikit";
 import {withBasePath} from "@/lib/base-path";
-import {HISTORY_PREFIX,parseHistoryGeneration,readGenerationHistory,type GenerationHistoryEntry,type HistoryGeneration} from "@/lib/pets/generation/history";
+import {HISTORY_PREFIX,parseHistoryGeneration,readGenerationHistory,pruneGenerationHistory,type GenerationHistoryEntry,type HistoryGeneration} from "@/lib/pets/generation/history";
 import "./MyGenerations.scss";
 
 type Result={generation?:HistoryGeneration; unavailable?:boolean; failedReads:number};
@@ -41,6 +41,7 @@ function BrowserGenerations({onRefresh}:{onRefresh:()=>void}){
   const [history]=useState(()=>readGenerationHistory());
   const [rows,setRows]=useState<Row[]>(()=>history.entries.map(entry=>({...entry,failedReads:0,expired:entry.expiresAt<=Date.now()})));
   useEffect(()=>{
+    pruneGenerationHistory();
     let disposed=false,timer:ReturnType<typeof setTimeout>|undefined,round:AbortController|undefined;
     const cache=new Map<string,Result>();
     async function refresh(){

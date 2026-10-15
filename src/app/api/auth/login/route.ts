@@ -18,7 +18,11 @@ export async function POST(req: Request): Promise<Response> {
 
   let body: { email?: unknown; password?: unknown };
   try {
-    body = (await req.json()) as typeof body;
+    const value: unknown = await req.json();
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+    }
+    body = value as Record<string, unknown>;
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }

@@ -2,16 +2,16 @@ import {
   OPENAI_ANNOTATION_REVISION,
   OPENAI_CAPTION_REVISION,
 } from "@/lib/pets/metadata-sources";
-import { RELATED_PETS_ANNOTATION_REVISION } from "@/lib/pets/related-pets-annotation-contract.mjs";
+import { RELATED_PETS_ANNOTATION_REVISION } from "@/lib/pets/related/related-pets-annotation-contract.mjs";
 import {
   getRelatedPetAnnotation, listRelatedPetAnnotations,
   type StoredRelatedPetAnnotation,
-} from "@/lib/pets/related-pets-annotations-repository";
+} from "@/lib/pets/related/related-pets-annotations-repository";
 import {
   getPetSearchCaption, listPetSearchCaptions,
   type StoredPetSearchCaption,
-} from "@/lib/pets/search-captions-repository";
-import { PET_VISION_CAPTION_REVISION } from "@/lib/pets/search-vision-contract";
+} from "@/lib/pets/search/search-captions-repository";
+import { PET_VISION_CAPTION_REVISION } from "@/lib/pets/search/search-vision-contract";
 
 // Return candidates; callers validate freshness before selecting a source.
 export async function getPetAnnotationCandidates(revision: string, slug: string): Promise<StoredRelatedPetAnnotation[]> {

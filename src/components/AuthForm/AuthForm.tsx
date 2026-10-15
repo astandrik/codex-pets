@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Alert, Button, Card, Flex, Text, TextInput } from "@gravity-ui/uikit";
 
 import { withBasePath } from "@/lib/base-path";
+import { readJsonResponse } from "@/lib/read-json-response";
 import { trackGoal } from "@/lib/metrics/yandex";
 import "./AuthForm.scss";
 
@@ -155,10 +156,5 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!response.ok) {
-    throw new Error(data.message ?? data.error ?? `Request failed ${response.status}`);
-  }
-  return data as T;
+  return (await readJsonResponse(response)) as T;
 }

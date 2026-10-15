@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Container, TextInput } from "@gravity-ui/uikit";
 import { StatePreview } from "@/components/StatePreview/StatePreview";
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
@@ -48,7 +48,7 @@ function GeneratedPetPreviewContent({ generationId }: { generationId: string }) 
   const checkSequence = useRef(0);
   const submissionController = useRef<AbortController | null>(null);
 
-  function rememberSubmission(receipt: Submission) {
+  const rememberSubmission = useCallback((receipt: Submission) => {
     savedSubmission.current = receipt;
     checkSequence.current++;
     setSubmission(receipt);
@@ -56,7 +56,7 @@ function GeneratedPetPreviewContent({ generationId }: { generationId: string }) 
     setSlugCheck(null);
     setSlugNotice("");
     setSubmissionError("");
-  }
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -77,10 +77,7 @@ function GeneratedPetPreviewContent({ generationId }: { generationId: string }) 
         setGeneration(body.generation);
         rememberGeneration(generationId,body.generation.expiresAt);
         if (body.generation.submission) {
-          savedSubmission.current = body.generation.submission;
-          checkSequence.current++;
-          setSubmission(body.generation.submission); setSlug(body.generation.submission.slug);
-          setSlugCheck(null); setSlugNotice(""); setSubmissionError("");
+          rememberSubmission(body.generation.submission);
         } else if (body.generation.pet && !initializedSlug.current && !editedSlug.current && !savedSubmission.current) {
           initializedSlug.current = true;
           setSlug(suggestPublicPetSlug(body.generation.pet.displayName));
@@ -99,7 +96,7 @@ function GeneratedPetPreviewContent({ generationId }: { generationId: string }) 
       controller.abort(); submissionController.current?.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [generationId]);
+  }, [generationId, rememberSubmission]);
 
   useEffect(() => {
     const sequence = ++checkSequence.current;
@@ -127,9 +124,7 @@ function GeneratedPetPreviewContent({ generationId }: { generationId: string }) 
         if (!current()) return;
         const receipt = readSubmission(result.submission);
         if (receipt) {
-          savedSubmission.current = receipt;
-          checkSequence.current++;
-          setSubmission(receipt); setSlug(receipt.slug); setSlugCheck(null); setSlugNotice(""); setSubmissionError("");
+          rememberSubmission(receipt);
           return;
         }
         if (result.available === true && result.suggestedSlug === slug) {
@@ -144,7 +139,7 @@ function GeneratedPetPreviewContent({ generationId }: { generationId: string }) 
       }
     }, 300);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [generation?.status, generationId, slug, submission, unavailable, checkAttempt]);
+  }, [generation?.status, generationId, slug, submission, unavailable, checkAttempt, rememberSubmission]);
 
   function updateSlug(value: string) {
     if (savedSubmission.current || pendingSubmission.current) return;

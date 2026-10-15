@@ -7,7 +7,7 @@ import { createAgentPet } from "@/lib/pets/agent-dto";
 import {
   formatRelatedPetDescription,
   type RelatedPetCandidate,
-} from "@/lib/pets/related-pets";
+} from "@/lib/pets/related/related-pets";
 import type { PublicPet } from "@/lib/pets/types";
 
 export function buildPetMarkdown(

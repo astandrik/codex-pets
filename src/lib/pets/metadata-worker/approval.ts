@@ -3,9 +3,9 @@ import { join, isAbsolute } from "node:path";
 import { createAMSOpenAIJSONTransport } from "@/lib/openai-ams";
 import { getPetAssetIdFromSpritesheetUrl } from "@/lib/pets/asset-urls";
 import { readPetSpritesheetAsset } from "@/lib/pets/assets-repository";
-import { extractPetVisionFrames } from "@/lib/pets/search-vision-frames";
-import { getRelatedPetAnnotation, upsertRelatedPetAnnotation } from "@/lib/pets/related-pets-annotations-repository";
-import { getPetSearchCaption, upsertPetSearchCaption } from "@/lib/pets/search-captions-repository";
+import { extractPetVisionFrames } from "@/lib/pets/search/search-vision-frames";
+import { getRelatedPetAnnotation, upsertRelatedPetAnnotation } from "@/lib/pets/related/related-pets-annotations-repository";
+import { getPetSearchCaption, upsertPetSearchCaption } from "@/lib/pets/search/search-captions-repository";
 import { OPENAI_ANNOTATION_REVISION, OPENAI_CAPTION_REVISION, OPENAI_METADATA_MODEL_URI,
   OPENAI_ANNOTATION_PROPOSAL_REVISION, selectFreshAnnotationMetadata, selectFreshCaptionMetadata } from "@/lib/pets/metadata-sources";
 import { MetadataLedger } from "@/lib/pets/metadata-worker/ledger";

@@ -3,7 +3,6 @@ import { readDailyQuota, consumeDailyQuota } from "@/lib/pets/generation/quota-g
 import { parsePublicPetSlug } from "@/lib/pets/public-slug";
 import { findAvailablePublicPetSlug, PublicPetSlugUnavailableError } from "@/lib/pets/public-slug-allocation";
 import { createHash, randomUUID } from "node:crypto";
-import JSZip from "jszip";
 import type { AppPrincipal } from "@/lib/auth/session";
 import { assetUrl } from "@/lib/pets/asset-urls";
 import { validateUploadedPackage } from "@/lib/pets/package";
@@ -65,7 +64,7 @@ export function createGenerationService(store: GenerationStore, options: {
     const now = clock();
     return store.transaction(async tx => {
       const state = await scheduler(tx, now);
-      const current = await ownedJob(tx, state, job, now);
+      const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
       if (!options.enabled()) throw new GenerationError("generation_disabled");
       if (state.pauseReason) throw new GenerationError("generation_paused");
       if (names.some(name => current.stages.some(stage => stage.name === name && stage.status === "completed"))) throw new GenerationError("stage_already_completed");
@@ -207,8 +206,6 @@ export function createGenerationService(store: GenerationStore, options: {
           const assets = { assetId, petJsonBuffer, spritesheetBuffer, zipBuffer, spritesheetExt: "webp" as const };
           const validation = await validateUploadedPackage(assets);
           if (!validation.ok || validation.value.petJson.spriteVersionNumber !== 2) throw new GenerationError("invalid_generated_package");
-          const zip = await JSZip.loadAsync(zipBuffer);
-          if (!(await zip.file("pet.json")!.async("nodebuffer")).equals(petJsonBuffer) || !(await zip.file("spritesheet.webp")!.async("nodebuffer")).equals(spritesheetBuffer)) throw new GenerationError("invalid_generated_package");
           const base = publicSlug ?? (slugify(validation.value.petJson.id) || "generated-pet") + "-" + suffix;
           const { suggestedSlug: slug } = await findSubmissionSlug(base, tx);
           const submission = { petId: "pet_" + suffix, slug, submittedAt: new Date(now).toISOString() };
@@ -285,7 +282,7 @@ export function createGenerationService(store: GenerationStore, options: {
       const now = clock();
       return store.transaction(async tx => {
         const state = await scheduler(tx, now);
-        const current = await ownedJob(tx, state, job, now);
+        const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
         const updated = { ...current, leaseUntil: now + LEASE_MS };
         await tx.putJob(updated);
         state.active = { ...state.active, id: job.id, owner: job.worker, until: now + LEASE_MS };
@@ -301,7 +298,7 @@ export function createGenerationService(store: GenerationStore, options: {
       const now = clock();
       await store.transaction(async tx => {
         const state = await scheduler(tx, now);
-        const current = await ownedJob(tx, state, job, now);
+        const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
         if (!options.enabled()) throw new GenerationError("generation_disabled");
         if (state.pauseReason) throw new GenerationError("generation_paused");
         if (current.status !== "generating" || current.stages.find(stage => stage.name === name)?.status !== "inflight") throw new GenerationError("invalid_stage");
@@ -310,7 +307,7 @@ export function createGenerationService(store: GenerationStore, options: {
     },
     async recordRowAttemptFailure(job:GenerationJob,name:StageName,attempt:1|2,error:GenerationError){
       const now=clock();return store.transaction(async tx=>{
-        const state=await scheduler(tx,now),current=await ownedJob(tx,state,job,now);
+        const state=await scheduler(tx,now),current=await requireJobWithActiveWorkerLease(tx,state,job,now);
         if(current.status!=="generating"||current.stages.find(stage=>stage.name===name)?.status!=="inflight")throw new GenerationError("invalid_stage");
         const entry:RowAttemptLog=rowAttemptLogSchema.parse({stage:name,attempt,at:now,code:error.code,diagnostic:error.diagnostic,cliCause:error.cliCause,details:error.details});
         const logs=current.rowAttemptLogs??[];
@@ -321,7 +318,7 @@ export function createGenerationService(store: GenerationStore, options: {
     },
     async beginRowRetry(job:GenerationJob,name:StageName){
       const now=clock(),token=randomUUID();return store.transaction(async tx=>{
-        const state=await scheduler(tx,now),current=await ownedJob(tx,state,job,now);
+        const state=await scheduler(tx,now),current=await requireJobWithActiveWorkerLease(tx,state,job,now);
         if(!options.enabled())throw new GenerationError("generation_disabled");
         if(state.pauseReason)throw new GenerationError("generation_paused");
         const first=current.rowAttemptLogs?.find(log=>log.stage===name&&log.attempt===1);
@@ -333,7 +330,7 @@ export function createGenerationService(store: GenerationStore, options: {
     },
     async authorizeRowRetry(job:GenerationJob,name:StageName,token:string){
       const now=clock();return store.transaction(async tx=>{
-        const state=await scheduler(tx,now),current=await ownedJob(tx,state,job,now);
+        const state=await scheduler(tx,now),current=await requireJobWithActiveWorkerLease(tx,state,job,now);
         if(!options.enabled())throw new GenerationError("generation_disabled");
         if(state.pauseReason)throw new GenerationError("generation_paused");
         const retry=current.rowRetries?.find(item=>item.stage===name);
@@ -348,7 +345,7 @@ export function createGenerationService(store: GenerationStore, options: {
       const hash = createHash("sha256").update(bytes).digest("hex");
       return store.transaction(async tx => {
         const state = await scheduler(tx, now);
-        const current = await ownedJob(tx, state, job, now);
+        const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
         const index = current.stages.findIndex(stage => stage.name === name);
         if (index < 0) throw new GenerationError("invalid_stage");
         if (current.stages[index].status === "completed") {
@@ -368,7 +365,7 @@ export function createGenerationService(store: GenerationStore, options: {
     },
     async beginCardMetadata(job:GenerationJob,requestHash:string){
       const now=clock();return store.transaction(async tx=>{
-        const state=await scheduler(tx,now),current=await ownedJob(tx,state,job,now);
+        const state=await scheduler(tx,now),current=await requireJobWithActiveWorkerLease(tx,state,job,now);
         if(!options.enabled())throw new GenerationError("generation_disabled");
         if(state.pauseReason)throw new GenerationError("generation_paused");
         if(current.status!=="processing"||current.cardMetadata?.state!=="pending"||!/^[a-f0-9]{64}$/.test(requestHash))throw new GenerationError("metadata_already_started");
@@ -379,7 +376,7 @@ export function createGenerationService(store: GenerationStore, options: {
     },
     async authorizeCardMetadata(job:GenerationJob){
       const now=clock();return store.transaction(async tx=>{
-        const state=await scheduler(tx,now),current=await ownedJob(tx,state,job,now);
+        const state=await scheduler(tx,now),current=await requireJobWithActiveWorkerLease(tx,state,job,now);
         if(!options.enabled())throw new GenerationError("generation_disabled");
         if(state.pauseReason)throw new GenerationError("generation_paused");
         if(current.status!=="processing"||current.cardMetadata?.state!=="inflight"||current.cardMetadata.requestHash!==job.cardMetadata?.requestHash)throw new GenerationError("metadata_already_started");
@@ -390,7 +387,7 @@ export function createGenerationService(store: GenerationStore, options: {
       const fields=normalizeCardMetadata(result.fields),now=clock();
       if(!/^[a-f0-9]{64}$/.test(result.responseHash)||![result.costUsd,result.inputTokens,result.outputTokens].every(n=>Number.isFinite(n)&&n>=0))throw new GenerationError("metadata_unavailable");
       return store.transaction(async tx=>{
-        const state=await scheduler(tx,now),current=await ownedJob(tx,state,job,now),card=current.cardMetadata;
+        const state=await scheduler(tx,now),current=await requireJobWithActiveWorkerLease(tx,state,job,now),card=current.cardMetadata;
         if(card?.state==="completed"&&card.responseHash===result.responseHash)return current;
         if(current.status!=="processing"||card?.state!=="inflight"||card.requestHash!==job.cardMetadata?.requestHash)throw new GenerationError("metadata_already_started");
         await recordStageCost(tx,job.id,now,{costUsd:result.costUsd},"card");
@@ -402,7 +399,7 @@ export function createGenerationService(store: GenerationStore, options: {
     async failCardMetadata(job:GenerationJob,code:string){
       const error:NonNullable<CardMetadataRecord["error"]>=code==="provider_rejected"||code==="outcome_unknown"||code==="budget_exhausted"||code==="generation_disabled"?code:"metadata_unavailable";
       const now=clock();return store.transaction(async tx=>{
-        const state=await scheduler(tx,now),current=await ownedJob(tx,state,job,now),card=current.cardMetadata;
+        const state=await scheduler(tx,now),current=await requireJobWithActiveWorkerLease(tx,state,job,now),card=current.cardMetadata;
         if(!card||current.status!=="processing")throw new GenerationError("metadata_already_started");
         if(card.state==="completed"||card.state==="failed")return current;
         await recordStageCost(tx,job.id,now,error==="outcome_unknown"?undefined:{costUsd:0},"card");
@@ -415,7 +412,7 @@ export function createGenerationService(store: GenerationStore, options: {
       const now = clock();
       return store.transaction(async (tx) => {
         const state = await scheduler(tx, now);
-        const current = await ownedJob(tx, state, job, now);
+        const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
         if (current.status === "processing") return current;
         if (current.status !== "generating") throw new GenerationError("stale_worker");
         if (current.pipelineVersion === 2 && (current.stages.length !== STAGE_NAMES.length || current.stages.some((stage, index) => stage.status !== "completed" || stage.name !== STAGE_NAMES[index]))) throw new GenerationError("invalid_stage");
@@ -431,7 +428,7 @@ export function createGenerationService(store: GenerationStore, options: {
       const now = clock();
       await store.transaction(async (tx) => {
         const state = await scheduler(tx, now);
-        const current = await ownedJob(tx, state, job, now);
+        const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
         if (current.status !== "processing") throw new GenerationError("stale_worker");
         if(current.cardMetadata&&["pending","inflight"].includes(current.cardMetadata.state))throw new GenerationError("metadata_not_prepared");
         for (const [kind, bytes] of Object.entries(files)) await tx.putArtifact(job.id, kind, bytes, job.expiresAt);
@@ -445,7 +442,7 @@ export function createGenerationService(store: GenerationStore, options: {
       const now = clock();
       await store.transaction(async (tx) => {
         const state = await scheduler(tx, now);
-        const current = await ownedJob(tx, state, job, now);
+        const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
         const diagnostic = readProviderFailure(providerFailure);
         const failure = readFailureDiagnostic(failureDiagnostic);
         const stages = stageDiagnostics.slice(0,12).flatMap(entry=>{
@@ -482,7 +479,7 @@ export function createGenerationService(store: GenerationStore, options: {
   };
 }
 
-async function ownedJob(tx: GenerationTransaction, state: Scheduler, job: GenerationJob, now: number) {
+async function requireJobWithActiveWorkerLease(tx: GenerationTransaction, state: Scheduler, job: GenerationJob, now: number) {
   const current = await tx.getJob(job.id);
   if (!current || current.expiresAt <= now || current.worker !== job.worker || state.active?.id !== job.id || state.active.owner !== job.worker || state.active.until <= now) throw new GenerationError("stale_worker");
   return current;

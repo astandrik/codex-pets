@@ -3,11 +3,11 @@ import { YANDEX_METRIKA_ID } from "@/lib/metrics/yandex";
 import type {
   PetSearchVisualMode,
   PetVisualSearchFallbackReason,
-} from "@/lib/pets/search-config";
+} from "@/lib/pets/search/search-config";
 import type {
   PetSearchFallbackReason,
   PetSearchResultMode,
-} from "@/lib/pets/search-service";
+} from "@/lib/pets/search/search-service";
 
 const YANDEX_COLLECT_URL = "https://mc.yandex.ru/collect";
 const MCP_TOOL_CALL_GOAL = "mcp_tool_call";

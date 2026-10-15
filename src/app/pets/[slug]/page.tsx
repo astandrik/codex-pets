@@ -38,8 +38,8 @@ import { listPublicUserProfilesByIds } from "@/lib/auth/repository";
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import { serializeJsonLd } from "@/lib/json-ld";
 import { createAgentPet } from "@/lib/pets/agent-dto";
-import { getApprovedResolvedRelatedPets } from "@/lib/pets/related-pets-server";
-import { RELATED_PETS_PAGE_LIMIT } from "@/lib/pets/related-pets-limits";
+import { getApprovedResolvedRelatedPets } from "@/lib/pets/related/related-pets-server";
+import { RELATED_PETS_PAGE_LIMIT } from "@/lib/pets/related/related-pets-limits";
 import { getPetBySlug, getPetMetrics } from "@/lib/pets/repository";
 import type { ApprovalStatus } from "@/lib/pets/types";
 import {

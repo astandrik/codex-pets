@@ -1,7 +1,7 @@
 import {
   RELATED_PETS_DESCRIPTION_DOCUMENT_REVISION,
   RELATED_PETS_DESCRIPTION_QUERY_REVISION,
-} from "../../src/lib/pets/related-pets-semantics.mjs";
+} from "../../src/lib/pets/related/related-pets-semantics.mjs";
 
 export const PET_SEARCH_BACKFILL_REVISIONS = {
   "yandex-text-search-2026-07": {
@@ -53,13 +53,12 @@ export const PET_VISUAL_BACKFILL_REVISIONS = {
 };
 
 export function requirePetSearchBackfillRevision(revision) {
-  const definition = PET_SEARCH_BACKFILL_REVISIONS[revision];
-  if (!definition) {
+  if (!Object.hasOwn(PET_SEARCH_BACKFILL_REVISIONS, revision)) {
     throw new Error(
       "PET_SEARCH_MODEL_REVISION must name a supported additive search revision.",
     );
   }
-  return definition;
+  return PET_SEARCH_BACKFILL_REVISIONS[revision];
 }
 
 export function createEmbeddingRequest({ folderId, definition, text }) {

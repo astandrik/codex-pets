@@ -16,12 +16,31 @@ export function assertGenerationOrigin(request: Request) {
 
 export function generationHttpError(error: unknown, admission = false) {
   const code = error instanceof GenerationError ? error.code : "generation_unavailable";
-  const status = admission && code === "invalid_origin" ? 403 : admission && code === "body_too_large" ? 413 : admission && code === "invalid_argument" ? 400 : ["request_id_conflict","generation_not_completed","metadata_conflict","metadata_locked"].includes(code) ? 409 : code === "invalid_generated_package" ? 422 : ["rate_limited", "budget_exhausted", "queue_full"].includes(code) ? 429 : code === "generation_expired" ? 410 : code === "not_found" || code === "invalid_argument" ? 404 : 503;
+  const status = generationHttpStatus(code, admission);
   const detail = publicGenerationError(code, error instanceof GenerationError ? error.providerFailure : undefined, error instanceof GenerationError ? error.limitScope : undefined);
   return Response.json({ ...buildApiErrorBody(detail.code, { message: detail.message, hint: detail.hint }),
     ...(detail.limitScope ? { limitScope: detail.limitScope } : {}),
     ...(error instanceof GenerationError && error.retryAt ? { retryAt: error.retryAt } : {}),
   }, { status, headers: GENERATION_HEADERS });
+}
+
+function generationHttpStatus(code: string, admission: boolean): number {
+  switch (code) {
+    case "invalid_origin": return admission ? 403 : 503;
+    case "body_too_large": return admission ? 413 : 503;
+    case "invalid_argument": return admission ? 400 : 404;
+    case "request_id_conflict":
+    case "generation_not_completed":
+    case "metadata_conflict":
+    case "metadata_locked": return 409;
+    case "invalid_generated_package": return 422;
+    case "rate_limited":
+    case "budget_exhausted":
+    case "queue_full": return 429;
+    case "generation_expired": return 410;
+    case "not_found": return 404;
+    default: return 503;
+  }
 }
 
 export async function readGenerationJson(request:Request,maxBytes:number):Promise<unknown>{

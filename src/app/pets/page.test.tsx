@@ -12,7 +12,7 @@ const navigationMocks = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock("@/lib/pets/search-runtime", () => ({
+vi.mock("@/lib/pets/search/search-runtime", () => ({
   searchApprovedPets: searchMocks.searchApprovedPets,
 }));
 vi.mock("next/navigation", () => navigationMocks);

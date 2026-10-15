@@ -3,6 +3,7 @@ import sharp from "sharp";
 
 import { readSafeCardSlug } from "@/lib/pets/agent-dto";
 import { readPetSpritesheetAsset } from "@/lib/pets/assets-repository";
+import { getPetAssetIdFromSpritesheetUrl } from "@/lib/pets/asset-urls";
 import { getApprovedPetBySlug } from "@/lib/pets/repository";
 import {
   readPetAnimationState,
@@ -74,7 +75,7 @@ async function renderAnimatedCard(
   pet: PublicPet,
   state: PetAnimationState,
 ): Promise<Buffer> {
-  const assetId = assetIdFromSpritesheetUrl(pet.spritesheetUrl);
+  const assetId = getPetAssetIdFromSpritesheetUrl(pet.spritesheetUrl);
   if (!assetId) {
     throw new Error("Unsupported spritesheet URL.");
   }
@@ -163,26 +164,6 @@ async function renderCardFrame(input: {
 
 function readCardMode(value: string | null): CardMode {
   return value === "card" ? "card" : "sprite";
-}
-
-function assetIdFromSpritesheetUrl(value: string): string | null {
-  const pathname = getPathname(value);
-  const match = pathname.match(
-    /\/api\/assets\/([^/]+)\/spritesheet\.(?:webp|png)$/,
-  );
-  return match ? decodeURIComponent(match[1]) : null;
-}
-
-function getPathname(value: string): string {
-  if (!value.startsWith("http://") && !value.startsWith("https://")) {
-    return value;
-  }
-
-  try {
-    return new URL(value).pathname;
-  } catch {
-    return value;
-  }
 }
 
 function truncateText(value: string, maxLength: number): string {

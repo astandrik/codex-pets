@@ -1,3 +1,4 @@
+import { PetAssetNotFoundError } from "@/lib/pets/asset-errors";
 import type { YdbQueryExecutor } from "@/lib/ydb/client";
 import { TypedValues, withSession } from "@/lib/ydb/client";
 import { bytesAt, rowsFromResult, textAt } from "@/lib/ydb/result";
@@ -90,7 +91,7 @@ export async function readPetAssetFile(input: {
 
   const contentType = ASSET_CONTENT_TYPES.get(input.filename);
   if (!contentType) {
-    throw new Error("Unsupported asset file.");
+    throw new PetAssetNotFoundError("Unsupported asset file.");
   }
 
   const { row, spritesheetExt } = await readAssetRow(input.assetId);
@@ -104,7 +105,7 @@ export async function readPetAssetFile(input: {
     return { buffer: bytesAt(row, 1), contentType };
   }
 
-  throw new Error("Asset variant mismatch.");
+  throw new PetAssetNotFoundError("Asset variant mismatch.");
 }
 
 export async function readPetSpritesheetAsset(input: {
@@ -146,7 +147,7 @@ LIMIT 1;
 
   const row = rowsFromResult(result)[0];
   if (!row) {
-    throw new Error("Asset not found.");
+    throw new PetAssetNotFoundError("Asset not found.");
   }
 
   return {
