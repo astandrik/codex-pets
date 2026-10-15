@@ -6,13 +6,13 @@ import {
   buildBestCodexPetsGuideMarkdown,
 } from "@/lib/guides/best-codex-pets";
 import { loadGuidePets } from "@/lib/guides/load-guide-pets";
-import { listApprovedPets } from "@/lib/pets/repository";
+import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const getApprovedPetsSnapshot = unstable_cache(
-  async () => listApprovedPets(),
+  async () => listApprovedPetsForSearch(),
   [
     "best-codex-pets-guide-markdown",
     process.env.CODEX_PETS_DATA_SOURCE?.trim() || "ydb",
