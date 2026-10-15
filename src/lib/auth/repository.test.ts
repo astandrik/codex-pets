@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EmailAlreadyExistsError } from "@/lib/auth/errors";
-import { createSessionForUser, createUser, deleteSessionById, getSessionById, updateUserProfile } from "@/lib/auth/repository";
+import { createSessionForUser, createUser, deleteSessionById, getSessionById, normalizeEmail, normalizeProfileSlug, updateUserProfile } from "@/lib/auth/repository";
 
 const session = vi.hoisted(() => ({
   beginTransaction: vi.fn(), executeQuery: vi.fn(), commitTransaction: vi.fn(), rollbackTransaction: vi.fn(),
@@ -121,5 +121,35 @@ describe("auth persistence contracts", () => {
     expect(deleteSql).toContain("WHERE session_id = $session_id");
     expect(deleteParams.$session_id.value.textValue).toBe(created.sessionId);
     await expect(getSessionById(created.sessionId)).resolves.toBeNull();
+  });
+});
+
+describe("account input normalization", () => {
+  it("preserves trimming, casing and the legacy domain-dot grammar", () => {
+    expect(normalizeEmail(" \tUser+Tag@Example.COM\n")).toEqual({
+      email: "User+Tag@Example.COM", emailLower: "user+tag@example.com",
+    });
+    for (const email of ["a@..b", "a@b..", "a@...", "a@b.c.", "ü@bücher.de"]) {
+      expect(normalizeEmail(email)).toEqual({ email, emailLower: email });
+    }
+  });
+
+  it("rejects malformed email and the long CodeQL backtracking input", () => {
+    for (const value of ["", "a@b", "a@.b", "a@b.", "a @b.c", "a@b.\nc", "a@b.c@d", "!@!." + "!.".repeat(8_000) + "@"]) {
+      expect(normalizeEmail(value)).toBeNull();
+    }
+  });
+
+  it("preserves slug collapse, edge trimming, truncation and reserved names", () => {
+    for (const [value, expected] of [
+      ["--A--B--", "a-b"],
+      [" O'Ne`il__Pet ", "oneil-pet"],
+      ["a" + "-".repeat(80_000) + "b", "a-b"],
+      ["a".repeat(39) + "-z", "a".repeat(39)],
+      ["a".repeat(40) + "-z", "a".repeat(40)],
+      ["---", null], ["ab", null], [" ADMIN ", null],
+    ] as const) {
+      expect(normalizeProfileSlug(value)).toBe(expected);
+    }
   });
 });

@@ -62,7 +62,6 @@ export type PublicUserReference = Pick<
   "userId" | "displayName" | "profileSlug" | "avatarUrl"
 >;
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PROFILE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/;
 const SESSION_TTL_DAYS = 30;
 const PROFILE_SLUG_CREATE_ATTEMPTS = 100;
@@ -89,7 +88,13 @@ export function normalizeEmail(value: string): {
   emailLower: string;
 } | null {
   const email = value.trim();
-  if (!email || !EMAIL_PATTERN.test(email)) {
+  const at = email.indexOf("@");
+  // The legacy grammar permits dots in both domain segments.
+  const dot = email.indexOf(".", at + 2);
+  if (
+    at < 1 || at !== email.lastIndexOf("@") ||
+    dot === -1 || dot === email.length - 1 || /\s/.test(email)
+  ) {
     return null;
   }
   return { email, emailLower: email.toLowerCase() };
@@ -101,9 +106,9 @@ export function normalizeProfileSlug(value: string): string | null {
     .toLowerCase()
     .replace(/['`]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    .replace(/^-|-$/g, "")
     .slice(0, 40)
-    .replace(/-+$/g, "");
+    .replace(/-$/, "");
 
   if (!PROFILE_SLUG_PATTERN.test(slug) || RESERVED_PROFILE_SLUGS.has(slug)) {
     return null;
