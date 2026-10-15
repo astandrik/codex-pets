@@ -19,7 +19,7 @@ import {
 } from "@/lib/guides/best-codex-pets";
 import { loadGuidePets } from "@/lib/guides/load-guide-pets";
 import { serializeJsonLd } from "@/lib/json-ld";
-import { listApprovedPets } from "@/lib/pets/repository";
+import { listApprovedPetsForSearch } from "@/lib/pets/repository";
 import {
   getOpenGraphImages,
   getPageViewOtherMetadata,
@@ -60,7 +60,7 @@ export const metadata: Metadata = {
 };
 
 const getApprovedPetsSnapshot = unstable_cache(
-  async () => listApprovedPets(),
+  async () => listApprovedPetsForSearch(),
   [
     "best-codex-pets-guide",
     process.env.CODEX_PETS_DATA_SOURCE?.trim() || "ydb",

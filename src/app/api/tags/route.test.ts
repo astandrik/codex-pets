@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { decode } from "@toon-format/toon";
 
 const repositoryMocks = vi.hoisted(() => ({
-  listApprovedPets: vi.fn(),
+  listApprovedPetsForSearch: vi.fn(),
 }));
 
 vi.mock("@/lib/pets/repository", () => ({
-  listApprovedPets: repositoryMocks.listApprovedPets,
+  listApprovedPetsForSearch: repositoryMocks.listApprovedPetsForSearch,
+  listApprovedPets: async () =>
+    (await repositoryMocks.listApprovedPetsForSearch()).slice(0, 200),
 }));
 
 const basePet = {
@@ -37,7 +39,7 @@ describe("GET /api/tags", () => {
   });
 
   it("returns tag counts for approved pets", async () => {
-    repositoryMocks.listApprovedPets.mockResolvedValueOnce([
+    repositoryMocks.listApprovedPetsForSearch.mockResolvedValueOnce([
       basePet,
       {
         ...basePet,
@@ -76,12 +78,12 @@ describe("GET /api/tags", () => {
           tags: ["space", "terminal"],
         },
       ];
-      repositoryMocks.listApprovedPets.mockResolvedValueOnce(pets);
+      repositoryMocks.listApprovedPetsForSearch.mockResolvedValueOnce(pets);
       const { GET: getJson } = await import("@/app/api/tags/route");
       const jsonResponse = await getJson();
       const jsonBody = await jsonResponse.json();
 
-      repositoryMocks.listApprovedPets.mockResolvedValueOnce(pets);
+      repositoryMocks.listApprovedPetsForSearch.mockResolvedValueOnce(pets);
       const { GET: getToon } = await import("@/app/api/tags.toon/route");
       const toonResponse = await getToon();
       const toonBody = decode(await toonResponse.text());
@@ -95,4 +97,32 @@ describe("GET /api/tags", () => {
       vi.useRealTimers();
     }
   });
+
+  it.each(["json", "toon"])(
+    "counts tags from pets beyond the first 200 in %s",
+    async (format) => {
+      const pets = Array.from({ length: 201 }, (_, index) => ({
+        ...basePet,
+        slug: `pet-${index}`,
+        tags: index === 200 ? ["space", "tail-only"] : ["space"],
+      }));
+      repositoryMocks.listApprovedPetsForSearch.mockResolvedValueOnce(pets);
+      const { GET } = format === "json"
+        ? await import("@/app/api/tags/route")
+        : await import("@/app/api/tags.toon/route");
+
+      const response = await GET();
+      const body = format === "json"
+        ? await response.json()
+        : decode(await response.text());
+
+      expect(body).toMatchObject({
+        total: 2,
+        tags: [
+          { name: "space", count: 201 },
+          { name: "tail-only", count: 1 },
+        ],
+      });
+    },
+  );
 });

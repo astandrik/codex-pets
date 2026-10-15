@@ -6,6 +6,14 @@ Sensitive host-specific details, private paths, secrets, and one-off operational
 commands should live outside git, for example under a gitignored `private/`
 directory.
 
+## Current production runbook (local)
+
+Start with `private/codex-pets-production-runbook.md` for the current production
+SSH route, service inventory, immutable image rollout, verification, and rollback.
+The runbook and its pinned SSH host keys are intentionally gitignored. The old
+`private/111.88.152.4-codex-pets-runbook.md` and its deployment script describe
+a historical host and must not be used for the current production deployment.
+
 ## Topology
 
 The current application is designed to run with:

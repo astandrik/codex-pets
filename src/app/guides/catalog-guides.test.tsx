@@ -5,9 +5,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import McpGuide from "@/app/guides/codex-pets-mcp-integration-guide/page";
 import OpenPetsGuide from "@/app/guides/codex-pets-vs-openpets/page";
 import VsCodeGuide from "@/app/guides/codex-pets-vs-vscode-pets/page";
+import BestPetsGuide from "@/app/guides/best-codex-pets-for-ai-coding-agents/page";
 import { GET as mcpMarkdown } from "@/app/guides/codex-pets-mcp-integration-guide.md/route";
 import { GET as openPetsMarkdown } from "@/app/guides/codex-pets-vs-openpets.md/route";
 import { GET as vsCodeMarkdown } from "@/app/guides/codex-pets-vs-vscode-pets.md/route";
+import { GET as bestPetsMarkdown } from "@/app/guides/best-codex-pets-for-ai-coding-agents.md/route";
 import { MCP_GUIDE_QUERY_EXAMPLES, METHODOLOGY_RUN_DATE as mcpRunDate } from "@/lib/guides/codex-pets-mcp-integration";
 import { OPENPETS_QUERY_EXAMPLES, METHODOLOGY_RUN_DATE as openPetsRunDate } from "@/lib/guides/codex-pets-vs-openpets";
 import { VS_VSCODE_PETS_QUERY_EXAMPLES, METHODOLOGY_RUN_DATE as vsCodeRunDate } from "@/lib/guides/codex-pets-vs-vscode-pets";
@@ -15,7 +17,10 @@ import { formatGuideDate, GUIDE_AUTHOR_NAME } from "@/lib/guides/shared";
 import type { PublicPet } from "@/lib/pets/types";
 
 const catalog = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/pets/repository", () => ({ listApprovedPetsForSearch: catalog }));
+vi.mock("@/lib/pets/repository", () => ({
+  listApprovedPetsForSearch: catalog,
+  listApprovedPets: async () => (await catalog()).slice(0, 200),
+}));
 vi.mock("next/cache", () => ({ unstable_cache: (load: () => Promise<unknown>) => load }));
 
 const pets: PublicPet[] = Array.from({ length: 6 }, (_, index) => ({
@@ -81,4 +86,29 @@ it("links the MCP guide primary CTA to GET-able markdown instead of the POST end
   const header = container.querySelector(".page-section-header");
   expect(header?.querySelector('a[href="/mcp.md"]')?.textContent).toContain("MCP markdown");
   expect(header?.querySelector('a[href="/mcp"]')).toBeNull();
+});
+
+it("ranks a popular pet beyond the first 200 in both Best pets formats", async () => {
+  catalog.mockResolvedValue(Array.from({ length: 201 }, (_, index) => ({
+    ...pets[0],
+    id: `pet-${index}`,
+    slug: `pet-${index}`,
+    displayName: `Pet ${index}`,
+    tags: ["anime"],
+    likeCount: index === 200 ? 100 : 0,
+  })));
+
+  const container = document.createElement("div");
+  container.innerHTML = renderToStaticMarkup(await BestPetsGuide());
+  const links = Array.from(container.querySelectorAll("article h3 a"));
+  expect(links).toHaveLength(5);
+  expect(links[0].getAttribute("href")).toBe("/pets/pet-200");
+
+  const response = await bestPetsMarkdown();
+  const body = await response.text();
+  expect(body).toContain("Pet 200 is the first recommendation for anime");
+  const markdownSlugs = Array.from(body.matchAll(/^- \[.*?\]\(.*?\/pets\/([^)]*)\)/gm),
+    (match) => match[1]);
+  expect(markdownSlugs).toEqual(links.map((link) =>
+    link.getAttribute("href")?.replace("/pets/", "")));
 });
