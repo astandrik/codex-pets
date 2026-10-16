@@ -59,6 +59,27 @@ This scheduling change removes one image wave compared with six plus five rows;
 it is not a measured production speedup. All eleven calls may already be sent
 when one row fails, so a failed task can pay for five more rows than before.
 
+## Local extraction fallback
+
+After a normal extraction fails with a component-count error, the renderer can
+separate lightly touching poses in those failed strips. It uses projection to
+locate gaps, then follows a narrow contour through background and dark outlines.
+Successful strips and the saved stage images remain unchanged. This is local
+image processing: it never requests another image or reopens a failed job.
+
+Recovery rejects unrelated errors and warnings, more than 24 foreground pixels
+cut at any one boundary (also capped at 6% of the shorter adjacent pose's height), or total cuts above
+0.1% of foreground pixels. The resulting poses must have the expected count,
+substantial and comparable areas/heights, and positions consistent with the
+requested slots. These conservative checks cannot reconstruct occluded details.
+All candidate strips must pass before any derived raw strip is replaced.
+
+The renderer retries local extraction once, then runs the unchanged manifest,
+atlas and package checks. Missing poses and substantial overlap remain failures.
+Work is bounded to the existing eleven strips, at most 1536x512 pixels and eight
+frames per strip. Run the offline Python contracts with the pinned dependencies:
+`python3 -m unittest discover -s scripts/pet-spritegen -p 'test_*.py'`.
+
 ## One delayed provider retry
 
 A failed image stage with a captured RemoteDisconnected, IncompleteRead, HTTP 500
