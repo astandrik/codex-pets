@@ -1,6 +1,50 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Evaluate the literal prefixes and end anchors used by this robots policy.
+function allowsPath(path: string, allow: string[], disallow: string[]): boolean {
+  const matches = [
+    ...allow.map((pattern) => ({ pattern, allowed: true })),
+    ...disallow.map((pattern) => ({ pattern, allowed: false })),
+  ].filter(({ pattern }) => pattern.endsWith("$")
+    ? path === pattern.slice(0, -1)
+    : path.startsWith(pattern));
+  matches.sort((a, b) => b.pattern.replace(/\$$/, "").length - a.pattern.replace(/\$$/, "").length
+    || Number(b.allowed) - Number(a.allowed));
+  return matches[0]?.allowed ?? true;
+}
 
 describe("robots", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each(["", "/codex-pets"])(
+    "allows only canonical manifests within the API for base path %s",
+    async (basePath) => {
+      vi.resetModules();
+      vi.stubEnv("NEXT_PUBLIC_BASE_PATH", basePath);
+      const { default: robots } = await import("@/app/robots");
+      const result = robots();
+      const rules = Array.isArray(result.rules) ? result.rules : [result.rules];
+
+      for (const userAgent of ["*", "OAI-SearchBot", "GPTBot"]) {
+        const rule = rules.find((item) => item.userAgent === userAgent);
+        expect(rule, userAgent).toBeDefined();
+        const allow = [rule?.allow ?? []].flat();
+        const disallow = [rule?.disallow ?? []].flat();
+        for (const path of ["/api/manifest", "/api/manifest.toon"]) {
+          expect(allowsPath(`${basePath}${path}`, allow, disallow), `${userAgent}: ${path}`).toBe(true);
+        }
+        for (const path of [
+          "/api/admin", "/api/pet-generations", "/api/pets", "/api/assets/file",
+          "/api/manifest-private", "/api/manifest.toon-private",
+          "/api/manifest/child", "/api/manifest.toon/child",
+          "/api/manifest?x=1", "/api/manifest.toon?x=1",
+        ]) {
+          expect(allowsPath(`${basePath}${path}`, allow, disallow), `${userAgent}: ${path}`).toBe(false);
+        }
+      }
+    },
+  );
+
   it("allows public developer and agent resource routes while disallowing admin routes", async () => {
     vi.resetModules();
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/codex-pets");

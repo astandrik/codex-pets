@@ -17,7 +17,7 @@ export async function GET(): Promise<Response> {
     headers: {
       "Cache-Control": "public, max-age=60, s-maxage=300",
       Link: alternateLinkHeader(toPublicUrl("/api/manifest"), JSON_MEDIA_TYPE),
-      "X-Robots-Tag": "noindex, nofollow",
+      "X-Robots-Tag": "index, follow",
     },
   });
 }
