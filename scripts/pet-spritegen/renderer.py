@@ -193,7 +193,20 @@ def compose(root,job):
     for row in job['rows']:
         target=run/raw_rel(request,row['name']); target.parent.mkdir(parents=True,exist_ok=True)
         shutil.copyfile(root/(row['name']+'.png'),target)
-    run_tool(root,['extract','--run-dir',str(run)])
+    (run/'extract-failure.json').unlink(missing_ok=True)
+    try:
+        run_tool(root,['extract','--run-dir',str(run)])
+    except RenderError as error:
+        diagnostic = error.failure_diagnostic or {}
+        if (str(error) != 'invalid_sprite_extraction' or diagnostic.get('boundary') != 'renderer_process'
+                or diagnostic.get('reason') != 'process_exit' or diagnostic.get('exitCode') != 1):
+            raise
+        from extraction_fallback import recover_failed_strips
+        if not recover_failed_strips(run, job['rows']):
+            raise
+        # Re-run only local extraction, once. Provider stages and saved originals
+        # are untouched; the ordinary manifest and package checks still apply.
+        run_tool(root,['extract','--run-dir',str(run)])
     manifest=json.loads((run/'frames/frames-manifest.json').read_text())
     if not manifest.get('ok') or manifest.get('errors') or manifest.get('warnings'): raise RenderError('invalid_sprite_extraction')
     if len(manifest['rows'])!=11 or sum(row['frames'] for row in manifest['rows'])!=73: raise RenderError('missing_animation_frame')
