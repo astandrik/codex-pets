@@ -439,6 +439,10 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
 ## SEO, agents, and analytics
 
 - `robots.txt` is served from `src/app/robots.ts`.
+- The canonical `/api/manifest` and `/api/manifest.toon` URLs allow search and
+  AI crawler access and return `X-Robots-Tag: index, follow`. Both formats
+  include the complete approved catalog. These exact-path exceptions do not
+  open query variants, similarly named paths, or other restricted API routes.
 - `sitemap.xml` is dynamic and includes all currently approved pets.
 - `llms.txt` is dynamic and provides a curated AI-readable map of the gallery,
   manifest, and approved pet pages. `/llm.txt` is a direct plain-text alias for

@@ -31,6 +31,8 @@ const PUBLIC_ALLOW_PATHS = [
   "/llms-full.txt",
   "/openapi.json",
   "/api/openapi.json",
+  "/api/manifest$",
+  "/api/manifest.toon$",
   "/.well-known/mcp",
   "/server.json",
   "/.well-known/mcp/server.json",

@@ -50,7 +50,12 @@ describe("GET /api/manifest", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("X-Robots-Tag")).toBe("noindex, nofollow");
+    expect(response.headers.get("X-Robots-Tag")).toBe("index, follow");
+    expect(response.headers.get("Content-Type")).toContain("application/json");
+    expect(response.headers.get("Cache-Control")).toBe("public, max-age=60, s-maxage=300");
+    expect(response.headers.get("Link")).toBe(
+      '<https://pets.example/api/manifest.toon>; rel="alternate"; type="text/toon"',
+    );
     expect(body).toEqual({
       generatedAt: expect.any(String),
       total: 1,
@@ -85,17 +90,24 @@ describe("GET /api/manifest", () => {
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "");
 
     try {
-      repositoryMocks.listApprovedPetsForSearch.mockResolvedValueOnce([approvedPet]);
+      const pets = Array.from({ length: 201 }, (_, index) => ({
+        ...approvedPet,
+        id: `pet-${index}`,
+        slug: `pet-${index}`,
+      }));
+      repositoryMocks.listApprovedPetsForSearch.mockResolvedValueOnce(pets);
       const { GET: getJson } = await import("@/app/api/manifest/route");
       const jsonResponse = await getJson();
       const jsonBody = await jsonResponse.json();
 
-      repositoryMocks.listApprovedPetsForSearch.mockResolvedValueOnce([approvedPet]);
+      repositoryMocks.listApprovedPetsForSearch.mockResolvedValueOnce(pets);
       const { GET: getToon } = await import("@/app/api/manifest.toon/route");
       const toonResponse = await getToon();
       const toonBody = decode(await toonResponse.text());
 
       expect(toonResponse.status).toBe(200);
+      expect(toonResponse.headers.get("X-Robots-Tag")).toBe("index, follow");
+      expect(toonResponse.headers.get("Cache-Control")).toBe("public, max-age=60, s-maxage=300");
       expect(toonResponse.headers.get("Content-Type")).toBe(
         "text/toon; charset=utf-8",
       );
@@ -103,6 +115,14 @@ describe("GET /api/manifest", () => {
         '<https://pets.example/api/manifest>; rel="alternate"; type="application/json"',
       );
       expect(toonBody).toEqual(jsonBody);
+      expect(jsonBody.total).toBe(201);
+      expect(jsonBody.pets).toHaveLength(201);
+      expect(new Set(jsonBody.pets.map((pet: { slug: string }) => pet.slug)).size).toBe(201);
+      expect(jsonBody.pets[200]).toMatchObject({
+        slug: "pet-200",
+        submittedByEmail: "creator+public@example.com",
+      });
+      expect(JSON.stringify(toonBody)).not.toContain("private@example.com");
     } finally {
       vi.useRealTimers();
     }
