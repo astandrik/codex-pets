@@ -33,6 +33,9 @@ function generationHttpStatus(code: string, admission: boolean): number {
     case "generation_not_completed":
     case "metadata_conflict":
     case "metadata_locked": return 409;
+    case "base_not_ready": return 409;
+    case "invalid_reference_image": return 400;
+    case "reference_image_too_large": return 413;
     case "invalid_generated_package": return 422;
     case "rate_limited":
     case "budget_exhausted":
@@ -47,6 +50,12 @@ export async function readGenerationJson(request:Request,maxBytes:number):Promis
   if (request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
     throw new GenerationError("invalid_argument");
   }
+  const bytes = await readGenerationBody(request, maxBytes);
+  try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown; }
+  catch { throw new GenerationError("invalid_argument"); }
+}
+
+export async function readGenerationBody(request: Request, maxBytes: number): Promise<Buffer> {
   const reader = request.body?.getReader();
   if (!reader) throw new GenerationError("invalid_argument");
   const chunks: Uint8Array[] = [];
@@ -63,6 +72,5 @@ export async function readGenerationJson(request:Request,maxBytes:number):Promis
       chunks.push(value);
     }
   } finally { reader.releaseLock(); }
-  try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks))) as unknown; }
-  catch { throw new GenerationError("invalid_argument"); }
+  return Buffer.concat(chunks);
 }

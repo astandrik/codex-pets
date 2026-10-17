@@ -7,3 +7,13 @@
   label { font-weight: 600; }
   [role="alert"] { color: var(--g-color-text-danger); }
 }
+
+.pet-generation-form__reference {
+  display: grid;
+  gap: var(--g-spacing-3);
+  padding: var(--g-spacing-4);
+  border: 1px dashed var(--g-color-line-generic);
+  border-radius: var(--g-border-radius-l);
+  img { max-width: 100%; max-height: 16rem; object-fit: contain; justify-self: start; }
+  input { max-width: 100%; }
+}

@@ -22,3 +22,15 @@ describe("browser generation idempotency", () => {
     await expect(prepareGenerationRequest({getItem:()=>null,setItem:()=>{throw new Error("blocked storage");}},{prompt:"fox"},0)).rejects.toThrow("blocked storage");
   });
 });
+
+it("includes image bytes in identity and treats an explicit new attempt differently from retry", async () => {
+  vi.stubGlobal("crypto", webcrypto); const store = storage();
+  const referenceImage = new Blob(["synthetic-image"]);
+  const first = await prepareGenerationRequest(store, {prompt: "", referenceImage});
+  expect((await prepareGenerationRequest(store, {prompt: "", referenceImage: new Blob(["synthetic-image"])})).requestId).toBe(first.requestId);
+  expect((await prepareGenerationRequest(store, {prompt: "", referenceImage: new Blob(["different-image"])})).requestId).not.toBe(first.requestId);
+  expect(JSON.stringify(store.getItem("pets-generation-request"))).not.toContain("synthetic-image");
+  const {startNewGeneration} = await import("./request");
+  startNewGeneration({removeItem: key => store.setItem(key, "")});
+  expect((await prepareGenerationRequest(store, {prompt: "", referenceImage})).requestId).not.toBe(first.requestId);
+});

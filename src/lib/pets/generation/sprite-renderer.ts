@@ -54,7 +54,7 @@ export function spritegenEnvironment(apiKey: string): NodeJS.ProcessEnv {
 }
 export const spriteRenderer: SpriteRenderer = {
   async cleanupExpired(now) { await cleanupSpriteWorkspaces(tmpdir(), now); },
-  async open(job, saved) {
+  async open(job, saved, reference) {
     const keyFile = process.env.PET_GENERATION_OPENAI_KEY_FILE?.trim();
     let key: string;
     try {
@@ -71,7 +71,8 @@ export const spriteRenderer: SpriteRenderer = {
       await writeFile(path.join(directory, "workspace.json"), JSON.stringify({ expiresAt: job.expiresAt, pid: process.pid }), { mode: 0o600 });
       const rows = [...PET_STATES.map(state => ({ name: state.key, frames: state.frames, action: state.description })),
         { name: "look-0-157", frames: 8, action: "" }, { name: "look-180-337", frames: 8, action: "" }];
-      await writeFile(path.join(directory, "job.json"), JSON.stringify({ prompt: job.prompt, rows }), { mode: 0o600 });
+      await writeFile(path.join(directory, "job.json"), JSON.stringify({ prompt: job.prompt, rows, reviewBase: job.reviewBase === true, hasReference: Boolean(job.reference) }), { mode: 0o600 });
+      if (reference) await writeFile(path.join(directory, "reference.png"), reference, {mode: 0o600});
       for (const [name, bytes] of saved) await writeFile(path.join(directory, name + ".png"), bytes, { mode: 0o600 });
     } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
     const attempts = new Map<StageName, number>();

@@ -239,3 +239,50 @@ it.each([false,true])("updates the heading and preserves a manually selected URL
  await act(async()=>element.querySelector('form.generated-pet-metadata')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
  expect(element.querySelector('h1')?.textContent).toBe('Мятня');expect(input().value).toBe(manualSlug?'my-own-url':'myatnya');await tick();expect(button()?.disabled).toBe(false);
 });
+
+it("waits without polling, refreshes on focus and resumes polling after idempotent confirmation", async () => {
+  const waiting = {...generation(undefined, "awaiting_confirmation").generation, expiresAt: new Date(Date.now() + 86400000).toISOString(), reviewBase: true};
+  let confirmed = false;
+  fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+    if (init?.method === "POST") {confirmed = true; return response({generation: {...waiting, status: "queued", baseConfirmed: true, pollAfterSeconds: 5}}, 202);}
+    return response({generation: confirmed ? {...waiting, status: "queued", pollAfterSeconds: 5} : waiting});
+  });
+  await render(); await tick(30000);
+  expect(fetchMock).toHaveBeenCalledOnce(); expect(element.querySelector('img')?.getAttribute("src")).toBe(`/api/pet-generations/${id}/base`);
+  expect(element.textContent).toContain("Confirmation does not extend");
+  await act(async () => window.dispatchEvent(new Event("focus"))); expect(fetchMock).toHaveBeenCalledTimes(2);
+  act(() => element.querySelector("img")!.dispatchEvent(new Event("load")));
+  const animate = [...element.querySelectorAll("button")].find(b => b.textContent === "Animate this character")!;
+  await act(async () => {animate.click(); animate.click();});
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+  expect(element.textContent).toContain("Waiting in the queue");
+  const calls = fetchMock.mock.calls.length; await tick(5000); expect(fetchMock.mock.calls.length).toBe(calls + 1);
+});
+
+it("keeps base visible on queue refusal and disables confirmation at expiry", async () => {
+  const waiting = {...generation(undefined, "awaiting_confirmation").generation, expiresAt: new Date(Date.now() + 10000).toISOString()};
+  fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => init?.method === "POST" ? response({code: "queue_full"}, 429) : response({generation: waiting}));
+  await render();
+  act(() => element.querySelector("img")!.dispatchEvent(new Event("load")));
+  await act(async () => [...element.querySelectorAll("button")].find(b => b.textContent === "Animate this character")!.click());
+  expect(element.textContent).toContain("Your character is saved"); expect(element.querySelector("img")).not.toBeNull();
+  await tick(10001); expect(element.textContent).toContain("This generation has expired");
+  expect([...element.querySelectorAll("button")].some(b => b.textContent === "Animate this character")).toBe(false);
+});
+
+it("keeps polling after a successful confirmation when the immediate status read fails", async () => {
+  const waiting = {...generation(undefined, "awaiting_confirmation").generation, progress: {completedSteps: 1, totalSteps: 12}, expiresAt: new Date(Date.now() + 86400000).toISOString(), reviewBase: true, baseConfirmed: false};
+  let confirmed = false, failedReads = 0;
+  fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+    if (init?.method === "POST") {confirmed = true; return response({generation: {...waiting, status: "queued", baseConfirmed: true, pollAfterSeconds: 5}}, 202);}
+    if (!confirmed) return response({generation: waiting});
+    if (failedReads++ === 0) return response({code: "generation_unavailable"}, 503);
+    return response(generation());
+  });
+  await render(); act(() => element.querySelector("img")!.dispatchEvent(new Event("load")));
+  await act(async () => [...element.querySelectorAll("button")].find(b => b.textContent === "Animate this character")!.click());
+  await tick(5000);
+  expect(element.textContent).toContain("Your pet is ready");
+  expect(element.textContent).not.toContain("Animation requested. Refreshing progress");
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+});
