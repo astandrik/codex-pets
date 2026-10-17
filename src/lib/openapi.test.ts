@@ -78,7 +78,6 @@ describe("buildOpenApiSpec", () => {
             type: "integer",
             minimum: 1,
             maximum: 200,
-            default: 24,
           }),
         }),
       ]),
@@ -88,7 +87,7 @@ describe("buildOpenApiSpec", () => {
     expect(spec.components.schemas.PetsResponse.properties.pagination).toEqual(
       { $ref: "#/components/schemas/PetsPagination" },
     );
-    expect(spec.components.schemas.PetsResponse.required).not.toContain(
+    expect(spec.components.schemas.PetsResponse.required).toContain(
       "pagination",
     );
     expect(

@@ -141,10 +141,12 @@ The crawlable HTML gallery lives on `/`; numbered pages use `/?page=2`,
 to the equivalent homepage URL, while pet details remain on `/pets/<slug>`.
 
 `/api/pets` and `/api/pets.toon` accept optional `page` and `pageSize`
-parameters. Supplying either parameter enables the additive `pagination`
-metadata object; requests without them retain the legacy response shape.
-In paginated responses, top-level `total` is the number of returned pets and
-`pagination.totalItems` is the full filtered count.
+parameters and always return `pagination` metadata. Without either parameter,
+the response is page 1 with up to 200 pets. With `page` but no `pageSize`, the
+page size remains 24. Top-level `total` is the number of returned pets;
+`pagination.totalItems` is the full filtered count and `pagination.hasNextPage`
+indicates whether more results are available. For the next request, increment
+`pagination.page` and pass the returned `pagination.pageSize` explicitly.
 
 If you deploy under a subpath such as `/codex-pets`, set:
 

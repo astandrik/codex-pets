@@ -1,5 +1,6 @@
 import { decode } from "@toon-format/toon";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createPetSearchService } from "@/lib/pets/search/search-service";
 
 const searchMocks = vi.hoisted(() => ({
   searchApprovedPets: vi.fn(),
@@ -111,6 +112,8 @@ describe("GET /api/pets", () => {
       q: "space",
       kind: "creature",
       tags: ["friendly", "space"],
+      offset: 0,
+      limit: 200,
     });
     expect(response.status).toBe(200);
     expect(response.headers.get("Link")).toBe(
@@ -119,12 +122,19 @@ describe("GET /api/pets", () => {
     expect(body).toEqual({
       total: 1,
       pets: [approvedPetPayload],
+      pagination: {
+        page: 1,
+        pageSize: 200,
+        totalItems: 1,
+        totalPages: 1,
+        hasNextPage: false,
+      },
     });
     expect(JSON.stringify(body)).not.toContain("private@example.com");
     expect(JSON.stringify(body)).toContain("creator+public@example.com");
   });
 
-  it("adds pagination metadata only when page parameters are requested", async () => {
+  it("returns the requested page with pagination metadata", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
     searchMocks.searchApprovedPets.mockResolvedValueOnce({
       pets: [approvedPet],
@@ -161,6 +171,78 @@ describe("GET /api/pets", () => {
         hasNextPage: true,
       },
     });
+  });
+
+  it.each([
+    { count: 0, totalPages: 0, hasNextPage: false },
+    { count: 200, totalPages: 1, hasNextPage: false },
+    { count: 201, totalPages: 2, hasNextPage: true },
+    { count: 401, totalPages: 3, hasNextPage: true },
+  ])(
+    "exposes the full count and continuation for $count pets without page parameters",
+    async ({ count, totalPages, hasNextPage }) => {
+      const pets = Array.from({ length: count }, (_, index) => ({
+        ...approvedPet, id: `pet-${index}`, slug: `pet-${index}`,
+      }));
+      searchMocks.searchApprovedPets.mockImplementation(createPetSearchService({
+        listApprovedPets: async () => pets,
+        mode: "lexical",
+        semanticSearch: async () => { throw new Error("Unexpected semantic request"); },
+      }));
+      const { GET: getJson } = await import("@/app/api/pets/route");
+      const { GET: getToon } = await import("@/app/api/pets.toon/route");
+      const json = await (await getJson(new Request("https://pets.example/api/pets"))).json();
+      const toon = decode(await (await getToon(new Request("https://pets.example/api/pets.toon"))).text());
+
+      expect(toon).toEqual(json);
+      expect(json.total).toBe(Math.min(count, 200));
+      expect(json.pets).toHaveLength(json.total);
+      expect(json.pagination).toEqual({
+        page: 1, pageSize: 200, totalItems: count,
+        totalPages, hasNextPage,
+      });
+      expect(JSON.stringify(json)).not.toContain("private@example.com");
+
+      const slugs = json.pets.map((pet: { slug: string }) => pet.slug);
+      let pagination = json.pagination;
+      for (let page = 2; page <= totalPages; page++) {
+        expect(pagination.hasNextPage).toBe(true);
+        const params = `page=${pagination.page + 1}&pageSize=${pagination.pageSize}`;
+        const next = await (await getJson(new Request(`https://pets.example/api/pets?${params}`))).json();
+        const nextToon = decode(await (await getToon(new Request(`https://pets.example/api/pets.toon?${params}`))).text());
+        expect(nextToon).toEqual(next);
+        expect(next.pagination.page).toBe(page);
+        slugs.push(...next.pets.map((pet: { slug: string }) => pet.slug));
+        pagination = next.pagination;
+      }
+      expect(pagination.hasNextPage).toBe(false);
+      expect(slugs).toEqual(pets.map((pet) => pet.slug));
+      expect(new Set(slugs).size).toBe(count);
+    },
+  );
+
+  it("reports the filtered count with the default window and preserves page-only size", async () => {
+    const pets = Array.from({ length: 401 }, (_, index) => ({
+      ...approvedPet, id: `pet-${index}`, slug: `pet-${index}`,
+      tags: index % 2 === 0 ? ["selected"] : [],
+    }));
+    searchMocks.searchApprovedPets.mockImplementation(createPetSearchService({
+      listApprovedPets: async () => pets,
+      mode: "lexical",
+      semanticSearch: async () => { throw new Error("Unexpected semantic request"); },
+    }));
+    const { GET } = await import("@/app/api/pets/route");
+    const filtered = await (await GET(new Request("https://pets.example/api/pets?tags=selected"))).json();
+    expect(filtered).toMatchObject({
+      total: 200,
+      pagination: { page: 1, pageSize: 200, totalItems: 201, totalPages: 2, hasNextPage: true },
+    });
+    const explicit = await (await GET(new Request("https://pets.example/api/pets?tags=selected&page=2"))).json();
+    expect(explicit).toMatchObject({
+      total: 24,
+      pagination: { page: 2, pageSize: 24, totalItems: 201, totalPages: 9, hasNextPage: true },
+    });
+    expect(explicit.pets[0].slug).toBe("pet-48");
   });
 
   it.each(["JSON", "TOON"] as const)("rejects a continuation request from a different catalog snapshot (%s)", async (format) => {

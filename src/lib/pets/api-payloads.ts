@@ -63,12 +63,12 @@ export function buildManifestPayload(
 
 export function buildPetsPayload(
   pets: PublicPet[],
-  pagination?: PetsPaginationMetadata,
+  pagination: PetsPaginationMetadata,
 ) {
   return {
     total: pets.length,
     pets: pets.map(createPublicPetPayload),
-    ...(pagination ? { pagination } : {}),
+    pagination,
   };
 }
 
