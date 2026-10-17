@@ -22,6 +22,9 @@ import {
 type PetsResponse = {
   total?: number;
   pets?: unknown[];
+  pagination?: {
+    totalItems?: number;
+  };
 };
 
 type PetResponse = {
@@ -139,8 +142,9 @@ async function searchCodexPets(input: unknown) {
     ? response.data.pets.filter(isWebMCPPetInput).slice(0, limit)
     : [];
   const agentPets = pets.map((pet) => createAgentPet(pet, origin));
+  const reportedTotal = response.data.pagination?.totalItems ?? response.data.total;
   const total =
-    typeof response.data.total === "number" ? response.data.total : agentPets.length;
+    typeof reportedTotal === "number" ? reportedTotal : agentPets.length;
 
   return toolResult(
     `Found ${agentPets.length} approved Codex pet pack${agentPets.length === 1 ? "" : "s"}.`,

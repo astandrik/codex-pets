@@ -8,6 +8,62 @@ describe("WebMCP search tool", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([201, 214])(
+    "reports all %i matches when the API returns only the first 200 pets",
+    async (totalItems) => {
+      vi.stubGlobal("window", { location: { origin: "https://pets.example" } });
+      const registered = new Map<string, WebMCPTool>();
+      vi.stubGlobal("navigator", {
+        modelContext: {
+          registerTool: (tool: WebMCPTool) => registered.set(tool.name, tool),
+          unregisterTool: (name: string) => registered.delete(name),
+        },
+      });
+      const pets = Array.from({ length: 200 }, (_, index) =>
+        createPet(`pet-${index}`, `Pet ${index}`),
+      );
+      vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+        total: pets.length,
+        pets,
+        pagination: { page: 1, pageSize: 200, totalItems, totalPages: 2, hasNextPage: true },
+      })));
+
+      const unregister = registerWebMCPTools(createSiteTools());
+      try {
+        const search = registered.get("search_codex_pets");
+        if (!search) throw new Error("Expected registered search tool");
+        expect(search.annotations?.readOnlyHint).toBe(true);
+        const result = await search.execute({ limit: 10 });
+        expect(result.structuredContent).toMatchObject({
+          total: totalItems,
+          returned: 10,
+          truncated: true,
+          pets: pets.slice(0, 10).map(({ slug }) => ({ slug })),
+        });
+      } finally {
+        unregister();
+      }
+      expect(registered.size).toBe(0);
+    },
+  );
+
+  it.each([
+    { name: "legacy total", counts: { total: 3 }, size: 2, total: 3, truncated: true },
+    { name: "missing counts", counts: {}, size: 2, total: 2, truncated: false },
+    { name: "empty results", counts: { total: 0, pagination: { totalItems: 0 } }, size: 0, total: 0, truncated: false },
+  ])("handles $name", async ({ counts, size, total, truncated }) => {
+    vi.stubGlobal("window", { location: { origin: "https://pets.example" } });
+    const pets = Array.from({ length: size }, (_, index) =>
+      createPet(`pet-${index}`, `Pet ${index}`),
+    );
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ...counts, pets })));
+    const search = createSiteTools().find((tool) => tool.name === "search_codex_pets");
+    if (!search) throw new Error("Expected search tool");
+
+    const result = await search.execute({});
+    expect(result.structuredContent).toMatchObject({ total, returned: size, truncated });
+  });
+
   it("preserves the unified API ranking without applying another query filter", async () => {
     vi.stubGlobal("window", { location: { origin: "https://pets.example" } });
     vi.stubGlobal(
