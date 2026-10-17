@@ -438,7 +438,7 @@ export function buildOpenApiSpec() {
           tags: ["Pets"],
           summary: "Search approved Codex pets",
           description:
-            "Returns approved pets only. Private contact fields are never included. page or pageSize opts into pagination metadata; requests without either parameter retain the legacy response shape.",
+            "Returns approved pets only. Private contact fields are never included. Pagination metadata is always included. Without page or pageSize, returns the first page of up to 200 pets with the full filtered count in pagination.totalItems.",
           security: publicReadSecurity,
           parameters: petSearchParameters,
           responses: {
@@ -730,13 +730,13 @@ export function buildOpenApiSpec() {
         },
         PetsResponse: {
           type: "object",
-          required: ["total", "pets"],
+          required: ["total", "pets", "pagination"],
           properties: {
             total: {
               type: "integer",
               minimum: 0,
               description:
-                "Number of pets in this response. For paginated requests, pagination.totalItems is the full filtered count.",
+                "Number of pets in this response. pagination.totalItems is the full filtered count.",
             },
             pets: {
               type: "array",
@@ -992,7 +992,7 @@ const petSearchParameters = [
     required: false,
     schema: { type: "integer", minimum: 1, default: 1 },
     description:
-      "1-based result page. Supplying page or pageSize enables pagination metadata.",
+      "1-based result page. Pagination metadata is always included. Pass the returned pagination.pageSize when requesting the next page.",
   },
   {
     name: "pageSize",
@@ -1002,10 +1002,9 @@ const petSearchParameters = [
       type: "integer",
       minimum: 1,
       maximum: 200,
-      default: 24,
     },
     description:
-      "Number of pets per page. Supplying page or pageSize enables pagination metadata.",
+      "Number of pets per page. Defaults to 24 when page is supplied without pageSize; requests without both parameters use 200. Pass the returned pagination.pageSize when requesting the next page.",
   },
 ] as const;
 

@@ -2,7 +2,7 @@ import { buildPetsPayload } from "@/lib/pets/api-payloads";
 import { PET_CATALOG_RANKING_HEADER, PET_CATALOG_SNAPSHOT_HEADER } from "@/lib/pets/catalog-snapshot";
 import { getApprovedPetsCatalogSnapshot } from "@/lib/pets/catalog-snapshot-server";
 import type { GalleryFilters } from "@/lib/pets/gallery-filters";
-import { createPetsPaginationMetadata, type PetsApiPagination } from "@/lib/pets/pagination";
+import { createPetsPaginationMetadata, MAX_PETS_API_PAGE_SIZE, type PetsApiPagination } from "@/lib/pets/pagination";
 import { searchApprovedPets } from "@/lib/pets/search/search-runtime";
 
 type CatalogPageResult =
@@ -22,6 +22,11 @@ export async function readPetsCatalogPage(input: {
   rankingVersion: string | null;
 }): Promise<CatalogPageResult> {
   const { filters, pagination } = input;
+  const effectivePagination = pagination ?? {
+    page: 1,
+    pageSize: MAX_PETS_API_PAGE_SIZE,
+    offset: 0,
+  };
   const requestedSnapshot = input.snapshotVersion?.trim();
   const requestedRanking = input.rankingVersion?.trim();
   const snapshot = pagination && requestedSnapshot
@@ -41,7 +46,8 @@ export async function readPetsCatalogPage(input: {
     q: filters.query,
     kind: filters.kind,
     tags: filters.tags,
-    ...(pagination ? { offset: pagination.offset, limit: pagination.pageSize } : {}),
+    offset: effectivePagination.offset,
+    limit: effectivePagination.pageSize,
   };
   const result = snapshot
     ? await searchApprovedPets(searchInput, { catalog: snapshot.pets })
@@ -59,7 +65,7 @@ export async function readPetsCatalogPage(input: {
     ok: true,
     payload: buildPetsPayload(
       result.pets,
-      pagination ? createPetsPaginationMetadata(pagination, result.total) : undefined,
+      createPetsPaginationMetadata(effectivePagination, result.total),
     ),
   };
 }

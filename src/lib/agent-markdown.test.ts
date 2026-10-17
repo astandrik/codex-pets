@@ -20,7 +20,7 @@ describe("agent markdown sprite guidance", () => {
 });
 
 describe("API markdown pagination", () => {
-  it("documents the opt-in page contract without changing legacy requests", () => {
+  it("documents pagination metadata and the returned count", () => {
     const markdown = buildApiDocsMarkdown();
 
     expect(markdown).toContain("page=2&pageSize=24");

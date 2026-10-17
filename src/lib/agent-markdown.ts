@@ -281,13 +281,15 @@ Codex Pets exposes public JSON, TOON, markdown, and MCP surfaces for approved pe
 
 ## Pet search pagination
 
-\`GET /api/pets?page=2&pageSize=24\` returns the requested slice and adds a
+\`GET /api/pets?page=2&pageSize=24\` returns the requested slice. Every successful response includes a
 \`pagination\` object with \`page\`, \`pageSize\`, \`totalItems\`,
 \`totalPages\`, and \`hasNextPage\`. pageSize must be between 1 and 200.
 Top-level \`total\` remains the number of pets in the current response;
 \`pagination.totalItems\` is the full filtered count.
-Requests without page or pageSize keep the legacy response shape without a
-\`pagination\` field. The TOON endpoint accepts the same parameters.
+Requests without page or pageSize return page 1 with up to 200 pets and full
+pagination metadata. With page but no pageSize, the page size is 24.
+For continuation, increment \`pagination.page\` and send the returned
+\`pagination.pageSize\`. The TOON endpoint follows the same contract.
 
 ## Error responses
 
@@ -532,7 +534,7 @@ API and MCP routes for approved public Codex pet discovery.
 ## Core endpoints
 
 - GET /api/manifest
-- GET /api/pets (optional page and pageSize add pagination metadata)
+- GET /api/pets (always includes pagination metadata; optional page and pageSize)
 - GET /api/pets/{slug}
 - GET /api/pets/{slug}/share
 - GET /api/pets/{slug}/install
@@ -541,7 +543,11 @@ API and MCP routes for approved public Codex pet discovery.
 - POST /.well-known/mcp
 
 Use \`GET /api/pets?page=2&pageSize=24\` for paginated catalog retrieval.
-Requests without page or pageSize keep the legacy response shape.
+Requests without page or pageSize return page 1 with up to 200 pets and full
+pagination metadata. With page but no pageSize, the page size is 24.
+Top-level \`total\` is the returned count; \`pagination.totalItems\` is the full
+filtered count. Use \`pagination.hasNextPage\` and pass the returned
+\`pagination.pageSize\` to retrieve the next page.
 
 ## Error responses
 
