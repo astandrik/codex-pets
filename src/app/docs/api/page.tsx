@@ -139,8 +139,9 @@ export default function ApiDocsPage() {
           ))}
         </ul>
         <Text variant="body-2" color="secondary">
-          Every successful response includes pagination metadata. Top-level total
-          is the number of returned pets; pagination.totalItems is the full filtered
+          Successful responses from /api/pets and /api/pets.toon include pagination
+          metadata. Top-level total is the number of returned pets;
+          pagination.totalItems is the full filtered
           count, and pagination.hasNextPage indicates more results. Without page
           or pageSize, the first page contains up to 200 pets. With page but no
           pageSize, the page size is 24. Pass the returned pagination.pageSize
