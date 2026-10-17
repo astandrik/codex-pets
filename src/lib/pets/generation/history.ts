@@ -107,7 +107,7 @@ export function rememberGeneration(
 
 const historyGenerationSchema = z.object({
   generationId: z.string().regex(ID),
-  status: z.enum(["queued", "generating", "processing", "completed", "failed"]),
+  status: z.enum(["queued", "generating", "awaiting_confirmation", "processing", "completed", "failed"]),
   expiresAt: z.iso.datetime(),
   progress: z.object({
     completedSteps: z.number().int().min(0).max(12), totalSteps: z.number().int().min(1).max(12),

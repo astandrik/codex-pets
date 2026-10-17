@@ -725,3 +725,19 @@ read. Diagnostics never copy response bodies, prompts, credentials, arbitrary
 headers, URLs or raw exception messages. Invalid trace identifiers are omitted
 as null, and diagnostic write/log failures do not trigger another provider call.
 The request, timeout, retry, budget and lease policies are unchanged.
+
+### Optional website base-review flow
+
+`PET_GENERATION_REVIEW_FLOW_ENABLED` defaults to false. See
+[the review and reference contract](docs/pet-generation-parallel-rows.md#website-character-review-and-image-references).
+Deploy web and worker readers that preserve the new job fields before enabling
+new admission. Drain every old worker; never force-kill a paid in-flight stage.
+Verify upload body limits permit the 6 MiB application boundary. Check a bounded,
+separately authorized pilot: base waits without holding the scheduler, confirmation
+queues exactly once, and base/attempt counters are not repeated. Keep the flag off
+until these gates pass. Do not claim image likeness from mock-provider tests.
+
+Rollback disables new review admission but keeps compatible web/worker versions
+serving existing private review links. Do not restore an older parser/worker while
+review jobs remain. Deployment, flag activation and paid pilots require their own
+explicit authorization; local implementation or test completion does not enable it.

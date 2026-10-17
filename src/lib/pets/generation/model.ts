@@ -22,6 +22,16 @@ export const generationInputSchema = z.object({
   displayName: z.string().trim().min(1).max(80).optional(),
   requestId: z.uuid(),
 }).strict();
+export const browserGenerationInputSchema = generationInputSchema.extend({prompt: z.string().trim().max(2000).default("")});
+export const referenceImageSchema = z.object({
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  sourceSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  width: z.number().int().min(1).max(1024),
+  height: z.number().int().min(1).max(1024),
+  sizeBytes: z.number().int().min(1).max(5 * 1024 * 1024),
+  normalizationVersion: z.literal(1),
+}).strict();
+export type GenerationReference = {metadata: z.infer<typeof referenceImageSchema>; bytes: Buffer};
 export type GenerationInput = z.infer<typeof generationInputSchema>;
 
 export const usageSchema = z.object({
@@ -51,7 +61,11 @@ export const jobSchema = z.object({
   prompt: z.string(),
   displayName: z.string(),
   nameSource: z.enum(["user", "automatic"]).optional(),
-  status: z.enum(["queued", "generating", "processing", "completed", "failed"]),
+  status: z.enum(["queued", "generating", "awaiting_confirmation", "processing", "completed", "failed"]),
+  reviewBase: z.boolean().optional(),
+  baseConfirmedAt: z.number().optional(),
+  queuedAt: z.number().optional(),
+  reference: referenceImageSchema.optional(),
   createdAt: z.number(),
   expiresAt: z.number(),
   worker: z.string().default(""),
@@ -101,6 +115,10 @@ export function generationEnabled() {
   const file = process.env.PET_GENERATION_ENABLE_FILE?.trim();
   if (file) { try { return readFileSync(file, "utf8").trim() === "true"; } catch { return false; } }
   return process.env.PET_GENERATION_ENABLED === "true";
+}
+
+export function generationReviewFlowEnabled() {
+  return process.env.PET_GENERATION_REVIEW_FLOW_ENABLED === "true";
 }
 
 export function readGenerationSecret() {

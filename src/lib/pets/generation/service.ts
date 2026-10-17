@@ -8,13 +8,12 @@ import { assetUrl } from "@/lib/pets/asset-urls";
 import { validateUploadedPackage } from "@/lib/pets/package";
 import { replaceGeneratedDetails, validateGeneratedSheet } from "@/lib/pets/generation/package";
 import { slugify } from "@/lib/pets/validation";
-import { toPublicUrl } from "@/lib/base-path";
 import {
-  DAY, WAIT_MS, LEASE_MS, GENERATION_ID, PROMPT_REVISION, MAX_PARALLEL_IMAGE_ROWS, GenerationError,
+  DAY, LEASE_MS, GENERATION_ID, PROMPT_REVISION, MAX_PARALLEL_IMAGE_ROWS, GenerationError,
   generationInputSchema, generationDigest, generationEnabled, readGenerationSecret,
-  nextMoscowDay, newGenerationId, schedulerSchema, dedupSchema,
+  nextMoscowDay, newGenerationId, dedupSchema,
   rowAttemptLogSchema, ROW_RETRY_DELAY_MS, type RowAttemptLog, stageFailureDiagnosticSchema, type StageFailureDiagnostic, stageCliCauseSchema, type StageCliCause,
-  STAGE_NAMES, type StageName, type GenerationJob, type Scheduler, type ImageUsage,
+  STAGE_NAMES, type StageName, type GenerationJob, type ImageUsage, type GenerationReference, browserGenerationInputSchema,
 } from "@/lib/pets/generation/model";
 import { generationStore, type GenerationStore, type GenerationTransaction } from "@/lib/pets/generation/store";
 
@@ -23,31 +22,9 @@ import { readProviderFailure } from "@/lib/pets/generation/provider-failure";
 import { readFailureDiagnostic } from "@/lib/pets/generation/failure-diagnostic";
 import {CARD_METADATA_FALLBACK, normalizeCardMetadata, cardMetadataEditSchema, type CardMetadataFields, type CardMetadataRecord, type PublicCardMetadata} from "@/lib/pets/generation/card-metadata";
 import type {CardMetadataResult} from "@/lib/pets/generation/card-provider";
-import { publicGenerationError } from "@/lib/pets/generation/public-error";
-
-const SCHEDULER_EXPIRY = Date.UTC(2099, 0, 1);
-async function scheduler(tx: GenerationTransaction, now: number): Promise<Scheduler> {
-  const raw = await tx.getLedger("scheduler", now);
-  return raw ? schedulerSchema.parse(JSON.parse(raw)) : { revision: 0, queue: [], active: null };
-}
-async function saveScheduler(tx: GenerationTransaction, state: Scheduler) {
-  state.revision += 1;
-  await tx.putLedger("scheduler", JSON.stringify(state), SCHEDULER_EXPIRY);
-}
-
-async function expireQueue(tx: GenerationTransaction, state: Scheduler, now: number) {
-  const ready: string[] = [];
-  for (const id of state.queue) {
-    const job = await tx.getJob(id);
-    if (!job || job.expiresAt <= now) { await settleBudget(tx, id, now); continue; }
-    if (job.status !== "queued") continue;
-    if (job.createdAt + WAIT_MS <= now) {
-      await tx.putJob({ ...job, status: "failed", error: "queue_timeout", prompt: "" });
-      await settleBudget(tx, id, now);
-    } else ready.push(id);
-  }
-  state.queue = ready;
-}
+import {publicJob} from "@/lib/pets/generation/public-job";
+import {scheduler, saveScheduler, expireQueue, requireJobWithActiveWorkerLease} from "@/lib/pets/generation/scheduler";
+import {createBaseReviewService} from "@/lib/pets/generation/base-review";
 
 export function createGenerationService(store: GenerationStore, options: {
   enabled: () => boolean;
@@ -67,6 +44,7 @@ export function createGenerationService(store: GenerationStore, options: {
       const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
       if (!options.enabled()) throw new GenerationError("generation_disabled");
       if (state.pauseReason) throw new GenerationError("generation_paused");
+      if (current.reviewBase && current.baseConfirmedAt === undefined && names.some(name => name !== "base")) throw new GenerationError("base_not_ready");
       if (names.some(name => current.stages.some(stage => stage.name === name && stage.status === "completed"))) throw new GenerationError("stage_already_completed");
       const next = STAGE_NAMES.slice(current.stages.length, current.stages.length + names.length);
       if (current.pipelineVersion !== 2 || current.status !== "generating" || names.length < 1 || names.length > MAX_PARALLEL_IMAGE_ROWS
@@ -82,14 +60,15 @@ export function createGenerationService(store: GenerationStore, options: {
     });
   }
   return {
-    async generate(input: unknown, clientIp: string | null) {
-      const parsed = generationInputSchema.safeParse(input);
-      if (!parsed.success) throw new GenerationError("invalid_argument");
+    ...createBaseReviewService(store, {now: clock, enabled: options.enabled, budgetUsd}),
+    async generate(input: unknown, clientIp: string | null, admission: {reviewBase?: boolean; reference?: GenerationReference; allowNew?: boolean} = {}) {
+      const parsed = (admission.reviewBase ? browserGenerationInputSchema : generationInputSchema).safeParse(input);
+      if (!parsed.success || (!parsed.data.prompt && !admission.reference) || (admission.reference && !admission.reviewBase)) throw new GenerationError("invalid_argument");
       const body = parsed.data;
       const now = clock();
       const secret = options.secret();
       const requestKey = "request:" + generationDigest(secret, "request", body.requestId);
-      const hash = generationDigest(secret, "body", JSON.stringify({ prompt: body.prompt, displayName: body.displayName ?? "Generated pet" }));
+      const hash = generationDigest(secret, "body", JSON.stringify({ prompt: body.prompt, displayName: body.displayName ?? "Generated pet", ...(admission.reference ? {referenceSha256: admission.reference.metadata.sourceSha256} : {}) }));
       const id = createId();
       return store.transaction(async (tx) => {
         const previous = await tx.getLedger(requestKey, now);
@@ -100,6 +79,7 @@ export function createGenerationService(store: GenerationStore, options: {
           if (!job || job.expiresAt <= now) throw new GenerationError("generation_expired");
           return publicJob(job, now);
         }
+        if (admission.allowNew === false) throw new GenerationError("generation_review_disabled");
         if (!options.enabled()) throw new GenerationError("generation_disabled");
         if (!clientIp) throw new GenerationError("client_ip_unavailable");
         const state = await scheduler(tx, now);
@@ -110,7 +90,8 @@ export function createGenerationService(store: GenerationStore, options: {
         if (quota.ipRemaining === 0) throw new GenerationError("rate_limited", nextMoscowDay(now), undefined, "ip");
         if (state.queue.length >= 5) throw new GenerationError("queue_full");
         await startBudgetTracking(tx, id, now, budgetUsd());
-        const job: GenerationJob = { id, prompt: body.prompt, displayName: body.displayName ?? "Generated pet", status: "queued", createdAt: now, expiresAt: now + DAY, worker: "", promptRevision: PROMPT_REVISION, pipelineVersion: 2, stages: [], nameSource:body.displayName===undefined?"automatic":"user", ...(options.automaticCardMetadata?.()?{cardMetadata:{policy:1 as const,state:"pending" as const,revision:0,edited:false}}:{}) };
+        const job: GenerationJob = { id, prompt: body.prompt, displayName: body.displayName ?? "Generated pet", status: "queued", createdAt: now, expiresAt: now + DAY, worker: "", promptRevision: admission.reviewBase ? "pet-v2-review-20261017-1" : PROMPT_REVISION, ...(admission.reviewBase ? {reviewBase: true, queuedAt: now} : {}), ...(admission.reference ? {reference: admission.reference.metadata} : {}), pipelineVersion: 2, stages: [], nameSource:body.displayName===undefined?"automatic":"user", ...(options.automaticCardMetadata?.()?{cardMetadata:{policy:1 as const,state:"pending" as const,revision:0,edited:false}}:{}) };
+        if (admission.reference) await tx.putArtifact(id, "reference.png", admission.reference.bytes, job.expiresAt);
         await tx.putJob(job);
         await tx.putLedger(requestKey, JSON.stringify({ hash, id, expiresAt: now + 7 * DAY, nameProvided:body.displayName!==undefined }), now + 7 * DAY);
         await consumeDailyQuota(tx, secret, clientIp, now, quota);
@@ -301,6 +282,7 @@ export function createGenerationService(store: GenerationStore, options: {
         const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
         if (!options.enabled()) throw new GenerationError("generation_disabled");
         if (state.pauseReason) throw new GenerationError("generation_paused");
+        if (name !== "base" && current.reviewBase && current.baseConfirmedAt === undefined) throw new GenerationError("base_not_ready");
         if (current.status !== "generating" || current.stages.find(stage => stage.name === name)?.status !== "inflight") throw new GenerationError("invalid_stage");
         await checkStageBudget(tx, job.id, now, budgetUsd());
       });
@@ -476,35 +458,6 @@ export function createGenerationService(store: GenerationStore, options: {
         await saveScheduler(tx, state);
       });
     },
-  };
-}
-
-async function requireJobWithActiveWorkerLease(tx: GenerationTransaction, state: Scheduler, job: GenerationJob, now: number) {
-  const current = await tx.getJob(job.id);
-  if (!current || current.expiresAt <= now || current.worker !== job.worker || state.active?.id !== job.id || state.active.owner !== job.worker || state.active.until <= now) throw new GenerationError("stale_worker");
-  return current;
-}
-
-function publicJob(record: GenerationJob, now: number, metadata?:PublicCardMetadata) {
-  let job = record;
-  if (record.status === "queued" && record.createdAt + WAIT_MS <= now) {
-    job = { ...record, status: "failed", error: "queue_timeout", prompt: "" };
-  }
-  if (record.status === "generating" && record.leaseUntil && record.leaseUntil <= now && (record.pipelineVersion !== 2 || record.stages.some(stage => stage.status === "inflight"))) {
-    job = { ...record, status: "failed", error: "outcome_unknown" };
-  }
-  const root = `/api/pet-generations/${job.id}/files/`;
-  return {
-    generationId: job.id,
-    status: job.status,
-    progress: { completedSteps: job.pipelineVersion === 1 && job.status === "completed" ? 1 : job.stages.filter(stage => stage.status === "completed").length, totalSteps: job.pipelineVersion === 2 ? STAGE_NAMES.length : 1 },
-    expiresAt: new Date(job.expiresAt).toISOString(),
-    pollAfterSeconds: job.status === "queued" || job.status === "generating" || job.status === "processing" ? 5 : undefined,
-    previewUrl: toPublicUrl(`/generated/${job.id}`),
-    submission: job.submission,
-    ...(metadata?{metadata}:{}),
-    ...(job.status === "failed" || job.error ? { error: publicGenerationError(job.error ?? "generation_unavailable", job.providerFailure) } : {}),
-    ...(job.status === "completed" ? { pet: { displayName: job.displayName, spriteVersionNumber: 2 as const, petJsonUrl: toPublicUrl(root + "pet.json"), spritesheetUrl: toPublicUrl(root + "spritesheet.webp"), zipUrl: toPublicUrl(root + "pet.zip") } } : {}),
   };
 }
 

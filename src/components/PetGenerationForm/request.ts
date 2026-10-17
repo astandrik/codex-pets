@@ -1,9 +1,10 @@
 export const REQUEST_STORAGE_KEY = "pets-generation-request";
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
-type Brief = { prompt: string; displayName?: string };
+type Brief = { prompt: string; displayName?: string; referenceImage?: Blob };
 export async function prepareGenerationRequest(storage: Storage, brief: Brief, now = Date.now()) {
   const content = { prompt: brief.prompt.trim(), ...(brief.displayName?.trim() ? { displayName: brief.displayName.trim() } : {}) };
-  const bytes = new TextEncoder().encode(JSON.stringify(content));
+  const referenceSha256 = brief.referenceImage ? Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await brief.referenceImage.arrayBuffer())), byte => byte.toString(16).padStart(2,"0")).join("") : undefined;
+  const bytes = new TextEncoder().encode(JSON.stringify({...content, ...(referenceSha256 ? {referenceSha256} : {})}));
   const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), byte => byte.toString(16).padStart(2,"0")).join("");
   let requestId = crypto.randomUUID();
   try {
@@ -12,4 +13,8 @@ export async function prepareGenerationRequest(storage: Storage, brief: Brief, n
   } catch { /* Ignore corrupt local metadata, never the subsequent write failure. */ }
   storage.setItem(REQUEST_STORAGE_KEY, JSON.stringify({ hash, requestId, expiresAt: now + 86_400_000 }));
   return { ...content, requestId };
+}
+
+export function startNewGeneration(storage: Pick<globalThis.Storage, "removeItem"> = sessionStorage) {
+  storage.removeItem(REQUEST_STORAGE_KEY);
 }

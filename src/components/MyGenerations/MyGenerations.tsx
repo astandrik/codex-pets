@@ -9,7 +9,7 @@ import "./MyGenerations.scss";
 type Result={generation?:HistoryGeneration; unavailable?:boolean; failedReads:number};
 type Row=GenerationHistoryEntry&Result&{expired:boolean};
 const subscribeToBrowser=()=>()=>{};
-const LABELS={queued:"Queued",generating:"Generating",processing:"Processing",completed:"Ready",failed:"Failed"};
+const LABELS={queued:"Queued",generating:"Generating",awaiting_confirmation:"Review character",processing:"Processing",completed:"Ready",failed:"Failed"};
 const live=(result?:Result)=>!result?.generation||["queued","generating","processing"].includes(result.generation.status);
 
 function statusLabel(row:Row,expired:boolean){

@@ -108,3 +108,39 @@ frames retain only code basenames, function names and line numbers, without
 source lines, locals, URLs, headers, prompt text, provider bodies or credentials.
 Logs expire with the existing private job retention. Deploy web readers together
 with the worker so subsequent metadata edits preserve the private audit fields.
+
+## Website character review and image references
+
+`PET_GENERATION_REVIEW_FLOW_ENABLED=true` enables the new website flow. It is off
+by default and affects admission only. New website tasks accept text, one static
+PNG/JPEG/WebP reference, or both, and stop after the saved base character. The
+reference defines appearance; optional text changes only explicitly named details.
+The user confirms the base before the eleven animation rows and metadata request.
+MCP and jobs admitted before this flag keep their automatic behavior.
+
+The upload limit is 5 MiB, with a 6 MiB streamed multipart limit and a 25-million
+pixel decoding limit. The server rotates, strips metadata and normalizes the image
+to PNG, at most 1024 pixels on its long side, without cropping or enlargement.
+Reference bytes and the job are committed together. Raw-image hash participates in
+idempotency; normalized-image hash protects the saved artifact. The reference is
+private, expires with the job, and is never copied into gallery assets or the ZIP.
+
+A review job releases its worker lease and scheduler slot while awaiting approval.
+Confirmation queues the same job once, reuses its base and starts a fresh 30-minute
+queue clock. It consumes no new daily attempt and preserves recorded expenses and
+unknown accounting markers. The original 24-hour expiry never moves. An explicit
+new attempt creates a new job and consumes another daily attempt; refreshing or
+retrying an interrupted request does not. Confirmation is not an automatic retry
+of a failed or expired task.
+
+`GET /api/pet-generations/{id}/base` exposes only the saved base PNG.
+`POST /api/pet-generations/{id}/confirm` returns 202 for the first queued
+confirmation, or 200 for a previously confirmed job. Queue or budget rejection
+leaves the base waiting. Both endpoints keep the existing private-capability
+model; confirmation also requires the same-origin check. Never share the task URL.
+
+Before enabling the flag, deploy compatible web readers and workers and drain all
+old workers. Old code can ignore new job fields and must not claim review jobs.
+To roll back, disable new review admission and retain compatible readers/workers
+until existing review jobs complete or expire. Disabling the flag must not prevent
+confirmation of existing jobs. This change needs no YDB schema migration.

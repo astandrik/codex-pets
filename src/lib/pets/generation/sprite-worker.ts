@@ -14,7 +14,7 @@ export type SpriteSession = {
   compose(): Promise<Buffer>;
   cleanup(): Promise<void>;
 };
-export type SpriteRenderer = { open(job: GenerationJob, saved: Map<StageName, Buffer>): Promise<SpriteSession>; cleanupExpired?(now: number): Promise<void> };
+export type SpriteRenderer = { open(job: GenerationJob, saved: Map<StageName, Buffer>, reference?: Buffer): Promise<SpriteSession>; cleanupExpired?(now: number): Promise<void> };
 type Service = ReturnType<typeof createGenerationService>;
 
 export function createSpriteGenerationWorker(options: {
@@ -39,6 +39,18 @@ export function createSpriteGenerationWorker(options: {
     const timer = setInterval(() => {
       heartbeat = heartbeat.then(async () => { await options.service.heartbeat(initial); }).catch(error => { leaseError = error; });
     }, HEARTBEAT_MS);
+    async function awaitReview(current: GenerationJob) {
+      clearInterval(timer);
+      await heartbeat;
+      if (leaseError) throw new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary: "lease", reason: "heartbeat_failed"});
+      try { await options.service.awaitConfirmation(current); }
+      catch (error) {
+        const saved = await options.store.readJob(current.id);
+        if (!saved || !saved.reviewBase || (saved.status !== "awaiting_confirmation" && saved.baseConfirmedAt === undefined) ||
+            saved.stages[0]?.sha256 !== current.stages[0]?.sha256) throw error;
+      }
+      return "awaiting_confirmation" as const;
+    }
     try {
       if (job.status === "generating") {
         if (job.pipelineVersion !== 2) throw new GenerationError("outcome_unknown");
@@ -48,7 +60,14 @@ export function createSpriteGenerationWorker(options: {
           if (stage.status !== "completed" || !bytes || createHash("sha256").update(bytes).digest("hex") !== stage.sha256) throw new GenerationError("saved_stage_unavailable");
           saved.set(stage.name, bytes);
         }
-        const activeSession = await options.renderer.open(job, saved);
+        if (job.reviewBase && job.baseConfirmedAt === undefined && saved.has("base")) return await awaitReview(job);
+        let reference: Buffer | undefined;
+        if (job.reference && !saved.has("base")) {
+          const bytes = await options.store.readArtifact(job.id, "reference.png", now());
+          if (!bytes || createHash("sha256").update(bytes).digest("hex") !== job.reference.sha256) throw new GenerationError("saved_stage_unavailable");
+          reference = bytes;
+        }
+        const activeSession = await options.renderer.open(job, saved, reference);
         session = activeSession;
         let prepared = false;
         const prepareRows = async () => {
@@ -133,6 +152,7 @@ export function createSpriteGenerationWorker(options: {
           if (!refreshed) throw new Error("Saved generation checkpoint unavailable");
           if (refreshed.worker !== owner) throw new GenerationError("stale_worker");
           job = refreshed;
+          if (job.reviewBase && job.baseConfirmedAt === undefined && saved.has("base")) return await awaitReview(job);
         }
         await prepareRows();
         const atlas = await session.compose();

@@ -25,7 +25,7 @@ export async function startBudgetTracking(tx: GenerationTransaction, id: string,
   const budget = await load(tx, now);
   assertBelowRecordedLimit(budget, now, limitUsd);
   // Retain the stored shape for compatible readers; this marker holds no money.
-  budget.reservations[id] = { remainingMicroUsd: 0, unknown: false };
+  budget.reservations[id] ??= { remainingMicroUsd: 0, unknown: false };
   await save(tx, budget, now);
 }
 export async function checkStageBudget(tx: GenerationTransaction, id: string, now: number, limitUsd: number) {
