@@ -9,6 +9,7 @@ import type { PublicGeneration } from "@/lib/pets/generation/service";
 import { publicGenerationError } from "@/lib/pets/generation/public-error";
 import {GeneratedPetMetadataEditor} from "@/components/GeneratedPetMetadataEditor/GeneratedPetMetadataEditor";
 import { notifyGenerationHistory, rememberGeneration } from "@/lib/pets/generation/history";
+import {RefinementRecovery} from "./BaseRefinement";
 import {BaseReview} from "./BaseReview";
 import "./GeneratedPetPreview.scss";
 
@@ -230,6 +231,7 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId }: { ge
     {generation?.status==="completed"&&generation.metadata&&<GeneratedPetMetadataEditor generationId={generationId} metadata={generation.metadata} disabled={Boolean(submission)||submitting||unavailable} onBlocked={value=>{metadataBlockedRef.current=value;setMetadataBlocked(value);}} onSaved={metadata=>{setMetadataConflict(false);setGeneration(current=>current?{...current,metadata,pet:current.pet?{...current.pet,displayName:metadata.displayName??current.pet.displayName}:current.pet}:current);if(metadata.displayName&&!editedSlug.current&&!savedSubmission.current&&suggestPublicPetSlug(metadata.displayName)!==slug){checkSequence.current++;setSlug(suggestPublicPetSlug(metadata.displayName));setSlugCheck(null);setSlugNotice("");}}}/>}
     <p role="status" aria-live="polite">{error || (generation ? STATUS_LABELS[generation.status] : "Loading generation…")}</p>
     {generation?.progress && generation.status !== "failed" && <p>{generation.progress.completedSteps} of {generation.progress.totalSteps} generation steps completed.</p>}
+    {!editingBase && (unavailable || (generation && generation.status !== "awaiting_confirmation")) && <RefinementRecovery generationId={generationId} />}
     {failed && <div role="alert"><p>{failure.message}</p><p>{failure.hint}</p></div>}
     {previousGenerationId && <p><a href={withBasePath(`/generated/${generationId}`)}>Open this version</a>{" · "}<a href={withBasePath(`/generated/${previousGenerationId}`)}>Open previous version</a></p>}
     <div className={previousGenerationId ? "generated-pet-versions" : undefined}>

@@ -124,3 +124,23 @@ it("counts deliberate identical edits with new UUIDs as distinct ordinary attemp
   expect(quota(f.store).map(([, row]) => row.value)).toEqual(["3", "3"]);
   expect((await f.service.get(f.parent.generationId)).status).toBe("awaiting_confirmation");
 });
+
+
+it.each(["read", "write"])("rejects an edit if the source expires during an admission ledger %s", async phase => {
+  const f = await fixture();
+  f.config.now = Date.parse(f.parent.expiresAt) - 1;
+  const before = {jobs: structuredClone([...f.store.jobs]), ledger: structuredClone([...f.store.ledger]), artifacts: [...f.store.artifacts]};
+  const transaction = f.store.transaction.bind(f.store);
+  vi.spyOn(f.store, "transaction").mockImplementationOnce(operation => transaction(tx => operation({...tx, getLedger: async (key, now) => {
+    const value = await tx.getLedger(key, now);
+    if (phase === "read" && key === "scheduler") f.config.now += 2;
+    return value;
+  }, putLedger: async (key, value, expiresAt) => {
+    await tx.putLedger(key, value, expiresAt);
+    if (phase === "write" && key === "scheduler") f.config.now += 2;
+  }})));
+  await expect(f.refine()).rejects.toMatchObject({code: "generation_expired"});
+  expect([...f.store.jobs]).toEqual(before.jobs);
+  expect([...f.store.ledger]).toEqual(before.ledger);
+  expect([...f.store.artifacts]).toEqual(before.artifacts);
+});

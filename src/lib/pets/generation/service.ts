@@ -96,6 +96,7 @@ export function createGenerationService(store: GenerationStore, options: {
         if (!clientIp) throw new GenerationError("client_ip_unavailable");
         let reference = admission.reference;
         let displayName = body.displayName;
+        let sourceExpiresAt: number | undefined;
         if (admission.sourceBaseId) {
           const source = await tx.getJob(admission.sourceBaseId);
           if (!source) throw new GenerationError("not_found");
@@ -103,6 +104,7 @@ export function createGenerationService(store: GenerationStore, options: {
           if (!source.reviewBase || source.status !== "awaiting_confirmation" || source.baseConfirmedAt !== undefined) throw new GenerationError("base_not_ready");
           const bytes = await readSavedGenerationBase(source, tx.getArtifact, now);
           reference = await normalizeSavedGenerationBase(bytes);
+          sourceExpiresAt = source.expiresAt;
           now = clock();
           if (source.expiresAt <= now) throw new GenerationError("generation_expired");
           if (displayName === undefined && source.nameSource === "user") displayName = source.displayName;
@@ -122,6 +124,8 @@ export function createGenerationService(store: GenerationStore, options: {
         await consumeDailyQuota(tx, secret, clientIp, now, quota);
         state.queue.push(id);
         await saveScheduler(tx, state);
+        // Roll back admission if the source expired while the database work was in flight.
+        if (sourceExpiresAt !== undefined && sourceExpiresAt <= clock()) throw new GenerationError("generation_expired");
         return publicJob(job, now);
       });
     },

@@ -149,3 +149,33 @@ it("creates a fresh request when the user returns to the original and intentiona
   const second = JSON.parse(String(posts()[1][1].body));
   expect(second.prompt).toBe(first.prompt); expect(second.requestId).not.toBe(first.requestId);
 });
+
+
+it.each(["expired", "confirmed"])("recovers a lost receipt after remount with a %s source", async condition => {
+  const normal = fetchMock.getMockImplementation()!; let lost = false; let remounted = false;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/refine") && !lost) {lost = true; throw Error("synthetic lost receipt");}
+    if (remounted && url === `/api/pet-generations/${original}`) return condition === "expired"
+      ? Response.json({code: "generation_expired"}, {status: 410})
+      : Response.json({generation: {...reply(original).generation, status: "queued", baseConfirmed: true}});
+    return normal(url, init);
+  });
+  await render(); await edit(); await submit();
+  const body = String(posts()[0][1].body);
+  await act(async () => root.unmount()); root = createRoot(host); remounted = true;
+  await act(async () => {root.render(<ThemeProvider theme="light"><GeneratedPetPreview generationId={original}/></ThemeProvider>);});
+  await act(async () => {await new Promise(resolve => setTimeout(resolve, 50));});
+  const recovery = findButton("Recover submitted edit"); expect(recovery).toBeDefined();
+  await act(async () => recovery!.click());
+  const input = host.querySelector("textarea")!;
+  const type = (value: string) => act(() => {Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, value); input.dispatchEvent(new Event("input", {bubbles: true}));});
+  type("A different edit");
+  await act(async () => {findButton("Check submitted version")!.click(); await new Promise(resolve => setTimeout(resolve, 50));});
+  expect(posts()).toHaveLength(1);
+  expect(host.textContent).toContain("same edit text");
+  type("Make the scarf red");
+  await act(async () => {findButton("Check submitted version")!.click(); await new Promise(resolve => setTimeout(resolve, 50));});
+  expect(posts()).toHaveLength(2); expect(String(posts()[1][1].body)).toBe(body);
+  expect(navigate).toHaveBeenCalledWith(`/generated/${child}?from=${original}`);
+  expect(localStorage.getItem("pets-generation-history-v1:" + child)).not.toBeNull();
+});

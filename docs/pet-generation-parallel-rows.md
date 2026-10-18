@@ -175,12 +175,17 @@ the body is limited to16KiB. New admission requires review enabled and a live
 reference copy, new job, quota, budget and queue writes share one transaction.
 The source ID participates in request identity. Replay checks deduplication before
 reading the source, so accepted requests survive source expiry or flag rollback.
+A final source-expiry check rolls back admission if database work crosses its deadline.
 
 Stored renderer PNGs may be up to8MiB; their private references are fully decoded,
 resized to at most1024pixels on the long side and kept under5MiB. Public uploads
 retain their5MiB input limit. Original references are never returned or published.
 No prompts or image bytes are placed in browser storage; request identity stores
-only a hash, UUID and expiry. Successful refinement navigates to the new private
+only a hash, UUID and expiry under a key derived from the source ID. Other forms
+cannot replace that pending identity. After a lost response and page reload, an
+expired or confirmed source offers **Recover submitted edit**. Re-entering the
+exact text checks its hash and replays the saved UUID; a mismatch or missing
+identity cannot start a new attempt. Successful refinement navigates to the new private
 result with a validated `from` capability hint for comparison/return navigation.
 That hint is not an authorization decision and never appears in gallery assets.
 Both jobs are retained in the existing local history. Confirmation always targets
