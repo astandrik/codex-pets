@@ -53,7 +53,7 @@ describe("mock pet data source", () => {
     });
 
     expect((await getPetBySlug(created.slug))?.status).toBe("pending");
-    expect((await listPendingPets()).some((pet) => pet.id === created.id)).toBe(
+    expect((await listPendingPets()).items.some((pet) => pet.id === created.id)).toBe(
       true,
     );
 

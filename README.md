@@ -434,6 +434,10 @@ Use `npm run seed:dev:reset` to replace only the fixed `dev_*` seed records.
   `/admin/submissions`.
 - Admins can review generation requests and link them to existing pets from
   `/admin/requests`.
+- Both admin queues show 50 rows per page with the full matching count and
+  Previous/Next links (`?page=N`). Submissions remain oldest-first; requests
+  keep pending/in-progress entries first, newest-first within each group.
+  If moderation removes the last page, its URL redirects to the current last page.
 - Owners can delete their own pets from `/my-pets`.
 - Admins can delete any pet from the pet detail page.
 - Deleted pets disappear from owner lists, public listings, and `sitemap.xml`.
