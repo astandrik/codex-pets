@@ -1,4 +1,4 @@
-import {GenerationError, browserGenerationInputSchema} from "@/lib/pets/generation/model";
+import {GenerationError, browserGenerationInputSchema, normalizeGenerationText} from "@/lib/pets/generation/model";
 import {readGenerationBody, readGenerationJson} from "@/lib/pets/generation/http";
 import {normalizeGenerationReference, MAX_REFERENCE_BYTES} from "@/lib/pets/generation/reference-image";
 
@@ -26,8 +26,14 @@ export async function readBrowserGenerationInput(request: Request) {
       fields[key] = value;
     }
   }
-  const parsed = browserGenerationInputSchema.safeParse(fields);
+  const parsed = browserGenerationInputSchema.safeParse({
+    ...fields, prompt: normalizeGenerationText(fields.prompt ?? ""),
+    ...(fields.displayName === undefined ? {} : {displayName: normalizeGenerationText(fields.displayName)}),
+  });
   if (!parsed.success || (!parsed.data.prompt && !file)) throw new GenerationError("invalid_argument");
   const reference = file ? await normalizeGenerationReference(Buffer.from(await file.arrayBuffer()), file.type.toLowerCase()) : undefined;
-  return {input: parsed.data, reference, multipart: true};
+  // Older multipart requests fingerprinted CRLF. Retain only valid old input for replay.
+  const legacy = browserGenerationInputSchema.safeParse(fields);
+  const legacyMultipartInput = legacy.success && (legacy.data.prompt !== parsed.data.prompt || legacy.data.displayName !== parsed.data.displayName) ? legacy.data : undefined;
+  return {input: parsed.data, reference, multipart: true, legacyMultipartInput};
 }

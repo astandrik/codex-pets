@@ -116,12 +116,18 @@ by default and affects admission only. New website tasks accept text, one static
 PNG/JPEG/WebP reference, or both, and stop after the saved base character. The
 reference defines appearance; optional text changes only explicitly named details.
 The user confirms the base before the eleven animation rows and metadata request.
-MCP and jobs admitted before this flag keep their automatic behavior.
+JSON and MCP admissions keep their automatic behavior regardless of this flag.
+Existing jobs retain the policy saved at admission.
 
 All review-form submissions use multipart, including text without an image. This
 preserves review intent if the flag is disabled while the form is open: new review
 requests are rejected, while retries of already accepted requests return the same
-job. Legacy forms continue to send JSON.
+job. Legacy forms continue to send JSON. Multipart text is normalized to LF before
+length validation and fingerprinting. Replays also recognize the original CRLF
+fingerprint of already accepted multipart requests; stored records are not rewritten.
+JSON and MCP text fingerprints remain unchanged. Deploy compatible web readers
+together: an old web instance cannot replay newly normalized multipart records.
+Disabling new review admission does not remove the need for compatible readers.
 
 The upload limit is 5 MiB, with a 6 MiB streamed multipart limit and a 25-million
 pixel decoding limit. The server rotates, strips metadata and normalizes the image

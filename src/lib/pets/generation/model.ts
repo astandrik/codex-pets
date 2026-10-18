@@ -22,6 +22,9 @@ export const generationInputSchema = z.object({
   displayName: z.string().trim().min(1).max(80).optional(),
   requestId: z.uuid(),
 }).strict();
+export function normalizeGenerationText(value: string) {
+  return value.replace(/\r\n?/g, "\n");
+}
 export const browserGenerationInputSchema = generationInputSchema.extend({prompt: z.string().trim().max(2000).default("")});
 export const referenceImageSchema = z.object({
   sha256: z.string().regex(/^[a-f0-9]{64}$/),

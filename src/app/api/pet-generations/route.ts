@@ -10,9 +10,9 @@ export async function POST(request: Request) {
   try {
     assertGenerationOrigin(request);
     const reviewBase = generationReviewFlowEnabled();
-    const {input, reference, multipart} = await readBrowserGenerationInput(request);
+    const {input, reference, multipart, legacyMultipartInput} = await readBrowserGenerationInput(request);
     const ip = readGenerationClientIp(request.headers);
-    const generation = reviewBase || multipart ? await petGeneration.generate(input, ip, {reviewBase: true, reference, allowNew: reviewBase}) : await petGeneration.generate(input, ip);
+    const generation = multipart ? await petGeneration.generate(input, ip, {reviewBase: true, reference, allowNew: reviewBase, legacyMultipartInput}) : await petGeneration.generate(input, ip);
     return Response.json({generation}, {status: 202, headers: GENERATION_HEADERS});
   } catch (error) { return generationHttpError(error, true); }
 }

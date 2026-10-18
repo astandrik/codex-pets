@@ -13,7 +13,7 @@ import {
   generationInputSchema, generationDigest, generationEnabled, readGenerationSecret,
   nextMoscowDay, newGenerationId, dedupSchema,
   rowAttemptLogSchema, ROW_RETRY_DELAY_MS, type RowAttemptLog, stageFailureDiagnosticSchema, type StageFailureDiagnostic, stageCliCauseSchema, type StageCliCause,
-  STAGE_NAMES, type StageName, type GenerationJob, type ImageUsage, type GenerationReference, browserGenerationInputSchema,
+  STAGE_NAMES, type StageName, type GenerationJob, type ImageUsage, type GenerationReference, browserGenerationInputSchema, normalizeGenerationText, type GenerationInput,
 } from "@/lib/pets/generation/model";
 import { generationStore, type GenerationStore, type GenerationTransaction } from "@/lib/pets/generation/store";
 
@@ -61,20 +61,29 @@ export function createGenerationService(store: GenerationStore, options: {
   }
   return {
     ...createBaseReviewService(store, {now: clock, enabled: options.enabled, budgetUsd}),
-    async generate(input: unknown, clientIp: string | null, admission: {reviewBase?: boolean; reference?: GenerationReference; allowNew?: boolean} = {}) {
+    async generate(input: unknown, clientIp: string | null, admission: {reviewBase?: boolean; reference?: GenerationReference; allowNew?: boolean; legacyMultipartInput?: GenerationInput} = {}) {
       const parsed = (admission.reviewBase ? browserGenerationInputSchema : generationInputSchema).safeParse(input);
       if (!parsed.success || (!parsed.data.prompt && !admission.reference) || (admission.reference && !admission.reviewBase)) throw new GenerationError("invalid_argument");
       const body = parsed.data;
       const now = clock();
       const secret = options.secret();
       const requestKey = "request:" + generationDigest(secret, "request", body.requestId);
-      const hash = generationDigest(secret, "body", JSON.stringify({ prompt: body.prompt, displayName: body.displayName ?? "Generated pet", ...(admission.reference ? {referenceSha256: admission.reference.metadata.sourceSha256} : {}) }));
+      const fingerprint = (value: GenerationInput) => generationDigest(secret, "body", JSON.stringify({ prompt: value.prompt, displayName: value.displayName ?? "Generated pet", ...(admission.reference ? {referenceSha256: admission.reference.metadata.sourceSha256} : {}) }));
+      const hash = fingerprint(body);
+      let legacyHash: string | undefined;
+      if (admission.legacyMultipartInput !== undefined) {
+        const legacy = browserGenerationInputSchema.safeParse(admission.legacyMultipartInput);
+        if (!admission.reviewBase || !legacy.success || legacy.data.requestId !== body.requestId ||
+            normalizeGenerationText(legacy.data.prompt) !== body.prompt ||
+            (legacy.data.displayName === undefined ? undefined : normalizeGenerationText(legacy.data.displayName)) !== body.displayName) throw new GenerationError("invalid_argument");
+        legacyHash = fingerprint(legacy.data);
+      }
       const id = createId();
       return store.transaction(async (tx) => {
         const previous = await tx.getLedger(requestKey, now);
         if (previous) {
           const record = dedupSchema.parse(JSON.parse(previous));
-          if (record.hash !== hash || (record.nameProvided!==undefined && record.nameProvided!==(body.displayName!==undefined))) throw new GenerationError("request_id_conflict");
+          if ((record.hash !== hash && record.hash !== legacyHash) || (record.nameProvided!==undefined && record.nameProvided!==(body.displayName!==undefined))) throw new GenerationError("request_id_conflict");
           const job = await tx.getJob(record.id);
           if (!job || job.expiresAt <= now) throw new GenerationError("generation_expired");
           return publicJob(job, now);

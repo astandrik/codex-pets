@@ -13,7 +13,7 @@ import {POST} from "@/app/api/pet-generations/route";
 window.matchMedia ??= ((query: string) => ({matches: false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false})) as typeof window.matchMedia;
 afterEach(() => {vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs();});
 
-async function renderForm(reviewBase: boolean, loseFirstResponse = false) {
+async function renderForm(reviewBase: boolean, loseFirstResponse = false, promptText = "Synthetic private fox") {
   sessionStorage.clear(); localStorage.clear(); vi.stubGlobal("crypto", webcrypto);
   const store = new MemoryStore();
   const service = createGenerationService(store, {enabled: () => true, secret: () => "synthetic-form-secret-at-least-32-characters"});
@@ -25,21 +25,19 @@ async function renderForm(reviewBase: boolean, loseFirstResponse = false) {
   const request = vi.fn(async (url: string, init: RequestInit) => {
     const headers = new Headers(init.headers);
     headers.set("origin", origin); headers.set("x-pets-client-ip", "203.0.113.5");
-    let body: string;
+    let body: string | FormData;
     if (typeof init.body === "string") body = init.body;
     else {
-      // Encode the browser's actual text-only FormData at the HTTP boundary.
-      const form = init.body as FormData, boundary = "synthetic-form-boundary";
-      const parts: string[] = [];
-      for (const [key, value] of form.entries()) {
+      // Response produces runtime-native FormData; jsdom's form belongs to another realm.
+      body = await new Response("", {headers: {"content-type": "application/x-www-form-urlencoded"}}).formData();
+      for (const [key, value] of (init.body as FormData).entries()) {
         if (typeof value !== "string") throw Error("Unexpected image in text-only fixture");
-        parts.push(`--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${value}\r\n`);
+        body.set(key, value);
       }
-      body = parts.join("") + `--${boundary}--\r\n`;
-      headers.set("content-type", `multipart/form-data; boundary=${boundary}`);
     }
-    contentTypes.push(headers.get("content-type") ?? "");
-    const response = await POST(new Request(origin + url, {method: "POST", headers, body}));
+    const wire = new Request(origin + url, {method: "POST", headers, body});
+    contentTypes.push(wire.headers.get("content-type") ?? "");
+    const response = await POST(wire);
     statuses.push(response.status);
     if (loseFirstResponse && statuses.length === 1) throw Error("synthetic lost admission response");
     return response;
@@ -48,7 +46,7 @@ async function renderForm(reviewBase: boolean, loseFirstResponse = false) {
   const element = document.createElement("div"); document.body.append(element); const root = createRoot(element);
   await act(async () => root.render(<ThemeProvider theme="light"><PetGenerationForm enabled reviewBase={reviewBase} /></ThemeProvider>));
   const input = element.querySelector("textarea")!;
-  act(() => {Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, "Synthetic private fox"); input.dispatchEvent(new Event("input", {bubbles: true}));});
+  act(() => {Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, promptText); input.dispatchEvent(new Event("input", {bubbles: true}));});
   const submit = () => act(async () => {
     element.querySelector("form")!.dispatchEvent(new Event("submit", {bubbles: true, cancelable: true}));
     await new Promise(resolve => setTimeout(resolve, 50));
@@ -87,12 +85,24 @@ it("replays a text-only review admission after a lost response and flag rollback
   } finally {await form.cleanup();}
 });
 
-it("preserves JSON automatic admission for a legacy form with the flag off", async () => {
+it.each(["false", "true"])("preserves JSON automatic admission for a legacy form with flag=%s", async flag => {
   const form = await renderForm(false);
   try {
-    vi.stubEnv("PET_GENERATION_REVIEW_FLOW_ENABLED", "false");
+    vi.stubEnv("PET_GENERATION_REVIEW_FLOW_ENABLED", flag);
     await form.submit();
     expect(form.statuses).toEqual([202]); expect(form.contentTypes).toEqual(["application/json"]);
     expect([...form.store.jobs.values()][0].reviewBase).toBeUndefined();
+  } finally {await form.cleanup();}
+});
+
+
+it("sends a 2000-character textarea through native multipart serialization without rejection", async () => {
+  const prompt = "a".repeat(999) + "\n" + "b".repeat(1000);
+  const form = await renderForm(true, false, prompt);
+  try {
+    await form.submit();
+    expect(form.statuses).toEqual([202]);
+    expect(form.contentTypes[0]).toContain("multipart/form-data");
+    expect([...form.store.jobs.values()][0].prompt).toBe(prompt);
   } finally {await form.cleanup();}
 });
