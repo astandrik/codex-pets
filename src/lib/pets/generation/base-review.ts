@@ -47,8 +47,9 @@ export function createBaseReviewService(store: GenerationStore, options: {now: (
       if (!GENERATION_ID.test(id)) throw new GenerationError("invalid_argument");
       try {
         return await store.transaction(async tx => {
+          const saved = await tx.getJob(id);
           const now = options.now();
-          const job = liveJob(id, await tx.getJob(id), now);
+          const job = liveJob(id, saved, now);
           if (job.baseConfirmedAt !== undefined) return {generation: publicJob(job, now), newlyQueued: false};
           if (!job.reviewBase || job.status !== "awaiting_confirmation") throw new GenerationError("base_not_ready");
           await baseImage(job, tx.getArtifact, now);
@@ -58,11 +59,13 @@ export function createBaseReviewService(store: GenerationStore, options: {now: (
           if (state.pauseReason) throw new GenerationError("generation_paused");
           if (state.queue.length >= 5) throw new GenerationError("queue_full");
           await startBudgetTracking(tx, id, now, options.budgetUsd());
-          const updated: GenerationJob = {...job, status: "queued", baseConfirmedAt: now, queuedAt: now};
+          const decisionTime = options.now();
+          liveJob(id, job, decisionTime);
+          const updated: GenerationJob = {...job, status: "queued", baseConfirmedAt: decisionTime, queuedAt: decisionTime};
           await tx.putJob(updated);
           state.queue.push(id);
           await saveScheduler(tx, state);
-          return {generation: publicJob(updated, now), newlyQueued: true};
+          return {generation: publicJob(updated, decisionTime), newlyQueued: true};
         });
       } catch (error) {
         if (!(error instanceof GenerationError)) {

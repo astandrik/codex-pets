@@ -19,7 +19,7 @@ const ERRORS: Record<string,string> = {
   invalid_reference_image: "Choose a readable, single-frame PNG, JPEG or WebP image, up to 25 million pixels.",
   reference_image_too_large: "Choose an image of 5 MiB or less.",
   body_too_large: "The upload is too large. Choose an image of 5 MiB or less.",
-  generation_review_disabled: "Image generation is not currently enabled. Reload the form to continue.",
+  generation_review_disabled: "Character review is not currently enabled for new tasks. Reload the form to continue.",
 };
 export function PetGenerationForm({ enabled, reviewBase = false }: { enabled: boolean; reviewBase?: boolean }) {
   const [prompt,setPrompt]=useState(""); const [displayName,setDisplayName]=useState("");
@@ -52,11 +52,11 @@ export function PetGenerationForm({ enabled, reviewBase = false }: { enabled: bo
     try {
       const input=await prepareGenerationRequest(sessionStorage,{prompt,displayName,referenceImage:reference?.file});
       let body: string | FormData = JSON.stringify(input);
-      if (reviewBase && reference) {
+      if (reviewBase) {
         body = new FormData();
         body.set("prompt", input.prompt); body.set("requestId", input.requestId);
         if (input.displayName) body.set("displayName", input.displayName);
-        body.set("referenceImage", reference.file);
+        if (reference) body.set("referenceImage", reference.file);
       }
       const response=await fetch(withBasePath("/api/pet-generations"),{method:"POST",headers:typeof body === "string" ? {"Content-Type":"application/json"} : undefined,body,cache:"no-store"});
       const result: unknown=await response.json();

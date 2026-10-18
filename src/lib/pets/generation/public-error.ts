@@ -42,7 +42,7 @@ export function publicGenerationError(code: string, providerFailure?: ProviderFa
     case "base_not_ready":
       return result("This character is not awaiting confirmation.", "Refresh the existing task to see its current state.");
     case "generation_review_disabled":
-      return result("Image input is not enabled for new tasks.", "Reload the generation form. Existing tasks remain available.");
+      return result("Character review is not enabled for new tasks.", "Reload the generation form. Existing tasks remain available.");
     case "invalid_reference_image":
       return result("The reference image could not be accepted.", "Use one readable, static PNG, JPEG or WebP image with at most 25 million pixels.");
     case "reference_image_too_large":

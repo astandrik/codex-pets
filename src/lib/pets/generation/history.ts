@@ -105,6 +105,16 @@ export function rememberGeneration(
   }
 }
 
+// Status updates must change a value: rewriting the same entry does not notify other windows.
+export function notifyGenerationHistory(storage?: Pick<Storage, "setItem">): boolean {
+  try {
+    (storage ?? window.localStorage).setItem(HISTORY_PREFIX + "refresh", crypto.randomUUID());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const historyGenerationSchema = z.object({
   generationId: z.string().regex(ID),
   status: z.enum(["queued", "generating", "awaiting_confirmation", "processing", "completed", "failed"]),

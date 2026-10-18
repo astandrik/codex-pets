@@ -109,6 +109,6 @@ it("does not silently submit a previous reference after a rejected replacement",
     act(() => [...element.querySelectorAll("button")].find(button => button.textContent === "Remove image")!.click());
     fetchMock.mockRejectedValueOnce(Error("synthetic offline"));
     await submit(); expect(fetchMock).toHaveBeenCalledOnce();
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).prompt).toBe("Keep the red sweater");
+    expect((fetchMock.mock.calls[0][1].body as FormData).get("prompt")).toBe("Keep the red sweater");
   } finally {create.mockRestore(); revoke.mockRestore();}
 });

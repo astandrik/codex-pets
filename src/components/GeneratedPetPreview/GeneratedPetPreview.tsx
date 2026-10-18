@@ -8,7 +8,7 @@ import { parsePublicPetSlug, suggestPublicPetSlug } from "@/lib/pets/public-slug
 import type { PublicGeneration } from "@/lib/pets/generation/service";
 import { publicGenerationError } from "@/lib/pets/generation/public-error";
 import {GeneratedPetMetadataEditor} from "@/components/GeneratedPetMetadataEditor/GeneratedPetMetadataEditor";
-import { rememberGeneration } from "@/lib/pets/generation/history";
+import { notifyGenerationHistory, rememberGeneration } from "@/lib/pets/generation/history";
 import {BaseReview} from "./BaseReview";
 import "./GeneratedPetPreview.scss";
 
@@ -48,6 +48,7 @@ function GeneratedPetPreviewContent({ generationId }: { generationId: string }) 
   const initializedSlug = useRef(false);
   const editedSlug = useRef(false);
   const checkSequence = useRef(0);
+  const observedStatus = useRef<PublicGeneration["status"] | undefined>(undefined);
   const submissionController = useRef<AbortController | null>(null);
   useEffect(() => () => submissionController.current?.abort(), []);
   useEffect(() => {
@@ -89,6 +90,10 @@ function GeneratedPetPreviewContent({ generationId }: { generationId: string }) 
         setGeneration(body.generation);
         setError(""); setUnavailable(false);
         rememberGeneration(generationId,body.generation.expiresAt);
+        if (observedStatus.current !== body.generation.status) {
+          observedStatus.current = body.generation.status;
+          notifyGenerationHistory();
+        }
         if (body.generation.submission) {
           rememberSubmission(body.generation.submission);
         } else if (body.generation.pet && !initializedSlug.current && !editedSlug.current && !savedSubmission.current) {

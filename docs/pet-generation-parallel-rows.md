@@ -118,6 +118,11 @@ reference defines appearance; optional text changes only explicitly named detail
 The user confirms the base before the eleven animation rows and metadata request.
 MCP and jobs admitted before this flag keep their automatic behavior.
 
+All review-form submissions use multipart, including text without an image. This
+preserves review intent if the flag is disabled while the form is open: new review
+requests are rejected, while retries of already accepted requests return the same
+job. Legacy forms continue to send JSON.
+
 The upload limit is 5 MiB, with a 6 MiB streamed multipart limit and a 25-million
 pixel decoding limit. The server rotates, strips metadata and normalizes the image
 to PNG, at most 1024 pixels on its long side, without cropping or enlargement.
