@@ -9,7 +9,7 @@ import { validateUploadedPackage } from "@/lib/pets/package";
 import { replaceGeneratedDetails, validateGeneratedSheet } from "@/lib/pets/generation/package";
 import { slugify } from "@/lib/pets/validation";
 import {
-  DAY, LEASE_MS, GENERATION_ID, PROMPT_REVISION, MAX_PARALLEL_IMAGE_ROWS, GenerationError,
+  DAY, LEASE_MS, WAIT_MS, GENERATION_ID, PROMPT_REVISION, MAX_PARALLEL_IMAGE_ROWS, GenerationError,
   generationInputSchema, generationDigest, generationEnabled, readGenerationSecret,
   nextMoscowDay, newGenerationId, dedupSchema,
   rowAttemptLogSchema, ROW_RETRY_DELAY_MS, type RowAttemptLog, stageFailureDiagnosticSchema, type StageFailureDiagnostic, stageCliCauseSchema, type StageCliCause,
@@ -218,18 +218,27 @@ export function createGenerationService(store: GenerationStore, options: {
     },
     async claim(owner: string) {
       if (!options.enabled()) return null;
-      const now = clock();
       return store.transaction(async (tx) => {
-        const state = await scheduler(tx, now);
+        const state = await scheduler(tx, clock());
+        let now = clock();
         const hadPendingWork = Boolean(state.active || state.queue.length);
+        const queuedBeforeCleanup = state.queue.length;
         await expireQueue(tx, state, now);
+        const saveQueueCleanup = async () => {
+          if (state.queue.length !== queuedBeforeCleanup) await saveScheduler(tx, state);
+        };
+        now = clock();
         if(state.pauseReason){
           const pending=state.active&&state.active.until<=now?await tx.getJob(state.active.id):null;
-          if(!pending||pending.status!=="processing"||pending.cardMetadata?.state!=="failed")return null;
+          now = clock();
+          if(!pending||pending.status!=="processing"||pending.cardMetadata?.state!=="failed") {
+            await saveQueueCleanup(); return null;
+          }
         }
         if (state.active) {
-          if (state.active.until > now) return null;
+          if (state.active.until > now) { await saveQueueCleanup(); return null; }
           const abandoned = await tx.getJob(state.active.id);
+          now = clock();
           if(abandoned&&abandoned.expiresAt>now&&abandoned.status==="processing"&&abandoned.cardMetadata?.state==="inflight"){
             state.active={id:abandoned.id,owner,until:now+LEASE_MS,inflight:true};
             const recovered={...abandoned,worker:owner,leaseUntil:now+LEASE_MS};await tx.putJob(recovered);await saveScheduler(tx,state);return recovered;
@@ -257,15 +266,29 @@ export function createGenerationService(store: GenerationStore, options: {
           state.active = null;
           if (state.pauseReason) { await saveScheduler(tx, state); return null; }
         }
-        const id = state.queue.shift();
-        if (!id) { if (hadPendingWork) await saveScheduler(tx, state); return null; }
-        const job = await tx.getJob(id);
-        if (!job) throw new Error("Queued generation is missing");
-        const claimed: GenerationJob = { ...job, status: "generating", worker: owner, leaseUntil: now + LEASE_MS };
-        state.active = { id, owner, until: now + LEASE_MS, inflight: job.pipelineVersion !== 2 };
-        await tx.putJob(claimed);
-        await saveScheduler(tx, state);
-        return claimed;
+        while (state.queue.length) {
+          const id = state.queue.shift()!;
+          const job = await tx.getJob(id);
+          // Reads and transaction retries can cross either deadline after expireQueue.
+          const decisionTime = clock();
+          if (!job || job.expiresAt <= decisionTime) {
+            await settleBudget(tx, id, decisionTime);
+            continue;
+          }
+          if (job.status !== "queued") continue;
+          if ((job.queuedAt ?? job.createdAt) + WAIT_MS <= decisionTime) {
+            await tx.putJob({...job, status: "failed", error: "queue_timeout", prompt: ""});
+            await settleBudget(tx, id, decisionTime);
+            continue;
+          }
+          const claimed: GenerationJob = {...job, status: "generating", worker: owner, leaseUntil: decisionTime + LEASE_MS};
+          state.active = {id, owner, until: decisionTime + LEASE_MS, inflight: job.pipelineVersion !== 2};
+          await tx.putJob(claimed);
+          await saveScheduler(tx, state);
+          return claimed;
+        }
+        if (hadPendingWork) await saveScheduler(tx, state);
+        return null;
       });
     },
     async heartbeat(job: GenerationJob) {
