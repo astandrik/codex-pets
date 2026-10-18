@@ -31,4 +31,10 @@ describe("human-readable public pet slugs", () => {
     expect(() => appendPublicPetSlugSuffix("lumi", "2", 2)).toThrow();
     expect(() => appendPublicPetSlugSuffix("lumi", "../x")).toThrow();
   });
+  it.each([65, 8.5, 0])("rejects invalid maxLength %s", (maxLength) => {
+    expect(() => appendPublicPetSlugSuffix("a".repeat(64), "2", maxLength)).toThrow();
+  });
+  it("rejects a maximum that cannot fit the suffix and separator", () => {
+    expect(() => appendPublicPetSlugSuffix("lumi", "123", 3)).toThrow();
+  });
 });
