@@ -1,10 +1,10 @@
 export const REQUEST_STORAGE_KEY = "pets-generation-request";
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
-type Brief = { prompt: string; displayName?: string; referenceImage?: Blob };
+type Brief = { prompt: string; displayName?: string; referenceImage?: Blob; sourceBaseId?: string };
 export async function prepareGenerationRequest(storage: Storage, brief: Brief, now = Date.now()) {
   const content = { prompt: brief.prompt.trim(), ...(brief.displayName?.trim() ? { displayName: brief.displayName.trim() } : {}) };
   const referenceSha256 = brief.referenceImage ? Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await brief.referenceImage.arrayBuffer())), byte => byte.toString(16).padStart(2,"0")).join("") : undefined;
-  const bytes = new TextEncoder().encode(JSON.stringify({...content, ...(referenceSha256 ? {referenceSha256} : {})}));
+  const bytes = new TextEncoder().encode(JSON.stringify({...content, ...(referenceSha256 ? {referenceSha256} : {}), ...(brief.sourceBaseId ? {sourceBaseId: brief.sourceBaseId} : {})}));
   const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), byte => byte.toString(16).padStart(2,"0")).join("");
   let requestId = crypto.randomUUID();
   try {

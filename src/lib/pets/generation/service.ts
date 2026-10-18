@@ -24,7 +24,8 @@ import {CARD_METADATA_FALLBACK, normalizeCardMetadata, cardMetadataEditSchema, t
 import type {CardMetadataResult} from "@/lib/pets/generation/card-provider";
 import {publicJob} from "@/lib/pets/generation/public-job";
 import {scheduler, saveScheduler, expireQueue, requireJobWithActiveWorkerLease} from "@/lib/pets/generation/scheduler";
-import {createBaseReviewService} from "@/lib/pets/generation/base-review";
+import {createBaseReviewService, readSavedGenerationBase} from "@/lib/pets/generation/base-review";
+import {normalizeSavedGenerationBase} from "@/lib/pets/generation/reference-image";
 
 export function createGenerationService(store: GenerationStore, options: {
   enabled: () => boolean;
@@ -61,14 +62,15 @@ export function createGenerationService(store: GenerationStore, options: {
   }
   return {
     ...createBaseReviewService(store, {now: clock, enabled: options.enabled, budgetUsd}),
-    async generate(input: unknown, clientIp: string | null, admission: {reviewBase?: boolean; reference?: GenerationReference; allowNew?: boolean; legacyMultipartInput?: GenerationInput} = {}) {
-      const parsed = (admission.reviewBase ? browserGenerationInputSchema : generationInputSchema).safeParse(input);
+    async generate(input: unknown, clientIp: string | null, admission: {reviewBase?: boolean; reference?: GenerationReference; allowNew?: boolean; legacyMultipartInput?: GenerationInput; sourceBaseId?: string} = {}) {
+      if (admission.sourceBaseId !== undefined && (!GENERATION_ID.test(admission.sourceBaseId) || !admission.reviewBase || admission.reference || admission.legacyMultipartInput)) throw new GenerationError("invalid_argument");
+      const parsed = (admission.reviewBase && admission.sourceBaseId === undefined ? browserGenerationInputSchema : generationInputSchema).safeParse(input);
       if (!parsed.success || (!parsed.data.prompt && !admission.reference) || (admission.reference && !admission.reviewBase)) throw new GenerationError("invalid_argument");
       const body = parsed.data;
-      const now = clock();
+      const requestTime = clock();
       const secret = options.secret();
       const requestKey = "request:" + generationDigest(secret, "request", body.requestId);
-      const fingerprint = (value: GenerationInput) => generationDigest(secret, "body", JSON.stringify({ prompt: value.prompt, displayName: value.displayName ?? "Generated pet", ...(admission.reference ? {referenceSha256: admission.reference.metadata.sourceSha256} : {}) }));
+      const fingerprint = (value: GenerationInput) => generationDigest(secret, "body", JSON.stringify({ prompt: value.prompt, displayName: value.displayName ?? "Generated pet", ...(admission.reference ? {referenceSha256: admission.reference.metadata.sourceSha256} : {}), ...(admission.sourceBaseId ? {sourceBaseId: admission.sourceBaseId} : {}) }));
       const hash = fingerprint(body);
       let legacyHash: string | undefined;
       if (admission.legacyMultipartInput !== undefined) {
@@ -80,6 +82,7 @@ export function createGenerationService(store: GenerationStore, options: {
       }
       const id = createId();
       return store.transaction(async (tx) => {
+        let now = admission.sourceBaseId ? clock() : requestTime;
         const previous = await tx.getLedger(requestKey, now);
         if (previous) {
           const record = dedupSchema.parse(JSON.parse(previous));
@@ -91,6 +94,19 @@ export function createGenerationService(store: GenerationStore, options: {
         if (admission.allowNew === false) throw new GenerationError("generation_review_disabled");
         if (!options.enabled()) throw new GenerationError("generation_disabled");
         if (!clientIp) throw new GenerationError("client_ip_unavailable");
+        let reference = admission.reference;
+        let displayName = body.displayName;
+        if (admission.sourceBaseId) {
+          const source = await tx.getJob(admission.sourceBaseId);
+          if (!source) throw new GenerationError("not_found");
+          if (source.expiresAt <= now) throw new GenerationError("generation_expired");
+          if (!source.reviewBase || source.status !== "awaiting_confirmation" || source.baseConfirmedAt !== undefined) throw new GenerationError("base_not_ready");
+          const bytes = await readSavedGenerationBase(source, tx.getArtifact, now);
+          reference = await normalizeSavedGenerationBase(bytes);
+          now = clock();
+          if (source.expiresAt <= now) throw new GenerationError("generation_expired");
+          if (displayName === undefined && source.nameSource === "user") displayName = source.displayName;
+        }
         const state = await scheduler(tx, now);
         await expireQueue(tx, state, now);
         if (state.pauseReason) throw new GenerationError("generation_paused");
@@ -99,8 +115,8 @@ export function createGenerationService(store: GenerationStore, options: {
         if (quota.ipRemaining === 0) throw new GenerationError("rate_limited", nextMoscowDay(now), undefined, "ip");
         if (state.queue.length >= 5) throw new GenerationError("queue_full");
         await startBudgetTracking(tx, id, now, budgetUsd());
-        const job: GenerationJob = { id, prompt: body.prompt, displayName: body.displayName ?? "Generated pet", status: "queued", createdAt: now, expiresAt: now + DAY, worker: "", promptRevision: admission.reviewBase ? "pet-v2-review-20261017-1" : PROMPT_REVISION, ...(admission.reviewBase ? {reviewBase: true, queuedAt: now} : {}), ...(admission.reference ? {reference: admission.reference.metadata} : {}), pipelineVersion: 2, stages: [], nameSource:body.displayName===undefined?"automatic":"user", ...(options.automaticCardMetadata?.()?{cardMetadata:{policy:1 as const,state:"pending" as const,revision:0,edited:false}}:{}) };
-        if (admission.reference) await tx.putArtifact(id, "reference.png", admission.reference.bytes, job.expiresAt);
+        const job: GenerationJob = { id, prompt: body.prompt, displayName: displayName ?? "Generated pet", status: "queued", createdAt: now, expiresAt: now + DAY, worker: "", promptRevision: admission.reviewBase ? "pet-v2-review-20261017-1" : PROMPT_REVISION, ...(admission.reviewBase ? {reviewBase: true, queuedAt: now} : {}), ...(reference ? {reference: reference.metadata} : {}), pipelineVersion: 2, stages: [], nameSource:displayName===undefined?"automatic":"user", ...(options.automaticCardMetadata?.()?{cardMetadata:{policy:1 as const,state:"pending" as const,revision:0,edited:false}}:{}) };
+        if (reference) await tx.putArtifact(id, "reference.png", reference.bytes, job.expiresAt);
         await tx.putJob(job);
         await tx.putLedger(requestKey, JSON.stringify({ hash, id, expiresAt: now + 7 * DAY, nameProvided:body.displayName!==undefined }), now + 7 * DAY);
         await consumeDailyQuota(tx, secret, clientIp, now, quota);

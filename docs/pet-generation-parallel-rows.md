@@ -155,3 +155,45 @@ old workers. Old code can ignore new job fields and must not claim review jobs.
 To roll back, disable new review admission and retain compatible readers/workers
 until existing review jobs complete or expire. Disabling the flag must not prevent
 confirmation of existing jobs. This change needs no YDB schema migration.
+
+
+### Text refinement of a saved base
+
+Before confirming a character, **Edit character** accepts a text-only change such
+as “keep everything else, but make the scarf red”. The saved base is the reference,
+not the original upload. Each accepted refinement creates an independent review
+job through the same queue, daily quota and budget checks. It consumes one ordinary
+attempt, gets its own24-hour expiry and stops before animations. The previous
+version and its original expiry/costs remain unchanged. Its user-supplied name is
+inherited; automatic naming remains automatic.
+
+`POST /api/pet-generations/{id}/refine` takes strict JSON `{prompt, requestId}`,
+requires the browser Origin and trusted client IP, and returns `{generation}`/202.
+The prompt is required, normalized to LF, trimmed and limited to2000characters;
+the body is limited to16KiB. New admission requires review enabled and a live
+`awaiting_confirmation` source. The source job/base integrity check, normalized
+reference copy, new job, quota, budget and queue writes share one transaction.
+The source ID participates in request identity. Replay checks deduplication before
+reading the source, so accepted requests survive source expiry or flag rollback.
+
+Stored renderer PNGs may be up to8MiB; their private references are fully decoded,
+resized to at most1024pixels on the long side and kept under5MiB. Public uploads
+retain their5MiB input limit. Original references are never returned or published.
+No prompts or image bytes are placed in browser storage; request identity stores
+only a hash, UUID and expiry. Successful refinement navigates to the new private
+result with a validated `from` capability hint for comparison/return navigation.
+That hint is not an authorization decision and never appears in gallery assets.
+Both jobs are retained in the existing local history. Confirmation always targets
+the displayed new job; reopening the previous version can confirm that one instead.
+
+Existing jobs and MCP/JSON text admissions do not change. This feature needs no
+schema migration or new provider integration. Deploy the compatible web endpoint
+and UI together; the existing reference-aware worker already processes the new
+jobs. Disabling new review admission keeps accepted refinement retries and
+confirmation available.
+
+After accepting refinements, a rollback must retain a web version with the
+`/refine` handler and its request replay support. Turning review admission off on
+that compatible version is safe; restoring a pre-refinement web image can strand
+an accepted request whose response was lost, even though its worker job is valid.
+The existing reference-aware worker does not need a new job schema.

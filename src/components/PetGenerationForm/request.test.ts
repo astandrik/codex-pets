@@ -34,3 +34,13 @@ it("includes image bytes in identity and treats an explicit new attempt differen
   startNewGeneration({removeItem: key => store.setItem(key, "")});
   expect((await prepareGenerationRequest(store, {prompt: "", referenceImage})).requestId).not.toBe(first.requestId);
 });
+
+it("separates identical refinements of different saved bases without storing their IDs or edit text", async () => {
+  vi.stubGlobal("crypto", webcrypto); const store = storage();
+  const first = await prepareGenerationRequest(store, {prompt: "Private scarf change", sourceBaseId: "a".repeat(64)});
+  expect((await prepareGenerationRequest(store, {prompt: "Private scarf change", sourceBaseId: "a".repeat(64)})).requestId).toBe(first.requestId);
+  expect((await prepareGenerationRequest(store, {prompt: "Private scarf change", sourceBaseId: "b".repeat(64)})).requestId).not.toBe(first.requestId);
+  expect(store.getItem("pets-generation-request")).not.toContain("Private scarf change");
+  expect(store.getItem("pets-generation-request")).not.toContain("a".repeat(64));
+  expect(store.getItem("pets-generation-request")).not.toContain("b".repeat(64));
+});

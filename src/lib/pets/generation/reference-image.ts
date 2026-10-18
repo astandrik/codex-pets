@@ -16,9 +16,18 @@ function animatedPng(bytes: Buffer): boolean {
   return false;
 }
 
-export async function normalizeGenerationReference(bytes: Buffer, contentType: string): Promise<GenerationReference> {
+export function normalizeGenerationReference(bytes: Buffer, contentType: string): Promise<GenerationReference> {
+  return normalizeReference(bytes, contentType, MAX_REFERENCE_BYTES);
+}
+
+export function normalizeSavedGenerationBase(bytes: Buffer): Promise<GenerationReference> {
+  // Renderer stage artifacts can be larger than user uploads; normalized output keeps the same limit.
+  return normalizeReference(bytes, "image/png", 8 * 1024 * 1024);
+}
+
+async function normalizeReference(bytes: Buffer, contentType: string, maxInputBytes: number): Promise<GenerationReference> {
   if (!bytes.length) throw new GenerationError("invalid_reference_image");
-  if (bytes.length > MAX_REFERENCE_BYTES) throw new GenerationError("reference_image_too_large");
+  if (bytes.length > maxInputBytes) throw new GenerationError("reference_image_too_large");
   if (!Object.values(FORMATS).includes(contentType)) throw new GenerationError("invalid_reference_image");
   try {
     const image = sharp(bytes, {limitInputPixels: 25_000_000, failOn: "warning"});

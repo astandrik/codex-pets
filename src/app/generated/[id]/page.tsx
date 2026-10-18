@@ -10,8 +10,10 @@ export const metadata: Metadata = {
   referrer: "no-referrer",
 };
 
-export default async function GeneratedPetPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function GeneratedPetPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<{from?: string | string[]}> }) {
   const { id } = await params;
   if (!GENERATION_ID.test(id)) notFound();
-  return <GeneratedPetPreview generationId={id} />;
+  const from = (await searchParams)?.from;
+  const previousGenerationId = typeof from === "string" && GENERATION_ID.test(from) && from !== id ? from : undefined;
+  return <GeneratedPetPreview generationId={id} previousGenerationId={previousGenerationId} />;
 }
