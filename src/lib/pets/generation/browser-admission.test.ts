@@ -120,7 +120,7 @@ it("replays new multiline image requests once, rejects changed inputs and charge
 
 it("rejects changed text, name presence or image when replaying an old multipart fingerprint", async () => {
   const body = input("Synthetic fox\nRed scarf"), reference = await image("blue");
-  seedOldRequest({...body, prompt: body.prompt.replace("\n", "\r\n")}, reference);
+  seedOldRequest({...body, prompt: body.prompt.replaceAll("\n", "\r\n")}, reference);
   const before = structuredClone(store.ledger);
   for (const changed of [{...body, prompt: "Other\nRed scarf"}, {...body, displayName: "Generated pet"}]) {
     expect((await POST(request(changed, true, reference))).status).toBe(409);
