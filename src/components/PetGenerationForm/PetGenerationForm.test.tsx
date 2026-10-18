@@ -55,3 +55,60 @@ it("keeps the accepted link and never offers a paid retry when history storage i
   expect(element.querySelector('a[href="/generated/'+"c".repeat(64)+'"]')).not.toBeNull();expect(element.textContent).toContain("was accepted");expect(element.textContent).toContain("could not save its link");await submit();expect(fetchMock).toHaveBeenCalledTimes(1);
  }finally{storage.mockRestore();}
 });
+
+it("uploads image-only, retains it on retry, supports replacing/removing and clears it after acceptance", async () => {
+  const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:synthetic-reference");
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+  try {
+    act(() => root.render(<ThemeProvider theme="light"><PetGenerationForm enabled reviewBase /></ThemeProvider>));
+    function choose(name: string) {
+      const file = new File(["synthetic-" + name], name, {type: "image/png"});
+      Object.defineProperty(file, "arrayBuffer", {value: async () => new TextEncoder().encode(name).buffer});
+      const input = element.querySelector<HTMLInputElement>('input[type="file"]')!;
+      Object.defineProperty(input, "files", {configurable: true, value: [file]});
+      act(() => input.dispatchEvent(new Event("change", {bubbles: true})));
+    }
+    choose("first.png");
+    expect(element.textContent).toContain("What should change?"); expect(element.querySelector("textarea")!.getAttribute("aria-required")).toBe("false");
+    expect(element.querySelector('img')?.getAttribute("src")).toBe("blob:synthetic-reference");
+    fetchMock.mockRejectedValueOnce(Error("lost response")); await submit();
+    const first = fetchMock.mock.calls[0][1].body as FormData;
+    expect(first.get("prompt")).toBe(""); expect((first.get("referenceImage") as File).name).toBe("first.png");
+    fetchMock.mockRejectedValueOnce(Error("still offline")); await submit();
+    expect((fetchMock.mock.calls[1][1].body as FormData).get("requestId")).toBe(first.get("requestId"));
+    choose("second.png"); expect(revoke).toHaveBeenCalled();
+    act(() => [...element.querySelectorAll("button")].find(button => button.textContent === "Remove image")!.click());
+    expect(element.querySelector("img")).toBeNull(); expect(element.textContent).toContain("Describe your pet");
+    await submit(); expect(fetchMock).toHaveBeenCalledTimes(2);
+    choose("second.png");
+    fetchMock.mockResolvedValueOnce({ok: true, json: async () => ({generation: {generationId: "d".repeat(64), expiresAt: new Date(Date.now() + 86400000).toISOString()}})});
+    await submit(); expect(element.querySelector("img")).toBeNull(); expect(fetchMock.mock.calls[2][1].headers).toBeUndefined();
+    expect(JSON.stringify(sessionStorage)).not.toContain("second.png"); expect(JSON.stringify(localStorage)).not.toContain("second.png");
+  } finally {create.mockRestore(); revoke.mockRestore();}
+});
+
+it("does not silently submit a previous reference after a rejected replacement", async () => {
+  const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:old-reference");
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+  try {
+    act(() => root.render(<ThemeProvider theme="light"><PetGenerationForm enabled reviewBase /></ThemeProvider>));
+    const input = element.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const first = new File(["synthetic"], "first.png", {type: "image/png"});
+    Object.defineProperty(first, "arrayBuffer", {value: async () => new TextEncoder().encode("synthetic").buffer});
+    Object.defineProperty(input, "files", {configurable: true, value: [first]});
+    act(() => input.dispatchEvent(new Event("change", {bubbles: true})));
+    const invalid = new File(["not-an-image"], "replacement.svg", {type: "image/svg+xml"});
+    Object.defineProperty(input, "files", {configurable: true, value: [invalid]});
+    act(() => input.dispatchEvent(new Event("change", {bubbles: true})));
+    await submit();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(element.querySelector("img")).toBeNull();
+    expect(element.textContent).not.toContain("Selected: first.png");
+    prompt("Keep the red sweater");
+    await submit(); expect(fetchMock).not.toHaveBeenCalled();
+    act(() => [...element.querySelectorAll("button")].find(button => button.textContent === "Remove image")!.click());
+    fetchMock.mockRejectedValueOnce(Error("synthetic offline"));
+    await submit(); expect(fetchMock).toHaveBeenCalledOnce();
+    expect((fetchMock.mock.calls[0][1].body as FormData).get("prompt")).toBe("Keep the red sweater");
+  } finally {create.mockRestore(); revoke.mockRestore();}
+});

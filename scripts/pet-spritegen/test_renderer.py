@@ -25,6 +25,35 @@ def base_prompt(brief):
     return captured[0]
 
 class RendererTests(unittest.TestCase):
+    def test_reference_is_sent_to_base_and_changes_do_not_repeat_in_rows(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            reference = root/'reference.png'
+            renderer.Image.new('RGBA', (64,64), 'red').save(reference)
+            captured = []
+            class StopBeforeProvider(Exception): pass
+            def capture(_root, args):
+                captured.append((args, Path(args[args.index('--prompt-file') + 1]).read_text()))
+                raise StopBeforeProvider()
+            for prompt in ['', 'Remove glasses and make the sweater red']:
+                job = {'prompt': prompt, 'hasReference': True, 'reviewBase': True}
+                with patch.object(renderer, 'run_tool', side_effect=capture):
+                    with self.assertRaises(StopBeforeProvider): renderer.generate(root, job, 'base')
+                args, text = captured[-1]
+                self.assertEqual(args[args.index('--ref') + 1], str(reference))
+                self.assertIn('Preserve its recognizable silhouette', text)
+                self.assertIn(json.dumps(prompt), text)
+                row = renderer.row_prompt(job, {'name': 'idle', 'frames': 6, 'action': 'resting'})
+                self.assertIn('approved character', row)
+                self.assertNotIn('Requested appearance changes', row)
+                if prompt: self.assertNotIn(prompt, row)
+
+    def test_missing_reference_never_falls_back_to_text_generation(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(renderer, 'run_tool') as call:
+            with self.assertRaises(renderer.RenderError):
+                renderer.generate(Path(folder), {'prompt': '', 'hasReference': True}, 'base')
+            call.assert_not_called()
+
     def test_parallel_rows_keep_their_own_prompt_report_and_pixels(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder); (root/'run').mkdir(); (root/'run/sprite-request.json').write_text('{}')

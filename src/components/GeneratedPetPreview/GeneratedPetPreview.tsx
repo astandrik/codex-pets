@@ -8,10 +8,11 @@ import { parsePublicPetSlug, suggestPublicPetSlug } from "@/lib/pets/public-slug
 import type { PublicGeneration } from "@/lib/pets/generation/service";
 import { publicGenerationError } from "@/lib/pets/generation/public-error";
 import {GeneratedPetMetadataEditor} from "@/components/GeneratedPetMetadataEditor/GeneratedPetMetadataEditor";
-import { rememberGeneration } from "@/lib/pets/generation/history";
+import { notifyGenerationHistory, rememberGeneration } from "@/lib/pets/generation/history";
+import {BaseReview} from "./BaseReview";
 import "./GeneratedPetPreview.scss";
 
-const STATUS_LABELS = { queued: "Waiting in the queue", generating: "Creating your pet", processing: "Checking and packaging your pet", completed: "Your pet is ready", failed: "Generation could not be completed" };
+const STATUS_LABELS = { queued: "Waiting in the queue", generating: "Creating your pet", awaiting_confirmation: "Your character is ready for review", processing: "Checking and packaging your pet", completed: "Your pet is ready", failed: "Generation could not be completed" };
 type Submission = NonNullable<PublicGeneration["submission"]>;
 type SlugCheck = { slug: string; status: "checking" | "available" | "error"; available?: boolean; suggestedSlug?: string; message?: string };
 
@@ -31,6 +32,7 @@ function GeneratedPetPreviewContent({ generationId }: { generationId: string }) 
   const [generation, setGeneration] = useState<PublicGeneration | null>(null);
   const [error, setError] = useState("");
   const [unavailable, setUnavailable] = useState(false);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [submission, setSubmission] = useState<Submission>();
   const [submitting, setSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState("");
@@ -46,7 +48,15 @@ function GeneratedPetPreviewContent({ generationId }: { generationId: string }) 
   const initializedSlug = useRef(false);
   const editedSlug = useRef(false);
   const checkSequence = useRef(0);
+  const observedStatus = useRef<PublicGeneration["status"] | undefined>(undefined);
   const submissionController = useRef<AbortController | null>(null);
+  useEffect(() => () => submissionController.current?.abort(), []);
+  useEffect(() => {
+    if (generation?.status !== "awaiting_confirmation") return;
+    const refresh = () => {if (!document.hidden) setRefreshVersion(value => value + 1);};
+    window.addEventListener("focus", refresh); document.addEventListener("visibilitychange", refresh);
+    return () => {window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh);};
+  }, [generation?.status]);
 
   const rememberSubmission = useCallback((receipt: Submission) => {
     savedSubmission.current = receipt;
@@ -68,14 +78,22 @@ function GeneratedPetPreviewContent({ generationId }: { generationId: string }) 
         if (controller.signal.aborted) return;
         if (!response.ok) {
           const expired = response.status === 410 || response.status === 404;
-          setUnavailable(expired);
-          setError(expired ? "This generation is unavailable or has expired." : "Could not load this generation. Reload to try again.");
-          return;
+          if (expired) {
+            setUnavailable(true);
+            setError("This generation is unavailable or has expired.");
+            return;
+          }
+          throw new Error("generation_status_unavailable");
         }
         const body: { generation: PublicGeneration } = await response.json();
         if (controller.signal.aborted) return;
         setGeneration(body.generation);
+        setError(""); setUnavailable(false);
         rememberGeneration(generationId,body.generation.expiresAt);
+        if (observedStatus.current !== body.generation.status) {
+          observedStatus.current = body.generation.status;
+          notifyGenerationHistory();
+        }
         if (body.generation.submission) {
           rememberSubmission(body.generation.submission);
         } else if (body.generation.pet && !initializedSlug.current && !editedSlug.current && !savedSubmission.current) {
@@ -93,10 +111,10 @@ function GeneratedPetPreviewContent({ generationId }: { generationId: string }) 
     }
     void poll();
     return () => {
-      controller.abort(); submissionController.current?.abort();
+      controller.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [generationId, rememberSubmission]);
+  }, [generationId, rememberSubmission, refreshVersion]);
 
   useEffect(() => {
     const sequence = ++checkSequence.current;
@@ -211,6 +229,7 @@ function GeneratedPetPreviewContent({ generationId }: { generationId: string }) 
     <p role="status" aria-live="polite">{error || (generation ? STATUS_LABELS[generation.status] : "Loading generation…")}</p>
     {generation?.progress && generation.status !== "failed" && <p>{generation.progress.completedSteps} of {generation.progress.totalSteps} generation steps completed.</p>}
     {failed && <div role="alert"><p>{failure.message}</p><p>{failure.hint}</p></div>}
+    {generation?.status === "awaiting_confirmation" && <BaseReview generationId={generationId} expiresAt={generation.expiresAt} disabled={unavailable} onConfirmed={() => setRefreshVersion(value => value + 1)} />}
     {generation?.pet && generation.status === "completed" && <>
       <StatePreview petJsonUrl={files + "pet.json"} spritesheetUrl={files + "spritesheet.webp"} />
       {!metadataBlocked&&<p><a href={files + "pet.zip"}>Download pet ZIP</a></p>}

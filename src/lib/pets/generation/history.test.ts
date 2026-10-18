@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import {afterEach,beforeEach, describe, expect, it, vi} from "vitest";
-import {HISTORY_PREFIX, readGenerationHistory, pruneGenerationHistory, rememberGeneration, parseHistoryGeneration} from "./history";
+import {HISTORY_PREFIX, readGenerationHistory, pruneGenerationHistory, rememberGeneration, notifyGenerationHistory, parseHistoryGeneration} from "./history";
 const now=Date.parse("2026-10-12T12:00:00Z"), id="a".repeat(64), expires=new Date(now+86400000).toISOString();
 beforeEach(()=>localStorage.clear());
 afterEach(()=>vi.restoreAllMocks());
@@ -127,5 +127,28 @@ describe("history read and cleanup separation", () => {
     expect(pruneGenerationHistory(now, storage)).toBe(false);
     expect(rememberGeneration(id, expires, now, storage)).toBe(false);
     expect(storage.setItem).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("cross-window history notification", () => {
+  it("changes one non-entry key without changing existing entries or storing private input", () => {
+    rememberGeneration(id, expires, now);
+    const original = localStorage.getItem(HISTORY_PREFIX + id);
+    expect(notifyGenerationHistory()).toBe(true);
+    const first = localStorage.getItem(HISTORY_PREFIX + "refresh");
+    expect(first).toMatch(/^[a-f0-9-]{36}$/);
+    expect(notifyGenerationHistory()).toBe(true);
+    expect(localStorage.getItem(HISTORY_PREFIX + "refresh")).not.toBe(first);
+    expect(localStorage.length).toBe(2);
+    expect(localStorage.getItem(HISTORY_PREFIX + id)).toBe(original);
+    expect(readGenerationHistory(now).entries).toEqual([JSON.parse(original!)]);
+    expect(pruneGenerationHistory(now)).toBe(true);
+    expect(readGenerationHistory(now).entries).toHaveLength(1);
+  });
+  it("tolerates blocked storage without throwing or retrying a generation", () => {
+    const storage = {setItem: vi.fn(() => {throw Error("blocked");})};
+    expect(notifyGenerationHistory(storage)).toBe(false);
+    expect(storage.setItem).toHaveBeenCalledOnce();
   });
 });

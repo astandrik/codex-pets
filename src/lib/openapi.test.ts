@@ -19,6 +19,14 @@ describe("buildOpenApiSpec", () => {
     }
   });
 
+  it("documents transport-specific generation policy and normalized multipart text", async () => {
+    const {buildOpenApiSpec} = await import("@/lib/openapi");
+    const description = buildOpenApiSpec().paths["/api/pet-generations"].post.description;
+    expect(description).toContain("JSON and MCP admissions remain automatic regardless of the flag");
+    expect(description).toContain("new multipart website tasks stop at awaiting_confirmation");
+    expect(description).toContain("normalized to LF before length validation");
+  });
+
   it("builds the public Codex Pets OpenAPI contract without admin routes", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example/codex-pets");
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/codex-pets");

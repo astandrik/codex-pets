@@ -12,3 +12,14 @@
   [role="alert"] { color: var(--g-color-text-danger); }
   &__url { overflow-wrap: anywhere; }
 }
+
+.generated-pet-base {
+  display: grid;
+  justify-items: start;
+  gap: var(--g-spacing-3);
+  max-width: 48rem;
+  margin-block: var(--g-spacing-4);
+  img { width: min(100%, 28rem); height: auto; border-radius: var(--g-border-radius-l); }
+  p { margin: 0; }
+  [role="alert"] { color: var(--g-color-text-danger); }
+}

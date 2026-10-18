@@ -39,6 +39,14 @@ export function publicGenerationError(code: string, providerFailure?: ProviderFa
   if (VALIDATION_ERRORS.has(code)) return result("The generated images could not be assembled into a valid pet package.", NEW_TASK);
   if (CONFIGURATION_ERRORS.has(code)) return result("The generation service is not configured correctly.", CONTACT_SUPPORT);
   switch (code) {
+    case "base_not_ready":
+      return result("This character is not awaiting confirmation.", "Refresh the existing task to see its current state.");
+    case "generation_review_disabled":
+      return result("Character review is not enabled for new tasks.", "Reload the generation form. Existing tasks remain available.");
+    case "invalid_reference_image":
+      return result("The reference image could not be accepted.", "Use one readable, static PNG, JPEG or WebP image with at most 25 million pixels.");
+    case "reference_image_too_large":
+      return result("The reference image is too large.", "Choose an image of 5 MiB or less.");
     case "outcome_unknown":
       return result("The image request was interrupted and its outcome could not be confirmed.", "Do not start another task: it could repeat a paid request. Contact the service administrator to check the saved state.");
     case "generation_paused":
@@ -57,7 +65,7 @@ export function publicGenerationError(code: string, providerFailure?: ProviderFa
     case "queue_full":
       return result("The generation queue is full.", "Wait for a free slot. Do not create repeated tasks.");
     case "request_id_conflict":
-      return result("This requestId was already used with a different description or name.", "Use the original input to read the existing task. A new task requires a new requestId and explicit user intent.");
+      return result("This requestId was already used with a different description, name or image.", "Use the original input to read the existing task. A new task requires a new requestId and explicit user intent.");
     case "metadata_conflict":
       return result("These details changed in another tab.", "Reload the saved details before editing again. No generation was started.");
     case "metadata_locked":
