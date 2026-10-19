@@ -61,7 +61,8 @@ function RefinementForm({generationId, disabled, blocked, recoveryOnly = false, 
         const code = result && typeof result === "object" && "code" in result && typeof result.code === "string" ? result.code : "generation_unavailable";
         const scope = result && typeof result === "object" && "limitScope" in result ? result.limitScope : undefined;
         const detail = publicGenerationError(code, undefined, scope === "ip" || scope === "global" ? scope : undefined);
-        if (response.status >= 400 && response.status < 500 && ["invalid_argument", "invalid_origin", "body_too_large", "rate_limited", "queue_full", "budget_exhausted", "base_not_ready", "not_found", "generation_expired", "invalid_reference_image", "reference_image_too_large"].includes(code)) {
+        // Only a rejection after dedup can settle an earlier uncertain admission.
+        if (response.status >= 400 && response.status < 500 && ["rate_limited", "queue_full", "budget_exhausted", "base_not_ready", "not_found", "generation_expired", "invalid_reference_image", "reference_image_too_large"].includes(code)) {
           await clearRefinementRequest(sessionStorage, generationId);
           setSubmitted(null); onRejected();
         }

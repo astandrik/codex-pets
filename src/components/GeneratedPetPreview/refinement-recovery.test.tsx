@@ -136,3 +136,25 @@ it.each(["http", "receipt"])("pins the submitted text after an uncertain %s resp
   expect(String(posts()[1][1].body)).toBe(String(posts()[0][1].body));
   expect(localStorage.getItem("pets-generation-history-v1:" + child)).not.toBeNull();
 });
+
+
+it.each([403, 400, 413])("retains an uncertain request when a retry fails before dedup with HTTP %s", async status => {
+  const normal = fetchMock.getMockImplementation()!; let attempts = 0;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/refine")) {
+      attempts++;
+      if (attempts === 1) throw Error("synthetic accepted request with lost response");
+      if (attempts === 2) return Response.json({code: {403: "invalid_origin", 400: "invalid_argument", 413: "body_too_large"}[status]}, {status});
+    }
+    return normal(url, init);
+  });
+  await render(); await edit(); await submit();
+  const first = String(posts()[0][1].body);
+  await submit();
+  const {hasPendingRefinement} = await import("../PetGenerationForm/request");
+  expect(await hasPendingRefinement(sessionStorage, original)).toBe(true);
+  expect(host.querySelector("textarea")?.disabled).toBe(true);
+  changeText("Make the scarf green"); await submit();
+  expect(posts()).toHaveLength(3);
+  expect(posts().map(([, init]) => String(init.body))).toEqual([first, first, first]);
+});

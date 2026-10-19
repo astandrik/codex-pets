@@ -185,7 +185,9 @@ only a hash, UUID and expiry under a key derived from the source ID. Other forms
 cannot replace that pending identity. An unresolved refinement also cannot be
 replaced by different text for the same source. Transport failures, server errors
 and invalid receipts keep the submitted request pinned; a definitive admission
-rejection allows editing again. Replays do not extend the saved request deadline.
+rejection after dedup allows editing again. Origin/body rejections happen before
+dedup and cannot settle an earlier uncertain request. Replays do not extend the
+saved request deadline.
 After a lost response, cancellation or page reload, **Recover submitted edit** is
 available even while the source is live or has expired locally without a status
 refresh. Re-entering the
