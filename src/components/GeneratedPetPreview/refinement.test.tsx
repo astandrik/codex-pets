@@ -40,7 +40,18 @@ async function edit(text = "Make the scarf red") {
   const input = host.querySelector("textarea")!;
   act(() => {Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, text); input.dispatchEvent(new Event("input", {bubbles: true}));});
 }
-async function submit() {await act(async () => {(findButton("Create new version") ?? findButton("Check submitted version"))!.click(); await new Promise(resolve => setTimeout(resolve, 50));});}
+async function submit(waitForResponse = true) {
+  const previousPosts = posts().length;
+  await act(async () => (findButton("Create new version") ?? findButton("Check submitted version"))!.click());
+  await vi.waitFor(async () => {
+    await act(async () => {await new Promise(resolve => setTimeout(resolve, 0));});
+    expect(posts().length > previousPosts || Boolean(host.querySelector("[role=alert]"))).toBe(true);
+  });
+  if (waitForResponse) await vi.waitFor(async () => {
+    await act(async () => {await new Promise(resolve => setTimeout(resolve, 0));});
+    expect(findButton("Cancel edit")?.disabled ?? false).toBe(false);
+  });
+}
 const posts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
 
 it("uses the displayed base, preserves its link and confirms only the resulting version", async () => {
@@ -97,7 +108,7 @@ it("keeps an accepted refinement response recoverable when the source expires wh
     if (url === `/api/pet-generations/${original}`) return Response.json({generation: {...reply(original).generation, expiresAt}});
     return normal(url, init);
   });
-  await render(); await edit(); await submit();
+  await render(); await edit(); await submit(false);
   expect(posts()).toHaveLength(1);
   await act(async () => {await new Promise(resolve => setTimeout(resolve, 1550));});
   await act(async () => {finish(Response.json(reply(child), {status: 202})); await new Promise(resolve => setTimeout(resolve, 20));});
@@ -131,7 +142,7 @@ it("receives the new version when another tab confirms the source during the req
     if (url === `/api/pet-generations/${original}` && confirmedElsewhere) return Response.json({generation: {...reply(original).generation, status: "queued", baseConfirmed: true}});
     return normal(url, init);
   });
-  await render(); await edit(); await submit();
+  await render(); await edit(); await submit(false);
   const signal = posts()[0][1].signal as AbortSignal;
   confirmedElsewhere = true;
   await act(async () => window.dispatchEvent(new Event("focus")));

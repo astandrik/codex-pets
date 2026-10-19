@@ -184,9 +184,15 @@ No prompts or image bytes are placed in browser storage; request identity stores
 only a hash, UUID and expiry under a key derived from the source ID. Other forms
 cannot replace that pending identity. An unresolved refinement also cannot be
 replaced by different text for the same source. Transport failures, server errors
-and invalid receipts keep the submitted request pinned; a definitive admission
-rejection after dedup allows editing again. Origin/body rejections happen before
-dedup and cannot settle an earlier uncertain request. Replays do not extend the
+and invalid receipts keep the submitted request pinned. A known admission refusal
+for a fresh identity allows editing again, including explicit503 refusal codes.
+The preparation helper reports fresh versus reused identity alongside the wire
+input from the same metadata read; this decision is never sent to the server.
+Its operation-scoped cleanup uses the prepared key and UUID synchronously, so
+cleanup cannot navigate after unmount or delete a different request identity.
+A retry or restored identity remains pinned even after a later refusal: an earlier
+admission may still finish. Origin/body errors and generic unavailable responses
+also keep recovery intact. Replays do not extend the
 saved request deadline.
 Refinement request identity is retained for a fixed48hours after the first
 submission, covering the source's remaining24hours and the accepted version's

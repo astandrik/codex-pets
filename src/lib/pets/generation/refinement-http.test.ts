@@ -60,3 +60,37 @@ it("accepts only a distinct capability ID as the previous-version navigation hin
   expect((await GeneratedPetPage({params: Promise.resolve({id}), searchParams: Promise.resolve({from: previous})})).props.previousGenerationId).toBe(previous);
   for (const from of [id, "https://evil.example/private", [previous]]) expect((await GeneratedPetPage({params: Promise.resolve({id}), searchParams: Promise.resolve({from})})).props.previousGenerationId).toBeUndefined();
 });
+
+it.each(["generation_paused", "generation_disabled", "generation_review_disabled", "saved_stage_unavailable", "client_ip_unavailable"])("returns a definite503 %s with no new job or quota", async code => {
+  const id = await parent();
+  if (code === "generation_paused") {
+    const row = store.ledger.get("scheduler")!; row.value = JSON.stringify({...JSON.parse(row.value), pauseReason: "outcome_unknown"});
+  }
+  if (code === "generation_disabled") {
+    const disabled = createGenerationService(store, {enabled: () => false, secret: () => "synthetic-http-refinement-secret-long-enough"});
+    vi.mocked(petGeneration.generate).mockImplementation(disabled.generate);
+  }
+  if (code === "generation_review_disabled") vi.stubEnv("PET_GENERATION_REVIEW_FLOW_ENABLED", "false");
+  if (code === "saved_stage_unavailable") store.artifacts.get(id + ":stage-base.png")!.bytes = Buffer.from("synthetic corrupt saved base");
+  const before = {jobs: structuredClone([...store.jobs]), ledger: structuredClone([...store.ledger]), artifacts: [...store.artifacts]};
+  const response = await POST(request({requestId: randomUUID(), prompt: "Scarf red"}, code === "client_ip_unavailable" ? {"x-pets-client-ip": ""} : {}), context(id));
+  expect(response.status).toBe(503); expect((await response.json()).code).toBe(code);
+  expect([...store.jobs]).toEqual(before.jobs); expect([...store.ledger]).toEqual(before.ledger); expect([...store.artifacts]).toEqual(before.artifacts);
+});
+
+
+it("a post-dedup refusal cannot settle an older request still waiting to start its transaction", async () => {
+  const id = await parent(), input = {requestId: randomUUID(), prompt: "Scarf red"};
+  const transaction = store.transaction.bind(store);
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => {release = resolve;});
+  vi.spyOn(store, "transaction").mockImplementationOnce(async operation => {await gate; return transaction(operation);});
+  const earlier = service.generate(input, "203.0.113.8", {reviewBase: true, sourceBaseId: id, allowNew: true});
+  try {
+    await expect(service.generate(input, "203.0.113.8", {reviewBase: true, sourceBaseId: id, allowNew: false})).rejects.toMatchObject({code: "generation_review_disabled"});
+    expect(store.jobs.size).toBe(1);
+  } finally {release();}
+  const accepted = await earlier;
+  expect(accepted.status).toBe("queued"); expect(store.jobs.size).toBe(2);
+  expect((await service.generate(input, "203.0.113.8", {reviewBase: true, sourceBaseId: id, allowNew: false})).generationId).toBe(accepted.generationId);
+});

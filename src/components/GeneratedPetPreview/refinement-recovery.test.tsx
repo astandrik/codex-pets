@@ -40,7 +40,18 @@ async function edit(text = "Make the scarf red") {
   const input = host.querySelector("textarea")!;
   act(() => {Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, text); input.dispatchEvent(new Event("input", {bubbles: true}));});
 }
-async function submit() {await act(async () => {(findButton("Create new version") ?? findButton("Check submitted version"))!.click(); await new Promise(resolve => setTimeout(resolve, 50));});}
+async function submit(waitForResponse = true) {
+  const previousPosts = posts().length;
+  await act(async () => (findButton("Create new version") ?? findButton("Check submitted version"))!.click());
+  await vi.waitFor(async () => {
+    await act(async () => {await new Promise(resolve => setTimeout(resolve, 0));});
+    expect(posts().length > previousPosts || Boolean(host.querySelector("[role=alert]"))).toBe(true);
+  });
+  if (waitForResponse) await vi.waitFor(async () => {
+    await act(async () => {await new Promise(resolve => setTimeout(resolve, 0));});
+    expect(findButton("Cancel edit")?.disabled ?? false).toBe(false);
+  });
+}
 const posts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
 
 
@@ -193,7 +204,7 @@ it("does not abort an in-flight recovery when another recovery entry is opened",
   const normal = fetchMock.getMockImplementation()!;
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => url.endsWith("/refine") ? delayed : normal(url, init));
   await act(async () => findButton("Recover submitted edit")!.click());
-  changeText("Make the scarf red"); await submit();
+  changeText("Make the scarf red"); await submit(false);
   expect(posts()).toHaveLength(2);
   const signal = posts()[1][1].signal as AbortSignal;
   try {
@@ -223,4 +234,95 @@ it("keeps standalone recovery available when the initial status response is410",
   changeText("Make the scarf red"); await submit();
   expect(JSON.parse(String(posts()[0][1].body)).requestId).toBe(saved.requestId);
   expect(localStorage.getItem("pets-generation-history-v1:" + child)).not.toBeNull();
+});
+
+const refusalCodes = ["generation_paused", "generation_disabled", "generation_review_disabled", "saved_stage_unavailable", "client_ip_unavailable"];
+
+it.each(refusalCodes)("unlocks text after the first acknowledged %s refusal without admission", async code => {
+  const normal = fetchMock.getMockImplementation()!;
+  let refused = false;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/refine") && !refused) {refused = true; return Response.json({code}, {status: 503});}
+    return normal(url, init);
+  });
+  await render(); await edit(); await submit();
+  expect(posts()).toHaveLength(1);
+  expect(host.querySelector("textarea")?.disabled).toBe(false);
+  const {hasPendingRefinement} = await import("../PetGenerationForm/request");
+  expect(await hasPendingRefinement(sessionStorage, original)).toBe(false);
+  const first = JSON.parse(String(posts()[0][1].body));
+  expect(Object.keys(first).sort()).toEqual(["prompt", "requestId"]);
+  changeText("Make the scarf green"); await submit();
+  const second = JSON.parse(String(posts()[1][1].body));
+  expect(second.prompt).toBe("Make the scarf green"); expect(second.requestId).not.toBe(first.requestId);
+  expect(localStorage.getItem("pets-generation-history-v1:" + child)).not.toBeNull();
+});
+
+it.each([...refusalCodes, "rate_limited", "base_not_ready"])("preserves an earlier uncertain request when a retry reports %s", async code => {
+  const normal = fetchMock.getMockImplementation()!; let attempted = false;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/refine")) {
+      if (!attempted) {attempted = true; throw Error("synthetic uncertain admission");}
+      return Response.json({code}, {status: code === "rate_limited" ? 429 : code === "base_not_ready" ? 409 : 503});
+    }
+    return normal(url, init);
+  });
+  await render(); await edit(); await submit();
+  const originalBody = String(posts()[0][1].body);
+  await submit();
+  expect(host.querySelector("textarea")?.disabled).toBe(true);
+  const {hasPendingRefinement} = await import("../PetGenerationForm/request");
+  expect(await hasPendingRefinement(sessionStorage, original)).toBe(true);
+  expect(String(posts()[1][1].body)).toBe(originalBody);
+});
+
+
+it.each(["remount", "late-metadata"])("keeps reused identity uncertain after503 even with an empty submitted state (%s)", async mode => {
+  const normal = fetchMock.getMockImplementation()!; let send = false;
+  const {prepareGenerationRequest, hasPendingRefinement} = await import("../PetGenerationForm/request");
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/refine")) {
+      if (!send) {send = true; throw Error("synthetic uncertain admission");}
+      return Response.json({code: "generation_paused"}, {status: 503});
+    }
+    return normal(url, init);
+  });
+  let requestId: string;
+  if (mode === "remount") {
+    await render(); await edit(); await submit();
+    requestId = JSON.parse(String(posts()[0][1].body)).requestId;
+    await act(async () => root.unmount()); root = createRoot(host);
+    await render(); await edit();
+  } else {
+    await render(); await edit();
+    // The editor opened before a pending identity was visible to its parent.
+    requestId = (await prepareGenerationRequest(sessionStorage, {prompt: "Make the scarf red", sourceBaseId: original})).requestId;
+    send = true;
+  }
+  await submit();
+  expect(host.querySelector("textarea")?.disabled).toBe(true);
+  expect(await hasPendingRefinement(sessionStorage, original)).toBe(true);
+  expect(JSON.parse(String(posts().at(-1)![1].body)).requestId).toBe(requestId);
+});
+
+
+it("does not navigate after the editor unmounts during receipt cleanup", async () => {
+  const digest = webcrypto.subtle.digest.bind(webcrypto.subtle);
+  let held = false; const waiting: (() => void)[] = [];
+  const spy = vi.spyOn(webcrypto.subtle, "digest").mockImplementation((algorithm, data) => held
+    ? new Promise<ArrayBuffer>((resolve, reject) => {waiting.push(() => {void digest(algorithm, data).then(resolve, reject);});})
+    : digest(algorithm, data));
+  const normal = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/refine")) held = true;
+    return normal(url, init);
+  });
+  try {
+    await render(); await edit(); await submit(false);
+    const navigations = navigate.mock.calls.length;
+    await act(async () => root.unmount()); root = createRoot(host);
+    held = false;
+    await act(async () => {waiting.forEach(release => release()); await new Promise(resolve => setTimeout(resolve, 0));});
+    expect(navigate).toHaveBeenCalledTimes(navigations);
+  } finally {held = false; waiting.forEach(release => release()); spy.mockRestore();}
 });

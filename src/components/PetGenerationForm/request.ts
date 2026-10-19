@@ -28,11 +28,7 @@ export async function hasPendingRefinement(storage: Pick<Storage, "getItem">, so
   return readRequest(storage, await requestKey(sourceBaseId), now) !== null;
 }
 
-export async function clearRefinementRequest(storage: Pick<globalThis.Storage, "removeItem">, sourceBaseId: string) {
-  storage.removeItem(await requestKey(sourceBaseId));
-}
-
-export async function prepareGenerationRequest(storage: Storage, brief: Brief, now = Date.now()) {
+async function prepareRequest(storage: Storage, brief: Brief, now: number) {
   const content = { prompt: brief.prompt.trim(), ...(brief.displayName?.trim() ? { displayName: brief.displayName.trim() } : {}) };
   const referenceSha256 = brief.referenceImage ? await digest(await brief.referenceImage.arrayBuffer()) : undefined;
   const hash = await digest(new TextEncoder().encode(JSON.stringify({...content, ...(referenceSha256 ? {referenceSha256} : {}), ...(brief.sourceBaseId ? {sourceBaseId: brief.sourceBaseId} : {})})));
@@ -45,7 +41,18 @@ export async function prepareGenerationRequest(storage: Storage, brief: Brief, n
   // Admission can wait for the source's remaining day, then the accepted version lives another day.
   const retentionMs = brief.sourceBaseId ? 2 * DAY : DAY;
   if (!brief.replayOnly && !(brief.sourceBaseId && matching)) storage.setItem(key, JSON.stringify({ hash, requestId, expiresAt: now + retentionMs }));
-  return { ...content, requestId };
+  return {input: { ...content, requestId }, isNew: matching === null, key};
+}
+
+export async function prepareGenerationRequest(storage: Storage, brief: Brief, now = Date.now()) {
+  return (await prepareRequest(storage, brief, now)).input;
+}
+
+export async function prepareRefinementRequest(storage: Storage & Pick<globalThis.Storage, "removeItem">, brief: {prompt: string; sourceBaseId: string; replayOnly?: boolean}, now = Date.now()) {
+  const {input, isNew, key} = await prepareRequest(storage, brief, now);
+  return {input, isNew, clear: () => {
+    if (readRequest(storage, key, now)?.requestId === input.requestId) storage.removeItem(key);
+  }};
 }
 
 export function startNewGeneration(storage: Pick<globalThis.Storage, "removeItem"> = sessionStorage) {

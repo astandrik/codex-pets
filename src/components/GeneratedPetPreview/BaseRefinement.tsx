@@ -6,7 +6,9 @@ import {useRouter} from "next/navigation";
 import {withBasePath} from "@/lib/base-path";
 import {rememberGeneration} from "@/lib/pets/generation/history";
 import {publicGenerationError} from "@/lib/pets/generation/public-error";
-import {prepareGenerationRequest, clearRefinementRequest, hasPendingRefinement} from "@/components/PetGenerationForm/request";
+import {prepareRefinementRequest, hasPendingRefinement} from "@/components/PetGenerationForm/request";
+
+type SubmittedRefinement = Awaited<ReturnType<typeof prepareRefinementRequest>>;
 
 type Props = {recoveryOnly?: boolean; generationId: string; disabled: boolean; blocked: boolean; onPendingChange: (pending: boolean) => void; onEditingChange: (editing: boolean) => void};
 
@@ -35,7 +37,7 @@ function RefinementForm({generationId, disabled, blocked, recoveryOnly = false, 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [acceptedUrl, setAcceptedUrl] = useState("");
-  const [submitted, setSubmitted] = useState<{prompt: string; requestId: string} | null>(null);
+  const [submitted, setSubmitted] = useState<SubmittedRefinement | null>(null);
   const checkingSubmitted = submitted !== null;
   const recovering = recoveryOnly || checkingSubmitted;
   const pending = useRef(false);
@@ -49,9 +51,10 @@ function RefinementForm({generationId, disabled, blocked, recoveryOnly = false, 
     const request = new AbortController(); controller.current = request;
     try {
       // Until the outcome is known, every retry uses the submitted body, even while the source is live.
-      const input = submitted ?? await prepareGenerationRequest(sessionStorage, {prompt, sourceBaseId: generationId, replayOnly: recoveryOnly});
+      const prepared = submitted ?? await prepareRefinementRequest(sessionStorage, {prompt, sourceBaseId: generationId, replayOnly: recoveryOnly});
+      const {input, isNew} = prepared;
       if (request.signal.aborted) return;
-      setSubmitted({prompt: input.prompt, requestId: input.requestId});
+      setSubmitted({...prepared, isNew: false});
       const response = await fetch(withBasePath(`/api/pet-generations/${generationId}/refine`), {
         method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(input), cache: "no-store", signal: request.signal,
       });
@@ -61,9 +64,9 @@ function RefinementForm({generationId, disabled, blocked, recoveryOnly = false, 
         const code = result && typeof result === "object" && "code" in result && typeof result.code === "string" ? result.code : "generation_unavailable";
         const scope = result && typeof result === "object" && "limitScope" in result ? result.limitScope : undefined;
         const detail = publicGenerationError(code, undefined, scope === "ip" || scope === "global" ? scope : undefined);
-        // Only a rejection after dedup can settle an earlier uncertain admission.
-        if (response.status >= 400 && response.status < 500 && ["rate_limited", "queue_full", "budget_exhausted", "base_not_ready", "not_found", "generation_expired", "invalid_reference_image", "reference_image_too_large"].includes(code)) {
-          await clearRefinementRequest(sessionStorage, generationId);
+        // A refusal settles a fresh request, but an older uncertain admission may still finish later.
+        if (isNew && response.status >= 400 && ["rate_limited", "queue_full", "budget_exhausted", "base_not_ready", "not_found", "generation_expired", "invalid_reference_image", "reference_image_too_large", "generation_paused", "generation_disabled", "generation_review_disabled", "saved_stage_unavailable", "client_ip_unavailable"].includes(code)) {
+          prepared.clear();
           setSubmitted(null); onRejected();
         }
         setError(detail.message + " " + detail.hint); return;
@@ -78,7 +81,7 @@ function RefinementForm({generationId, disabled, blocked, recoveryOnly = false, 
         setError("Could not save this version to My generations. Keep the new version link below. Your recovery request is still saved in this tab.");
         return;
       }
-      try {await clearRefinementRequest(sessionStorage, generationId);} catch { /* The accepted version remains available through its link. */ }
+      try {prepared.clear();} catch { /* The accepted version remains available through its link. */ }
       router.push(url);
     } catch (cause) {
       if (!request.signal.aborted) setError(cause instanceof Error && cause.message === "refinement_replay_mismatch"
@@ -92,7 +95,7 @@ function RefinementForm({generationId, disabled, blocked, recoveryOnly = false, 
 
   return <form className="generated-pet-refinement" onSubmit={event => void submit(event)}>
     <label htmlFor={`refinement-${generationId}`}>What should change?</label>
-    <TextArea id={`refinement-${generationId}`} value={checkingSubmitted ? submitted.prompt : prompt} onUpdate={setPrompt} minRows={3}
+    <TextArea id={`refinement-${generationId}`} value={checkingSubmitted ? submitted.input.prompt : prompt} onUpdate={setPrompt} minRows={3}
       controlProps={{maxLength: 2000, "aria-required": true}} disabled={checkingSubmitted || (disabled && !recoveryOnly) || busy || Boolean(acceptedUrl)} placeholder="Keep everything else, but make the scarf red…" />
     {!recovering && <p>The current character is the reference. A new version uses one daily attempt and has its own 24 hours. This version stays available until its original deadline.</p>}
     {recoveryOnly && !submitted && <p>Re-enter the same edit text to find the submitted version. Text is not stored in your browser. This action cannot create a new attempt.</p>}

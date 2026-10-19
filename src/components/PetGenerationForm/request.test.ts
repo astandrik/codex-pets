@@ -60,7 +60,7 @@ it("preserves a pending refinement when another source or the main form is used"
 
 it("only replays matching pending metadata and clears only the selected source", async () => {
   vi.stubGlobal("crypto", webcrypto); const store = storage();
-  const {clearRefinementRequest, hasPendingRefinement} = await import("./request");
+  const {prepareRefinementRequest, hasPendingRefinement} = await import("./request");
   const sourceBaseId = "a".repeat(64), other = "b".repeat(64);
   const brief = {sourceBaseId, prompt: "Private edit"};
   const first = await prepareGenerationRequest(store, brief, 100);
@@ -71,7 +71,8 @@ it("only replays matching pending metadata and clears only the selected source",
   expect(await prepareGenerationRequest(store, {...brief, replayOnly: true}, 101)).toEqual(first);
   expect([...store.rows]).toEqual(before);
   await expect(prepareGenerationRequest(store, {...brief, replayOnly: true}, 172800101)).rejects.toThrow("refinement_replay_mismatch");
-  await clearRefinementRequest({removeItem: key => store.rows.delete(key)}, sourceBaseId);
+  const prepared = await prepareRefinementRequest({...store, removeItem: key => {store.rows.delete(key);}}, brief, 101);
+  prepared.clear();
   expect(await hasPendingRefinement(store, sourceBaseId, 101)).toBe(false);
   await expect(prepareGenerationRequest(store, {...brief, replayOnly: true}, 101)).rejects.toThrow("refinement_replay_mismatch");
   expect((await prepareGenerationRequest(store, {...brief, sourceBaseId: other}, 101)).requestId).toBe(second.requestId);
