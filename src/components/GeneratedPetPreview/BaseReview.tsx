@@ -3,11 +3,14 @@
 import {useEffect, useRef, useState} from "react";
 import {Button} from "@gravity-ui/uikit";
 import {withBasePath} from "@/lib/base-path";
+import {BaseRefinement} from "./BaseRefinement";
 import {startNewGeneration} from "@/components/PetGenerationForm/request";
 
-export function BaseReview({generationId, expiresAt, disabled, onConfirmed}: {
-  generationId: string; expiresAt: string; disabled: boolean; onConfirmed: () => void;
+export function BaseReview({generationId, expiresAt, disabled, onConfirmed, onEditingChange}: {
+  generationId: string; expiresAt: string; disabled: boolean; onConfirmed: () => void; onEditingChange: (editing: boolean) => void;
 }) {
+  const [refining, setRefining] = useState(false);
+  const refinementPending = useRef(false);
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [imageState, setImageState] = useState<"loading" | "loaded" | "error">("loading");
@@ -21,7 +24,7 @@ export function BaseReview({generationId, expiresAt, disabled, onConfirmed}: {
     return () => {clearTimeout(timer); controller.current?.abort();};
   }, [expiresAt]);
   async function confirm() {
-    if (pending.current || disabled || expired || confirmed || imageState !== "loaded") return;
+    if (pending.current || refinementPending.current || disabled || expired || confirmed || imageState !== "loaded") return;
     pending.current = true; setBusy(true); setError("");
     const request = new AbortController(); controller.current = request;
     try {
@@ -65,10 +68,12 @@ export function BaseReview({generationId, expiresAt, disabled, onConfirmed}: {
     <p>Check the appearance before starting animations. Confirmation does not use another daily attempt.</p>
     <p>Available until {new Date(expiresAt).toLocaleString()}. Confirmation does not extend this deadline.</p>
     {expired ? <p role="status">This generation has expired.</p> :
-      <Button view="action" loading={busy} disabled={disabled || confirmed || busy || imageState !== "loaded"} onClick={() => void confirm()}>Animate this character</Button>}
+      <Button view="action" loading={busy} disabled={disabled || confirmed || busy || refining || imageState !== "loaded"} onClick={() => void confirm()}>Animate this character</Button>}
+    <BaseRefinement generationId={generationId} disabled={expired || disabled || confirmed || busy || imageState !== "loaded"} blocked={busy} onEditingChange={onEditingChange}
+      onPendingChange={value => {refinementPending.current = value; setRefining(value);}} />
     {confirmed && <p role="status">Animation requested. Refreshing progress…</p>}
     <p><a href={withBasePath("/generate")} onClick={event => {
-      if (busy) {event.preventDefault(); return;}
+      if (busy || refinementPending.current) {event.preventDefault(); return;}
       try {startNewGeneration();} catch {event.preventDefault(); setError("Browser storage is unavailable. Enable it before starting a new attempt.");}
     }}>Start a new generation</a> — a new character uses a new attempt. This one remains available until its deadline.</p>
     {error && <p role="alert">{error}</p>}

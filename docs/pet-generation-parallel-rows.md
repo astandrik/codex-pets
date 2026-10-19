@@ -155,3 +155,69 @@ old workers. Old code can ignore new job fields and must not claim review jobs.
 To roll back, disable new review admission and retain compatible readers/workers
 until existing review jobs complete or expire. Disabling the flag must not prevent
 confirmation of existing jobs. This change needs no YDB schema migration.
+
+
+### Text refinement of a saved base
+
+Before confirming a character, **Edit character** accepts a text-only change such
+as “keep everything else, but make the scarf red”. The saved base is the reference,
+not the original upload. Each accepted refinement creates an independent review
+job through the same queue, daily quota and budget checks. It consumes one ordinary
+attempt, gets its own24-hour expiry and stops before animations. The previous
+version and its original expiry/costs remain unchanged. Its user-supplied name is
+inherited; automatic naming remains automatic.
+
+`POST /api/pet-generations/{id}/refine` takes strict JSON `{prompt, requestId}`,
+requires the browser Origin and trusted client IP, and returns `{generation}`/202.
+The prompt is required, normalized to LF, trimmed and limited to2000characters;
+the body is limited to16KiB. New admission requires review enabled and a live
+`awaiting_confirmation` source. The source job/base integrity check, normalized
+reference copy, new job, quota, budget and queue writes share one transaction.
+The source ID participates in request identity. Replay checks deduplication before
+reading the source, so accepted requests survive source expiry or flag rollback.
+A final source-expiry check rolls back admission if database work crosses its deadline.
+
+Stored renderer PNGs may be up to8MiB; their private references are fully decoded,
+resized to at most1024pixels on the long side and kept under5MiB. Public uploads
+retain their5MiB input limit. Original references are never returned or published.
+No prompts or image bytes are placed in browser storage; request identity stores
+only a hash, UUID and expiry under a key derived from the source ID. Other forms
+cannot replace that pending identity. An unresolved refinement also cannot be
+replaced by different text for the same source. Transport failures, server errors
+and invalid receipts keep the submitted request pinned. A known admission refusal
+for a fresh identity allows editing again, including explicit503 refusal codes.
+The preparation helper reports fresh versus reused identity alongside the wire
+input from the same metadata read; this decision is never sent to the server.
+Its operation-scoped cleanup uses the prepared key and UUID synchronously, so
+cleanup cannot navigate after unmount or delete a different request identity.
+A retry or restored identity remains pinned even after a later refusal: an earlier
+admission may still finish. Origin/body errors and generic unavailable responses
+also keep recovery intact. Replays do not extend the
+saved request deadline.
+Refinement request identity is retained for a fixed48hours after the first
+submission, covering the source's remaining24hours and the accepted version's
+own24hours even after delayed admission. Ordinary form identity remains24hours.
+This metadata contains no text/image; server job and artifact retention stays24hours.
+After a lost response, cancellation or page reload, **Recover submitted edit** is
+available even while the source is live or has expired locally without a status
+refresh. Re-entering the
+exact text checks its hash and replays the saved UUID; a mismatch or missing
+identity cannot start a new attempt. Successful refinement navigates to the new private
+result with a validated `from` capability hint for comparison/return navigation.
+That hint is not an authorization decision and never appears in gallery assets.
+Both jobs are retained in the existing local history. If saving the new version
+fails, the editor shows its private link and a warning instead of navigating away;
+it retains the recovery identity so the accepted result can still be retrieved. Confirmation always targets
+the displayed new job; reopening the previous version can confirm that one instead.
+
+Existing jobs and MCP/JSON text admissions do not change. This feature needs no
+schema migration or new provider integration. Deploy the compatible web endpoint
+and UI together; the existing reference-aware worker already processes the new
+jobs. Disabling new review admission keeps accepted refinement retries and
+confirmation available.
+
+After accepting refinements, a rollback must retain a web version with the
+`/refine` handler and its request replay support. Turning review admission off on
+that compatible version is safe; restoring a pre-refinement web image can strand
+an accepted request whose response was lost, even though its worker job is valid.
+The existing reference-aware worker does not need a new job schema.

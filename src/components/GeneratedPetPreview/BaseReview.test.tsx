@@ -12,7 +12,7 @@ const fetchMock = vi.fn(), confirmed = vi.fn();
 const id = "a".repeat(64);
 beforeEach(() => {vi.useFakeTimers(); element = document.createElement("div"); document.body.append(element); root = createRoot(element); vi.stubGlobal("fetch", fetchMock); fetchMock.mockReset(); confirmed.mockReset();});
 afterEach(async () => {await act(async () => root.unmount()); element.remove(); vi.useRealTimers(); vi.unstubAllGlobals();});
-async function render() {await act(async () => root.render(<ThemeProvider theme="light"><BaseReview generationId={id} expiresAt={new Date(Date.now() + 86400000).toISOString()} disabled={false} onConfirmed={confirmed}/></ThemeProvider>));}
+async function render() {await act(async () => root.render(<ThemeProvider theme="light"><BaseReview generationId={id} expiresAt={new Date(Date.now() + 86400000).toISOString()} disabled={false} onConfirmed={confirmed} onEditingChange={() => undefined}/></ThemeProvider>));}
 const animate = () => [...element.querySelectorAll("button")].find(button => button.textContent === "Animate this character")!;
 
 it("does not authorize animations before the user can see the base or after the image fails", async () => {

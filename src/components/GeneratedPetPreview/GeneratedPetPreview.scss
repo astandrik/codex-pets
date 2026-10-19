@@ -23,3 +23,17 @@
   p { margin: 0; }
   [role="alert"] { color: var(--g-color-text-danger); }
 }
+
+.generated-pet-refinement {
+  display: grid;
+  gap: var(--g-spacing-3);
+  width: 100%;
+  label { font-weight: 600; }
+}
+
+.generated-pet-versions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  align-items: start;
+  gap: var(--g-spacing-5);
+}

@@ -5,6 +5,14 @@ import {scheduler, saveScheduler, expireQueue, requireJobWithActiveWorkerLease} 
 import {settleBudget, startBudgetTracking} from "@/lib/pets/generation/budget";
 import {publicJob} from "@/lib/pets/generation/public-job";
 
+export async function readSavedGenerationBase(job: GenerationJob, read: GenerationTransaction["getArtifact"], now: number) {
+  const stage = job.stages.find(stage => stage.name === "base" && stage.status === "completed");
+  if (!stage) throw new GenerationError("base_not_ready");
+  const bytes = await read(job.id, "stage-base.png", now);
+  if (!bytes || createHash("sha256").update(bytes).digest("hex") !== stage.sha256) throw new GenerationError("saved_stage_unavailable");
+  return bytes;
+}
+
 export function createBaseReviewService(store: GenerationStore, options: {now: () => number; enabled: () => boolean; budgetUsd: () => number}) {
   function liveJob(id: string, job: GenerationJob | null, now: number): GenerationJob {
     if (!GENERATION_ID.test(id)) throw new GenerationError("invalid_argument");
@@ -12,19 +20,12 @@ export function createBaseReviewService(store: GenerationStore, options: {now: (
     if (job.expiresAt <= now) throw new GenerationError("generation_expired");
     return job;
   }
-  async function baseImage(job: GenerationJob, read: GenerationTransaction["getArtifact"], now: number) {
-    const stage = job.stages.find(stage => stage.name === "base" && stage.status === "completed");
-    if (!stage) throw new GenerationError("base_not_ready");
-    const bytes = await read(job.id, "stage-base.png", now);
-    if (!bytes || createHash("sha256").update(bytes).digest("hex") !== stage.sha256) throw new GenerationError("saved_stage_unavailable");
-    return bytes;
-  }
   return {
     async getBase(id: string) {
       if (!GENERATION_ID.test(id)) throw new GenerationError("invalid_argument");
       const now = options.now();
       const job = liveJob(id, await store.readJob(id), now);
-      const bytes = await baseImage(job, (jobId, kind, time) => store.readArtifact(jobId, kind, time), now);
+      const bytes = await readSavedGenerationBase(job, (jobId, kind, time) => store.readArtifact(jobId, kind, time), now);
       liveJob(id, job, options.now());
       return bytes;
     },
@@ -52,7 +53,7 @@ export function createBaseReviewService(store: GenerationStore, options: {now: (
           const job = liveJob(id, saved, now);
           if (job.baseConfirmedAt !== undefined) return {generation: publicJob(job, now), newlyQueued: false};
           if (!job.reviewBase || job.status !== "awaiting_confirmation") throw new GenerationError("base_not_ready");
-          await baseImage(job, tx.getArtifact, now);
+          await readSavedGenerationBase(job, tx.getArtifact, now);
           if (!options.enabled()) throw new GenerationError("generation_disabled");
           const state = await scheduler(tx, now);
           await expireQueue(tx, state, now);

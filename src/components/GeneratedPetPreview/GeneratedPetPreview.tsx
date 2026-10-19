@@ -9,6 +9,7 @@ import type { PublicGeneration } from "@/lib/pets/generation/service";
 import { publicGenerationError } from "@/lib/pets/generation/public-error";
 import {GeneratedPetMetadataEditor} from "@/components/GeneratedPetMetadataEditor/GeneratedPetMetadataEditor";
 import { notifyGenerationHistory, rememberGeneration } from "@/lib/pets/generation/history";
+import {RefinementRecovery} from "./BaseRefinement";
 import {BaseReview} from "./BaseReview";
 import "./GeneratedPetPreview.scss";
 
@@ -23,11 +24,13 @@ function readSubmission(value: unknown): Submission | null {
   return slug ? { petId: value.petId, slug, submittedAt: value.submittedAt } : null;
 }
 
-export function GeneratedPetPreview({ generationId }: { generationId: string }) {
-  return <GeneratedPetPreviewContent key={generationId} generationId={generationId} />;
+export function GeneratedPetPreview({ generationId, previousGenerationId }: { generationId: string; previousGenerationId?: string }) {
+  return <GeneratedPetPreviewContent key={generationId} generationId={generationId} previousGenerationId={previousGenerationId} />;
 }
 
-function GeneratedPetPreviewContent({ generationId }: { generationId: string }) {
+function GeneratedPetPreviewContent({ generationId, previousGenerationId }: { generationId: string; previousGenerationId?: string }) {
+  const [previousUnavailable, setPreviousUnavailable] = useState(false);
+  const [editingBase, setEditingBase] = useState(false);
   const files = withBasePath(`/api/pet-generations/${generationId}/files/`);
   const [generation, setGeneration] = useState<PublicGeneration | null>(null);
   const [error, setError] = useState("");
@@ -221,6 +224,7 @@ function GeneratedPetPreviewContent({ generationId }: { generationId: string }) 
   const futureURL = previewSlug ? toPublicUrl(`/pets/${previewSlug}`) : null;
   const failed = generation?.status === "failed";
   const failure = generation?.error?.message ? generation.error : publicGenerationError(generation?.error?.code ?? "generation_unavailable");
+  const showBaseReview = Boolean(generation && (generation.status === "awaiting_confirmation" || editingBase));
   return <Container as="main" maxWidth="xl" gutters={5} className="page-shell">
     <p><a href={withBasePath("/my-generations")}>My generations</a></p>
     <h1>{generation?.pet?.displayName ?? "Generated pet"}</h1>
@@ -228,8 +232,19 @@ function GeneratedPetPreviewContent({ generationId }: { generationId: string }) 
     {generation?.status==="completed"&&generation.metadata&&<GeneratedPetMetadataEditor generationId={generationId} metadata={generation.metadata} disabled={Boolean(submission)||submitting||unavailable} onBlocked={value=>{metadataBlockedRef.current=value;setMetadataBlocked(value);}} onSaved={metadata=>{setMetadataConflict(false);setGeneration(current=>current?{...current,metadata,pet:current.pet?{...current.pet,displayName:metadata.displayName??current.pet.displayName}:current.pet}:current);if(metadata.displayName&&!editedSlug.current&&!savedSubmission.current&&suggestPublicPetSlug(metadata.displayName)!==slug){checkSequence.current++;setSlug(suggestPublicPetSlug(metadata.displayName));setSlugCheck(null);setSlugNotice("");}}}/>}
     <p role="status" aria-live="polite">{error || (generation ? STATUS_LABELS[generation.status] : "Loading generation…")}</p>
     {generation?.progress && generation.status !== "failed" && <p>{generation.progress.completedSteps} of {generation.progress.totalSteps} generation steps completed.</p>}
+    {!showBaseReview && (unavailable || (generation && generation.status !== "awaiting_confirmation")) && <RefinementRecovery generationId={generationId} />}
     {failed && <div role="alert"><p>{failure.message}</p><p>{failure.hint}</p></div>}
-    {generation?.status === "awaiting_confirmation" && <BaseReview generationId={generationId} expiresAt={generation.expiresAt} disabled={unavailable} onConfirmed={() => setRefreshVersion(value => value + 1)} />}
+    {previousGenerationId && <p><a href={withBasePath(`/generated/${generationId}`)}>Open this version</a>{" · "}<a href={withBasePath(`/generated/${previousGenerationId}`)}>Open previous version</a></p>}
+    <div className={previousGenerationId ? "generated-pet-versions" : undefined}>
+      {previousGenerationId && <section className="generated-pet-base">
+        <h2>Previous version</h2>
+        {/* Private capability images bypass the optimizer and shared caches. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {!previousUnavailable && <img src={withBasePath(`/api/pet-generations/${previousGenerationId}/base`)} alt="Previous character version" onError={() => setPreviousUnavailable(true)} />}
+        <p>{previousUnavailable ? "The previous version is unavailable or has expired." : "The previous version keeps its original deadline."}</p>
+      </section>}
+      {generation && showBaseReview && <BaseReview generationId={generationId} expiresAt={generation.expiresAt} disabled={unavailable || generation.status !== "awaiting_confirmation"} onEditingChange={setEditingBase} onConfirmed={() => setRefreshVersion(value => value + 1)} />}
+    </div>
     {generation?.pet && generation.status === "completed" && <>
       <StatePreview petJsonUrl={files + "pet.json"} spritesheetUrl={files + "spritesheet.webp"} />
       {!metadataBlocked&&<p><a href={files + "pet.zip"}>Download pet ZIP</a></p>}
