@@ -70,7 +70,7 @@ it("only replays matching pending metadata and clears only the selected source",
   expect([...store.rows]).toEqual(before);
   expect(await prepareGenerationRequest(store, {...brief, replayOnly: true}, 101)).toEqual(first);
   expect([...store.rows]).toEqual(before);
-  await expect(prepareGenerationRequest(store, {...brief, replayOnly: true}, 86400101)).rejects.toThrow("refinement_replay_mismatch");
+  await expect(prepareGenerationRequest(store, {...brief, replayOnly: true}, 172800101)).rejects.toThrow("refinement_replay_mismatch");
   await clearRefinementRequest({removeItem: key => store.rows.delete(key)}, sourceBaseId);
   expect(await hasPendingRefinement(store, sourceBaseId, 101)).toBe(false);
   await expect(prepareGenerationRequest(store, {...brief, replayOnly: true}, 101)).rejects.toThrow("refinement_replay_mismatch");
@@ -88,4 +88,19 @@ it("does not replace a pending refinement with changed text or extend its recove
   expect([...store.rows]).toEqual(saved);
   expect(await prepareGenerationRequest(store, brief, 102)).toEqual(first);
   expect([...store.rows]).toEqual(saved);
+});
+
+
+it("retains a refinement identity for delayed acceptance without sliding its deadline", async () => {
+  vi.stubGlobal("crypto", webcrypto); const store = storage();
+  const {hasPendingRefinement} = await import("./request");
+  const brief = {prompt: "Private edit", sourceBaseId: "a".repeat(64)};
+  const start = 100, day = 86400000;
+  const first = await prepareGenerationRequest(store, brief, start);
+  const saved = [...store.rows];
+  expect(await hasPendingRefinement(store, brief.sourceBaseId, start + day + 3600000)).toBe(true);
+  expect(await prepareGenerationRequest(store, brief, start + 47 * 3600000)).toEqual(first);
+  expect([...store.rows]).toEqual(saved);
+  expect(await hasPendingRefinement(store, brief.sourceBaseId, start + 2 * day - 1)).toBe(true);
+  expect(await hasPendingRefinement(store, brief.sourceBaseId, start + 2 * day)).toBe(false);
 });

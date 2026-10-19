@@ -1,4 +1,5 @@
 export const REQUEST_STORAGE_KEY = "pets-generation-request";
+const DAY = 86_400_000;
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
 type Brief = { prompt: string; displayName?: string; referenceImage?: Blob; sourceBaseId?: string; replayOnly?: boolean };
 type SavedRequest = {hash: string; requestId: string; expiresAt: number};
@@ -41,7 +42,9 @@ export async function prepareGenerationRequest(storage: Storage, brief: Brief, n
   // A pending refinement may already be charged; different text must not replace its recovery identity.
   if ((brief.replayOnly || (brief.sourceBaseId && previous)) && !matching) throw new Error("refinement_replay_mismatch");
   const requestId = matching?.requestId ?? crypto.randomUUID();
-  if (!brief.replayOnly && !(brief.sourceBaseId && matching)) storage.setItem(key, JSON.stringify({ hash, requestId, expiresAt: now + 86_400_000 }));
+  // Admission can wait for the source's remaining day, then the accepted version lives another day.
+  const retentionMs = brief.sourceBaseId ? 2 * DAY : DAY;
+  if (!brief.replayOnly && !(brief.sourceBaseId && matching)) storage.setItem(key, JSON.stringify({ hash, requestId, expiresAt: now + retentionMs }));
   return { ...content, requestId };
 }
 

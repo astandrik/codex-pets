@@ -158,3 +158,69 @@ it.each([403, 400, 413])("retains an uncertain request when a retry fails before
   expect(posts()).toHaveLength(3);
   expect(posts().map(([, init]) => String(init.body))).toEqual([first, first, first]);
 });
+
+async function expiredStatusAfterLostReceipt() {
+  const normal = fetchMock.getMockImplementation()!; let expired = false;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/refine")) throw Error("synthetic accepted request with lost response");
+    if (expired && url === `/api/pet-generations/${original}`) return Response.json({code: "generation_expired"}, {status: 410});
+    return normal(url, init);
+  });
+  await render(); await edit(); await submit();
+  expect(posts()).toHaveLength(1);
+  await act(async () => findButton("Cancel edit")!.click());
+  expired = true;
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(host.textContent).toContain("This generation is unavailable or has expired.");
+  await vi.waitFor(async () => {
+    await act(async () => {await new Promise(resolve => setTimeout(resolve, 0));});
+    expect(findButton("Recover submitted edit")).toBeDefined();
+  });
+}
+
+it("shows only one recovery control after a loaded review source returns410", async () => {
+  await expiredStatusAfterLostReceipt();
+  // Both entry points become visible after their async pending-identity reads settle.
+  await act(async () => {await new Promise(resolve => setTimeout(resolve, 50));});
+  expect([...host.querySelectorAll("button")].filter(b => b.textContent === "Recover submitted edit")).toHaveLength(1);
+});
+
+it("does not abort an in-flight recovery when another recovery entry is opened", async () => {
+  await expiredStatusAfterLostReceipt();
+  await act(async () => {await new Promise(resolve => setTimeout(resolve, 50));});
+  let finish!: (response: Response) => void;
+  const delayed = new Promise<Response>(resolve => {finish = resolve;});
+  const normal = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => url.endsWith("/refine") ? delayed : normal(url, init));
+  await act(async () => findButton("Recover submitted edit")!.click());
+  changeText("Make the scarf red"); await submit();
+  expect(posts()).toHaveLength(2);
+  const signal = posts()[1][1].signal as AbortSignal;
+  try {
+    const other = findButton("Recover submitted edit");
+    if (other) await act(async () => other.click());
+    expect(signal.aborted).toBe(false);
+  } finally {
+    await act(async () => {finish(Response.json(reply(child), {status: 202})); await new Promise(resolve => setTimeout(resolve, 0));});
+  }
+});
+
+
+it("keeps standalone recovery available when the initial status response is410", async () => {
+  const {prepareGenerationRequest} = await import("../PetGenerationForm/request");
+  const saved = await prepareGenerationRequest(sessionStorage, {prompt: "Make the scarf red", sourceBaseId: original});
+  const normal = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => url === `/api/pet-generations/${original}`
+    ? Response.json({code: "generation_expired"}, {status: 410}) : normal(url, init));
+  await act(async () => root.render(<ThemeProvider theme="light"><GeneratedPetPreview generationId={original}/></ThemeProvider>));
+  await vi.waitFor(async () => {
+    await act(async () => {await new Promise(resolve => setTimeout(resolve, 0));});
+    expect(findButton("Recover submitted edit")?.disabled).toBe(false);
+  });
+  expect(host.textContent).not.toContain("Review your character");
+  expect([...host.querySelectorAll("button")].filter(b => b.textContent === "Recover submitted edit")).toHaveLength(1);
+  await act(async () => findButton("Recover submitted edit")!.click());
+  changeText("Make the scarf red"); await submit();
+  expect(JSON.parse(String(posts()[0][1].body)).requestId).toBe(saved.requestId);
+  expect(localStorage.getItem("pets-generation-history-v1:" + child)).not.toBeNull();
+});

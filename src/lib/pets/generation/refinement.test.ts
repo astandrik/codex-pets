@@ -1,4 +1,5 @@
-import {createHash, randomUUID} from "node:crypto";
+import {prepareGenerationRequest, hasPendingRefinement} from "@/components/PetGenerationForm/request";
+import {createHash, randomUUID, webcrypto} from "node:crypto";
 import sharp from "sharp";
 import {describe, expect, it, vi} from "vitest";
 import {createGenerationService} from "./service";
@@ -143,4 +144,34 @@ it.each(["read", "write"])("rejects an edit if the source expires during an admi
   expect([...f.store.jobs]).toEqual(before.jobs);
   expect([...f.store.ledger]).toEqual(before.ledger);
   expect([...f.store.artifacts]).toEqual(before.artifacts);
+});
+
+it.each([3 * 3600000, DAY - 1])("keeps browser recovery after delayed acceptance at +%sms", async acceptedAt => {
+  vi.stubGlobal("crypto", webcrypto);
+  try {
+    const f = await fixture(); const start = f.config.now;
+    const rows = new Map<string, string>();
+    const storage = {getItem: (key: string) => rows.get(key) ?? null, setItem: (key: string, value: string) => {rows.set(key, value);}};
+    const brief = {prompt: "Make the scarf red", sourceBaseId: f.parent.generationId};
+    f.config.now = start + 2 * 3600000;
+    const first = await prepareGenerationRequest(storage, brief, f.config.now);
+    expect(f.store.jobs.size).toBe(1); // This first POST never reaches admission.
+    f.config.now = start + acceptedAt;
+    const retry = await prepareGenerationRequest(storage, brief, f.config.now);
+    expect(retry.requestId).toBe(first.requestId);
+    const child = await f.service.generate(retry, "203.0.113.9", {reviewBase: true, sourceBaseId: brief.sourceBaseId});
+    const active = (await f.service.claim("delayed-child"))!;
+    await f.service.beginStage(active, "base");
+    await f.service.saveStage(active, "base", f.base, {generationMs: 1, usage: {textInputTokens: 1, imageInputTokens: 1, outputTokens: 1, costUsd: .1}});
+    await f.service.awaitConfirmation(active);
+    // Acceptance succeeded at +3h, but the receipt was lost and no history link was saved.
+    f.config.now = start + acceptedAt + 23.5 * 3600000;
+    await f.store.cleanup(f.config.now);
+    expect(Date.parse(child.expiresAt)).toBeGreaterThan(f.config.now);
+    const backendReplay = await f.service.generate(retry, "203.0.113.9", {reviewBase: true, sourceBaseId: brief.sourceBaseId, allowNew: false});
+    expect(backendReplay.generationId).toBe(child.generationId);
+    expect(backendReplay.status).toBe("awaiting_confirmation");
+    expect(await hasPendingRefinement(storage, brief.sourceBaseId, f.config.now)).toBe(true);
+    expect((await prepareGenerationRequest(storage, {...brief, replayOnly: true}, f.config.now)).requestId).toBe(first.requestId);
+  } finally {vi.unstubAllGlobals();}
 });

@@ -188,6 +188,10 @@ and invalid receipts keep the submitted request pinned; a definitive admission
 rejection after dedup allows editing again. Origin/body rejections happen before
 dedup and cannot settle an earlier uncertain request. Replays do not extend the
 saved request deadline.
+Refinement request identity is retained for a fixed48hours after the first
+submission, covering the source's remaining24hours and the accepted version's
+own24hours even after delayed admission. Ordinary form identity remains24hours.
+This metadata contains no text/image; server job and artifact retention stays24hours.
 After a lost response, cancellation or page reload, **Recover submitted edit** is
 available even while the source is live or has expired locally without a status
 refresh. Re-entering the
