@@ -77,3 +77,15 @@ it("only replays matching pending metadata and clears only the selected source",
   expect((await prepareGenerationRequest(store, {...brief, sourceBaseId: other}, 101)).requestId).toBe(second.requestId);
   expect(JSON.stringify([...store.rows])).not.toContain("Private edit");
 });
+
+
+it("does not replace a pending refinement with changed text or extend its recovery deadline", async () => {
+  vi.stubGlobal("crypto", webcrypto); const store = storage();
+  const brief = {prompt: "Private edit", sourceBaseId: "a".repeat(64)};
+  const first = await prepareGenerationRequest(store, brief, 100);
+  const saved = [...store.rows];
+  await expect(prepareGenerationRequest(store, {...brief, prompt: "Different edit"}, 101)).rejects.toThrow("refinement_replay_mismatch");
+  expect([...store.rows]).toEqual(saved);
+  expect(await prepareGenerationRequest(store, brief, 102)).toEqual(first);
+  expect([...store.rows]).toEqual(saved);
+});

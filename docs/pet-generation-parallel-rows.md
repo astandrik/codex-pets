@@ -182,13 +182,20 @@ resized to at most1024pixels on the long side and kept under5MiB. Public uploads
 retain their5MiB input limit. Original references are never returned or published.
 No prompts or image bytes are placed in browser storage; request identity stores
 only a hash, UUID and expiry under a key derived from the source ID. Other forms
-cannot replace that pending identity. After a lost response and page reload, an
-expired or confirmed source offers **Recover submitted edit**. Re-entering the
+cannot replace that pending identity. An unresolved refinement also cannot be
+replaced by different text for the same source. Transport failures, server errors
+and invalid receipts keep the submitted request pinned; a definitive admission
+rejection allows editing again. Replays do not extend the saved request deadline.
+After a lost response, cancellation or page reload, **Recover submitted edit** is
+available even while the source is live or has expired locally without a status
+refresh. Re-entering the
 exact text checks its hash and replays the saved UUID; a mismatch or missing
 identity cannot start a new attempt. Successful refinement navigates to the new private
 result with a validated `from` capability hint for comparison/return navigation.
 That hint is not an authorization decision and never appears in gallery assets.
-Both jobs are retained in the existing local history. Confirmation always targets
+Both jobs are retained in the existing local history. If saving the new version
+fails, the editor shows its private link and a warning instead of navigating away;
+it retains the recovery identity so the accepted result can still be retrieved. Confirmation always targets
 the displayed new job; reopening the previous version can confirm that one instead.
 
 Existing jobs and MCP/JSON text admissions do not change. This feature needs no

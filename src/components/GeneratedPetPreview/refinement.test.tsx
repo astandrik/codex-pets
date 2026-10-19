@@ -40,7 +40,7 @@ async function edit(text = "Make the scarf red") {
   const input = host.querySelector("textarea")!;
   act(() => {Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, text); input.dispatchEvent(new Event("input", {bubbles: true}));});
 }
-async function submit() {await act(async () => {findButton("Create new version")!.click(); await new Promise(resolve => setTimeout(resolve, 50));});}
+async function submit() {await act(async () => {(findButton("Create new version") ?? findButton("Check submitted version"))!.click(); await new Promise(resolve => setTimeout(resolve, 50));});}
 const posts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
 
 it("uses the displayed base, preserves its link and confirms only the resulting version", async () => {

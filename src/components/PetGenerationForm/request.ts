@@ -38,9 +38,10 @@ export async function prepareGenerationRequest(storage: Storage, brief: Brief, n
   const key = await requestKey(brief.sourceBaseId);
   const previous = readRequest(storage, key, now);
   const matching = previous?.hash === hash ? previous : null;
-  if (brief.replayOnly && !matching) throw new Error("refinement_replay_mismatch");
+  // A pending refinement may already be charged; different text must not replace its recovery identity.
+  if ((brief.replayOnly || (brief.sourceBaseId && previous)) && !matching) throw new Error("refinement_replay_mismatch");
   const requestId = matching?.requestId ?? crypto.randomUUID();
-  if (!brief.replayOnly) storage.setItem(key, JSON.stringify({ hash, requestId, expiresAt: now + 86_400_000 }));
+  if (!brief.replayOnly && !(brief.sourceBaseId && matching)) storage.setItem(key, JSON.stringify({ hash, requestId, expiresAt: now + 86_400_000 }));
   return { ...content, requestId };
 }
 
