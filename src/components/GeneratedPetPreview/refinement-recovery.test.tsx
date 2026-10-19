@@ -326,3 +326,54 @@ it("does not navigate after the editor unmounts during receipt cleanup", async (
     expect(navigate).toHaveBeenCalledTimes(navigations);
   } finally {held = false; waiting.forEach(release => release()); spy.mockRestore();}
 });
+
+
+it.each([false, true])("clears only a fresh identity when preparation is aborted before POST (reused=%s)", async reused => {
+  const requests = await import("../PetGenerationForm/request");
+  await render(); await edit();
+  let previousRequestId: string | undefined;
+  if (reused) {
+    const normal = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/refine")) throw Error("synthetic uncertain admission");
+      return normal(url, init);
+    });
+    await submit();
+    previousRequestId = JSON.parse(String(posts()[0][1].body)).requestId;
+    await act(async () => findButton("Cancel edit")!.click());
+    await vi.waitFor(async () => {
+      await act(async () => {await new Promise(resolve => setTimeout(resolve, 0));});
+      expect(findButton("Recover submitted edit")).toBeDefined();
+    });
+    await edit();
+  }
+  const previousPosts = posts().length;
+  const digest = webcrypto.subtle.digest.bind(webcrypto.subtle);
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => {release = resolve;});
+  const digestSpy = vi.spyOn(webcrypto.subtle, "digest").mockImplementation(async (algorithm, data) => {
+    await gate;
+    return digest(algorithm, data);
+  });
+  const prepareSpy = vi.spyOn(requests, "prepareRefinementRequest");
+  try {
+    await act(async () => (findButton("Create new version") ?? findButton("Check submitted version"))!.click());
+    expect(prepareSpy).toHaveBeenCalledTimes(1);
+    expect(digestSpy).toHaveBeenCalled();
+    expect(posts()).toHaveLength(previousPosts);
+    await act(async () => root.unmount()); root = createRoot(host);
+    release();
+    await act(async () => {await prepareSpy.mock.results[0].value;});
+    expect(posts()).toHaveLength(previousPosts);
+    expect(await requests.hasPendingRefinement(sessionStorage, original)).toBe(reused);
+    if (reused) {
+      const replay = await requests.prepareRefinementRequest(sessionStorage, {prompt: "Make the scarf red", sourceBaseId: original, replayOnly: true});
+      expect(replay.input.requestId).toBe(previousRequestId);
+      await expect(requests.prepareRefinementRequest(sessionStorage, {prompt: "Make the scarf green", sourceBaseId: original})).rejects.toThrow("refinement_replay_mismatch");
+    } else {
+      const nextRequest = await requests.prepareRefinementRequest(sessionStorage, {prompt: "Make the scarf green", sourceBaseId: original});
+      expect(nextRequest.input.prompt).toBe("Make the scarf green");
+      expect(nextRequest.isNew).toBe(true);
+    }
+  } finally {release(); prepareSpy.mockRestore(); digestSpy.mockRestore();}
+});

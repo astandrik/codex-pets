@@ -53,7 +53,10 @@ function RefinementForm({generationId, disabled, blocked, recoveryOnly = false, 
       // Until the outcome is known, every retry uses the submitted body, even while the source is live.
       const prepared = submitted ?? await prepareRefinementRequest(sessionStorage, {prompt, sourceBaseId: generationId, replayOnly: recoveryOnly});
       const {input, isNew} = prepared;
-      if (request.signal.aborted) return;
+      if (request.signal.aborted) {
+        if (isNew) prepared.clear();
+        return;
+      }
       setSubmitted({...prepared, isNew: false});
       const response = await fetch(withBasePath(`/api/pet-generations/${generationId}/refine`), {
         method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(input), cache: "no-store", signal: request.signal,
