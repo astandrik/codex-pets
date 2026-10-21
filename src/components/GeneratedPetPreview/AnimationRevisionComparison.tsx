@@ -9,13 +9,16 @@ import type {AnimationState} from "@/lib/pets/generation/animation-revision-inpu
 import {ANIMATION_LABELS} from "./AnimationRevisionEditor";
 import "./AnimationRevision.scss";
 
-type Props = {generationId: string; sourceGenerationId: string; expiresAt: string; petJsonUrl: string; spritesheetUrl: string; beforeSpritesheetUrl: string; selectedStates: AnimationState[]; onAccepted: () => void};
+type Props = {generationId: string; sourceGenerationId: string; expiresAt: string; petJsonUrl: string; spritesheetUrl: string; beforeSpritesheetUrl: string; selectedStates: AnimationState[]; unavailable?: boolean; onAccepted: () => void};
 export function AnimationRevisionComparison(props: Props) {
   const [state, setState] = useState<AnimationState>(props.selectedStates[0]);
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [terminalError, setTerminalError] = useState("");
+  const unavailable = Boolean(props.unavailable || terminalError);
+  const message = terminalError || (props.unavailable ? "Эта версия недоступна или срок её хранения истёк. Принять её больше нельзя." : error);
   const pending = useRef(false), controller = useRef<AbortController | null>(null);
   const frameCount = PET_STATES.find(item => item.key === state)!.frames;
   useEffect(() => {
@@ -25,11 +28,16 @@ export function AnimationRevisionComparison(props: Props) {
   }, [frameCount, playing]);
   useEffect(() => () => controller.current?.abort(), []);
   async function accept() {
-    if (pending.current) return;
+    if (pending.current || unavailable) return;
     pending.current = true; setBusy(true); setError("");
     const request = new AbortController(); controller.current = request;
     try {
       const response = await fetch(withBasePath(`/api/pet-generations/${props.generationId}/animation-revision/accept`), {method: "POST", cache: "no-store", signal: request.signal});
+      if (request.signal.aborted) return;
+      if (response.status === 404 || response.status === 410) {
+        setTerminalError(response.status === 410 ? "Срок хранения этой версии истёк. Принять её больше нельзя." : "Эта версия больше недоступна. Принять её нельзя.");
+        return;
+      }
       const result = await response.json();
       if (request.signal.aborted) return;
       if (!response.ok || result.generation?.animationRevision?.acceptedAt === undefined) throw Error("acceptance_unconfirmed");
@@ -48,8 +56,8 @@ export function AnimationRevisionComparison(props: Props) {
       <section><h3>Стало</h3><StatePreview petJsonUrl={props.petJsonUrl} spritesheetUrl={props.spritesheetUrl} selectedKey={state} frame={frame} hideControls/></section>
     </div>
     <p>Доступно до {new Date(props.expiresAt).toLocaleString()}. Принятие бесплатно и не продлевает срок.</p>
-    <div className="animation-revision__actions"><Button view="action" loading={busy} disabled={busy} onClick={() => void accept()}>Принять новую версию</Button><Button href={withBasePath(`/generated/${props.sourceGenerationId}`)} disabled={busy}>Оставить предыдущую</Button></div>
+    <div className="animation-revision__actions"><Button view="action" loading={busy} disabled={busy || unavailable} onClick={() => void accept()}>Принять новую версию</Button><Button href={withBasePath(`/generated/${props.sourceGenerationId}`)} disabled={busy}>Оставить предыдущую</Button></div>
     <p>Сравнение сохранено в этой версии. Ссылка на предыдущую работает только до её собственного срока.</p>
-    {error && <p role="alert">{error}</p>}
+    {message && <p role="alert">{message}</p>}
   </section>;
 }

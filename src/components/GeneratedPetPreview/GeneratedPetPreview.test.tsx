@@ -302,3 +302,18 @@ it("keeps a completed candidate private until another tab accepts it, refreshing
   expect(element.textContent).toContain("Tilt only");
   expect(element.querySelector('a[href$="pet.zip"]')).not.toBeNull();expect(button()).toBeDefined();
 });
+
+it.each([404, 410])("disables stale candidate acceptance when status refresh returns %i", async status => {
+  const candidate = {...generation().generation, expiresAt: new Date(Date.now() + 1000).toISOString(), animationRevision: {sourceGenerationId: "b".repeat(64), selectedStates: ["idle"], corrections: {}, beforeSpritesheetUrl: "/before.webp"}};
+  let unavailable = false;
+  fetchMock.mockImplementation(async () => unavailable ? response({code: status === 410 ? "generation_expired" : "not_found"}, status) : response({generation: candidate}));
+  await render();
+  const accept = () => [...element.querySelectorAll("button")].find(button => button.textContent === "Принять новую версию")!;
+  expect(accept().disabled).toBe(false);
+  unavailable = true;
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(element.textContent).toContain("has expired");
+  expect(accept().disabled).toBe(true);
+  await act(async () => accept().click());
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+});

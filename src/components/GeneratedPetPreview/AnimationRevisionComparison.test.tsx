@@ -21,3 +21,46 @@ it("synchronizes real preview frames and accepts only on explicit click",async()
   await act(async()=>[...element.querySelectorAll("button")].find(b=>b.textContent==="Принять новую версию")!.click());
   expect(accepted).toHaveBeenCalledTimes(1);expect(fetchMock.mock.calls.filter(([,init])=>init?.method==="POST")).toHaveLength(1);
 });
+
+const acceptanceButton = () => [...element.querySelectorAll("button")].find(button => button.textContent === "Принять новую версию")!;
+const previewResponse = () => ({ok: true, text: async () => JSON.stringify({id: "pet", displayName: "Pet", description: "Pet", spritesheetPath: "spritesheet.webp", spriteVersionNumber: 2})});
+async function renderCandidate() {
+  await act(async () => root.render(<ThemeProvider theme="light"><AnimationRevisionComparison generationId={"b".repeat(64)} sourceGenerationId={"a".repeat(64)} expiresAt={new Date(Date.now() + 1000).toISOString()} petJsonUrl="/pet.json" spritesheetUrl="/after.webp" beforeSpritesheetUrl="/before.webp" selectedStates={["idle"]} onAccepted={accepted}/></ThemeProvider>));
+}
+
+it.each([404, 410].flatMap(status => ["json", "empty", "html"].map(body => ({status, body}))))("disables acceptance after terminal $status with $body body", async ({status, body}) => {
+  const json = vi.fn(async () => {
+    if (body !== "json") throw new SyntaxError(body === "empty" ? "Unexpected end of JSON input" : "Unexpected token <");
+    return {code: status === 410 ? "generation_expired" : "not_found"};
+  });
+  fetchMock.mockImplementation(async (_url, init) => init?.method === "POST" ? {ok: false, status, json} : previewResponse());
+  await renderCandidate();
+  await act(async () => vi.advanceTimersByTimeAsync(1001));
+  await act(async () => acceptanceButton().click());
+  expect(element.querySelector('[role="alert"]')?.textContent).toContain(status === 410 ? "Срок хранения этой версии истёк" : "Эта версия больше недоступна");
+  expect(element.textContent).not.toContain("Повторите действие");
+  expect(acceptanceButton().disabled).toBe(true);
+  expect(accepted).not.toHaveBeenCalled();
+  expect(json).not.toHaveBeenCalled();
+  await act(async () => acceptanceButton().click());
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+});
+
+it.each(["network", "503", "invalid-success"])("keeps %s uncertainty retryable and accepts a later confirmed response", async failure => {
+  let posts = 0;
+  fetchMock.mockImplementation(async (_url, init) => {
+    if (init?.method !== "POST") return previewResponse();
+    if (posts++ === 0) {
+      if (failure === "network") throw new TypeError("connection lost");
+      if (failure === "503") return {ok: false, status: 503, json: async () => ({code: "generation_unavailable"})};
+      return {ok: true, status: 200, json: async () => {throw new SyntaxError("truncated receipt");}};
+    }
+    return {ok: true, status: 200, json: async () => ({generation: {animationRevision: {acceptedAt: 42}}})};
+  });
+  await renderCandidate();
+  await act(async () => acceptanceButton().click());
+  expect(element.textContent).toContain("Повторите действие");
+  expect(acceptanceButton().disabled).toBe(false); expect(accepted).not.toHaveBeenCalled();
+  await act(async () => acceptanceButton().click());
+  expect(accepted).toHaveBeenCalledTimes(1); expect(posts).toBe(2);
+});
