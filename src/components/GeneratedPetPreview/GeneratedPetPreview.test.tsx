@@ -293,10 +293,12 @@ it("keeps a completed candidate private until another tab accepts it, refreshing
   fetchMock.mockResolvedValue(response({generation:candidate}));
   await render(); await tick(5000);
   expect(element.textContent).toContain("Проверьте новую версию");
+  expect(element.textContent).toContain("Tilt only");
   expect(element.querySelector('a[href$="pet.zip"]')).toBeNull();expect(button()).toBeUndefined();
   expect(fetchMock).toHaveBeenCalledTimes(1);
   fetchMock.mockResolvedValue(response({generation:{...candidate,animationRevision:{...candidate.animationRevision,acceptedAt:Date.now()}}}));
   await act(async()=>window.dispatchEvent(new Event("focus")));
   expect(element.textContent).not.toContain("Проверьте новую версию");
+  expect(element.textContent).toContain("Tilt only");
   expect(element.querySelector('a[href$="pet.zip"]')).not.toBeNull();expect(button()).toBeDefined();
 });

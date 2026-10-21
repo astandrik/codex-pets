@@ -10,7 +10,7 @@ import { publicGenerationError } from "@/lib/pets/generation/public-error";
 import {GeneratedPetMetadataEditor} from "@/components/GeneratedPetMetadataEditor/GeneratedPetMetadataEditor";
 import { notifyGenerationHistory, rememberGeneration } from "@/lib/pets/generation/history";
 import {RefinementRecovery} from "./BaseRefinement";
-import {AnimationRevisionEditor} from "./AnimationRevisionEditor";
+import {AnimationRevisionEditor, AnimationRevisionCorrections} from "./AnimationRevisionEditor";
 import {AnimationRevisionComparison} from "./AnimationRevisionComparison";
 import {BaseReview} from "./BaseReview";
 import "./GeneratedPetPreview.scss";
@@ -257,7 +257,8 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
       </section>}
       {generation && showBaseReview && <BaseReview generationId={generationId} expiresAt={generation.expiresAt} disabled={unavailable || generation.status !== "awaiting_confirmation"} onEditingChange={setEditingBase} animationHintsEnabled={animationHintsEnabled} onAnimationPromptIntent={prompt => {animationPromptIntent.current = prompt;}} onConfirmed={different => {if (different) setDifferentAnimationPrompt(true); setRefreshVersion(value => value + 1);}} />}
     </div>
-    <AnimationRevisionEditor generationId={generationId} metadataRevision={generation?.metadata?.revision ?? 0} canEdit={Boolean(animationRevisionsEnabled && generation?.canReviseAnimations && !unavailable)} blocked={metadataBlocked || metadataConflict || submitting} corrections={generation?.animationRevision?.corrections}/>
+    {generation?.animationRevision && <AnimationRevisionCorrections corrections={generation.animationRevision.corrections}/>}
+    <AnimationRevisionEditor generationId={generationId} metadataRevision={generation?.metadata?.revision ?? 0} canEdit={Boolean(animationRevisionsEnabled && generation?.canReviseAnimations && !unavailable)} blocked={metadataBlocked || metadataConflict || submitting}/>
     {animationRevisionsEnabled && generation?.status === "completed" && !pendingAcceptance && !generation.canReviseAnimations && <p lang="ru">Редактирование недоступно: у этой версии нет сохранённого базового образа.</p>}
     {generation?.pet && generation.status === "completed" && pendingAcceptance && generation.animationRevision && <AnimationRevisionComparison generationId={generationId} sourceGenerationId={generation.animationRevision.sourceGenerationId} expiresAt={generation.expiresAt} petJsonUrl={files + "pet.json"} spritesheetUrl={files + "spritesheet.webp"} beforeSpritesheetUrl={generation.animationRevision.beforeSpritesheetUrl} selectedStates={generation.animationRevision.selectedStates} onAccepted={() => setRefreshVersion(value => value + 1)}/>}
     {generation?.pet && generation.status === "completed" && !pendingAcceptance && <>

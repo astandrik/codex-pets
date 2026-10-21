@@ -12,7 +12,7 @@ import "./AnimationRevision.scss";
 
 export const ANIMATION_LABELS: Record<AnimationState, string> = {idle: "Покой", running: "Работа", "running-left": "Движение влево", "running-right": "Движение вправо", waving: "Приветствие", jumping: "Прыжок", waiting: "Ожидание", failed: "Неудача", review: "Размышление"};
 type Prepared = Awaited<ReturnType<typeof prepareAnimationRevision>>;
-type Props = {generationId: string; metadataRevision: number; canEdit: boolean; blocked: boolean; corrections?: Partial<Record<AnimationState, string[]>>};
+type Props = {generationId: string; metadataRevision: number; canEdit: boolean; blocked: boolean};
 const DEFINITE_REFUSALS = new Set(["invalid_argument", "invalid_origin", "body_too_large", "rate_limited", "queue_full", "budget_exhausted", "not_found", "generation_expired", "generation_not_completed", "animation_revision_not_accepted", "metadata_conflict", "generation_paused", "generation_disabled", "animation_revisions_disabled", "animation_corrections_limit", "saved_stage_unavailable", "invalid_generated_package", "invalid_reference_image", "client_ip_unavailable"]);
 
 const subscribeToBrowser = () => () => {};
@@ -20,7 +20,7 @@ export function AnimationRevisionEditor(props: Props) {
   const browser = useSyncExternalStore(subscribeToBrowser, () => true, () => false);
   return browser ? <AnimationRevisionForm key={props.generationId} {...props}/> : null;
 }
-function AnimationRevisionForm({generationId, metadataRevision, canEdit, blocked, corrections}: Props) {
+function AnimationRevisionForm({generationId, metadataRevision, canEdit, blocked}: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState<PendingAnimationRevision | null>(() => {
@@ -102,8 +102,16 @@ function AnimationRevisionForm({generationId, metadataRevision, canEdit, blocked
         {!saved && !submitted && <Button type="button" disabled={busy} onClick={() => setEditing(false)}>Отмена</Button>}
       </div>
     </form>
-    {corrections && Object.keys(corrections).length > 0 && <details><summary>Прежние правки</summary>{PET_STATES.map(state => corrections[state.key]?.length ? <div key={state.key}><h3>{ANIMATION_LABELS[state.key]}</h3>{corrections[state.key]!.map((text,index) => <p key={index}>{text}</p>)}</div> : null)}</details>}
     {error && <p role="alert">{error}</p>}
     {acceptedUrl && <p><a href={acceptedUrl}>Открыть новую версию</a></p>}
   </section>;
+}
+
+export function AnimationRevisionCorrections({corrections}: {corrections: Partial<Record<AnimationState, string[]>>}) {
+  if (!Object.keys(corrections).length) return null;
+  return <section className="animation-revision" lang="ru"><details><summary>Правки этой версии</summary>
+    {PET_STATES.map(state => corrections[state.key]?.length ? <div key={state.key}><h3>{ANIMATION_LABELS[state.key]}</h3>
+      {corrections[state.key]!.map((text, index) => <p key={index}>{text}</p>)}
+    </div> : null)}
+  </details></section>;
 }
