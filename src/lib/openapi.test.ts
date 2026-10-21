@@ -27,6 +27,11 @@ describe("buildOpenApiSpec", () => {
     expect(description).toContain("normalized to LF before length validation");
   });
 
+  it("documents the oversized confirmation response", async () => {
+    const {buildOpenApiSpec} = await import("@/lib/openapi");
+    expect(buildOpenApiSpec().paths["/api/pet-generations/{id}/confirm"].post.responses).toHaveProperty("413");
+  });
+
   it("builds the public Codex Pets OpenAPI contract without admin routes", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example/codex-pets");
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/codex-pets");

@@ -640,3 +640,9 @@ and writes to `${CODEX_HOME:-~/.codex}/pets/<slug>/`. Use `--force` to replace
 an existing local pet folder, or `CODEX_PETS_URL` / `--url` to point at another
 deployment. If Codex is already running, restart it before selecting the new pet
 in Settings -> Appearance -> Pets.
+
+### Optional movement guidance
+
+`PET_GENERATION_ANIMATION_HINTS_ENABLED=true` enables one optional movement field before base confirmation. It defaults off. A single description may contain general preferences and conditions for individual animation states. The first accepted confirmation fixes the text; retries return those accepted settings. Guidance refines motion, turns and gestures in nine states; size changes and cursor-driven head motion are not supported. Base and gaze generation stay unchanged, with no extra provider stage or daily attempt.
+
+Deploy compatible web and generation-worker versions before enabling guidance. Turning the flag off prevents new guidance while accepted jobs and replays continue. Keep compatible readers/writers on rollback so saved guidance is not discarded. See `docs/pet-generation-parallel-rows.md` for the generation lifecycle.

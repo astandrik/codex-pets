@@ -24,13 +24,16 @@ describe("generated pet atlas and ZIP", () => {
     const source = await sheet();
     const validation = await validateGeneratedSheet(source);
     expect(validation.requiredFrames).toBe(PET_STATES.reduce((n, s) => n + s.frames, 16));
-    const job: GenerationJob = { id: "a".repeat(64), prompt: "A blue robot", displayName: "Robot", status: "processing", createdAt: 1_700_000_000_000, expiresAt: 1_700_086_400_000, worker: "test", promptRevision: "test", pipelineVersion: 1, stages: [] };
+    const job: GenerationJob = { id: "a".repeat(64), prompt: "A blue robot", displayName: "Robot", status: "processing", createdAt: 1_700_000_000_000, expiresAt: 1_700_086_400_000, worker: "test", promptRevision: "test", pipelineVersion: 1, stages: [], animationPrompt: "Private motion instructions" };
     const result = await buildGeneratedPackage(job, source);
     const zip = await JSZip.loadAsync(result["pet.zip"]);
     expect(Object.keys(zip.files).sort()).toEqual(["pet.json", "spritesheet.webp"]);
     expect(JSON.parse(await zip.file("pet.json")!.async("string"))).toMatchObject({ displayName: "Robot", spriteVersionNumber: 2, spritesheetPath: "spritesheet.webp" });
     expect(await zip.file("spritesheet.webp")!.async("nodebuffer")).toEqual(result["spritesheet.webp"]);
     expect(buildGenerationPrompt(job)).toContain("1536x2288");
+    expect(result["pet.json"].toString()).not.toContain(job.animationPrompt);
+    expect(await zip.file("pet.json")!.async("string")).not.toContain(job.animationPrompt);
+    expect(buildGenerationPrompt(job)).not.toContain(job.animationPrompt);
   });
   it.each(["", "   "])("packages a saved atlas after its prompt has been cleared (%j)", async (prompt) => {
     const job: GenerationJob = { id: "a".repeat(64), prompt, displayName: "Lumi", status: "processing", createdAt: 1_700_000_000_000, expiresAt: 1_700_086_400_000, worker: "test", promptRevision: "test", pipelineVersion: 2, stages: [] };

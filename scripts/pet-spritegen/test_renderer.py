@@ -190,4 +190,39 @@ class RendererTests(unittest.TestCase):
         self.assertNotIn('secret', str(result))
         self.assertIsNone(renderer.safe_usage({}))
 
+class AnimationHintsTests(unittest.TestCase):
+    def test_nine_prompts_receive_the_hint_with_current_state_and_constraints(self):
+        hint = 'Вправо — голова вправо; влево — влево; при прыжке поджимает лапы.'
+        for state in ['idle','running-right','running-left','waving','jumping','failed','waiting','running','review']:
+            with self.subTest(state=state):
+                prompt = renderer.row_prompt({'prompt': 'Blue fox', 'reviewBase': True, 'animationPrompt': hint}, {'name': state, 'frames': 6, 'action': 'default action'})
+                self.assertIn(json.dumps(hint, ensure_ascii=False), prompt)
+                self.assertIn('Current animation state: ' + state, prompt)
+                self.assertIn('conditions for the current state', prompt)
+                self.assertIn('Do not change character size', prompt)
+                self.assertIn('approved character', prompt)
+                if state == 'running':
+                    self.assertIn('while stationary', prompt)
+                    self.assertLess(prompt.index('FOCUSED TASK'), prompt.index('Movement guidance'))
+
+    def test_empty_hints_and_both_look_strips_keep_the_legacy_prompt(self):
+        for state in ['idle','running','jumping','look-0-157','look-180-337']:
+            row = {'name': state, 'frames': 6, 'action': 'default'}
+            original = renderer.row_prompt({'prompt': 'fox', 'reviewBase': True}, row)
+            self.assertEqual(original, renderer.row_prompt({'prompt': 'fox', 'reviewBase': True, 'animationPrompt': ''}, row))
+            if state.startswith('look-'):
+                self.assertEqual(original, renderer.row_prompt({'prompt': 'fox', 'reviewBase': True, 'animationPrompt': 'Private hint'}, row))
+
+    def test_base_does_not_receive_animation_instructions(self):
+        with tempfile.TemporaryDirectory() as folder:
+            captured = []
+            class Stop(Exception): pass
+            def capture(_root, args):
+                captured.append(Path(args[args.index('--prompt-file')+1]).read_text())
+                raise Stop()
+            with patch.object(renderer, 'run_tool', side_effect=capture):
+                with self.assertRaises(Stop):
+                    renderer.generate(Path(folder), {'prompt': 'fox', 'reviewBase': True, 'animationPrompt': 'Private motion hint'}, 'base')
+            self.assertNotIn('Private motion hint', captured[0])
+
 if __name__ == '__main__': unittest.main()

@@ -25,6 +25,9 @@ export const generationInputSchema = z.object({
 export function normalizeGenerationText(value: string) {
   return value.replace(/\r\n?/g, "\n");
 }
+export const generationConfirmationSchema = z.object({
+  animationPrompt: z.string().transform(value => normalizeGenerationText(value).trim()).pipe(z.string().max(2000)).optional(),
+}).strict();
 export const browserGenerationInputSchema = generationInputSchema.extend({prompt: z.string().trim().max(2000).default("")});
 export const referenceImageSchema = z.object({
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -83,6 +86,7 @@ export const jobSchema = z.object({
   usage: usageSchema.optional(),
   providerRequestId: z.string().optional(),
   generationMs: z.number().optional(),
+  animationPrompt: z.string().min(1).max(2000).optional(),
   promptRevision: z.string(),
   pipelineVersion: z.number().int().default(1),
   stages: z.array(stageSchema).default([]),
@@ -118,6 +122,10 @@ export function generationEnabled() {
   const file = process.env.PET_GENERATION_ENABLE_FILE?.trim();
   if (file) { try { return readFileSync(file, "utf8").trim() === "true"; } catch { return false; } }
   return process.env.PET_GENERATION_ENABLED === "true";
+}
+
+export function generationAnimationHintsEnabled() {
+  return process.env.PET_GENERATION_ANIMATION_HINTS_ENABLED === "true";
 }
 
 export function generationReviewFlowEnabled() {

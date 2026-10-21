@@ -1,14 +1,17 @@
 "use client";
 
 import {useEffect, useRef, useState} from "react";
-import {Button} from "@gravity-ui/uikit";
+import {Button, TextArea} from "@gravity-ui/uikit";
 import {withBasePath} from "@/lib/base-path";
 import {BaseRefinement} from "./BaseRefinement";
 import {startNewGeneration} from "@/components/PetGenerationForm/request";
 
-export function BaseReview({generationId, expiresAt, disabled, onConfirmed, onEditingChange}: {
-  generationId: string; expiresAt: string; disabled: boolean; onConfirmed: () => void; onEditingChange: (editing: boolean) => void;
+export function BaseReview({generationId, expiresAt, disabled, animationHintsEnabled = false, onConfirmed, onEditingChange, onAnimationPromptIntent}: {
+  generationId: string; expiresAt: string; disabled: boolean; animationHintsEnabled?: boolean; onConfirmed: (differentAnimationPrompt?: boolean) => void; onEditingChange: (editing: boolean) => void; onAnimationPromptIntent?: (prompt: string) => void;
 }) {
+  const [animationPrompt, setAnimationPrompt] = useState("");
+  const [submittedPrompt, setSubmittedPrompt] = useState<string | null>(null);
+  const [differentPrompt, setDifferentPrompt] = useState(false);
   const [refining, setRefining] = useState(false);
   const refinementPending = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -27,12 +30,19 @@ export function BaseReview({generationId, expiresAt, disabled, onConfirmed, onEd
     if (pending.current || refinementPending.current || disabled || expired || confirmed || imageState !== "loaded") return;
     pending.current = true; setBusy(true); setError("");
     const request = new AbortController(); controller.current = request;
+    const first = submittedPrompt === null;
+    const input = submittedPrompt ?? (animationHintsEnabled ? animationPrompt.replace(/\r\n?/g, "\n").trim() : "");
+    setSubmittedPrompt(input); onAnimationPromptIntent?.(input);
     try {
-      const response = await fetch(withBasePath(`/api/pet-generations/${generationId}/confirm`), {method: "POST", cache: "no-store", signal: request.signal});
+      const response = await fetch(withBasePath(`/api/pet-generations/${generationId}/confirm`), {method: "POST", ...(input ? {headers: {"Content-Type": "application/json"}, body: JSON.stringify({animationPrompt: input})} : {}), cache: "no-store", signal: request.signal});
       if (request.signal.aborted) return;
       if (!response.ok) {
         if (response.status === 404 || response.status === 410) {setExpired(true); return;}
-        setError(response.status === 429 ? "Animations could not be queued yet. Your character is saved; try confirming again later." :
+        const failure: unknown = await response.json();
+        if (request.signal.aborted) return;
+        const code = failure && typeof failure === "object" && "code" in failure ? failure.code : undefined;
+        if (first && typeof code === "string" && ["queue_full", "budget_exhausted", "generation_disabled", "generation_paused", "animation_hints_disabled", "saved_stage_unavailable", "invalid_argument", "body_too_large"].includes(code)) setSubmittedPrompt(null);
+        setError(code === "animation_hints_disabled" ? "Пожелания пока недоступны. Очистите поле, чтобы запустить стандартные анимации." : response.status === 429 ? "Animations could not be queued yet. Your character is saved; try confirming again later." :
           "Could not confirm the animation request. Try again or reload this page; your character will not be generated twice.");
         return;
       }
@@ -44,7 +54,12 @@ export function BaseReview({generationId, expiresAt, disabled, onConfirmed, onEd
           typeof generation.status !== "string" || !["queued", "generating", "processing", "completed", "failed"].includes(generation.status)) {
         throw new Error("invalid_confirmation_receipt");
       }
-      setConfirmed(true); onConfirmed();
+      const savedPrompt = "animationPrompt" in generation ? generation.animationPrompt : undefined;
+      if (savedPrompt !== undefined && (typeof savedPrompt !== "string" || savedPrompt.length > 2000)) throw new Error("invalid_confirmation_receipt");
+      const accepted = typeof savedPrompt === "string" ? savedPrompt : "";
+      const different = accepted !== input;
+      setAnimationPrompt(accepted); setSubmittedPrompt(accepted); setDifferentPrompt(different);
+      setConfirmed(true); onConfirmed(different);
     } catch {
       if (!request.signal.aborted) setError("Connection interrupted. Confirm again to check the same request; this does not create another task.");
     } finally {
@@ -67,8 +82,20 @@ export function BaseReview({generationId, expiresAt, disabled, onConfirmed, onEd
     </div>}
     <p>Check the appearance before starting animations. Confirmation does not use another daily attempt.</p>
     <p>Available until {new Date(expiresAt).toLocaleString()}. Confirmation does not extend this deadline.</p>
+    {animationHintsEnabled && !expired && <div className="generated-pet-animation-hints">
+      <label htmlFor={`animation-prompt-${generationId}`}>Как должен двигаться персонаж?</label>
+      <TextArea id={`animation-prompt-${generationId}`} value={submittedPrompt ?? animationPrompt} onUpdate={value => {
+          setAnimationPrompt(value);
+          onAnimationPromptIntent?.(submittedPrompt ?? value.replace(/\r\n?/g, "\n").trim());
+        }} minRows={3}
+        disabled={disabled || confirmed || busy || refining || submittedPrompt !== null || imageState !== "loaded"}
+        controlProps={{maxLength: 2000, "aria-describedby": `animation-help-${generationId}`}}
+        placeholder="При движении вправо голова поворачивается вправо, влево — влево. При прыжке поджимает лапы. В покое оглядывается." />
+      <p id={`animation-help-${generationId}`}>Необязательно. Опишите движения, повороты и жесты для разных состояний. Внешность берётся из этого образа. Изменение размера и реакция головы на курсор пока не поддерживаются. Черновик не сохраняется после закрытия страницы.</p>
+    </div>}
+    {differentPrompt && <p role="status">Анимации уже подтверждены в другой вкладке с другими пожеланиями. Показан сохранённый вариант.</p>}
     {expired ? <p role="status">This generation has expired.</p> :
-      <Button view="action" loading={busy} disabled={disabled || confirmed || busy || refining || imageState !== "loaded"} onClick={() => void confirm()}>Animate this character</Button>}
+      <Button view="action" loading={busy} disabled={disabled || confirmed || busy || refining || imageState !== "loaded"} onClick={() => void confirm()}>{submittedPrompt && !confirmed ? "Check animation request" : "Animate this character"}</Button>}
     <BaseRefinement generationId={generationId} disabled={expired || disabled || confirmed || busy || imageState !== "loaded"} blocked={busy} onEditingChange={onEditingChange}
       onPendingChange={value => {refinementPending.current = value; setRefining(value);}} />
     {confirmed && <p role="status">Animation requested. Refreshing progress…</p>}

@@ -1,5 +1,5 @@
 import {createHash} from "node:crypto";
-import {GENERATION_ID, GenerationError, type GenerationJob} from "@/lib/pets/generation/model";
+import {GENERATION_ID, GenerationError, generationConfirmationSchema, generationAnimationHintsEnabled, type GenerationJob} from "@/lib/pets/generation/model";
 import type {GenerationStore, GenerationTransaction} from "@/lib/pets/generation/store";
 import {scheduler, saveScheduler, expireQueue, requireJobWithActiveWorkerLease} from "@/lib/pets/generation/scheduler";
 import {settleBudget, startBudgetTracking} from "@/lib/pets/generation/budget";
@@ -44,8 +44,11 @@ export function createBaseReviewService(store: GenerationStore, options: {now: (
         return updated;
       });
     },
-    async confirm(id: string) {
+    async confirm(id: string, input: unknown = {}) {
       if (!GENERATION_ID.test(id)) throw new GenerationError("invalid_argument");
+      const parsed = generationConfirmationSchema.safeParse(input);
+      if (!parsed.success) throw new GenerationError("invalid_argument");
+      const animationPrompt = parsed.data.animationPrompt || undefined;
       try {
         return await store.transaction(async tx => {
           const saved = await tx.getJob(id);
@@ -53,6 +56,7 @@ export function createBaseReviewService(store: GenerationStore, options: {now: (
           const job = liveJob(id, saved, now);
           if (job.baseConfirmedAt !== undefined) return {generation: publicJob(job, now), newlyQueued: false};
           if (!job.reviewBase || job.status !== "awaiting_confirmation") throw new GenerationError("base_not_ready");
+          if (animationPrompt && !generationAnimationHintsEnabled()) throw new GenerationError("animation_hints_disabled");
           await readSavedGenerationBase(job, tx.getArtifact, now);
           if (!options.enabled()) throw new GenerationError("generation_disabled");
           const state = await scheduler(tx, now);
@@ -62,7 +66,7 @@ export function createBaseReviewService(store: GenerationStore, options: {now: (
           await startBudgetTracking(tx, id, now, options.budgetUsd());
           const decisionTime = options.now();
           liveJob(id, job, decisionTime);
-          const updated: GenerationJob = {...job, status: "queued", baseConfirmedAt: decisionTime, queuedAt: decisionTime};
+          const updated: GenerationJob = {...job, status: "queued", baseConfirmedAt: decisionTime, queuedAt: decisionTime, ...(animationPrompt ? {animationPrompt} : {})};
           await tx.putJob(updated);
           state.queue.push(id);
           await saveScheduler(tx, state);

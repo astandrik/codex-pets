@@ -41,6 +41,8 @@ export function publicGenerationError(code: string, providerFailure?: ProviderFa
   switch (code) {
     case "base_not_ready":
       return result("This character is not awaiting confirmation.", "Refresh the existing task to see its current state.");
+    case "animation_hints_disabled":
+      return result("Animation guidance is not enabled for new confirmations.", "Clear the movement instructions to use standard animations, or try again later. Accepted settings are preserved.");
     case "generation_review_disabled":
       return result("Character review is not enabled for new tasks.", "Reload the generation form. Existing tasks remain available.");
     case "invalid_reference_image":

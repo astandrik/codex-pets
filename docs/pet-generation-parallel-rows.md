@@ -221,3 +221,14 @@ After accepting refinements, a rollback must retain a web version with the
 that compatible version is safe; restoring a pre-refinement web image can strand
 an accepted request whose response was lost, even though its worker job is valid.
 The existing reference-aware worker does not need a new job schema.
+
+
+### Movement guidance at confirmation
+
+The optional server flag `PET_GENERATION_ANIMATION_HINTS_ENABLED` defaults to false. When enabled, the private review page shows one optional text field (2000 characters). `POST /api/pet-generations/{id}/confirm` accepts optional JSON `{animationPrompt?: string}` with a 16 KiB body limit, retaining empty-body confirmation. Text uses the existing LF normalization and trimming. Empty text means standard motion.
+
+The first accepted confirmation saves guidance with the confirmation timestamp and queue entry in one transaction. Capacity, budget, expiry or write failure saves neither decision nor text. Repeated or concurrent confirmation returns the first accepted settings, including when new guidance is disabled. No new attempt, TTL extension or provider stage is added. The client pins the sent text after an uncertain result; only a definite first refusal permits editing again. The server's accepted text is authoritative and displayed privately after confirmation.
+
+The worker passes saved guidance to the renderer independently of the admission flag. Each of nine animation prompts receives the full text, current state and instructions to apply only general preferences and conditions for that state. State purpose, approved identity, anatomy, proportions, fixed layout and pose count take priority. Running means stationary work; left/right locomotion remains directional. Size changes and cursor-driven head tracking are deferred. Guidance is absent from base, both gaze strips, metadata requests, packages, gallery data, logs, analytics and browser storage. Empty guidance preserves legacy prompt construction. Extraction/scaling and provider retries are unchanged.
+
+This additive job-payload field needs no YQL migration. Deploy compatible web and worker and drain old worker instances before enabling new guidance. On rollback, disable this flag while retaining compatible readers/writers: older schemas may discard the field when rewriting jobs. Existing review admission can remain enabled. Real model adherence requires a separately authorized paid pilot; mocked contracts only prove data flow and boundaries.
