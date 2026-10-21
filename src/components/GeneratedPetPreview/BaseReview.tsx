@@ -6,8 +6,8 @@ import {withBasePath} from "@/lib/base-path";
 import {BaseRefinement} from "./BaseRefinement";
 import {startNewGeneration} from "@/components/PetGenerationForm/request";
 
-export function BaseReview({generationId, expiresAt, disabled, animationHintsEnabled = false, onConfirmed, onEditingChange}: {
-  generationId: string; expiresAt: string; disabled: boolean; animationHintsEnabled?: boolean; onConfirmed: (differentAnimationPrompt?: boolean) => void; onEditingChange: (editing: boolean) => void;
+export function BaseReview({generationId, expiresAt, disabled, animationHintsEnabled = false, onConfirmed, onEditingChange, onAnimationPromptIntent}: {
+  generationId: string; expiresAt: string; disabled: boolean; animationHintsEnabled?: boolean; onConfirmed: (differentAnimationPrompt?: boolean) => void; onEditingChange: (editing: boolean) => void; onAnimationPromptIntent?: (prompt: string) => void;
 }) {
   const [animationPrompt, setAnimationPrompt] = useState("");
   const [submittedPrompt, setSubmittedPrompt] = useState<string | null>(null);
@@ -32,7 +32,7 @@ export function BaseReview({generationId, expiresAt, disabled, animationHintsEna
     const request = new AbortController(); controller.current = request;
     const first = submittedPrompt === null;
     const input = submittedPrompt ?? (animationHintsEnabled ? animationPrompt.replace(/\r\n?/g, "\n").trim() : "");
-    setSubmittedPrompt(input);
+    setSubmittedPrompt(input); onAnimationPromptIntent?.(input);
     try {
       const response = await fetch(withBasePath(`/api/pet-generations/${generationId}/confirm`), {method: "POST", ...(input ? {headers: {"Content-Type": "application/json"}, body: JSON.stringify({animationPrompt: input})} : {}), cache: "no-store", signal: request.signal});
       if (request.signal.aborted) return;
@@ -84,7 +84,10 @@ export function BaseReview({generationId, expiresAt, disabled, animationHintsEna
     <p>Available until {new Date(expiresAt).toLocaleString()}. Confirmation does not extend this deadline.</p>
     {animationHintsEnabled && !expired && <div className="generated-pet-animation-hints">
       <label htmlFor={`animation-prompt-${generationId}`}>Как должен двигаться персонаж?</label>
-      <TextArea id={`animation-prompt-${generationId}`} value={submittedPrompt ?? animationPrompt} onUpdate={setAnimationPrompt} minRows={3}
+      <TextArea id={`animation-prompt-${generationId}`} value={submittedPrompt ?? animationPrompt} onUpdate={value => {
+          setAnimationPrompt(value);
+          onAnimationPromptIntent?.(submittedPrompt ?? value.replace(/\r\n?/g, "\n").trim());
+        }} minRows={3}
         disabled={disabled || confirmed || busy || refining || submittedPrompt !== null || imageState !== "loaded"}
         controlProps={{maxLength: 2000, "aria-describedby": `animation-help-${generationId}`}}
         placeholder="При движении вправо голова поворачивается вправо, влево — влево. При прыжке поджимает лапы. В покое оглядывается." />

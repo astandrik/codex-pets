@@ -30,6 +30,8 @@ export function GeneratedPetPreview({ generationId, previousGenerationId, animat
 
 function GeneratedPetPreviewContent({ generationId, previousGenerationId, animationHintsEnabled = false }: { generationId: string; previousGenerationId?: string; animationHintsEnabled?: boolean }) {
   const [differentAnimationPrompt, setDifferentAnimationPrompt] = useState(false);
+  // Survive BaseReview unmount when status refresh observes another tab's confirmation.
+  const animationPromptIntent = useRef<string | null>(null);
   const [previousUnavailable, setPreviousUnavailable] = useState(false);
   const [editingBase, setEditingBase] = useState(false);
   const files = withBasePath(`/api/pet-generations/${generationId}/files/`);
@@ -91,6 +93,8 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
         }
         const body: { generation: PublicGeneration } = await response.json();
         if (controller.signal.aborted) return;
+        if (body.generation.baseConfirmed && animationPromptIntent.current !== null &&
+            animationPromptIntent.current !== (body.generation.animationPrompt ?? "")) setDifferentAnimationPrompt(true);
         setGeneration(body.generation);
         setError(""); setUnavailable(false);
         rememberGeneration(generationId,body.generation.expiresAt);
@@ -248,7 +252,7 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
         {!previousUnavailable && <img src={withBasePath(`/api/pet-generations/${previousGenerationId}/base`)} alt="Previous character version" onError={() => setPreviousUnavailable(true)} />}
         <p>{previousUnavailable ? "The previous version is unavailable or has expired." : "The previous version keeps its original deadline."}</p>
       </section>}
-      {generation && showBaseReview && <BaseReview generationId={generationId} expiresAt={generation.expiresAt} disabled={unavailable || generation.status !== "awaiting_confirmation"} onEditingChange={setEditingBase} animationHintsEnabled={animationHintsEnabled} onConfirmed={different => {setDifferentAnimationPrompt(Boolean(different)); setRefreshVersion(value => value + 1);}} />}
+      {generation && showBaseReview && <BaseReview generationId={generationId} expiresAt={generation.expiresAt} disabled={unavailable || generation.status !== "awaiting_confirmation"} onEditingChange={setEditingBase} animationHintsEnabled={animationHintsEnabled} onAnimationPromptIntent={prompt => {animationPromptIntent.current = prompt;}} onConfirmed={different => {if (different) setDifferentAnimationPrompt(true); setRefreshVersion(value => value + 1);}} />}
     </div>
     {generation?.pet && generation.status === "completed" && <>
       <StatePreview petJsonUrl={files + "pet.json"} spritesheetUrl={files + "spritesheet.webp"} />

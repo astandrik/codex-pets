@@ -74,3 +74,66 @@ it("integrates accepted text and the other-tab notice into the result page after
   await act(async () => root.render(<ThemeProvider theme="light"><GeneratedPetPreview generationId={id} animationHintsEnabled={false}/></ThemeProvider>));
   expect(host.querySelector('[aria-label="Принятые пожелания"]')?.textContent).toContain("Сохранённый вариант");
 });
+
+it.each([
+  ["draft", ""], ["draft", "В покое оглядывается."],
+  ["uncertain", ""], ["uncertain", "В покое оглядывается."],
+] as const)("reconciles %s intent with accepted %s through status refresh", async (phase, saved) => {
+  let accepted = false, reads = 0;
+  const expiresAt = new Date(Date.now() + 86400000).toISOString();
+  fetchMock.mockImplementation(async (_url, init) => {
+    if (init?.method === "POST") throw Error("synthetic lost receipt");
+    reads++;
+    return Response.json({generation: {generationId: id, status: accepted ? "queued" : "awaiting_confirmation", baseConfirmed: accepted, reviewBase: true, expiresAt,
+      progress: {completedSteps: 1, totalSteps: 12}, ...(accepted && saved ? {animationPrompt: saved} : {})}});
+  });
+  await act(async () => root.render(<ThemeProvider theme="light"><GeneratedPetPreview generationId={id} animationHintsEnabled/></ThemeProvider>));
+  act(() => host.querySelector("img")!.dispatchEvent(new Event("load"))); input(text);
+  if (phase === "uncertain") {await submit(); expect(host.querySelector("textarea")?.disabled).toBe(true);}
+  accepted = true;
+  await act(async () => {
+    if (phase === "draft") window.dispatchEvent(new Event("focus"));
+    else document.dispatchEvent(new Event("visibilitychange"));
+  });
+  expect(reads).toBe(2); expect(host.querySelector("textarea")).toBeNull();
+  expect(host.textContent).toContain("другой вкладке");
+  expect(host.querySelector('[aria-label="Принятые пожелания"]')?.textContent).toContain(saved || "Без дополнительных пожеланий.");
+});
+
+it("does not warn when focus refresh accepts the normalized local draft", async () => {
+  let accepted = false;
+  const expiresAt = new Date(Date.now() + 86400000).toISOString();
+  fetchMock.mockImplementation(async () => Response.json({generation: {generationId: id, status: accepted ? "queued" : "awaiting_confirmation", baseConfirmed: accepted, reviewBase: true,
+    expiresAt, progress: {completedSteps: 1, totalSteps: 12}, ...(accepted ? {animationPrompt: text} : {})}}));
+  await act(async () => root.render(<ThemeProvider theme="light"><GeneratedPetPreview generationId={id} animationHintsEnabled/></ThemeProvider>));
+  act(() => host.querySelector("img")!.dispatchEvent(new Event("load"))); input("  " + text + "\r\n  "); accepted = true;
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(host.textContent).not.toContain("другой вкладке");
+  expect(host.querySelector('[aria-label="Принятые пожелания"]')?.textContent).toContain(text);
+});
+
+it("does not invent a mismatch on initial load of an already confirmed job", async () => {
+  fetchMock.mockResolvedValue(Response.json({generation: {generationId: id, status: "queued", baseConfirmed: true, reviewBase: true, animationPrompt: text,
+    expiresAt: new Date(Date.now() + 86400000).toISOString(), progress: {completedSteps: 1, totalSteps: 12}}}));
+  await act(async () => root.render(<ThemeProvider theme="light"><GeneratedPetPreview generationId={id} animationHintsEnabled/></ThemeProvider>));
+  expect(host.textContent).not.toContain("другой вкладке");
+  expect(host.querySelector('[aria-label="Принятые пожелания"]')?.textContent).toContain(text);
+});
+
+it("compares an empty pending confirmation if status refresh wins the receipt", async () => {
+  let accepted = false, pendingSignal: AbortSignal | undefined;
+  const expiresAt = new Date(Date.now() + 86400000).toISOString();
+  fetchMock.mockImplementation(async (_url, init) => {
+    if (init?.method === "POST") {pendingSignal = init.signal; return new Promise(() => {});}
+    return Response.json({generation: {generationId: id, status: accepted ? "queued" : "awaiting_confirmation", baseConfirmed: accepted, reviewBase: true,
+      expiresAt, progress: {completedSteps: 1, totalSteps: 12}, ...(accepted ? {animationPrompt: text} : {})}});
+  });
+  await act(async () => root.render(<ThemeProvider theme="light"><GeneratedPetPreview generationId={id} animationHintsEnabled/></ThemeProvider>));
+  act(() => host.querySelector("img")!.dispatchEvent(new Event("load"))); await submit();
+  expect(pendingSignal?.aborted).toBe(false); accepted = true;
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(pendingSignal?.aborted).toBe(true);
+  expect(host.textContent).toContain("другой вкладке");
+  expect(host.querySelector('[aria-label="Принятые пожелания"]')?.textContent).toContain(text);
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+});
