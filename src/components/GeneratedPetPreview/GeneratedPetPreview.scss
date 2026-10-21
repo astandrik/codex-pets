@@ -37,3 +37,9 @@
   align-items: start;
   gap: var(--g-spacing-5);
 }
+
+.generated-pet-animation-hints {
+  margin-block: 16px;
+  p {white-space: pre-wrap; overflow-wrap: anywhere;}
+  label {display: block; margin-bottom: 8px;}
+}

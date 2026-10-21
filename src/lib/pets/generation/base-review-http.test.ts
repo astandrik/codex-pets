@@ -31,6 +31,7 @@ beforeEach(() => {
 afterEach(() => {vi.restoreAllMocks(); vi.unstubAllEnvs();});
 
 it("runs image-only HTTP admission through review, confirm and final private download", async () => {
+  vi.stubEnv("PET_GENERATION_ANIMATION_HINTS_ENABLED", "true");
   const image = await sharp({create: {width: 32, height: 32, channels: 4, background: "red"}}).png().toBuffer();
   const idempotency = randomUUID();
   function upload(bytes = image) {const f = new FormData(); f.set("requestId", idempotency); f.set("referenceImage", new Blob([new Uint8Array(bytes)], {type: "image/png"}), "reference.png"); return f;}
@@ -54,10 +55,14 @@ it("runs image-only HTTP admission through review, confirm and final private dow
   expect((await admit(post("/api/pet-generations", upload()))).status).toBe(202);
   const newUpload = upload(); newUpload.set("requestId", randomUUID());
   expect((await admit(post("/api/pet-generations", newUpload))).status).toBe(503);
-  expect((await confirm(post("/confirm"), context(id))).status).toBe(202);
+  const motion = "Вправо — голова вправо; при прыжке поджимает лапы.";
+  expect((await confirm(post("/confirm", JSON.stringify({animationPrompt: motion}), {"content-type": "application/json"}), context(id))).status).toBe(202);
+  vi.stubEnv("PET_GENERATION_ANIMATION_HINTS_ENABLED", "false");
   expect((await confirm(post("/confirm"), context(id))).status).toBe(200);
   store.artifacts.delete(id + ":reference.png");
   expect(await worker("two")).toBe("completed"); expect(generate).toHaveBeenCalledTimes(12);
+  expect(open.mock.calls[1][0].animationPrompt).toBe(motion);
+  expect((await service.get(id)).animationPrompt).toBe(motion);
   const download = await file(new Request(origin), {params: Promise.resolve({id, file: "pet.zip"})});
   expect(download.status).toBe(200); expect(await download.text()).toBe("synthetic-zip");
 });

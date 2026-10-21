@@ -71,7 +71,7 @@ export const spriteRenderer: SpriteRenderer = {
       await writeFile(path.join(directory, "workspace.json"), JSON.stringify({ expiresAt: job.expiresAt, pid: process.pid }), { mode: 0o600 });
       const rows = [...PET_STATES.map(state => ({ name: state.key, frames: state.frames, action: state.description })),
         { name: "look-0-157", frames: 8, action: "" }, { name: "look-180-337", frames: 8, action: "" }];
-      await writeFile(path.join(directory, "job.json"), JSON.stringify({ prompt: job.prompt, rows, reviewBase: job.reviewBase === true, hasReference: Boolean(job.reference) }), { mode: 0o600 });
+      await writeFile(path.join(directory, "job.json"), JSON.stringify({ prompt: job.prompt, rows, reviewBase: job.reviewBase === true, hasReference: Boolean(job.reference), ...(job.animationPrompt ? {animationPrompt: job.animationPrompt} : {}) }), { mode: 0o600 });
       if (reference) await writeFile(path.join(directory, "reference.png"), reference, {mode: 0o600});
       for (const [name, bytes] of saved) await writeFile(path.join(directory, name + ".png"), bytes, { mode: 0o600 });
     } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { GENERATION_ID } from "@/lib/pets/generation/model";
+import { GENERATION_ID, generationAnimationHintsEnabled } from "@/lib/pets/generation/model";
 import { GeneratedPetPreview } from "@/components/GeneratedPetPreview/GeneratedPetPreview";
 
 export const dynamic = "force-dynamic";
@@ -15,5 +15,5 @@ export default async function GeneratedPetPage({ params, searchParams }: { param
   if (!GENERATION_ID.test(id)) notFound();
   const from = (await searchParams)?.from;
   const previousGenerationId = typeof from === "string" && GENERATION_ID.test(from) && from !== id ? from : undefined;
-  return <GeneratedPetPreview generationId={id} previousGenerationId={previousGenerationId} />;
+  return <GeneratedPetPreview generationId={id} previousGenerationId={previousGenerationId} animationHintsEnabled={generationAnimationHintsEnabled()} />;
 }

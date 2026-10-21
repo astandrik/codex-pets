@@ -21,6 +21,7 @@ export function publicJob(record: GenerationJob, now: number, metadata?:PublicCa
     previewUrl: toPublicUrl(`/generated/${job.id}`),
     submission: job.submission,
     ...(job.reviewBase ? {reviewBase: true, baseConfirmed: job.baseConfirmedAt !== undefined, ...(job.stages.some(stage => stage.name === "base" && stage.status === "completed") ? {baseUrl: toPublicUrl(`/api/pet-generations/${job.id}/base`)} : {})} : {}),
+    ...(job.reviewBase && job.baseConfirmedAt !== undefined && job.animationPrompt ? {animationPrompt: job.animationPrompt} : {}),
     ...(metadata?{metadata}:{}),
     ...(job.status === "failed" || job.error ? { error: publicGenerationError(job.error ?? "generation_unavailable", job.providerFailure) } : {}),
     ...(job.status === "completed" ? { pet: { displayName: job.displayName, spriteVersionNumber: 2 as const, petJsonUrl: toPublicUrl(root + "pet.json"), spritesheetUrl: toPublicUrl(root + "spritesheet.webp"), zipUrl: toPublicUrl(root + "pet.zip") } } : {}),

@@ -46,11 +46,12 @@ function generationHttpStatus(code: string, admission: boolean): number {
   }
 }
 
-export async function readGenerationJson(request:Request,maxBytes:number):Promise<unknown>{
-  if (request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
-    throw new GenerationError("invalid_argument");
-  }
-  const bytes = await readGenerationBody(request, maxBytes);
+export async function readGenerationJson(request:Request,maxBytes:number,allowEmpty=false):Promise<unknown>{
+  const isJson = request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() === "application/json";
+  if (!isJson && !allowEmpty) throw new GenerationError("invalid_argument");
+  const bytes = allowEmpty && !request.body ? Buffer.alloc(0) : await readGenerationBody(request, maxBytes);
+  if (allowEmpty && bytes.length === 0) return {};
+  if (!isJson) throw new GenerationError("invalid_argument");
   try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown; }
   catch { throw new GenerationError("invalid_argument"); }
 }
