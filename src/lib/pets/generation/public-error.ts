@@ -39,6 +39,12 @@ export function publicGenerationError(code: string, providerFailure?: ProviderFa
   if (VALIDATION_ERRORS.has(code)) return result("The generated images could not be assembled into a valid pet package.", NEW_TASK);
   if (CONFIGURATION_ERRORS.has(code)) return result("The generation service is not configured correctly.", CONTACT_SUPPORT);
   switch (code) {
+    case "animation_revisions_disabled":
+      return result("Редактирование анимаций пока недоступно.", "Уже принятые версии сохраняются. Попробуйте позже.");
+    case "animation_revision_not_accepted":
+      return result("Эта версия ещё не принята.", "Сравните результат и нажмите «Принять новую версию».");
+    case "animation_corrections_limit":
+      return result("Накопленные правки превышают 8000 символов на состояние.", "Начните от более ранней доступной версии; прежние инструкции не удалены.");
     case "base_not_ready":
       return result("This character is not awaiting confirmation.", "Refresh the existing task to see its current state.");
     case "animation_hints_disabled":

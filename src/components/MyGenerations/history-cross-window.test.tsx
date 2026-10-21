@@ -7,6 +7,7 @@ import {MyGenerations} from "@/components/MyGenerations/MyGenerations";
 import {GeneratedPetPreview} from "@/components/GeneratedPetPreview/GeneratedPetPreview";
 import {HISTORY_PREFIX, readGenerationHistory, rememberGeneration} from "@/lib/pets/generation/history";
 vi.mock("@/components/StatePreview/StatePreview", () => ({StatePreview: () => <div>Synthetic animation preview</div>}));
+vi.mock("next/navigation", () => ({useRouter: () => ({push: vi.fn()})}));
 (globalThis as {IS_REACT_ACT_ENVIRONMENT?: boolean}).IS_REACT_ACT_ENVIRONMENT = true;
 window.matchMedia ??= ((query: string) => ({matches: false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false})) as typeof window.matchMedia;
 afterEach(() => {vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers();});

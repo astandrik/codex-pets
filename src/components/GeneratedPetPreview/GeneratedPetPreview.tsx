@@ -10,6 +10,8 @@ import { publicGenerationError } from "@/lib/pets/generation/public-error";
 import {GeneratedPetMetadataEditor} from "@/components/GeneratedPetMetadataEditor/GeneratedPetMetadataEditor";
 import { notifyGenerationHistory, rememberGeneration } from "@/lib/pets/generation/history";
 import {RefinementRecovery} from "./BaseRefinement";
+import {AnimationRevisionEditor} from "./AnimationRevisionEditor";
+import {AnimationRevisionComparison} from "./AnimationRevisionComparison";
 import {BaseReview} from "./BaseReview";
 import "./GeneratedPetPreview.scss";
 
@@ -24,11 +26,11 @@ function readSubmission(value: unknown): Submission | null {
   return slug ? { petId: value.petId, slug, submittedAt: value.submittedAt } : null;
 }
 
-export function GeneratedPetPreview({ generationId, previousGenerationId, animationHintsEnabled = false }: { generationId: string; previousGenerationId?: string; animationHintsEnabled?: boolean }) {
-  return <GeneratedPetPreviewContent key={generationId} generationId={generationId} previousGenerationId={previousGenerationId} animationHintsEnabled={animationHintsEnabled} />;
+export function GeneratedPetPreview({ generationId, previousGenerationId, animationHintsEnabled = false, animationRevisionsEnabled = false }: { generationId: string; previousGenerationId?: string; animationHintsEnabled?: boolean; animationRevisionsEnabled?: boolean }) {
+  return <GeneratedPetPreviewContent key={generationId} generationId={generationId} previousGenerationId={previousGenerationId} animationHintsEnabled={animationHintsEnabled} animationRevisionsEnabled={animationRevisionsEnabled} />;
 }
 
-function GeneratedPetPreviewContent({ generationId, previousGenerationId, animationHintsEnabled = false }: { generationId: string; previousGenerationId?: string; animationHintsEnabled?: boolean }) {
+function GeneratedPetPreviewContent({ generationId, previousGenerationId, animationHintsEnabled = false, animationRevisionsEnabled = false }: { generationId: string; previousGenerationId?: string; animationHintsEnabled?: boolean; animationRevisionsEnabled?: boolean }) {
   const [differentAnimationPrompt, setDifferentAnimationPrompt] = useState(false);
   // Survive BaseReview unmount when status refresh observes another tab's confirmation.
   const animationPromptIntent = useRef<string | null>(null);
@@ -36,6 +38,7 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
   const [editingBase, setEditingBase] = useState(false);
   const files = withBasePath(`/api/pet-generations/${generationId}/files/`);
   const [generation, setGeneration] = useState<PublicGeneration | null>(null);
+  const pendingAcceptance = Boolean(generation?.animationRevision && generation.animationRevision.acceptedAt === undefined);
   const [error, setError] = useState("");
   const [unavailable, setUnavailable] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
@@ -58,11 +61,11 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
   const submissionController = useRef<AbortController | null>(null);
   useEffect(() => () => submissionController.current?.abort(), []);
   useEffect(() => {
-    if (generation?.status !== "awaiting_confirmation") return;
+    if (generation?.status !== "awaiting_confirmation" && !(generation?.status === "completed" && pendingAcceptance)) return;
     const refresh = () => {if (!document.hidden) setRefreshVersion(value => value + 1);};
     window.addEventListener("focus", refresh); document.addEventListener("visibilitychange", refresh);
     return () => {window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh);};
-  }, [generation?.status]);
+  }, [generation?.status, pendingAcceptance]);
 
   const rememberSubmission = useCallback((receipt: Submission) => {
     savedSubmission.current = receipt;
@@ -126,7 +129,7 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
 
   useEffect(() => {
     const sequence = ++checkSequence.current;
-    if (generation?.status !== "completed" || unavailable || submission || !parsePublicPetSlug(slug)) {
+    if (generation?.status !== "completed" || pendingAcceptance || unavailable || submission || !parsePublicPetSlug(slug)) {
       return;
     }
     const controller = new AbortController();
@@ -165,7 +168,7 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
       }
     }, 300);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [generation?.status, generationId, slug, submission, unavailable, checkAttempt, rememberSubmission]);
+  }, [generation?.status, pendingAcceptance, generationId, slug, submission, unavailable, checkAttempt, rememberSubmission]);
 
   function updateSlug(value: string) {
     if (savedSubmission.current || pendingSubmission.current) return;
@@ -175,7 +178,7 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
   }
 
   async function submitForReview() {
-    if (pendingSubmission.current || savedSubmission.current || metadataBlockedRef.current || metadataConflict || unavailable || generation?.status !== "completed" ||
+    if (pendingAcceptance || pendingSubmission.current || savedSubmission.current || metadataBlockedRef.current || metadataConflict || unavailable || generation?.status !== "completed" ||
         !parsePublicPetSlug(slug) || slugCheck?.status !== "available" || slugCheck.slug !== slug) return;
     pendingSubmission.current = true;
     const controller = new AbortController();
@@ -234,8 +237,8 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
     <p><a href={withBasePath("/my-generations")}>My generations</a></p>
     <h1>{generation?.pet?.displayName ?? "Generated pet"}</h1>
     {generation?.status==="processing"&&generation.metadata?.automaticState==="inflight"&&<p role="status">Preparing the name, description and tags…</p>}
-    {generation?.status==="completed"&&generation.metadata&&<GeneratedPetMetadataEditor generationId={generationId} metadata={generation.metadata} disabled={Boolean(submission)||submitting||unavailable} onBlocked={value=>{metadataBlockedRef.current=value;setMetadataBlocked(value);}} onSaved={metadata=>{setMetadataConflict(false);setGeneration(current=>current?{...current,metadata,pet:current.pet?{...current.pet,displayName:metadata.displayName??current.pet.displayName}:current.pet}:current);if(metadata.displayName&&!editedSlug.current&&!savedSubmission.current&&suggestPublicPetSlug(metadata.displayName)!==slug){checkSequence.current++;setSlug(suggestPublicPetSlug(metadata.displayName));setSlugCheck(null);setSlugNotice("");}}}/>}
-    <p role="status" aria-live="polite">{error || (generation ? STATUS_LABELS[generation.status] : "Loading generation…")}</p>
+    {generation?.status==="completed"&&!pendingAcceptance&&generation.metadata&&<GeneratedPetMetadataEditor generationId={generationId} metadata={generation.metadata} disabled={Boolean(submission)||submitting||unavailable} onBlocked={value=>{metadataBlockedRef.current=value;setMetadataBlocked(value);}} onSaved={metadata=>{setMetadataConflict(false);setGeneration(current=>current?{...current,metadata,pet:current.pet?{...current.pet,displayName:metadata.displayName??current.pet.displayName}:current.pet}:current);if(metadata.displayName&&!editedSlug.current&&!savedSubmission.current&&suggestPublicPetSlug(metadata.displayName)!==slug){checkSequence.current++;setSlug(suggestPublicPetSlug(metadata.displayName));setSlugCheck(null);setSlugNotice("");}}}/>}
+    <p role="status" aria-live="polite">{error || (generation ? pendingAcceptance && generation.status === "completed" ? "Новая версия на проверке" : STATUS_LABELS[generation.status] : "Loading generation…")}</p>
     {generation?.progress && generation.status !== "failed" && <p>{generation.progress.completedSteps} of {generation.progress.totalSteps} generation steps completed.</p>}
     {differentAnimationPrompt && <p role="status">Анимации уже подтверждены в другой вкладке с другими пожеланиями. Показан сохранённый вариант.</p>}
     {generation?.baseConfirmed && (generation.animationPrompt || differentAnimationPrompt) && <section className="generated-pet-animation-hints" aria-label="Принятые пожелания">
@@ -254,7 +257,10 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
       </section>}
       {generation && showBaseReview && <BaseReview generationId={generationId} expiresAt={generation.expiresAt} disabled={unavailable || generation.status !== "awaiting_confirmation"} onEditingChange={setEditingBase} animationHintsEnabled={animationHintsEnabled} onAnimationPromptIntent={prompt => {animationPromptIntent.current = prompt;}} onConfirmed={different => {if (different) setDifferentAnimationPrompt(true); setRefreshVersion(value => value + 1);}} />}
     </div>
-    {generation?.pet && generation.status === "completed" && <>
+    <AnimationRevisionEditor generationId={generationId} metadataRevision={generation?.metadata?.revision ?? 0} canEdit={Boolean(animationRevisionsEnabled && generation?.canReviseAnimations && !unavailable)} blocked={metadataBlocked || metadataConflict || submitting} corrections={generation?.animationRevision?.corrections}/>
+    {animationRevisionsEnabled && generation?.status === "completed" && !pendingAcceptance && !generation.canReviseAnimations && <p lang="ru">Редактирование недоступно: у этой версии нет сохранённого базового образа.</p>}
+    {generation?.pet && generation.status === "completed" && pendingAcceptance && generation.animationRevision && <AnimationRevisionComparison generationId={generationId} sourceGenerationId={generation.animationRevision.sourceGenerationId} expiresAt={generation.expiresAt} petJsonUrl={files + "pet.json"} spritesheetUrl={files + "spritesheet.webp"} beforeSpritesheetUrl={generation.animationRevision.beforeSpritesheetUrl} selectedStates={generation.animationRevision.selectedStates} onAccepted={() => setRefreshVersion(value => value + 1)}/>}
+    {generation?.pet && generation.status === "completed" && !pendingAcceptance && <>
       <StatePreview petJsonUrl={files + "pet.json"} spritesheetUrl={files + "spritesheet.webp"} />
       {!metadataBlocked&&<p><a href={files + "pet.zip"}>Download pet ZIP</a></p>}
       {!metadataBlocked&&<p><a href={files + "pet.json"}>pet.json</a> · <a href={files + "spritesheet.webp"}>Spritesheet</a></p>}

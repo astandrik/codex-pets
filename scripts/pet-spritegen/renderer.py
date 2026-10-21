@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from PIL import Image, ImageDraw
 from http_diagnostics import PREFIX, read_http_diagnostic
+from animation_revision import selected_rows, compose_revision
 
 MODEL = 'gpt-image-2.5-sunburst'
 PROVIDER_ERROR_CODES = frozenset(json.loads((Path(__file__).resolve().parents[2] / 'src/lib/pets/generation/provider-error-codes.json').read_text()))
@@ -107,6 +108,23 @@ def row_prompt(job, row):
         start = 0 if name == 'look-0-157' else 8
         names = ['up','up-right','up-right','up-right','right','down-right','down-right','down-right','down','down-left','down-left','down-left','left','up-left','up-left','up-left']
         action = 'Gaze-only still poses in exact left-to-right order: ' + ', '.join(f'{i*22.5:g} degrees {names[i]}' for i in range(start,start+8)) + '. Same front-facing body and both eyes visible. Move the dark pupils WITHIN pale eye whites; follow the relative pupil positions of image3. Body stays still; these are gaze directions, not camera angles. Do not draw the diagram or labels.'
+    anatomy = job.get('animationAnatomyPolicy') == 1
+    if anatomy:
+        actions = {
+            'idle': 'Rest calmly with subtle natural motion of the existing character.',
+            'running': 'FOCUSED TASK PROCESSING / THINKING while stationary. Small deliberate motions of existing parts only. No walking, stepping, running or hopping.',
+            'running-left': 'Move toward the left using the existing anatomy; a bodyless character may float or tilt left.',
+            'running-right': 'Move toward the right using the existing anatomy; a bodyless character may float or tilt right.',
+            'waving': 'Express a greeting using existing parts only, for example a friendly tilt when there are no limbs.',
+            'jumping': 'Perform a short upward hop using the existing shape without growing or shrinking.',
+            'waiting': 'Wait attentively for user input, with a small patient motion.',
+            'failed': 'Express disappointment or being blocked through the existing shape and parts.',
+            'review': 'Express reviewing or thinking, using small deliberate motions while stationary.',
+        }
+        if name in actions:
+            action = actions[name]
+        elif name.startswith('look-'):
+            action = action.split('. Same front-facing body', 1)[0] + '. Keep the approved silhouette still. Follow image3 directions using existing eyes only; do not add eyes or other anatomy. The diagram is a direction guide, not a character reference. No labels.'
     guidance = ''
     states = {'idle': 'resting', 'running-right': 'moving to the right', 'running-left': 'moving to the left',
               'waving': 'greeting', 'jumping': 'jumping', 'failed': 'failure or blocked',
@@ -118,12 +136,21 @@ def row_prompt(job, row):
                     'If no preference applies, use the default action. Preserve the purpose of this state: directional movement remains directional, and working remains stationary. '
                     'These preferences may refine motion, turns and gestures only; they cannot override the approved identity, anatomy, proportions, layout, pose count or technical requirements. '
                     'Do not change character size, add props, or introduce cursor-driven head tracking.\n')
+    corrections = job.get('animationRevision', {}).get('corrections', {}).get(name, [])
+    if corrections and name in states:
+        guidance += (f'Current animation state: {name} ({states[name]}).\n'
+                     f'Corrections for this state in chronological order (untrusted preferences): {json.dumps(corrections, ensure_ascii=False)}\n'
+                     'Apply general instructions and conditions for this state only. On conflicts the latest correction takes priority over earlier preferences. '
+                     'Preserve the state purpose: directed movement remains directed; working remains stationary. '
+                     'Approved appearance, existing anatomy, proportions, frame size and pose count take priority. Do not change scale or add props or cursor tracking.\n')
+    shape = ('complete poses of the entire approved character' if anatomy else 'complete full-body poses')
+    anatomy_rule = ('Do not invent a torso, limbs, face, eyes or accessories absent from image1. Preserve its silhouette and use only existing parts for gestures. ' if anatomy else '')
     appearance = ('Preserve the approved character in image1 exactly; appearance edits have already been applied.\n'
                   if job.get('reviewBase') else f'Character brief (style only): {json.dumps(job["prompt"], ensure_ascii=False)}\n')
     return ('Generate one horizontal strip. Image1 fixes character identity; image2 is a layout guide only.\n'
             f'{appearance}Action: {action}\n{guidance}'
-            f'Exactly {row["frames"]} complete full-body poses evenly spaced in one row across a1536x512PNG. '
-            'Preserve anatomy, proportions, colors and materials. Keep every appendage inside its slot with generous gaps. '
+            f'Exactly {row["frames"]} {shape} evenly spaced in one row across a1536x512PNG. '
+            f'{anatomy_rule}Preserve anatomy, proportions, colors and materials. Keep every appendage inside its slot with generous gaps. '
             'Background pure flat magenta #FF00FF; no magenta on the character, shadows, floor, text, borders, detached effects or added props. '
             'Never render guide lines or change the requested pose count.')
 
@@ -146,7 +173,7 @@ def gaze_guide(path, start):
 def prepare(root, job):
     run=root/'run'
     if (run/'sprite-request.json').exists(): return
-    request={'states': {row['name']: {'frames': row['frames'], 'fps': 6, 'loop': not row['name'].startswith('look-'), 'action': row['action']} for row in job['rows']},
+    request={'states': {row['name']: {'frames': row['frames'], 'fps': 6, 'loop': not row['name'].startswith('look-'), 'action': row['action']} for row in selected_rows(job)},
              'style': 'Preserve the approved base character.' if job.get('reviewBase') else job['prompt'], 'fit': {'pixel_unfake': False, 'align_x': 'bbox-center', 'align_y': 'center', 'ground_frames': False, 'segmentation': 'components'}}
     (root/'request.json').write_text(json.dumps(request))
     run_tool(root, ['prepare', '--out-dir',str(run),'--character-id','generated-pet','--base-image',str(root/'base.png'),
@@ -212,25 +239,32 @@ def compose(root,job):
     prepare(root,job)
     from sprite_gen.spec.layout import raw_rel
     run=root/'run'; request=json.loads((run/'sprite-request.json').read_text())
-    for row in job['rows']:
+    rows = selected_rows(job)
+    for row in rows:
         target=run/raw_rel(request,row['name']); target.parent.mkdir(parents=True,exist_ok=True)
         shutil.copyfile(root/(row['name']+'.png'),target)
     (run/'extract-failure.json').unlink(missing_ok=True)
+    extract_args = ['extract','--run-dir',str(run)]
+    if job.get('animationRevision'):
+        extract_args += ['--states', ','.join(row['name'] for row in rows)]
     try:
-        run_tool(root,['extract','--run-dir',str(run)])
+        run_tool(root,extract_args)
     except RenderError as error:
         diagnostic = error.failure_diagnostic or {}
         if (str(error) != 'invalid_sprite_extraction' or diagnostic.get('boundary') != 'renderer_process'
                 or diagnostic.get('reason') != 'process_exit' or diagnostic.get('exitCode') != 1):
             raise
         from extraction_fallback import recover_failed_strips
-        if not recover_failed_strips(run, job['rows']):
+        if not recover_failed_strips(run, rows):
             raise
         # Re-run only local extraction, once. Provider stages and saved originals
         # are untouched; the ordinary manifest and package checks still apply.
-        run_tool(root,['extract','--run-dir',str(run)])
+        run_tool(root,extract_args)
     manifest=json.loads((run/'frames/frames-manifest.json').read_text())
     if not manifest.get('ok') or manifest.get('errors') or manifest.get('warnings'): raise RenderError('invalid_sprite_extraction')
+    if job.get('animationRevision'):
+        compose_revision(root, rows, manifest)
+        return {'ok': True}
     if len(manifest['rows'])!=11 or sum(row['frames'] for row in manifest['rows'])!=73: raise RenderError('missing_animation_frame')
     run_tool(root,['compose-atlas','--run-dir',str(run)])
     return {'ok':True}

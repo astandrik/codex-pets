@@ -227,3 +227,12 @@ describe("buildOpenApiSpec", () => {
     expect(spec.servers).toEqual([{ url: "https://pets.example" }]);
   });
 });
+
+it("documents bounded nine-state revision admission, recovery and explicit acceptance", async () => {
+  const {buildOpenApiSpec}=await import("@/lib/openapi");const paths=buildOpenApiSpec().paths;
+  const route=paths["/api/pet-generations/{id}/animation-revisions"];
+  expect(route.post.requestBody.content["application/json"].schema.properties.states.items.enum).toHaveLength(9);
+  expect(route.post.responses).toHaveProperty("413");
+  expect(route.get.description).toContain("does not prove rejection");
+  expect(paths["/api/pet-generations/{id}/animation-revision/accept"].post.responses).toHaveProperty("200");
+});

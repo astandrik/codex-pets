@@ -36,3 +36,11 @@ describe("StatePreview", () => {
     );
   });
 });
+
+it("uses the parent's state and frame for synchronized comparison without extra controls", () => {
+  hookValues.current = ["idle", 0, true, 2, 2];
+  const html = renderToStaticMarkup(StatePreview({petJsonUrl:"/pet.json",spritesheetUrl:"/after.webp",selectedKey:"waving",frame:2,hideControls:true}));
+  expect(html).toContain('aria-label="Waving preview"');
+  expect(html).toContain('background-position:28.57142857142857% 30%');
+  expect(html).not.toContain('state-preview__controls');
+});

@@ -741,3 +741,9 @@ Rollback disables new review admission but keeps compatible web/worker versions
 serving existing private review links. Do not restore an older parser/worker while
 review jobs remain. Deployment, flag activation and paid pilots require their own
 explicit authorization; local implementation or test completion does not enable it.
+
+### Animation revision rollout and rollback
+
+`PET_GENERATION_ANIMATION_REVISIONS_ENABLED` is a server flag, off by default. Update both web and generation-worker with support for pipeline3 jobs, saved anatomy policy and acceptance before enabling it. Drain or stop all older workers first; they must not claim revision jobs. Existing jobs retain their saved policy. Verify the same compatible source revision on both services and preserve current budget/unknown-cost records.
+
+Rollback the feature by disabling this flag while retaining compatible web/worker readers and writers. Already admitted revisions must still run, recover, compare and be accepted. Do not return to versions that discard revision fields or ignore the stage subset. No YQL migration, gallery rewrite, automatic deployment or paid pilot is included in local implementation. Paid quality examples require separately agreed references and budget.

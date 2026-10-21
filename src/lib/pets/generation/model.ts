@@ -1,3 +1,5 @@
+import {animationStatesSchema, animationCorrectionsSchema} from "@/lib/pets/generation/animation-revision-input";
+export {animationRevisionInputSchema} from "@/lib/pets/generation/animation-revision-input";
 import { createHmac, randomBytes } from "node:crypto";
 import { isIP } from "node:net";
 import { readFileSync } from "node:fs";
@@ -62,6 +64,12 @@ export const ROW_RETRY_DELAY_MS=5000;
 export type StageCliCause=z.infer<typeof stageCliCauseSchema>;
 export type StageFailureDiagnostic=z.infer<typeof stageFailureDiagnosticSchema>;
 export type GenerationSubmission = z.infer<typeof submissionSchema>;
+export const animationRevisionSchema = z.object({
+  policy: z.literal(1), sourceGenerationId: z.string().regex(GENERATION_ID),
+  sourceMetadataRevision: z.number().int().nonnegative(), selectedStates: animationStatesSchema,
+  baseSha256: z.string().regex(/^[a-f0-9]{64}$/), sourceAtlasSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  corrections: animationCorrectionsSchema, acceptedAt: z.number().optional(),
+}).strict();
 export const jobSchema = z.object({
   id: z.string().regex(GENERATION_ID),
   prompt: z.string(),
@@ -87,13 +95,33 @@ export const jobSchema = z.object({
   providerRequestId: z.string().optional(),
   generationMs: z.number().optional(),
   animationPrompt: z.string().min(1).max(2000).optional(),
+  animationAnatomyPolicy: z.literal(1).optional(),
+  animationRevision: animationRevisionSchema.optional(),
   promptRevision: z.string(),
   pipelineVersion: z.number().int().default(1),
   stages: z.array(stageSchema).default([]),
   submission: submissionSchema.optional(),
   cardMetadata: cardMetadataRecordSchema.optional(),
-});
+}).refine(job => job.pipelineVersion === 3
+  ? Boolean(job.animationRevision && job.animationAnatomyPolicy === 1 && job.reviewBase && job.baseConfirmedAt !== undefined && !job.reference)
+  : job.animationRevision === undefined, "Invalid animation revision policy");
 export type GenerationJob = z.infer<typeof jobSchema>;
+export function requiredStageNames(job: GenerationJob): readonly StageName[] {
+  if (job.pipelineVersion === 3) {
+    if (!job.animationRevision) throw new GenerationError("invalid_stage");
+    return job.animationRevision.selectedStates;
+  }
+  return STAGE_NAMES;
+}
+export function usesStageCheckpoints(job: GenerationJob) {
+  return job.pipelineVersion === 2 || job.pipelineVersion === 3;
+}
+export function isUnacceptedAnimationRevision(job: GenerationJob) {
+  return Boolean(job.animationRevision && job.animationRevision.acceptedAt === undefined);
+}
+export function generationAnimationRevisionsEnabled() {
+  return process.env.PET_GENERATION_ANIMATION_REVISIONS_ENABLED === "true";
+}
 export const schedulerSchema = z.object({
   revision: z.number().int(),
   queue: z.array(z.string()),
