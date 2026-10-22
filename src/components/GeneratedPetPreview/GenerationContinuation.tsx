@@ -22,9 +22,17 @@ export function GenerationContinuation(props: Props) {
 }
 function ContinuationForm({ generationId, enabled, onContinued }: Props) {
     const router = useRouter(), pendingRef = useRef(false), controller = useRef<AbortController | null>(null);
-    const [requestId, setRequestId] = useState<string | null>(() => readContinuationId(localStorage, generationId));
+    const [requestId, setRequestId] = useState<string | null>(() => {
+        try {
+            return readContinuationId(localStorage, generationId);
+        }
+        catch {
+            return null;
+        }
+    });
     const [submitted, setSubmitted] = useState<ContinuationInput | null>(null);
-    const [opened, setOpened] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(""), [terminal, setTerminal] = useState(false);
+    const [opened, setOpened] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(""), [receiptExpired, setReceiptExpired] = useState(false);
+    const [sourceUnavailable, setSourceUnavailable] = useState(false);
     const [options, setOptions] = useState<ContinuationOptions | null>(null), [mode, setMode] = useState<"rebuild" | "regenerate">("regenerate"), [states, setStates] = useState<ContinuationState[]>([]);
     const [acceptedUrl, setAcceptedUrl] = useState("");
     const endpoint = withBasePath(`/api/pet-generations/${generationId}/continuations`);
@@ -48,11 +56,16 @@ function ContinuationForm({ generationId, enabled, onContinued }: Props) {
             if (c.signal.aborted)
                 return;
             if (!response.ok) {
-                if (response.status === 404 || response.status === 410)
-                    setTerminal(true);
+                if (response.status === 404 || response.status === 410) {
+                    setSourceUnavailable(true);
+                    throw Error(requestId
+                        ? "Исходное задание недоступно. Проверьте сохранённый запрос: новая версия может быть ещё доступна."
+                        : "Исходное задание недоступно. Начните новую генерацию.");
+                }
                 throw Error("Продолжение недоступно: обновите страницу или начните новое задание.");
             }
             const o = continuationOptionsSchema.parse(data && typeof data === "object" && "options" in data ? data.options : null);
+            setSourceUnavailable(false);
             setOptions(o);
             setStates(o.requiredStates);
         }
@@ -119,7 +132,7 @@ function ContinuationForm({ generationId, enabled, onContinued }: Props) {
             if (c.signal.aborted)
                 return;
             if (r.status === 410) {
-                setTerminal(true);
+                setReceiptExpired(true);
                 forget(id);
                 setError("Результат продолжения истёк.");
                 return;
@@ -137,7 +150,7 @@ function ContinuationForm({ generationId, enabled, onContinued }: Props) {
         }
     }
     async function submit() {
-        if (terminal || acceptedUrl || (!submitted && !options))
+        if (receiptExpired || sourceUnavailable || acceptedUrl || (!submitted && !options))
             return;
         const c = begin();
         if (!c)
@@ -187,7 +200,7 @@ function ContinuationForm({ generationId, enabled, onContinued }: Props) {
         return null;
     if (!opened && !requestId)
         return <section className="generation-continuation"><Button onClick={() => void loadOptions()}>Продолжить генерацию</Button></section>;
-    const locked = busy || Boolean(submitted) || Boolean(acceptedUrl) || terminal;
+    const locked = busy || Boolean(submitted) || Boolean(acceptedUrl) || receiptExpired || sourceUnavailable;
     return <section className="generation-continuation" lang="ru">
     <h2>Продолжить генерацию</h2>
     {options && <>
@@ -206,13 +219,13 @@ function ContinuationForm({ generationId, enabled, onContinued }: Props) {
     </>}
     {requestId && !submitted && <p>Сохранён UUID прежнего запроса. Сначала проверьте результат; при отсутствии ответа выберите тот же режим и набор.</p>}
     <div className="generation-continuation__actions">
-      {(options || submitted) && <Button view="action" loading={busy} disabled={busy || terminal || Boolean(acceptedUrl) || (!submitted && mode === "regenerate" && !states.length)} onClick={() => void submit()}>{submitted ? "Повторить тот же запрос" : "Продолжить"}</Button>}
-      {requestId && <Button disabled={busy || terminal} onClick={() => void check()}>Проверить запрос</Button>}
-      {!submitted && <Button disabled={busy || terminal} onClick={() => void loadOptions()}>Обновить изображения</Button>}
+      {(options || submitted) && <Button view="action" loading={busy} disabled={busy || receiptExpired || sourceUnavailable || Boolean(acceptedUrl) || (!submitted && mode === "regenerate" && !states.length)} onClick={() => void submit()}>{submitted ? "Повторить тот же запрос" : "Продолжить"}</Button>}
+      {requestId && <Button disabled={busy || receiptExpired} onClick={() => void check()}>Проверить запрос</Button>}
+      {!submitted && <Button disabled={busy || receiptExpired} onClick={() => void loadOptions()}>Обновить изображения</Button>}
       {!requestId && !submitted && <Button disabled={busy} onClick={() => setOpened(false)}>Закрыть</Button>}
     </div>
     {error && <p role="alert">{error}</p>}
-    {terminal && <p><a href={withBasePath("/generate")}>Начать новую генерацию</a></p>}
+    {(receiptExpired || sourceUnavailable) && <p><a href={withBasePath("/generate")}>Начать новую генерацию</a></p>}
     {acceptedUrl && <p><a href={acceptedUrl}>Открыть результат</a></p>}
   </section>;
 }

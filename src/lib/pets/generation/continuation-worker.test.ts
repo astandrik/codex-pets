@@ -70,3 +70,18 @@ it.each(['stage-base.png','stage-idle.png','continuation-source.webp'])('rejects
   const worker=createSpriteGenerationWorker({service:f.service,store:f.store,renderer:r,now:()=>f.config.now});
   expect(await worker('corrupt-copy')).toBe('failed');expect(r.open).not.toHaveBeenCalled();expect(r.generate).not.toHaveBeenCalled();expect(f.store.jobs.get(id)?.error).toBe('saved_stage_unavailable');
 });
+
+it.each(["missing","corrupt","present"])("rebuild ignores the %s original reference and uses its verified base",async state=>{
+  const f=await continuationFixture(),r=renderer(f.image),hash=createHash("sha256").update(f.image).digest("hex");
+  f.job.reference={sha256:hash,sourceSha256:hash,width:32,height:32,sizeBytes:f.image.length,normalizationVersion:1};
+  f.store.jobs.set(f.job.id,structuredClone(f.job));
+  if(state!=="missing")f.store.artifacts.set(f.job.id+":reference.png",{bytes:state==="corrupt"?Buffer.from("broken"):f.image,expiresAt:f.job.expiresAt});
+  const input=await f.input("rebuild");await f.service.continueGeneration(f.job.id,input,null);
+  const read=vi.spyOn(f.store,"readArtifact");
+  const worker=createSpriteGenerationWorker({service:f.service,store:f.store,renderer:r,now:()=>f.config.now,build:async()=>({"pet.zip":Buffer.from("zip")})});
+  expect(await worker("reference-rebuild")).toBe("completed");expect(r.generate).not.toHaveBeenCalled();
+  expect(read.mock.calls.some(([,kind])=>kind==="reference.png")).toBe(false);
+  expect(r.open.mock.calls[0][1].get("base")).toEqual(f.image);expect(r.open.mock.calls[0][2]).toBeUndefined();
+  expect(f.store.jobs.get(f.job.id)).toMatchObject({status:"completed",expiresAt:f.job.expiresAt,rebuildHistory:[{operationId:input.requestId}]});
+  expect(f.store.ledger.has("day:2026-10-22")).toBe(false);
+});

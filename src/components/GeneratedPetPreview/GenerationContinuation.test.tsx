@@ -14,7 +14,7 @@ const options=()=>({sourceRevision:"f".repeat(64),canRebuild:true,canRegenerate:
 const response=(value:unknown,status=200)=>({ok:status<400,status,json:async()=>value});
 const accepted=(requestId:string,target=id)=>({operation:{id:requestId,mode:target===id?"rebuild":"regenerate",state:"accepted",generationId:target},generation:{generationId:target,expiresAt:new Date(Date.now()+86400000).toISOString(),status:"queued"}});
 const button=(text:string)=>[...element.querySelectorAll("button")].find(b=>b.textContent===text)!;
-async function mount(){await act(async()=>root.render(<ThemeProvider theme="light"><GenerationContinuation generationId={id} enabled onContinued={continued}/></ThemeProvider>));}
+async function mount(enabled=true){await act(async()=>root.render(<ThemeProvider theme="light"><GenerationContinuation generationId={id} enabled={enabled} onContinued={continued}/></ThemeProvider>));}
 async function open(){await mount();await act(async()=>button("Продолжить генерацию").click());}
 beforeEach(()=>{localStorage.clear();element=document.createElement("div");document.body.append(element);root=createRoot(element);vi.stubGlobal("fetch",fetchMock);fetchMock.mockReset();push.mockReset();continued.mockReset();});
 afterEach(async()=>{await act(async()=>root.unmount());element.remove();vi.restoreAllMocks();vi.unstubAllGlobals();});
@@ -55,4 +55,43 @@ it("allows a new selection after an accepted rebuild fails again",async()=>{
   await act(async()=>button("Продолжить").click());
   const posts=fetchMock.mock.calls.filter(([,init])=>init?.method==="POST").map(([,init])=>JSON.parse(init.body));
   expect(posts[1]).toMatchObject({mode:"regenerate",states:["running-right"]});expect(posts[1].requestId).not.toBe(posts[0].requestId);
+});
+
+it.each([false,true])("tolerates a blocked storage getter with continuation enabled=%s",async enabled=>{
+  vi.spyOn(globalThis,"localStorage","get").mockImplementation(()=>{throw new DOMException("Storage blocked","SecurityError");});
+  await mount(enabled);
+  expect(element.textContent).toBe(enabled?"Продолжить генерацию":"");
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+it.each([404,410])("keeps receipt recovery available after source options return %s",async status=>{
+  const uuid=crypto.randomUUID(),target="b".repeat(64);rememberContinuation(localStorage,id,uuid);
+  fetchMock.mockImplementation(async url=>String(url).includes("requestId=")?response(accepted(uuid,target)):response({code:status===410?"generation_expired":"not_found"},status));
+  await mount();await act(async()=>button("Обновить изображения").click());
+  expect(button("Проверить запрос").disabled).toBe(false);
+  expect(localStorage.getItem(CONTINUATION_PENDING+id)).not.toBeNull();
+  await act(async()=>button("Проверить запрос").click());
+  expect(push).toHaveBeenCalledWith("/generated/"+target);expect(localStorage.getItem(CONTINUATION_PENDING+id)).toBeNull();
+  expect(fetchMock.mock.calls.every(([,init])=>init?.method!=="POST")).toBe(true);
+});
+it("ends recovery only when the receipt endpoint reports expiry",async()=>{
+  const uuid=crypto.randomUUID();rememberContinuation(localStorage,id,uuid);fetchMock.mockResolvedValue(response({code:"generation_expired"},410));
+  await mount();await act(async()=>button("Проверить запрос").click());
+  expect(localStorage.getItem(CONTINUATION_PENDING+id)).toBeNull();expect(element.textContent).toContain("Результат продолжения истёк.");
+  expect(element.querySelector('a[href="/generate"]')).not.toBeNull();expect(push).not.toHaveBeenCalled();
+});
+it("preserves uncertain UUID and selection after a refused replay and missing receipt",async()=>{
+  let posts=0;fetchMock.mockImplementation(async(url,init)=>{
+    if(init?.method==="POST"){if(++posts===1)throw Error("lost response");return response({code:"rate_limited"},429);}
+    return String(url).includes("requestId=")?response({code:"not_found"},404):response({options:options()});
+  });
+  await open();await act(async()=>button("Продолжить").click());const saved=localStorage.getItem(CONTINUATION_PENDING+id);
+  await act(async()=>button("Повторить тот же запрос").click());await act(async()=>button("Проверить запрос").click());
+  expect(localStorage.getItem(CONTINUATION_PENDING+id)).toBe(saved);expect(element.querySelector('fieldset[disabled]')).not.toBeNull();
+  const attempts=fetchMock.mock.calls.filter(([,init])=>init?.method==="POST");expect(attempts[1][1].body).toBe(attempts[0][1].body);
+});
+it("does not send a new request when its UUID cannot be saved",async()=>{
+  fetchMock.mockResolvedValue(response({options:options()}));await open();
+  vi.spyOn(Storage.prototype,"setItem").mockImplementation(()=>{throw new DOMException("Storage blocked","SecurityError");});
+  await act(async()=>button("Продолжить").click());
+  expect(fetchMock.mock.calls.some(([,init])=>init?.method==="POST")).toBe(false);expect(element.textContent).toContain("Запрос не отправлен");
 });

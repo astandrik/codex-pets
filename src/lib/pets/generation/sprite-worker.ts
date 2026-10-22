@@ -64,7 +64,7 @@ export function createSpriteGenerationWorker(options: {
         }
         if (job.reviewBase && job.baseConfirmedAt === undefined && saved.has("base")) return await awaitReview(job);
         let reference: Buffer | undefined;
-        if (job.reference && !saved.has("base")) {
+        if (!job.continuation && job.reference && !saved.has("base")) {
           const bytes = await options.store.readArtifact(job.id, "reference.png", now());
           if (!bytes || createHash("sha256").update(bytes).digest("hex") !== job.reference.sha256) throw new GenerationError("saved_stage_unavailable");
           reference = bytes;
