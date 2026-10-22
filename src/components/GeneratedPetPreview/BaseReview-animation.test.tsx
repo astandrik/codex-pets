@@ -6,6 +6,7 @@ import {afterEach, beforeEach, expect, it, vi} from "vitest";
 import {BaseReview} from "./BaseReview";
 import {GeneratedPetPreview} from "./GeneratedPetPreview";
 
+vi.mock("next/navigation", () => ({useRouter: () => ({push: vi.fn()})}));
 (globalThis as {IS_REACT_ACT_ENVIRONMENT?: boolean}).IS_REACT_ACT_ENVIRONMENT = true;
 window.matchMedia ??= ((query: string) => ({matches: false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false})) as typeof window.matchMedia;
 let root: Root, host: HTMLDivElement;

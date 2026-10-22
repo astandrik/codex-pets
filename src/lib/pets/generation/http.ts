@@ -32,7 +32,9 @@ function generationHttpStatus(code: string, admission: boolean): number {
     case "request_id_conflict":
     case "generation_not_completed":
     case "metadata_conflict":
-    case "metadata_locked": return 409;
+    case "metadata_locked":
+    case "animation_revision_not_accepted": return 409;
+    case "animation_corrections_limit": return 400;
     case "base_not_ready": return 409;
     case "invalid_reference_image": return 400;
     case "reference_image_too_large": return 413;

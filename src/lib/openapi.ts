@@ -1,3 +1,4 @@
+import {ANIMATION_STATES} from "@/lib/pets/generation/animation-revision-input";
 import { GENERATION_EXPERIMENT_NOTICE } from "@/lib/pets/generation/disclosure";
 import { getPublicOrigin, toPublicUrl, withBasePath } from "@/lib/base-path";
 import { SITE_DESCRIPTION } from "@/lib/site-metadata";
@@ -382,8 +383,31 @@ export function buildOpenApiSpec() {
       "/api/pet-generations/{id}": {
         get: { operationId: "getPetGeneration", tags: ["MCP"], summary: "Read an unlisted generation by its private ID", security: publicReadSecurity,
           parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", pattern: "^[a-f0-9]{64}$" } }],
-          responses: { "200": { description: "Generation status (queued, generating, awaiting_confirmation, processing, completed or failed), optional reviewBase/baseConfirmed/baseUrl, optional accepted animationPrompt (private; never in gallery assets), completedSteps/totalSteps image progress, optional metadata (displayName,description,tags,revision,editable,automaticState,edited), expiry, completed preview/package URLs and optional submission receipt (petId,slug,submittedAt). Failed jobs include error.code, a safe message and hint, and automaticRetry=false. No raw provider diagnostics are exposed. A failed job is a successful status read, not an instruction to start another paid generation.", content: { "application/json": { schema: jsonObject } } }, "404": notFoundResponse, "410": errorResponse, "503": errorResponse },
+          responses: { "200": { description: "Generation status (queued, generating, awaiting_confirmation, processing, completed or failed), optional reviewBase/baseConfirmed/baseUrl, canReviseAnimations, optional animationRevision (sourceGenerationId, selectedStates, corrections, acceptedAt, beforeSpritesheetUrl), optional accepted animationPrompt (private; never in gallery assets), completedSteps/totalSteps image progress, optional metadata (displayName,description,tags,revision,editable,automaticState,edited), expiry, completed preview/package URLs (ZIP omitted for an unaccepted animation revision) and optional submission receipt (petId,slug,submittedAt). Failed jobs include error.code, a safe message and hint, and automaticRetry=false. No raw provider diagnostics are exposed. A failed job is a successful status read, not an instruction to start another paid generation.", content: { "application/json": { schema: jsonObject } } }, "404": notFoundResponse, "410": errorResponse, "503": errorResponse },
         },
+      },
+      "/api/pet-generations/{id}/animation-revisions": {
+        post: {operationId: "revisePetAnimations", tags: ["Submissions"], summary: "Create a private version by regenerating selected animations", security: publicReadSecurity,
+          description: "Same-origin action, enabled for new requests by PET_GENERATION_ANIMATION_REVISIONS_ENABLED (default false). Body limit 16 KiB. Select one to nine ordinary states; base and gaze cannot be selected. Optional corrections are LF-normalized and trimmed, appended only to selected states (8000 characters accumulated per state); empty text rerolls with saved instructions. Requires a live completed v2 result with a saved base and accepted candidate, if applicable. Snapshots and one ordinary daily attempt are committed atomically with queue admission; the new version expires 24 hours later, independently of its source. Only selected image stages run; no base or metadata AI call. Unselected decoded atlas pixels are preserved. SourceMetadataRevision fences the copied card. Reuse the same UUID and body after uncertainty; a new UUID is a new attempt. Source reference images, private instructions and links are never included in public packages.",
+          parameters: [{name: "id", in: "path", required: true, schema: {type: "string", pattern: "^[a-f0-9]{64}$"}}],
+          requestBody: {required: true, content: {"application/json": {schema: {type: "object", additionalProperties: false, required: ["requestId", "states", "sourceMetadataRevision"], properties: {requestId: {type: "string", format: "uuid"}, states: {type: "array", minItems: 1, maxItems: 9, uniqueItems: true, items: {type: "string", enum: ANIMATION_STATES}}, prompt: {type: "string", maxLength: 2000}, sourceMetadataRevision: {type: "integer", minimum: 0}}}}}},
+          responses: {"202": {description: "New or replayed generation receipt; private,no-store.", content: {"application/json": {schema: jsonObject}}}, "400": errorResponse, "403": errorResponse, "404": notFoundResponse, "409": errorResponse, "410": errorResponse, "413": errorResponse, "422": errorResponse, "429": errorResponse, "503": errorResponse}},
+        get: {operationId: "findPetAnimationRevision", tags: ["Submissions"], summary: "Recover a submitted animation revision", security: publicReadSecurity,
+          description: "Read-only receipt lookup by source capability and request UUID, including after source expiry or flag-off. A missing receipt does not prove rejection of an earlier uncertain request; retain its UUID.",
+          parameters: [{name: "id", in: "path", required: true, schema: {type: "string", pattern: "^[a-f0-9]{64}$"}}, {name: "requestId", in: "query", required: true, schema: {type: "string", format: "uuid"}}],
+          responses: {"200": {description: "Existing private generation receipt.", content: {"application/json": {schema: jsonObject}}}, "400": errorResponse, "404": notFoundResponse, "409": errorResponse, "410": errorResponse, "503": errorResponse}},
+      },
+      "/api/pet-generations/{id}/animation-revision/accept": {
+        post: {operationId: "acceptPetAnimationRevision", tags: ["Submissions"], summary: "Accept the complete animation revision", security: publicReadSecurity,
+          description: "Same-origin request with no body. Idempotently accepts a live completed candidate. No provider calls, queue, quota charge or TTL extension. Until accepted, ZIP downloads, metadata changes, further revisions and gallery submission are blocked. Works after feature flag-off; source expiry is irrelevant. Multiple accepted branches may coexist.",
+          parameters: [{name: "id", in: "path", required: true, schema: {type: "string", pattern: "^[a-f0-9]{64}$"}}],
+          responses: {"200": {description: "Accepted generation receipt.", content: {"application/json": {schema: jsonObject}}}, "400": errorResponse, "403": errorResponse, "404": notFoundResponse, "409": errorResponse, "410": errorResponse, "413": errorResponse, "503": errorResponse}},
+      },
+      "/api/pet-generations/{id}/animation-revision/source": {
+        get: {operationId: "getPetAnimationRevisionSource", tags: ["Submissions"], summary: "Read the saved before-comparison atlas", security: publicReadSecurity,
+          description: "Private no-store image, verified against the snapshot hash, retained until the child expires. Not the original uploaded reference.",
+          parameters: [{name: "id", in: "path", required: true, schema: {type: "string", pattern: "^[a-f0-9]{64}$"}}],
+          responses: {"200": {description: "Saved source atlas.", content: {"image/webp": {schema: {type: "string", format: "binary"}}}}, "404": notFoundResponse, "410": errorResponse, "503": errorResponse}},
       },
       "/api/pet-generations/{id}/refine": {
         post: {operationId: "refinePetGenerationBase", tags: ["Submissions"], summary: "Create a new review attempt by editing a saved base character",

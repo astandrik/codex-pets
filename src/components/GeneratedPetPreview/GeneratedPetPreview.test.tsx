@@ -7,6 +7,7 @@ import { GeneratedPetPreview } from "./GeneratedPetPreview";
 import { publicGenerationError } from "@/lib/pets/generation/public-error";
 
 vi.mock("@/components/StatePreview/StatePreview", () => ({ StatePreview: () => <div>Animation preview</div> }));
+vi.mock("next/navigation", () => ({useRouter: () => ({push: vi.fn()})}));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 window.matchMedia ??= ((query: string) => ({ matches: false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as typeof window.matchMedia;
 let root: Root; let element: HTMLDivElement;
@@ -285,4 +286,34 @@ it("keeps polling after a successful confirmation when the immediate status read
   expect(element.textContent).toContain("Your pet is ready");
   expect(element.textContent).not.toContain("Animation requested. Refreshing progress");
   expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+});
+
+it("keeps a completed candidate private until another tab accepts it, refreshing without periodic status polling", async () => {
+  const candidate={...generation().generation,expiresAt:new Date(Date.now()+86400000).toISOString(),animationRevision:{sourceGenerationId:"b".repeat(64),selectedStates:["idle"],corrections:{idle:["Tilt only"]},beforeSpritesheetUrl:"/before.webp"}};
+  fetchMock.mockResolvedValue(response({generation:candidate}));
+  await render(); await tick(5000);
+  expect(element.textContent).toContain("Проверьте новую версию");
+  expect(element.textContent).toContain("Tilt only");
+  expect(element.querySelector('a[href$="pet.zip"]')).toBeNull();expect(button()).toBeUndefined();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  fetchMock.mockResolvedValue(response({generation:{...candidate,animationRevision:{...candidate.animationRevision,acceptedAt:Date.now()}}}));
+  await act(async()=>window.dispatchEvent(new Event("focus")));
+  expect(element.textContent).not.toContain("Проверьте новую версию");
+  expect(element.textContent).toContain("Tilt only");
+  expect(element.querySelector('a[href$="pet.zip"]')).not.toBeNull();expect(button()).toBeDefined();
+});
+
+it.each([404, 410])("disables stale candidate acceptance when status refresh returns %i", async status => {
+  const candidate = {...generation().generation, expiresAt: new Date(Date.now() + 1000).toISOString(), animationRevision: {sourceGenerationId: "b".repeat(64), selectedStates: ["idle"], corrections: {}, beforeSpritesheetUrl: "/before.webp"}};
+  let unavailable = false;
+  fetchMock.mockImplementation(async () => unavailable ? response({code: status === 410 ? "generation_expired" : "not_found"}, status) : response({generation: candidate}));
+  await render();
+  const accept = () => [...element.querySelectorAll("button")].find(button => button.textContent === "Принять новую версию")!;
+  expect(accept().disabled).toBe(false);
+  unavailable = true;
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(element.textContent).toContain("has expired");
+  expect(accept().disabled).toBe(true);
+  await act(async () => accept().click());
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
 });

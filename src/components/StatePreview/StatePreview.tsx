@@ -16,21 +16,26 @@ import "./StatePreview.scss";
 type StatePreviewProps = {
   petJsonUrl: string;
   spritesheetUrl: string;
+  selectedKey?: PreviewKey;
+  frame?: number;
+  hideControls?: boolean;
 };
 
 type PetStateKey = (typeof PET_STATES)[number]["key"];
 type PreviewKey = PetStateKey | "look-directions";
 
-export function StatePreview({ petJsonUrl, spritesheetUrl }: StatePreviewProps) {
-  const [selectedKey, setSelectedKey] = useState<PreviewKey>(
+export function StatePreview({ petJsonUrl, spritesheetUrl, selectedKey: controlledKey, frame: controlledFrame, hideControls = false }: StatePreviewProps) {
+  const [localKey, setSelectedKey] = useState<PreviewKey>(
     PET_STATES[0].key,
   );
-  const [frame, setFrame] = useState(0);
+  const [localFrame, setFrame] = useState(0);
   const [lookPlaying, setLookPlaying] = useState(true);
   const [declaredVersion, setDeclaredVersion] =
     useState<SpriteVersionNumber | null>(null);
   const [imageVersion, setImageVersion] =
     useState<SpriteVersionNumber | null>(null);
+  const selectedKey = controlledKey ?? localKey;
+  const frame = controlledFrame ?? localFrame;
   const selected = useMemo(
     () =>
       PET_STATES.find((state) => state.key === selectedKey) ?? PET_STATES[0],
@@ -90,12 +95,12 @@ export function StatePreview({ petJsonUrl, spritesheetUrl }: StatePreviewProps) 
   }, [spritesheetUrl]);
 
   useEffect(() => {
-    if (isLookDirections && !lookPlaying) return;
+    if (controlledFrame !== undefined || (isLookDirections && !lookPlaying)) return;
     const timer = window.setInterval(() => {
       setFrame((current) => (current + 1) % frameCount);
     }, 140);
     return () => window.clearInterval(timer);
-  }, [frameCount, isLookDirections, lookPlaying]);
+  }, [frameCount, isLookDirections, lookPlaying, controlledFrame]);
 
   const x = column === 0 ? 0 : (column / (sheet.columns - 1)) * 100;
   const y = row === 0 ? 0 : (row / (sheet.rows - 1)) * 100;
@@ -123,7 +128,7 @@ export function StatePreview({ petJsonUrl, spritesheetUrl }: StatePreviewProps) 
           </div>
         ) : null}
       </div>
-      <div className="state-preview__controls">
+      {!hideControls && <div className="state-preview__controls">
         {PET_STATES.map((state) => (
           <button
             key={state.key}
@@ -162,8 +167,8 @@ export function StatePreview({ petJsonUrl, spritesheetUrl }: StatePreviewProps) 
             <small>16 frames</small>
           </button>
         ) : null}
-      </div>
-      {isLookDirections ? (
+      </div>}
+      {!hideControls && isLookDirections ? (
         <div className="state-preview__directions" aria-label="Look directions">
           {PET_LOOK_DIRECTIONS.map((direction) => (
             <button

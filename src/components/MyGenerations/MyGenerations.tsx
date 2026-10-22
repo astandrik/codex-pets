@@ -14,6 +14,7 @@ const live=(result?:Result)=>!result?.generation||["queued","generating","proces
 
 function statusLabel(row:Row,expired:boolean){
   if(expired)return "Expired";
+  if(row.generation?.status==="completed" && row.generation.animationRevision) return row.generation.animationRevision.acceptedAt === undefined ? "На проверке" : "Готово";
   if(row.generation)return LABELS[row.generation.status];
   return row.failedReads?"Status unavailable":"Checking status";
 }

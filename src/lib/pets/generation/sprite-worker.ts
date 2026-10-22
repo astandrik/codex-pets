@@ -1,9 +1,11 @@
+import {readSavedGenerationBase} from "@/lib/pets/generation/base-review";
+import {readRevisionAtlas} from "@/lib/pets/generation/animation-revisions";
 import { createHash } from "node:crypto";
 import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
 import {prepareGeneratedCard} from "@/lib/pets/generation/card-worker";
 import type {GenerationCardProvider} from "@/lib/pets/generation/card-provider";
 import { buildGeneratedPackage } from "@/lib/pets/generation/package";
-import { GenerationError, HEARTBEAT_MS, MAX_PARALLEL_IMAGE_ROWS, STAGE_NAMES, type GenerationJob, type ImageUsage, type StageName, type StageFailureDiagnostic, type StageCliCause } from "@/lib/pets/generation/model";
+import { GenerationError, requiredStageNames, usesStageCheckpoints, HEARTBEAT_MS, MAX_PARALLEL_IMAGE_ROWS, STAGE_NAMES, type GenerationJob, type ImageUsage, type StageName, type StageFailureDiagnostic, type StageCliCause } from "@/lib/pets/generation/model";
 import type { createGenerationService } from "@/lib/pets/generation/service";
 import type { GenerationStore } from "@/lib/pets/generation/store";
 
@@ -14,7 +16,7 @@ export type SpriteSession = {
   compose(): Promise<Buffer>;
   cleanup(): Promise<void>;
 };
-export type SpriteRenderer = { open(job: GenerationJob, saved: Map<StageName, Buffer>, reference?: Buffer): Promise<SpriteSession>; cleanupExpired?(now: number): Promise<void> };
+export type SpriteRenderer = { open(job: GenerationJob, saved: Map<StageName, Buffer>, reference?: Buffer, revisionAtlas?: Buffer): Promise<SpriteSession>; cleanupExpired?(now: number): Promise<void> };
 type Service = ReturnType<typeof createGenerationService>;
 
 export function createSpriteGenerationWorker(options: {
@@ -53,7 +55,7 @@ export function createSpriteGenerationWorker(options: {
     }
     try {
       if (job.status === "generating") {
-        if (job.pipelineVersion !== 2) throw new GenerationError("outcome_unknown");
+        if (!usesStageCheckpoints(job)) throw new GenerationError("outcome_unknown");
         const saved = new Map<StageName, Buffer>();
         for (const stage of job.stages) {
           const bytes = await options.store.readArtifact(job.id, "stage-" + stage.name + ".png", now());
@@ -67,13 +69,19 @@ export function createSpriteGenerationWorker(options: {
           if (!bytes || createHash("sha256").update(bytes).digest("hex") !== job.reference.sha256) throw new GenerationError("saved_stage_unavailable");
           reference = bytes;
         }
-        const activeSession = await options.renderer.open(job, saved, reference);
+        let revisionAtlas: Buffer | undefined;
+        if (job.animationRevision) {
+          const read = (id: string, kind: string, time: number) => options.store.readArtifact(id, kind, time);
+          saved.set("base", await readSavedGenerationBase(job, read, now()));
+          revisionAtlas = await readRevisionAtlas(job, read, now());
+        }
+        const activeSession = await options.renderer.open(job, saved, reference, revisionAtlas);
         session = activeSession;
         let prepared = false;
         const prepareRows = async () => {
           if (!prepared) { await activeSession.prepare(); prepared = true; }
         };
-        const remaining = STAGE_NAMES.filter(name => !saved.has(name));
+        const remaining = requiredStageNames(job).filter(name => !saved.has(name));
         while (remaining.length) {
           const names = remaining.splice(0, remaining[0] === "base" ? 1 : MAX_PARALLEL_IMAGE_ROWS);
           if (names[0] !== "base") await prepareRows();
