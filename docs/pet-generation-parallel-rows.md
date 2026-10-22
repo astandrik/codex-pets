@@ -59,6 +59,17 @@ This scheduling change removes one image wave compared with six plus five rows;
 it is not a measured production speedup. All eleven calls may already be sent
 when one row fails, so a failed task can pay for five more rows than before.
 
+## Chroma validation
+
+Extraction and post-extraction validation use the same RGB key-distance radius
+(96 from `#FF00FF`). The pinned CLI's default validation radius of 150 also
+includes pink/lilac subject colours that the matte correctly preserves. We set
+both public CLI options explicitly; the matte, resizing and pixel data are
+unchanged. The existing limit of 120 residual key-coloured pixels per frame,
+edge, area and frame-count checks still apply. Colours inside the removal radius
+remain indistinguishable from the key; this does not recover detail already
+painted in the background colour.
+
 ## Local extraction fallback
 
 After a normal extraction fails with a component-count error, the renderer can

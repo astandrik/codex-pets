@@ -244,7 +244,11 @@ def compose(root,job):
         target=run/raw_rel(request,row['name']); target.parent.mkdir(parents=True,exist_ok=True)
         shutil.copyfile(root/(row['name']+'.png'),target)
     (run/'extract-failure.json').unlink(missing_ok=True)
-    extract_args = ['extract','--run-dir',str(run)]
+    # Match QA to the matte's existing key radius. The CLI's broader QA default
+    # (150) also rejects opaque pink/lilac material that the matte preserves.
+    key_threshold = '96'
+    extract_args = ['extract','--run-dir',str(run), '--key-threshold', key_threshold,
+                    '--chroma-adjacent-threshold', key_threshold]
     if job.get('animationRevision'):
         extract_args += ['--states', ','.join(row['name'] for row in rows)]
     try:
