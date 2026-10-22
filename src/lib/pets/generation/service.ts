@@ -1,3 +1,4 @@
+import {createContinuationService} from "@/lib/pets/generation/continuations";
 import {createAnimationRevisionService, requireAcceptedAnimationRevision} from "@/lib/pets/generation/animation-revisions";
 import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
 import { readDailyQuota, consumeDailyQuota } from "@/lib/pets/generation/quota-grants";
@@ -10,7 +11,7 @@ import { validateUploadedPackage } from "@/lib/pets/package";
 import { replaceGeneratedDetails, validateGeneratedSheet } from "@/lib/pets/generation/package";
 import { slugify } from "@/lib/pets/validation";
 import {
-  requiredStageNames, usesStageCheckpoints, generationAnimationRevisionsEnabled, isUnacceptedAnimationRevision, DAY, LEASE_MS, WAIT_MS, GENERATION_ID, PROMPT_REVISION, MAX_PARALLEL_IMAGE_ROWS, GenerationError,
+  generationStageNames, requiredStageNames, usesStageCheckpoints, generationAnimationRevisionsEnabled, isUnacceptedAnimationRevision, DAY, LEASE_MS, WAIT_MS, GENERATION_ID, PROMPT_REVISION, MAX_PARALLEL_IMAGE_ROWS, GenerationError,
   generationInputSchema, generationDigest, generationEnabled, readGenerationSecret,
   nextMoscowDay, newGenerationId, dedupSchema,
   rowAttemptLogSchema, ROW_RETRY_DELAY_MS, type RowAttemptLog, stageFailureDiagnosticSchema, type StageFailureDiagnostic, stageCliCauseSchema, type StageCliCause,
@@ -50,7 +51,10 @@ export function createGenerationService(store: GenerationStore, options: {
       if (names.some(name => current.stages.some(stage => stage.name === name && stage.status === "completed"))) throw new GenerationError("stage_already_completed");
       const plan = requiredStageNames(current);
       const next = plan.slice(current.stages.length, current.stages.length + names.length);
-      if (!usesStageCheckpoints(current) || current.status !== "generating" || names.length < 1 || names.length > MAX_PARALLEL_IMAGE_ROWS
+      if (current.continuation) {
+        const pending = generationStageNames(current).filter(name => !current.stages.some(s => s.name === name));
+        if (current.status !== "generating" || current.stages.some(s => s.status !== "completed") || !names.length || names.length > MAX_PARALLEL_IMAGE_ROWS || names.some((name,index)=>name!==pending[index])) throw new GenerationError("invalid_stage");
+      } else if (!usesStageCheckpoints(current) || current.status !== "generating" || names.length < 1 || names.length > MAX_PARALLEL_IMAGE_ROWS
         || (current.pipelineVersion === 2 && current.stages.length === 0 && names.length !== 1)
         || current.stages.some((stage, index) => stage.status !== "completed" || stage.name !== requiredStageNames(current)[index])
         || names.some((name, index) => name !== next[index])) throw new GenerationError("invalid_stage");
@@ -63,6 +67,7 @@ export function createGenerationService(store: GenerationStore, options: {
     });
   }
   return {
+    ...createContinuationService(store, {now: clock, enabled: options.enabled, secret: options.secret, createId, budgetUsd}),
     ...createAnimationRevisionService(store, {now: clock, enabled: options.enabled, secret: options.secret, createId, budgetUsd}),
     ...createBaseReviewService(store, {now: clock, enabled: options.enabled, budgetUsd}),
     async generate(input: unknown, clientIp: string | null, admission: {reviewBase?: boolean; reference?: GenerationReference; allowNew?: boolean; legacyMultipartInput?: GenerationInput; sourceBaseId?: string} = {}) {
@@ -341,7 +346,7 @@ export function createGenerationService(store: GenerationStore, options: {
         if (!options.enabled()) throw new GenerationError("generation_disabled");
         if (state.pauseReason) throw new GenerationError("generation_paused");
         if (name !== "base" && current.reviewBase && current.baseConfirmedAt === undefined) throw new GenerationError("base_not_ready");
-        if (!requiredStageNames(current).includes(name) || current.status !== "generating" || current.stages.find(stage => stage.name === name)?.status !== "inflight") throw new GenerationError("invalid_stage");
+        if (!generationStageNames(current).includes(name) || current.status !== "generating" || current.stages.find(stage => stage.name === name)?.status !== "inflight") throw new GenerationError("invalid_stage");
         await checkStageBudget(tx, job.id, now, budgetUsd());
       });
     },
@@ -387,7 +392,7 @@ export function createGenerationService(store: GenerationStore, options: {
         const state = await scheduler(tx, now);
         const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
         const index = current.stages.findIndex(stage => stage.name === name);
-        if (!requiredStageNames(current).includes(name) || index < 0) throw new GenerationError("invalid_stage");
+        if (!generationStageNames(current).includes(name) || index < 0) throw new GenerationError("invalid_stage");
         if (current.stages[index].status === "completed") {
           if (current.stages[index].sha256 !== hash) throw new GenerationError("stage_conflict");
           return current;
@@ -455,7 +460,9 @@ export function createGenerationService(store: GenerationStore, options: {
         const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
         if (current.status === "processing") return current;
         if (current.status !== "generating") throw new GenerationError("stale_worker");
-        if (usesStageCheckpoints(current) && (current.stages.length !== requiredStageNames(current).length || current.stages.some((stage, index) => stage.status !== "completed" || stage.name !== requiredStageNames(current)[index]))) throw new GenerationError("invalid_stage");
+        if (current.continuation) {
+          if (requiredStageNames(current).some(name => !current.stages.some(s => s.name === name && s.status === "completed"))) throw new GenerationError("invalid_stage");
+        } else if (usesStageCheckpoints(current) && (current.stages.length !== requiredStageNames(current).length || current.stages.some((stage, index) => stage.status !== "completed" || stage.name !== requiredStageNames(current)[index]))) throw new GenerationError("invalid_stage");
         const processing: GenerationJob = { ...current, ...metadata, status: "processing", leaseUntil: now + LEASE_MS };
         await tx.putArtifact(job.id, "source.png", bytes, job.expiresAt);
         await tx.putJob(processing);
@@ -472,13 +479,13 @@ export function createGenerationService(store: GenerationStore, options: {
         if (current.status !== "processing") throw new GenerationError("stale_worker");
         if(current.cardMetadata&&["pending","inflight"].includes(current.cardMetadata.state))throw new GenerationError("metadata_not_prepared");
         for (const [kind, bytes] of Object.entries(files)) await tx.putArtifact(job.id, kind, bytes, job.expiresAt);
-        await tx.putJob({ ...current, status: "completed", prompt: "" });
+        await tx.putJob({ ...current, ...(current.continuation && current.animationRevision ? {animationRevision:{...current.animationRevision,acceptedAt:current.animationRevision.acceptedAt??now}}:{}), status: "completed", prompt: "" });
         await settleBudget(tx, job.id, now);
         state.active = null;
         await saveScheduler(tx, state);
       });
     },
-    async fail(job: GenerationJob, code: string, providerFailure?: unknown, failureDiagnostic?:unknown, stageDiagnostics:StageFailureDiagnostic[] = [], cliCauses:StageCliCause[] = []) {
+    async fail(job: GenerationJob, code: string, providerFailure?: unknown, failureDiagnostic?:unknown, stageDiagnostics:StageFailureDiagnostic[] = [], cliCauses:StageCliCause[] = [], assemblyIssues:import("./continuation-model").AssemblyIssue[] = []) {
       const now = clock();
       await store.transaction(async (tx) => {
         const state = await scheduler(tx, now);
@@ -494,7 +501,7 @@ export function createGenerationService(store: GenerationStore, options: {
           ...(diagnostic ? { providerFailure: diagnostic } : {}),
           ...(failure ? {failureDiagnostic:failure}:{}),
           ...(stages.length ? {stageFailureDiagnostics:stages}:{}),
-          ...(causes.length ? {cliFailureCauses:causes}:{}) });
+          ...(causes.length ? {cliFailureCauses:causes}:{}), ...(assemblyIssues.length?{assemblyIssues}:{}) });
         await settleBudget(tx, job.id, now, code === "outcome_unknown");
         const unresolved=current.stages.filter(stage=>stage.status==="inflight");
         // Only fully recorded provider failures are local to this terminal job.

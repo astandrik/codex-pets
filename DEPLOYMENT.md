@@ -747,3 +747,9 @@ explicit authorization; local implementation or test completion does not enable 
 `PET_GENERATION_ANIMATION_REVISIONS_ENABLED` is a server flag, off by default. Update both web and generation-worker with support for pipeline3 jobs, saved anatomy policy and acceptance before enabling it. Drain or stop all older workers first; they must not claim revision jobs. Existing jobs retain their saved policy. Verify the same compatible source revision on both services and preserve current budget/unknown-cost records.
 
 Rollback the feature by disabling this flag while retaining compatible web/worker readers and writers. Already admitted revisions must still run, recover, compare and be accepted. Do not return to versions that discard revision fields or ignore the stage subset. No YQL migration, gallery rewrite, automatic deployment or paid pilot is included in local implementation. Paid quality examples require separately agreed references and budget.
+
+### Generation continuation compatibility
+
+`PET_GENERATION_CONTINUATION_ENABLED` defaults to false. Before enabling new continuations, update both web and generation-worker to versions supporting pipeline 4, persisted continuation plans, staged snapshot receipts and extraction diagnostics. Drain or stop all older workers before activation. Accepted operations continue with their saved plans when the flag is disabled.
+
+Rollback is to disable new continuation admission while retaining compatible web and worker versions. Do not restore versions that ignore continuation plans or discard new job fields after any operation is accepted. Preserve budget and unknown-cost records. No schema migration is needed.

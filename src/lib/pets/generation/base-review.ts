@@ -7,7 +7,7 @@ import {publicJob} from "@/lib/pets/generation/public-job";
 
 export async function readSavedGenerationBase(job: GenerationJob, read: GenerationTransaction["getArtifact"], now: number) {
   const stage = job.stages.find(stage => stage.name === "base" && stage.status === "completed");
-  const hash = job.animationRevision?.baseSha256 ?? stage?.sha256;
+  const hash = job.continuation?.baseSha256 ?? job.animationRevision?.baseSha256 ?? stage?.sha256;
   if (!hash) throw new GenerationError("base_not_ready");
   const bytes = await read(job.id, "stage-base.png", now);
   if (!bytes || createHash("sha256").update(bytes).digest("hex") !== hash) throw new GenerationError("saved_stage_unavailable");

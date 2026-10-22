@@ -39,6 +39,17 @@ export function publicGenerationError(code: string, providerFailure?: ProviderFa
   if (VALIDATION_ERRORS.has(code)) return result("The generated images could not be assembled into a valid pet package.", NEW_TASK);
   if (CONFIGURATION_ERRORS.has(code)) return result("The generation service is not configured correctly.", CONTACT_SUPPORT);
   switch (code) {
+    case "continuation_disabled":
+      return result("Продолжение генерации пока недоступно.", "Уже принятые операции сохраняются. Попробуйте позже.");
+    case "continuation_busy":
+      return result("Для этого задания уже начато продолжение.", "Проверьте принятую операцию или обновите страницу.");
+    case "continuation_source_conflict":
+    case "continuation_selection_conflict":
+      return result("Состояние сохранённых изображений изменилось.", "Обновите список полос. Новая попытка не списана.");
+    case "continuation_limit":
+      return result("Три повторные сборки этого задания уже использованы.", "Можно перегенерировать проблемные полосы новой попыткой.");
+    case "continuation_cooldown":
+      return result("Повторную сборку можно запускать раз в 30 секунд.", "Подождите и обновите состояние.");
     case "animation_revisions_disabled":
       return result("Редактирование анимаций пока недоступно.", "Уже принятые версии сохраняются. Попробуйте позже.");
     case "animation_revision_not_accepted":

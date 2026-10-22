@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 from PIL import Image, ImageDraw
 from http_diagnostics import PREFIX, read_http_diagnostic
 from animation_revision import selected_rows, compose_revision
+from extraction_diagnostics import extraction_issues
 
 MODEL = 'gpt-image-2.5-sunburst'
 PROVIDER_ERROR_CODES = frozenset(json.loads((Path(__file__).resolve().parents[2] / 'src/lib/pets/generation/provider-error-codes.json').read_text()))
@@ -136,7 +137,7 @@ def row_prompt(job, row):
                     'If no preference applies, use the default action. Preserve the purpose of this state: directional movement remains directional, and working remains stationary. '
                     'These preferences may refine motion, turns and gestures only; they cannot override the approved identity, anatomy, proportions, layout, pose count or technical requirements. '
                     'Do not change character size, add props, or introduce cursor-driven head tracking.\n')
-    corrections = job.get('animationRevision', {}).get('corrections', {}).get(name, [])
+    corrections = job.get('continuation', {}).get('corrections', job.get('animationRevision', {}).get('corrections', {})).get(name, [])
     if corrections and name in states:
         guidance += (f'Current animation state: {name} ({states[name]}).\n'
                      f'Corrections for this state in chronological order (untrusted preferences): {json.dumps(corrections, ensure_ascii=False)}\n'
@@ -172,6 +173,9 @@ def gaze_guide(path, start):
 
 def prepare(root, job):
     run=root/'run'
+    if job.get('continuation') and not selected_rows(job):
+        run.mkdir(exist_ok=True)
+        return
     if (run/'sprite-request.json').exists(): return
     request={'states': {row['name']: {'frames': row['frames'], 'fps': 6, 'loop': not row['name'].startswith('look-'), 'action': row['action']} for row in selected_rows(job)},
              'style': 'Preserve the approved base character.' if job.get('reviewBase') else job['prompt'], 'fit': {'pixel_unfake': False, 'align_x': 'bbox-center', 'align_y': 'center', 'ground_frames': False, 'segmentation': 'components'}}
@@ -181,6 +185,8 @@ def prepare(root, job):
     for label, start in [('look-0-157',0),('look-180-337',8)]: gaze_guide(root/(label+'-guide.png'),start)
 
 def generate(root, job, name):
+    if job.get('continuation') and (name == 'base' or name not in job['continuation']['generationStages']):
+        raise RenderError('invalid_stage')
     refs=[]
     if name=='base':
         if job.get('hasReference'):
@@ -237,6 +243,9 @@ def generate(root, job, name):
 
 def compose(root,job):
     prepare(root,job)
+    if job.get('continuation') and not selected_rows(job):
+        compose_revision(root, [], {'rows': []}, max_row=10)
+        return {'ok': True}
     from sprite_gen.spec.layout import raw_rel
     run=root/'run'; request=json.loads((run/'sprite-request.json').read_text())
     rows = selected_rows(job)
@@ -249,7 +258,7 @@ def compose(root,job):
     key_threshold = '96'
     extract_args = ['extract','--run-dir',str(run), '--key-threshold', key_threshold,
                     '--chroma-adjacent-threshold', key_threshold]
-    if job.get('animationRevision'):
+    if job.get('animationRevision') or job.get('continuation'):
         extract_args += ['--states', ','.join(row['name'] for row in rows)]
     try:
         run_tool(root,extract_args)
@@ -266,8 +275,8 @@ def compose(root,job):
         run_tool(root,extract_args)
     manifest=json.loads((run/'frames/frames-manifest.json').read_text())
     if not manifest.get('ok') or manifest.get('errors') or manifest.get('warnings'): raise RenderError('invalid_sprite_extraction')
-    if job.get('animationRevision'):
-        compose_revision(root, rows, manifest)
+    if job.get('continuation', {}).get('atlas') or job.get('animationRevision'):
+        compose_revision(root, rows, manifest, max_row=10 if job.get('continuation') else 8)
         return {'ok': True}
     if len(manifest['rows'])!=11 or sum(row['frames'] for row in manifest['rows'])!=73: raise RenderError('missing_animation_frame')
     run_tool(root,['compose-atlas','--run-dir',str(run)])
@@ -292,6 +301,6 @@ def main():
         failure = failure or failure_diagnostic('renderer_process','unclassified')
         cause = error.cli_cause if isinstance(error, RenderError) else None
         details = error.error_details if isinstance(error, RenderError) else None
-        print(json.dumps({'error':code, 'failureDiagnostic':failure, **({'cliCause':cause} if cause else {}), **({'errorDetails':details} if details else {}), **({'providerFailure': diagnostic} if diagnostic else {})})); sys.exit(1)
+        print(json.dumps({'error':code, 'failureDiagnostic':failure, **({'assemblyIssues':extraction_issues(root/'run')} if action=='compose' else {}), **({'cliCause':cause} if cause else {}), **({'errorDetails':details} if details else {}), **({'providerFailure': diagnostic} if diagnostic else {})})); sys.exit(1)
 
 if __name__=='__main__': main()

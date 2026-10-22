@@ -25,7 +25,7 @@ export function parseSpritegenReply(text: string) {
       "providerFailure" in input ? input.providerFailure : undefined,undefined,
       "failureDiagnostic" in input ? input.failureDiagnostic : {boundary:"renderer_reply",reason:"unclassified"},
       "cliCause" in input ? input.cliCause : undefined,
-      "errorDetails" in input ? input.errorDetails : undefined);
+      "errorDetails" in input ? input.errorDetails : undefined, "assemblyIssues" in input ? input.assemblyIssues : undefined);
   }
   const parsed = replySchema.safeParse(input);
   if (!parsed.success) throw new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"renderer_reply",reason:"invalid_schema"});
@@ -55,23 +55,24 @@ export function spritegenEnvironment(apiKey: string): NodeJS.ProcessEnv {
 export const spriteRenderer: SpriteRenderer = {
   async cleanupExpired(now) { await cleanupSpriteWorkspaces(tmpdir(), now); },
   async open(job, saved, reference, revisionAtlas) {
-    const keyFile = process.env.PET_GENERATION_OPENAI_KEY_FILE?.trim();
+    const needsImages=!job.continuation || job.continuation.generationStages.length>0;
+    const keyFile = needsImages?process.env.PET_GENERATION_OPENAI_KEY_FILE?.trim():undefined;
     let key: string;
     try {
       key = keyFile ? readFileSync(keyFile, "utf8").trim() : "";
     } catch {
       throw new GenerationError("provider_not_configured");
     }
-    if (!key) throw new GenerationError("provider_not_configured");
-    const env = spritegenEnvironment(key);
+    if (needsImages && !key) throw new GenerationError("provider_not_configured");
+    const env: NodeJS.ProcessEnv = needsImages ? spritegenEnvironment(key) : {NODE_ENV: "production", PATH: "/usr/local/bin:/usr/bin:/bin", PYTHONDONTWRITEBYTECODE: "1", PYTHON_COLORS: "0"};
     const directory = await mkdtemp(path.join(tmpdir(), "pets-row-worker-"));
     const python = process.env.PET_GENERATION_PYTHON ?? "/usr/local/bin/python3";
     const script = path.resolve("scripts/pet-spritegen/renderer.py");
     try {
       await writeFile(path.join(directory, "workspace.json"), JSON.stringify({ expiresAt: job.expiresAt, pid: process.pid }), { mode: 0o600 });
       const rows = [...PET_STATES.map(state => ({ name: state.key, frames: state.frames, action: state.description, row: state.row })),
-        { name: "look-0-157", frames: 8, action: "" }, { name: "look-180-337", frames: 8, action: "" }];
-      await writeFile(path.join(directory, "job.json"), JSON.stringify({ prompt: job.prompt, rows, reviewBase: job.reviewBase === true, hasReference: Boolean(job.reference), animationAnatomyPolicy: job.animationAnatomyPolicy, ...(job.animationRevision ? {animationRevision: {selectedStates: job.animationRevision.selectedStates, corrections: job.animationRevision.corrections}} : {}), ...(job.animationPrompt ? {animationPrompt: job.animationPrompt} : {}) }), { mode: 0o600 });
+        { name: "look-0-157", frames: 8, action: "", row: 9 }, { name: "look-180-337", frames: 8, action: "", row: 10 }];
+      await writeFile(path.join(directory, "job.json"), JSON.stringify({ prompt: job.prompt, rows, reviewBase: job.reviewBase === true, hasReference: Boolean(job.reference), animationAnatomyPolicy: job.animationAnatomyPolicy, ...(job.continuation?{continuation:job.continuation}:{}), ...(job.animationRevision ? {animationRevision: {selectedStates: job.animationRevision.selectedStates, corrections: job.animationRevision.corrections}} : {}), ...(job.animationPrompt ? {animationPrompt: job.animationPrompt} : {}) }), { mode: 0o600 });
       if (revisionAtlas) await writeFile(path.join(directory, "revision-source.webp"), revisionAtlas, {mode: 0o600});
       if (reference) await writeFile(path.join(directory, "reference.png"), reference, {mode: 0o600});
       for (const [name, bytes] of saved) await writeFile(path.join(directory, name + ".png"), bytes, { mode: 0o600 });
@@ -113,6 +114,7 @@ export const spriteRenderer: SpriteRenderer = {
     return {
       async prepare() { await command("prepare"); },
       async generate(name) {
+        if (job.continuation && (name === "base" || !job.continuation.generationStages.includes(name))) throw new GenerationError("invalid_stage");
         const result = await command("generate", name);
         let bytes:Buffer;
         try{bytes=await readFile(path.join(directory, name + ".png"));}

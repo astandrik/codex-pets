@@ -29,6 +29,9 @@ function generationHttpStatus(code: string, admission: boolean): number {
     case "invalid_origin": return admission ? 403 : 503;
     case "body_too_large": return admission ? 413 : 503;
     case "invalid_argument": return admission ? 400 : 404;
+    case "continuation_busy":
+    case "continuation_source_conflict":
+    case "continuation_selection_conflict":
     case "request_id_conflict":
     case "generation_not_completed":
     case "metadata_conflict":
@@ -39,6 +42,8 @@ function generationHttpStatus(code: string, admission: boolean): number {
     case "invalid_reference_image": return 400;
     case "reference_image_too_large": return 413;
     case "invalid_generated_package": return 422;
+    case "continuation_limit":
+    case "continuation_cooldown":
     case "rate_limited":
     case "budget_exhausted":
     case "queue_full": return 429;

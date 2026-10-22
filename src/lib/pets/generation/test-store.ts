@@ -24,6 +24,9 @@ export class MemoryStore implements GenerationStore {
         getLedger: async (key, now) => { const row = ledger.get(key); return row && row.expiresAt > now ? row.value : null; },
         putLedger: async (key, value, expiresAt) => { ledger.set(key, { value, expiresAt }); },
         getArtifact: async (id, kind, now) => { const row = artifacts.get(id + ":" + kind); return row && row.expiresAt > now ? row.bytes : null; },
+        hasArtifact: async (id,kind,now) => {const row=artifacts.get(id+":"+kind);return Boolean(row&&row.expiresAt>now);},
+        setArtifactExpiry: async (id, kinds, expiresAt) => {for (const kind of kinds) {const k=id+":"+kind; const row=artifacts.get(k); if(row) artifacts.set(k,{...row,expiresAt});}},
+        deleteArtifacts: async id => {for(const key of artifacts.keys()) if(key.startsWith(id+":")) artifacts.delete(key);},
         putArtifact: async (id, kind, bytes, expiresAt) => { artifacts.set(id + ":" + kind, { bytes, expiresAt }); },
       };
       const value = await operation(tx);

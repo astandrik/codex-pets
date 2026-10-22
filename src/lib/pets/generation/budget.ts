@@ -59,3 +59,9 @@ export async function settleBudget(tx: GenerationTransaction, id: string, now: n
   }
   await save(tx, budget, now);
 }
+
+export async function restoreBudgetTracking(tx: GenerationTransaction, id: string, now: number) {
+  const budget = await load(tx, now);
+  budget.reservations[id] ??= {remainingMicroUsd: 0, unknown: false};
+  await save(tx, budget, now);
+}

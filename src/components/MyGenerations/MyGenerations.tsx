@@ -93,6 +93,8 @@ function BrowserGenerations({onRefresh}:{onRefresh:()=>void}){
         const status=statusLabel(row,Boolean(expired));
         return <li key={row.generationId} className="my-generations__item">
           <div className="my-generations__heading"><Text variant="subheader-2" as="h2">{row.generation?.pet?.displayName??"Pet generation"}</Text><Label theme={statusTheme(row,Boolean(expired))}>{status}</Label></div>
+          {row.generation?.continuation&&<p>{row.generation.continuation.mode === "rebuild" ? "Повторная сборка" : "Продолжение предыдущей генерации"}</p>}
+          {!expired&&row.generation?.canContinue&&<p><a href={withBasePath(`/generated/${row.generationId}`)}>Продолжить генерацию</a></p>}
           <Text variant="body-1" color="secondary">Saved {new Date(row.savedAt).toLocaleString()}</Text>
           {!expired&&row.generation&&live(row)&&<p role="status">{row.generation.progress.completedSteps} / {row.generation.progress.totalSteps} steps completed</p>}
           {row.failedReads>0&&!expired&&<p role="status">Could not refresh the status. Your task is unchanged; refresh statuses or open its page.</p>}
