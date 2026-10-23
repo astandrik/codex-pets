@@ -198,11 +198,7 @@ export function StatePreview({ petJsonUrl, spritesheetUrl, selectedKey: controll
         <div
           className="state-preview__sprite"
           aria-label={`${previewLabel} preview`}
-          style={{
-            backgroundImage: `url(${spritesheetUrl})`,
-            backgroundSize: `${sheet.columns * 100}% ${sheet.rows * 100}%`,
-            backgroundPosition: `${x}% ${y}%`,
-          }}
+          style={spriteStyle}
         />
         {lookDirection ? (
           <div className="state-preview__direction-label">
