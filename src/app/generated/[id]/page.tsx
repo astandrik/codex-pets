@@ -1,3 +1,4 @@
+import {continuationEnabled} from "@/lib/pets/generation/continuation-model";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { GENERATION_ID, generationAnimationRevisionsEnabled, generationAnimationHintsEnabled } from "@/lib/pets/generation/model";
@@ -15,5 +16,5 @@ export default async function GeneratedPetPage({ params, searchParams }: { param
   if (!GENERATION_ID.test(id)) notFound();
   const from = (await searchParams)?.from;
   const previousGenerationId = typeof from === "string" && GENERATION_ID.test(from) && from !== id ? from : undefined;
-  return <GeneratedPetPreview generationId={id} previousGenerationId={previousGenerationId} animationHintsEnabled={generationAnimationHintsEnabled()} animationRevisionsEnabled={generationAnimationRevisionsEnabled()} />;
+  return <GeneratedPetPreview generationId={id} previousGenerationId={previousGenerationId} animationHintsEnabled={generationAnimationHintsEnabled()} animationRevisionsEnabled={generationAnimationRevisionsEnabled()} continuationEnabled={continuationEnabled()} />;
 }

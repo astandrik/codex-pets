@@ -1,4 +1,5 @@
 "use client";
+import {GenerationContinuation} from "./GenerationContinuation";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Container, TextInput } from "@gravity-ui/uikit";
@@ -26,11 +27,11 @@ function readSubmission(value: unknown): Submission | null {
   return slug ? { petId: value.petId, slug, submittedAt: value.submittedAt } : null;
 }
 
-export function GeneratedPetPreview({ generationId, previousGenerationId, animationHintsEnabled = false, animationRevisionsEnabled = false }: { generationId: string; previousGenerationId?: string; animationHintsEnabled?: boolean; animationRevisionsEnabled?: boolean }) {
-  return <GeneratedPetPreviewContent key={generationId} generationId={generationId} previousGenerationId={previousGenerationId} animationHintsEnabled={animationHintsEnabled} animationRevisionsEnabled={animationRevisionsEnabled} />;
+export function GeneratedPetPreview({ generationId, previousGenerationId, animationHintsEnabled = false, animationRevisionsEnabled = false, continuationEnabled = false }: { generationId: string; previousGenerationId?: string; animationHintsEnabled?: boolean; animationRevisionsEnabled?: boolean; continuationEnabled?: boolean }) {
+  return <GeneratedPetPreviewContent key={generationId} generationId={generationId} previousGenerationId={previousGenerationId} animationHintsEnabled={animationHintsEnabled} animationRevisionsEnabled={animationRevisionsEnabled} continuationEnabled={continuationEnabled} />;
 }
 
-function GeneratedPetPreviewContent({ generationId, previousGenerationId, animationHintsEnabled = false, animationRevisionsEnabled = false }: { generationId: string; previousGenerationId?: string; animationHintsEnabled?: boolean; animationRevisionsEnabled?: boolean }) {
+function GeneratedPetPreviewContent({ generationId, previousGenerationId, animationHintsEnabled = false, animationRevisionsEnabled = false, continuationEnabled = false }: { generationId: string; previousGenerationId?: string; animationHintsEnabled?: boolean; animationRevisionsEnabled?: boolean; continuationEnabled?: boolean }) {
   const [differentAnimationPrompt, setDifferentAnimationPrompt] = useState(false);
   // Survive BaseReview unmount when status refresh observes another tab's confirmation.
   const animationPromptIntent = useRef<string | null>(null);
@@ -61,7 +62,7 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
   const submissionController = useRef<AbortController | null>(null);
   useEffect(() => () => submissionController.current?.abort(), []);
   useEffect(() => {
-    if (generation?.status !== "awaiting_confirmation" && !(generation?.status === "completed" && pendingAcceptance)) return;
+    if (generation?.status !== "failed" && generation?.status !== "awaiting_confirmation" && !(generation?.status === "completed" && pendingAcceptance)) return;
     const refresh = () => {if (!document.hidden) setRefreshVersion(value => value + 1);};
     window.addEventListener("focus", refresh); document.addEventListener("visibilitychange", refresh);
     return () => {window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh);};
@@ -245,7 +246,9 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
       <h2>Пожелания к движениям</h2><p>{generation.animationPrompt || "Без дополнительных пожеланий."}</p>
     </section>}
     {!showBaseReview && (unavailable || (generation && generation.status !== "awaiting_confirmation")) && <RefinementRecovery generationId={generationId} />}
-    {failed && <div role="alert"><p>{failure.message}</p><p>{failure.hint}</p></div>}
+    <GenerationContinuation generationId={generationId} enabled={continuationEnabled && Boolean(generation?.canContinue)} onContinued={()=>{setRefreshVersion(v=>v+1);}}/>
+    {generation?.continuation?.mode==="regenerate"&&<p><a href={withBasePath(`/generated/${generation.continuation.sourceGenerationId}`)}>Исходное задание</a></p>}
+    {failed && <div role="alert"><p>{failure.message}</p><p>{continuationEnabled && generation?.canContinue ? "Можно проверить сохранённые изображения и продолжить это задание." : failure.hint}</p></div>}
     {previousGenerationId && <p><a href={withBasePath(`/generated/${generationId}`)}>Open this version</a>{" · "}<a href={withBasePath(`/generated/${previousGenerationId}`)}>Open previous version</a></p>}
     <div className={previousGenerationId ? "generated-pet-versions" : undefined}>
       {previousGenerationId && <section className="generated-pet-base">

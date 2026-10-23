@@ -169,3 +169,13 @@ describe("production generation store read contracts", () => {
     expect(secret).not.toHaveBeenCalled();
   });
 });
+
+it("publishes snapshot TTLs without reading or rewriting binary payloads",async()=>{
+  const {generationStore}=await import("@/lib/pets/generation/store");const id="c".repeat(64),now=Date.UTC(2026,9,22),expiresAt=now+86400000;
+  session.executeQuery.mockResolvedValueOnce({resultSets:[{rows:[{items:[{textValue:"stage-base.png"}]}]}]});
+  await generationStore.transaction(async tx=>{expect(await tx.hasArtifact(id,"stage-base.png",now)).toBe(true);await tx.setArtifactExpiry(id,["stage-base.png","stage-idle.png"],expiresAt);});
+  const calls=session.executeQuery.mock.calls.slice(0,-1);expect(calls).toHaveLength(3);
+  expect(calls[0][0]).toContain("SELECT kind");expect(calls[0][0]).toContain("expires_at>$now");
+  for(const [query,parameters,control]of calls){expect(query).not.toMatch(/\bbytes\b/);expect(parameters).not.toHaveProperty("$bytes");expect(control).toEqual({txId:"tx-1"});}
+  for(const [,parameters]of calls.slice(1))expect(parameters.$expires).toEqual(TypedValues.timestamp(new Date(expiresAt)));
+});

@@ -25,6 +25,9 @@ export interface GenerationTransaction {
   putLedger(key: string, value: string, expiresAt: number): Promise<void>;
   getArtifact(id: string, kind: string, now: number): Promise<Buffer | null>;
   putArtifact(id: string, kind: string, bytes: Buffer, expiresAt: number): Promise<void>;
+  hasArtifact(id: string, kind: string, now: number): Promise<boolean>;
+  setArtifactExpiry(id: string, kinds: string[], expiresAt: number): Promise<void>;
+  deleteArtifacts(id: string): Promise<void>;
   saveSubmission(input: PendingGenerationSubmission): Promise<void>;
   listTakenSlugs(slugs: string[]): Promise<string[]>;
 }
@@ -79,6 +82,18 @@ SELECT bytes FROM ${GENERATION_TABLES.artifacts} WHERE id = $id AND kind = $kind
       });
       const row = rowsFromResult(result)[0];
       return row ? bytesAt(row, 0) : null;
+    },
+    async hasArtifact(id,kind,now) {
+      const result=await execute(`DECLARE $id AS Utf8; DECLARE $kind AS Utf8; DECLARE $now AS Timestamp;
+SELECT kind FROM ${GENERATION_TABLES.artifacts} WHERE id=$id AND kind=$kind AND expires_at>$now;`,{$id:TypedValues.utf8(id),$kind:TypedValues.utf8(kind),$now:TypedValues.timestamp(new Date(now))});
+      return rowsFromResult(result).length===1;
+    },
+    async setArtifactExpiry(id, kinds, expiresAt) {
+      for (const kind of kinds) await execute(`DECLARE $id AS Utf8; DECLARE $kind AS Utf8; DECLARE $expires AS Timestamp;
+UPDATE ${GENERATION_TABLES.artifacts} SET expires_at = $expires WHERE id = $id AND kind = $kind;`, {$id: TypedValues.utf8(id), $kind: TypedValues.utf8(kind), $expires: TypedValues.timestamp(new Date(expiresAt))});
+    },
+    async deleteArtifacts(id) {
+      await execute(`DECLARE $id AS Utf8; DELETE FROM ${GENERATION_TABLES.artifacts} WHERE id = $id;`, {$id: TypedValues.utf8(id)});
     },
     async putArtifact(id, kind, bytes, expiresAt) {
       await execute(`DECLARE $id AS Utf8; DECLARE $kind AS Utf8; DECLARE $bytes AS String; DECLARE $expires AS Timestamp;

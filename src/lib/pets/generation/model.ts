@@ -1,3 +1,4 @@
+import {continuationPlanSchema, assemblyIssuesSchema, rebuildHistorySchema, type AssemblyIssue} from "@/lib/pets/generation/continuation-model";
 import {animationStatesSchema, animationCorrectionsSchema} from "@/lib/pets/generation/animation-revision-input";
 export {animationRevisionInputSchema} from "@/lib/pets/generation/animation-revision-input";
 import { createHmac, randomBytes } from "node:crypto";
@@ -97,16 +98,22 @@ export const jobSchema = z.object({
   animationPrompt: z.string().min(1).max(2000).optional(),
   animationAnatomyPolicy: z.literal(1).optional(),
   animationRevision: animationRevisionSchema.optional(),
+  continuation: continuationPlanSchema.optional(),
+  assemblyIssues: assemblyIssuesSchema.optional(),
+  rebuildHistory: rebuildHistorySchema.optional(),
   promptRevision: z.string(),
   pipelineVersion: z.number().int().default(1),
   stages: z.array(stageSchema).default([]),
   submission: submissionSchema.optional(),
   cardMetadata: cardMetadataRecordSchema.optional(),
-}).refine(job => job.pipelineVersion === 3
+}).refine(job => job.pipelineVersion === 4
+  ? Boolean(job.continuation && job.reviewBase && job.baseConfirmedAt !== undefined && !job.reference && !job.animationRevision)
+  : job.pipelineVersion === 3
   ? Boolean(job.animationRevision && job.animationAnatomyPolicy === 1 && job.reviewBase && job.baseConfirmedAt !== undefined && !job.reference)
   : job.animationRevision === undefined, "Invalid animation revision policy");
 export type GenerationJob = z.infer<typeof jobSchema>;
 export function requiredStageNames(job: GenerationJob): readonly StageName[] {
+  if (job.continuation) return continuationPlanSchema.parse(job.continuation).compositionStages;
   if (job.pipelineVersion === 3) {
     if (!job.animationRevision) throw new GenerationError("invalid_stage");
     return job.animationRevision.selectedStates;
@@ -114,7 +121,10 @@ export function requiredStageNames(job: GenerationJob): readonly StageName[] {
   return STAGE_NAMES;
 }
 export function usesStageCheckpoints(job: GenerationJob) {
-  return job.pipelineVersion === 2 || job.pipelineVersion === 3;
+  return job.pipelineVersion === 2 || job.pipelineVersion === 3 || job.pipelineVersion === 4;
+}
+export function generationStageNames(job: GenerationJob): readonly StageName[] {
+  return job.continuation ? continuationPlanSchema.parse(job.continuation).generationStages : requiredStageNames(job);
 }
 export function isUnacceptedAnimationRevision(job: GenerationJob) {
   return Boolean(job.animationRevision && job.animationRevision.acceptedAt === undefined);
@@ -136,8 +146,11 @@ export class GenerationError extends Error {
   readonly diagnostic?: FailureDiagnostic;
   readonly cliCause?:CliCause;
   readonly details?:ErrorDetails;
-  constructor(public readonly code: string, public readonly retryAt?: string, providerFailure?: unknown, public readonly limitScope?: "ip" | "global", diagnostic?:unknown,cliCause?:unknown,details?:unknown) {
+  readonly assemblyIssues?: AssemblyIssue[];
+  constructor(public readonly code: string, public readonly retryAt?: string, providerFailure?: unknown, public readonly limitScope?: "ip" | "global", diagnostic?:unknown,cliCause?:unknown,details?:unknown,assemblyIssues?:unknown) {
     super(code);
+    const issues=assemblyIssuesSchema.safeParse(assemblyIssues);
+    this.assemblyIssues=issues.success?issues.data:undefined;
     this.name = "GenerationError";
     this.providerFailure = readProviderFailure(providerFailure);
     this.diagnostic = readFailureDiagnostic(diagnostic);

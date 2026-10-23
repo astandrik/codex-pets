@@ -76,7 +76,7 @@ export function createAnimationRevisionService(store: GenerationStore, options: 
       let metadata;
       try {metadata = validatePetJson(JSON.parse(json.toString("utf8")));} catch {throw new GenerationError("invalid_generated_package");}
       if (!metadata.ok || metadata.value.spriteVersionNumber !== 2) throw new GenerationError("invalid_generated_package");
-      const corrections = structuredClone(source.animationRevision?.corrections ?? {});
+      const corrections = animationCorrectionsSchema.parse(structuredClone(source.continuation?.corrections ?? source.animationRevision?.corrections ?? {}));
       if (body.prompt) for (const state of body.states) corrections[state] = [...(corrections[state] ?? []), body.prompt];
       if (!animationCorrectionsSchema.safeParse(corrections).success) throw new GenerationError("animation_corrections_limit");
       const baseSha256 = sha(base), sourceAtlasSha256 = sha(atlas), id = options.createId();
