@@ -3,7 +3,8 @@ import {GenerationContinuation} from "./GenerationContinuation";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Container, TextInput } from "@gravity-ui/uikit";
-import { StatePreview } from "@/components/StatePreview/StatePreview";
+import Image from "next/image";
+import { GeneratedPetResult } from "./GeneratedPetResult";
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import { parsePublicPetSlug, suggestPublicPetSlug } from "@/lib/pets/public-slug";
 import type { PublicGeneration } from "@/lib/pets/generation/service";
@@ -234,42 +235,10 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
   const failed = generation?.status === "failed";
   const failure = generation?.error?.message ? generation.error : publicGenerationError(generation?.error?.code ?? "generation_unavailable");
   const showBaseReview = Boolean(generation && (generation.status === "awaiting_confirmation" || editingBase));
-  return <Container as="main" maxWidth="xl" gutters={5} className="page-shell">
-    <p><a href={withBasePath("/my-generations")}>My generations</a></p>
-    <h1>{generation?.pet?.displayName ?? "Generated pet"}</h1>
-    {generation?.status==="processing"&&generation.metadata?.automaticState==="inflight"&&<p role="status">Preparing the name, description and tags…</p>}
-    {generation?.status==="completed"&&!pendingAcceptance&&generation.metadata&&<GeneratedPetMetadataEditor generationId={generationId} metadata={generation.metadata} disabled={Boolean(submission)||submitting||unavailable} onBlocked={value=>{metadataBlockedRef.current=value;setMetadataBlocked(value);}} onSaved={metadata=>{setMetadataConflict(false);setGeneration(current=>current?{...current,metadata,pet:current.pet?{...current.pet,displayName:metadata.displayName??current.pet.displayName}:current.pet}:current);if(metadata.displayName&&!editedSlug.current&&!savedSubmission.current&&suggestPublicPetSlug(metadata.displayName)!==slug){checkSequence.current++;setSlug(suggestPublicPetSlug(metadata.displayName));setSlugCheck(null);setSlugNotice("");}}}/>}
-    <p role="status" aria-live="polite">{error || (generation ? pendingAcceptance && generation.status === "completed" ? "Новая версия на проверке" : STATUS_LABELS[generation.status] : "Loading generation…")}</p>
-    {generation?.progress && generation.status !== "failed" && <p>{generation.progress.completedSteps} of {generation.progress.totalSteps} generation steps completed.</p>}
-    {differentAnimationPrompt && <p role="status">Анимации уже подтверждены в другой вкладке с другими пожеланиями. Показан сохранённый вариант.</p>}
-    {generation?.baseConfirmed && (generation.animationPrompt || differentAnimationPrompt) && <section className="generated-pet-animation-hints" aria-label="Принятые пожелания">
-      <h2>Пожелания к движениям</h2><p>{generation.animationPrompt || "Без дополнительных пожеланий."}</p>
-    </section>}
-    {!showBaseReview && (unavailable || (generation && generation.status !== "awaiting_confirmation")) && <RefinementRecovery generationId={generationId} />}
-    <GenerationContinuation generationId={generationId} enabled={continuationEnabled && Boolean(generation?.canContinue)} onContinued={()=>{setRefreshVersion(v=>v+1);}}/>
-    {generation?.continuation?.mode==="regenerate"&&<p><a href={withBasePath(`/generated/${generation.continuation.sourceGenerationId}`)}>Исходное задание</a></p>}
-    {failed && <div role="alert"><p>{failure.message}</p><p>{continuationEnabled && generation?.canContinue ? "Можно проверить сохранённые изображения и продолжить это задание." : failure.hint}</p></div>}
-    {previousGenerationId && <p><a href={withBasePath(`/generated/${generationId}`)}>Open this version</a>{" · "}<a href={withBasePath(`/generated/${previousGenerationId}`)}>Open previous version</a></p>}
-    <div className={previousGenerationId ? "generated-pet-versions" : undefined}>
-      {previousGenerationId && <section className="generated-pet-base">
-        <h2>Previous version</h2>
-        {/* Private capability images bypass the optimizer and shared caches. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        {!previousUnavailable && <img src={withBasePath(`/api/pet-generations/${previousGenerationId}/base`)} alt="Previous character version" onError={() => setPreviousUnavailable(true)} />}
-        <p>{previousUnavailable ? "The previous version is unavailable or has expired." : "The previous version keeps its original deadline."}</p>
-      </section>}
-      {generation && showBaseReview && <BaseReview generationId={generationId} expiresAt={generation.expiresAt} disabled={unavailable || generation.status !== "awaiting_confirmation"} onEditingChange={setEditingBase} animationHintsEnabled={animationHintsEnabled} onAnimationPromptIntent={prompt => {animationPromptIntent.current = prompt;}} onConfirmed={different => {if (different) setDifferentAnimationPrompt(true); setRefreshVersion(value => value + 1);}} />}
-    </div>
-    {generation?.animationRevision && <AnimationRevisionCorrections corrections={generation.animationRevision.corrections}/>}
-    <AnimationRevisionEditor generationId={generationId} metadataRevision={generation?.metadata?.revision ?? 0} canEdit={Boolean(animationRevisionsEnabled && generation?.canReviseAnimations && !unavailable)} blocked={metadataBlocked || metadataConflict || submitting}/>
-    {animationRevisionsEnabled && generation?.status === "completed" && !pendingAcceptance && !generation.canReviseAnimations && <p lang="ru">Редактирование недоступно: у этой версии нет сохранённого базового образа.</p>}
-    {generation?.pet && generation.status === "completed" && pendingAcceptance && generation.animationRevision && <AnimationRevisionComparison generationId={generationId} sourceGenerationId={generation.animationRevision.sourceGenerationId} expiresAt={generation.expiresAt} petJsonUrl={files + "pet.json"} spritesheetUrl={files + "spritesheet.webp"} beforeSpritesheetUrl={generation.animationRevision.beforeSpritesheetUrl} selectedStates={generation.animationRevision.selectedStates} unavailable={unavailable} onAccepted={() => setRefreshVersion(value => value + 1)}/>}
-    {generation?.pet && generation.status === "completed" && !pendingAcceptance && <>
-      <StatePreview petJsonUrl={files + "pet.json"} spritesheetUrl={files + "spritesheet.webp"} />
-      {!metadataBlocked&&<p><a href={files + "pet.zip"}>Download pet ZIP</a></p>}
-      {!metadataBlocked&&<p><a href={files + "pet.json"}>pet.json</a> · <a href={files + "spritesheet.webp"}>Spritesheet</a></p>}
-      <p>Download before {new Date(generation.expiresAt).toLocaleString()}. Keep this link private.</p>
-      <form className="generated-pet-publication" onSubmit={(event) => { event.preventDefault(); void submitForReview(); }}>
+  const ready = Boolean(generation?.pet && generation.status === "completed" && !pendingAcceptance);
+  const metadataEditor = generation?.status==="completed"&&!pendingAcceptance&&generation.metadata&&<GeneratedPetMetadataEditor generationId={generationId} metadata={generation.metadata} disabled={Boolean(submission)||submitting||unavailable} onBlocked={value=>{metadataBlockedRef.current=value;setMetadataBlocked(value);}} onSaved={metadata=>{setMetadataConflict(false);setGeneration(current=>current?{...current,metadata,pet:current.pet?{...current.pet,displayName:metadata.displayName??current.pet.displayName}:current.pet}:current);if(metadata.displayName&&!editedSlug.current&&!savedSubmission.current&&suggestPublicPetSlug(metadata.displayName)!==slug){checkSequence.current++;setSlug(suggestPublicPetSlug(metadata.displayName));setSlugCheck(null);setSlugNotice("");}}}/>;
+  const animationEditor = <AnimationRevisionEditor generationId={generationId} metadataRevision={generation?.metadata?.revision ?? 0} canEdit={Boolean(animationRevisionsEnabled && generation?.canReviseAnimations && !unavailable)} blocked={metadataBlocked || metadataConflict || submitting}/>;
+  const publicationForm = <form className="generated-pet-publication" onSubmit={(event) => { event.preventDefault(); void submitForReview(); }}>
         <label htmlFor="generated-pet-public-slug">Public URL name</label>
         <TextInput id="generated-pet-public-slug" value={slug} onUpdate={updateSlug}
           disabled={submitting || unavailable} validationState={slug && !validSlug ? "invalid" : undefined}
@@ -292,7 +261,56 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
         {metadataBlocked&&<p>Save the name, description and tags before submitting.</p>}
         {submissionError && <p role="alert">{submissionError}</p>}
         {metadataConflict&&<a data-metadata-reload href={withBasePath(`/generated/${generationId}`)}>Reload saved details</a>}
-      </form>
-    </>}
+      </form>;
+  const generationDetails = <>
+    {generation?.baseConfirmed && (generation.animationPrompt || differentAnimationPrompt) && <section className="generated-pet-animation-hints" aria-label="Принятые пожелания"><h2>Пожелания к движениям</h2><p>{generation.animationPrompt || "Без дополнительных пожеланий."}</p></section>}
+    {generation?.animationRevision && <AnimationRevisionCorrections corrections={generation.animationRevision.corrections} />}
+    {generation?.continuation?.mode === "regenerate" && <p><a href={withBasePath(`/generated/${generation.continuation.sourceGenerationId}`)}>Исходное задание</a></p>}
+    {generation?.animationRevision && <p><a href={withBasePath(`/generated/${generation.animationRevision.sourceGenerationId}`)}>Исходная версия анимаций</a></p>}
+    {previousGenerationId && <p><a href={withBasePath(`/generated/${generationId}`)}>Open this version</a>{" · "}<a href={withBasePath(`/generated/${previousGenerationId}`)}>Open previous version</a></p>}
+  </>;
+  return <Container as="main" maxWidth={ready ? undefined : "xl"} gutters={5} className={ready ? "page-shell generated-pet-ready" : "page-shell"}>
+    <a className={ready ? "generated-pet-ready__back" : undefined} href={withBasePath("/my-generations")}>{ready && <Image src={withBasePath("/assets/s09-arrow-left.svg")} alt="" width={16} height={16} unoptimized />}My generations</a>
+    <div className={ready ? "generated-pet-ready__heading" : undefined}><h1>{generation?.pet?.displayName ?? "Generated pet"}</h1>{ready && <span className="generated-pet-ready__status" role="status">Ready</span>}</div>
+    {ready && <p className="generated-pet-ready__intro">Preview your pet, then download its pack.</p>}
+    {generation?.status==="processing"&&generation.metadata?.automaticState==="inflight"&&<p role="status">Preparing the name, description and tags…</p>}
+
+    {!ready && metadataEditor}
+    {(!ready || error) && <p role="status" aria-live="polite">{error || (generation ? pendingAcceptance && generation.status === "completed" ? "Новая версия на проверке" : STATUS_LABELS[generation.status] : "Loading generation…")}</p>}
+    {!ready && generation?.progress && generation.status !== "failed" && <p>{generation.progress.completedSteps} of {generation.progress.totalSteps} generation steps completed.</p>}
+    {differentAnimationPrompt && <p role="status">Анимации уже подтверждены в другой вкладке с другими пожеланиями. Показан сохранённый вариант.</p>}
+    {!ready && generation?.baseConfirmed && (generation.animationPrompt || differentAnimationPrompt) && <section className="generated-pet-animation-hints" aria-label="Принятые пожелания">
+      <h2>Пожелания к движениям</h2><p>{generation.animationPrompt || "Без дополнительных пожеланий."}</p>
+    </section>}
+    {!showBaseReview && (unavailable || (generation && generation.status !== "awaiting_confirmation")) && <RefinementRecovery generationId={generationId} />}
+    <GenerationContinuation generationId={generationId} enabled={continuationEnabled && Boolean(generation?.canContinue)} onContinued={()=>{setRefreshVersion(v=>v+1);}}/>
+    {!ready && generation?.continuation?.mode==="regenerate"&&<p><a href={withBasePath(`/generated/${generation.continuation.sourceGenerationId}`)}>Исходное задание</a></p>}
+    {failed && <div role="alert"><p>{failure.message}</p><p>{continuationEnabled && generation?.canContinue ? "Можно проверить сохранённые изображения и продолжить это задание." : failure.hint}</p></div>}
+    {!ready && previousGenerationId && <p><a href={withBasePath(`/generated/${generationId}`)}>Open this version</a>{" · "}<a href={withBasePath(`/generated/${previousGenerationId}`)}>Open previous version</a></p>}
+    <div className={previousGenerationId ? "generated-pet-versions" : undefined}>
+      {previousGenerationId && <section className="generated-pet-base">
+        <h2>Previous version</h2>
+        {/* Private capability images bypass the optimizer and shared caches. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {!previousUnavailable && <img src={withBasePath(`/api/pet-generations/${previousGenerationId}/base`)} alt="Previous character version" onError={() => setPreviousUnavailable(true)} />}
+        <p>{previousUnavailable ? "The previous version is unavailable or has expired." : "The previous version keeps its original deadline."}</p>
+      </section>}
+      {generation && showBaseReview && <BaseReview generationId={generationId} expiresAt={generation.expiresAt} disabled={unavailable || generation.status !== "awaiting_confirmation"} onEditingChange={setEditingBase} animationHintsEnabled={animationHintsEnabled} onAnimationPromptIntent={prompt => {animationPromptIntent.current = prompt;}} onConfirmed={different => {if (different) setDifferentAnimationPrompt(true); setRefreshVersion(value => value + 1);}} />}
+    </div>
+    {!ready && generation?.animationRevision && <AnimationRevisionCorrections corrections={generation.animationRevision.corrections}/>}
+
+    {animationRevisionsEnabled && generation?.status === "completed" && !pendingAcceptance && !generation.canReviseAnimations && <p lang="ru">Редактирование недоступно: у этой версии нет сохранённого базового образа.</p>}
+    {generation?.pet && generation.status === "completed" && pendingAcceptance && generation.animationRevision && <AnimationRevisionComparison generationId={generationId} sourceGenerationId={generation.animationRevision.sourceGenerationId} expiresAt={generation.expiresAt} petJsonUrl={files + "pet.json"} spritesheetUrl={files + "spritesheet.webp"} beforeSpritesheetUrl={generation.animationRevision.beforeSpritesheetUrl} selectedStates={generation.animationRevision.selectedStates} unavailable={unavailable} onAccepted={() => setRefreshVersion(value => value + 1)}/>}
+    <GeneratedPetResult ready={ready}
+      petJsonUrl={files + "pet.json"} spritesheetUrl={files + "spritesheet.webp"}
+      metadataEditor={ready ? metadataEditor : undefined} animationEditor={animationEditor} publicationForm={ready ? publicationForm : null}
+      generationDetails={(generation?.animationPrompt || differentAnimationPrompt || generation?.animationRevision || generation?.continuation?.mode === "regenerate" || previousGenerationId) ? generationDetails : undefined}
+      metadataBlocked={metadataBlocked} metadataConflict={metadataConflict} submitted={Boolean(submission)}
+      downloads={generation && <>
+        {!metadataBlocked ? <Button href={files + "pet.zip"} view="action" size="xl" width="max">Download ZIP</Button> : <p role="status">Save the name, description and tags to download your pet pack.</p>}
+        {!metadataBlocked && <div className="generated-pet-result__files"><a href={files + "pet.json"}>pet.json</a><a href={files + "spritesheet.webp"}>Spritesheet</a></div>}
+        <p>Download before {new Date(generation.expiresAt).toLocaleString()}.</p><p>Keep this link private.</p>
+      </>}
+    />
   </Container>;
 }

@@ -5,42 +5,17 @@ import { withBasePath } from "@/lib/base-path";
 
 import "./Footer.scss";
 
-const GRAVITY_UI_URL = "https://github.com/gravity-ui/uikit";
-const YDB_URL = "https://ydb.tech/";
-const LEARN_LINKS = [
-  {
-    href: "/guides/ai-pet-generator",
-    label: "AI pet generator",
-  },
-  {
-    href: "/guides/how-codex-pets-works",
-    label: "How Codex Pets works",
-  },
-  {
-    href: "/guides/best-codex-pets-for-ai-coding-agents",
-    label: "Best Codex pets for AI coding agents",
-  },
-  {
-    href: "/guides/codex-pets-mcp-integration-guide",
-    label: "Codex Pets MCP integration guide",
-  },
-  {
-    href: "/guides/codex-pets-vs-vscode-pets",
-    label: "Codex Pets vs VS Code Pets",
-  },
-  {
-    href: "/guides/codex-pets-vs-openpets",
-    label: "Codex Pets vs OpenPets",
-  },
-] as const;
+import { GRAVITY_UI_URL, YDB_URL, LEARN_LINKS, DOCUMENTATION_LINKS } from "@/components/SiteNavigation/navigation-links";
 
 export function Footer() {
   return (
-    <Container as="footer" maxWidth="xl" gutters={5} className="footer">
+    <Container as="footer" gutters={5} className="footer">
       <div className="footer__content">
         <Text variant="caption-2" color="secondary" className="footer__note">
-          Codex pet packs are community-submitted.
+          Community-made pet packs for Codex.
         </Text>
+        <details className="footer__resources">
+          <summary>Guides, developers &amp; API</summary>
         <div className="footer__credits" aria-label="Technology credits">
           <span className="footer__credit">
             <span className="footer__credit-label">Created with</span>
@@ -98,19 +73,9 @@ export function Footer() {
           <Link href="/developers" className="footer__link">
             Developers
           </Link>
-          <Link href="/docs/api" className="footer__link">
-            API docs
-          </Link>
-          <Link href="/openapi.json" className="footer__link">
-            OpenAPI
-          </Link>
-          <Link href="/llms-full.txt" className="footer__link">
-            llms-full.txt
-          </Link>
-          <Link href="/api/manifest" className="footer__link">
-            Manifest
-          </Link>
+          {DOCUMENTATION_LINKS.map(({href, label}) => <Link key={href} href={href} className="footer__link">{label}</Link>)}
         </div>
+        </details>
       </div>
     </Container>
   );

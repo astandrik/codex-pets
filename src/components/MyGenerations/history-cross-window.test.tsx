@@ -47,7 +47,7 @@ it("refreshes visible history when another window confirms and completes a saved
     await act(async () => [...previewElement.querySelectorAll("button")].find(button => button.textContent === "Animate this character")!.click());
     state = "completed";
     await act(async () => vi.advanceTimersByTimeAsync(15000));
-    expect(previewElement.textContent).toContain("Your pet is ready");
+    expect(previewElement.textContent).toContain("Ready");
     expect(request.mock.calls.filter(([url]) => url.endsWith("/confirm"))).toHaveLength(1);
     expect(storageEvents).toBe(3); // First observed, queued and completed.
     expect(localStorage.getItem(HISTORY_PREFIX + id)).toBe(originalEntry);

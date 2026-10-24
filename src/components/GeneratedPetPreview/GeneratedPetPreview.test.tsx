@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ThemeProvider } from "@gravity-ui/uikit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GeneratedPetPreview } from "./GeneratedPetPreview";
 import { publicGenerationError } from "@/lib/pets/generation/public-error";
 
-vi.mock("@/components/StatePreview/StatePreview", () => ({ StatePreview: () => <div>Animation preview</div> }));
+vi.mock("@/components/StatePreview/StatePreview", () => ({ StatePreview: ({slots, active = true}: {active?: boolean; slots?: {afterStage?: ReactNode; sidePanel?: ReactNode; afterControls?: ReactNode}}) => <div>{active && <>Animation preview{slots?.afterStage}</>}{slots?.sidePanel}{active && slots?.afterControls}</div> }));
 vi.mock("next/navigation", () => ({useRouter: () => ({push: vi.fn()})}));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 window.matchMedia ??= ((query: string) => ({ matches: false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as typeof window.matchMedia;
@@ -32,8 +32,8 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); element.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 async function render() { await act(async () => root.render(<ThemeProvider theme="light"><GeneratedPetPreview generationId={id} /></ThemeProvider>)); }
 async function tick(ms = 300) { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); }
-function button() { return [...element.querySelectorAll("button")].find(b => b.textContent?.includes("Submit for review")); }
-function input() { return element.querySelector<HTMLInputElement>("#generated-pet-public-slug")!; }
+function button() { return [...document.body.querySelectorAll("button")].find(b => b.textContent?.includes("Submit for review")); }
+function input() { return document.body.querySelector<HTMLInputElement>("#generated-pet-public-slug")!; }
 function edit(value: string) { act(() => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input(), value); input().dispatchEvent(new Event("input", { bubbles: true })); }); }
 function puts() { return fetchMock.mock.calls.filter(([, init]) => init?.method === "PUT"); }
 
@@ -43,23 +43,23 @@ describe("generated pet public URL and moderation", () => {
     const error = publicGenerationError("provider_rejected", { httpStatus: 400, code: "moderation_blocked", moderationStage: "output" });
     fetchMock.mockResolvedValue(response({ generation: { ...data.generation, error } }));
     await render(); await tick(30000);
-    expect(element.querySelector('[role="alert"]')?.textContent).toContain("blocked the generated image");
-    expect(element.textContent).toContain("No image was returned");
-    expect(element.textContent).toContain("No further automatic retry will be started");
+    expect(document.body.querySelector('[role="alert"]')?.textContent).toContain("blocked the generated image");
+    expect(document.body.textContent).toContain("No image was returned");
+    expect(document.body.textContent).toContain("No further automatic retry will be started");
     expect(button()).toBeUndefined(); expect(puts()).toHaveLength(0);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
   it("shows an honest fallback for an old server returning only an error code", async () => {
     fetchMock.mockResolvedValue(response({ generation: { ...generation(undefined, "failed").generation, error: { code: "provider_rejected" } } }));
     await render();
-    expect(element.textContent).toContain("do not identify the reason");
-    expect(element.textContent).not.toContain("blocked the generated image");
+    expect(document.body.textContent).toContain("do not identify the reason");
+    expect(document.body.textContent).not.toContain("blocked the generated image");
   });
   it("suggests a transliterated slug, waits 300ms and submits PUT only after a click", async () => {
     fetchMock.mockResolvedValueOnce(response(generation(undefined, "completed", "Мятня")));
     await render();
     expect(input().value).toBe("myatnya"); expect(button()?.disabled).toBe(true);
-    expect(element.textContent).toContain("https://pets.example/pets/myatnya");
+    expect(document.body.textContent).toContain("https://pets.example/pets/myatnya");
     await tick(299); expect(fetchMock).toHaveBeenCalledTimes(1);
     await tick(1); expect(fetchMock).toHaveBeenCalledTimes(2); expect(button()?.disabled).toBe(false);
     expect(puts()).toHaveLength(0);
@@ -69,9 +69,9 @@ describe("generated pet public URL and moderation", () => {
     expect(puts()).toHaveLength(1); expect(puts()[0][1]).toMatchObject({ method: "PUT", body: '{"slug":"myatnya"}' });
     expect(button()?.disabled).toBe(true);
     await act(async () => resolve(response({ submission: { ...receipt, slug: "myatnya" } }, 201)));
-    expect(element.textContent).toContain("Sent for review"); expect(element.textContent).toContain("after approval");
+    expect(document.body.textContent).toContain("Sent for review"); expect(document.body.textContent).toContain("after approval");
     expect(button()).toBeUndefined(); expect(input().readOnly).toBe(true);
-    expect(element.querySelector('a[href$="pet.zip"]')).not.toBeNull();
+    expect(document.body.querySelector('a[href$="pet.zip"]')).not.toBeNull();
   });
   it("preserves the edited slug across status polls and debounces multiple edits", async () => {
     fetchMock.mockResolvedValueOnce(response(generation(undefined, "completed", "Demo", 1)));
@@ -96,20 +96,20 @@ describe("generated pet public URL and moderation", () => {
       return defaultFetch(url, init);
     });
     await render(); await tick(); expect(input().value).toBe("demo");
-    expect(element.textContent).toContain("already taken"); await tick();
+    expect(document.body.textContent).toContain("already taken"); await tick();
     expect(fetchMock).toHaveBeenCalledTimes(2); expect(button()?.disabled).toBe(false);
-    expect(element.textContent).toContain("https://pets.example/pets/demo-2");
+    expect(document.body.textContent).toContain("https://pets.example/pets/demo-2");
     await act(async () => button()!.click());
     expect(JSON.parse(puts()[0][1].body).slug).toBe("demo");
     expect(input().value).toBe("demo-3"); expect(input().readOnly).toBe(true);
-    expect(element.textContent).toContain("https://pets.example/pets/demo-3");
+    expect(document.body.textContent).toContain("https://pets.example/pets/demo-3");
   });
   it("uses the saved first-wins receipt even when submission returns a different slug", async () => {
     await render(); edit("different-draft"); await tick();
     await act(async () => button()!.click());
     expect(JSON.parse(puts()[0][1].body).slug).toBe("different-draft");
     expect(input().value).toBe("demo"); expect(input().readOnly).toBe(true);
-    expect(element.textContent).toContain("Saved public URL: https://pets.example/pets/demo");
+    expect(document.body.textContent).toContain("Saved public URL: https://pets.example/pets/demo");
   });
   it("pins a receipt returned by the check and never creates another submission", async () => {
     fetchMock.mockImplementation((url: string, init?: RequestInit) => url.endsWith("/slug-check")
@@ -122,15 +122,15 @@ describe("generated pet public URL and moderation", () => {
     await render(); await tick();
     fetchMock.mockRejectedValueOnce(new Error("network"));
     await act(async () => button()!.click());
-    expect(element.textContent).toContain("Try again"); expect(button()?.disabled).toBe(false);
+    expect(document.body.textContent).toContain("Try again"); expect(button()?.disabled).toBe(false);
     await act(async () => button()!.click()); expect(puts()).toHaveLength(2);
     expect(fetchMock.mock.calls.some(([url, init]) => url.endsWith("/submission") && init?.method === "POST")).toBe(false);
-    expect(element.textContent).toContain("Sent for review");
+    expect(document.body.textContent).toContain("Sent for review");
   });
   it("does not fall back to POST when the server does not support PUT", async () => {
     await render(); await tick(); fetchMock.mockResolvedValueOnce(response({}, 405));
     await act(async () => button()!.click());
-    expect(puts()).toHaveLength(1); expect(element.textContent).toContain("Could not confirm submission");
+    expect(puts()).toHaveLength(1); expect(document.body.textContent).toContain("Could not confirm submission");
     expect(fetchMock.mock.calls.some(([url, init]) => url.endsWith("/submission") && init?.method === "POST")).toBe(false);
   });
   it("ignores a late PUT from the previous generation and keeps the next submission busy", async () => {
@@ -153,7 +153,7 @@ describe("generated pet public URL and moderation", () => {
     await act(async () => button()!.click()); expect(puts()).toHaveLength(2);
     await act(async () => finishOld(response({ submission: receipt }, 201)));
     expect(input().value).toBe("other"); expect(input().readOnly).toBe(false);
-    expect(button()?.disabled).toBe(true); expect(element.textContent).not.toContain("Sent for review");
+    expect(button()?.disabled).toBe(true); expect(document.body.textContent).not.toContain("Sent for review");
     await act(async () => finishNext(response({ submission: { ...receipt, petId: "pet_other", slug: "other" } }, 201)));
     expect(input().value).toBe("other"); expect(input().readOnly).toBe(true);
   });
@@ -166,7 +166,7 @@ describe("generated pet public URL and moderation", () => {
     await act(async () => root.render(<ThemeProvider theme="light"><GeneratedPetPreview generationId={nextId} /></ThemeProvider>));
     await act(async () => finishOldJson(generation(receipt)));
     expect(input().value).toBe("other"); expect(input().readOnly).toBe(false);
-    expect(element.textContent).not.toContain("Sent for review");
+    expect(document.body.textContent).not.toContain("Sent for review");
   });
   it("requires manual entry when the name cannot provide an ASCII slug and rejects invalid input", async () => {
     fetchMock.mockResolvedValueOnce(response(generation(undefined, "completed", "東京")));
@@ -186,7 +186,7 @@ describe("generated pet public URL and moderation", () => {
     await render(); expect(button()).toBeUndefined();
     await act(async () => root.unmount()); root = createRoot(element);
     fetchMock.mockResolvedValueOnce(response({}, 410)); await render(); expect(button()).toBeUndefined();
-    expect(element.textContent).toContain("expired");
+    expect(document.body.textContent).toContain("expired");
   });
 });
 
@@ -195,7 +195,7 @@ it("imports an explicitly opened valid private result into this browser history"
  fetchMock.mockResolvedValueOnce(response({generation:{...generation().generation,expiresAt:new Date(Date.now()+86400000).toISOString()}}));
  await render();const {readGenerationHistory}=await import("@/lib/pets/generation/history");
  expect(readGenerationHistory().entries.map(entry=>entry.generationId)).toEqual([id]);
- expect(element.querySelector('a[href="/my-generations"]')).not.toBeNull();
+ expect(document.body.querySelector('a[href="/my-generations"]')).not.toBeNull();
 });
 
 it("requires saved metadata before downloads and moderation, then forwards the new revision",async()=>{
@@ -206,11 +206,11 @@ it("requires saved metadata before downloads and moderation, then forwards the n
   if(init?.method==='PUT')return Promise.resolve(response({submission:receipt},201));
   return Promise.resolve(response({generation:{...generation().generation,metadata}}));
  });
- await render();await tick();const area=element.querySelector<HTMLTextAreaElement>('#generated-description')!;
+ await render();await tick();const area=document.body.querySelector<HTMLTextAreaElement>('#generated-description')!;
  act(()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(area,'Edited description');area.dispatchEvent(new Event('input',{bubbles:true}));});
- expect(button()?.disabled).toBe(true);expect(element.querySelector('a[href$="pet.zip"]')).toBeNull();
- await act(async()=>element.querySelector('form.generated-pet-metadata')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
- expect(button()?.disabled).toBe(false);expect(element.querySelector('a[href$="pet.zip"]')).not.toBeNull();
+ expect(button()?.disabled).toBe(true);expect(document.body.querySelector('a[href$="pet.zip"]')).toBeNull();
+ await act(async()=>document.body.querySelector('form.generated-pet-metadata')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+ expect(button()?.disabled).toBe(false);expect(document.body.querySelector('a[href$="pet.zip"]')).not.toBeNull();
  expect(fetchMock.mock.calls.filter(([url])=>url.endsWith('/metadata'))).toHaveLength(1);expect(area.value).toBe('Edited description');
 });
 
@@ -222,7 +222,7 @@ it("offers explicit reload and blocks stale metadata submission after a conflict
   return Promise.resolve(response({generation:{...generation().generation,metadata}}));
  });
  await render();await tick();await act(async()=>button()!.click());
- expect(element.textContent).toContain('Name, description or tags changed');expect(element.querySelector('a[data-metadata-reload]')).not.toBeNull();expect(button()?.disabled).toBe(true);
+ expect(document.body.textContent).toContain('Name, description or tags changed');expect(document.body.querySelector('a[data-metadata-reload]')).not.toBeNull();expect(button()?.disabled).toBe(true);
  edit('new-url');await tick();expect(button()?.disabled).toBe(true);expect(puts()).toHaveLength(1);
 });
 
@@ -234,11 +234,11 @@ it.each([false,true])("updates the heading and preserves a manually selected URL
   return Promise.resolve(response({generation:{...generation(undefined,'completed','Generated pet').generation,metadata}}));
  });
  await render();await tick();if(manualSlug)edit('my-own-url');
- const name=element.querySelector<HTMLInputElement>('#generated-name')!;
+ const name=document.body.querySelector<HTMLInputElement>('#generated-name')!;
  act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(name,'Мятня');name.dispatchEvent(new Event('input',{bubbles:true}));});
  expect(button()?.disabled).toBe(true);
- await act(async()=>element.querySelector('form.generated-pet-metadata')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
- expect(element.querySelector('h1')?.textContent).toBe('Мятня');expect(input().value).toBe(manualSlug?'my-own-url':'myatnya');await tick();expect(button()?.disabled).toBe(false);
+ await act(async()=>document.body.querySelector('form.generated-pet-metadata')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+ expect(document.body.querySelector('h1')?.textContent).toBe('Мятня');expect(input().value).toBe(manualSlug?'my-own-url':'myatnya');await tick();expect(button()?.disabled).toBe(false);
 });
 
 it("waits without polling, refreshes on focus and resumes polling after idempotent confirmation", async () => {
@@ -249,14 +249,14 @@ it("waits without polling, refreshes on focus and resumes polling after idempote
     return response({generation: confirmed ? {...waiting, status: "queued", pollAfterSeconds: 5} : waiting});
   });
   await render(); await tick(30000);
-  expect(fetchMock).toHaveBeenCalledOnce(); expect(element.querySelector('img')?.getAttribute("src")).toBe(`/api/pet-generations/${id}/base`);
-  expect(element.textContent).toContain("Confirmation does not extend");
+  expect(fetchMock).toHaveBeenCalledOnce(); expect(document.body.querySelector('img')?.getAttribute("src")).toBe(`/api/pet-generations/${id}/base`);
+  expect(document.body.textContent).toContain("Confirmation does not extend");
   await act(async () => window.dispatchEvent(new Event("focus"))); expect(fetchMock).toHaveBeenCalledTimes(2);
-  act(() => element.querySelector("img")!.dispatchEvent(new Event("load")));
-  const animate = [...element.querySelectorAll("button")].find(b => b.textContent === "Animate this character")!;
+  act(() => document.body.querySelector("img")!.dispatchEvent(new Event("load")));
+  const animate = [...document.body.querySelectorAll("button")].find(b => b.textContent === "Animate this character")!;
   await act(async () => {animate.click(); animate.click();});
   expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
-  expect(element.textContent).toContain("Waiting in the queue");
+  expect(document.body.textContent).toContain("Waiting in the queue");
   const calls = fetchMock.mock.calls.length; await tick(5000); expect(fetchMock.mock.calls.length).toBe(calls + 1);
 });
 
@@ -264,11 +264,11 @@ it("keeps base visible on queue refusal and disables confirmation at expiry", as
   const waiting = {...generation(undefined, "awaiting_confirmation").generation, expiresAt: new Date(Date.now() + 10000).toISOString()};
   fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => init?.method === "POST" ? response({code: "queue_full"}, 429) : response({generation: waiting}));
   await render();
-  act(() => element.querySelector("img")!.dispatchEvent(new Event("load")));
-  await act(async () => [...element.querySelectorAll("button")].find(b => b.textContent === "Animate this character")!.click());
-  expect(element.textContent).toContain("Your character is saved"); expect(element.querySelector("img")).not.toBeNull();
-  await tick(10001); expect(element.textContent).toContain("This generation has expired");
-  expect([...element.querySelectorAll("button")].some(b => b.textContent === "Animate this character")).toBe(false);
+  act(() => document.body.querySelector("img")!.dispatchEvent(new Event("load")));
+  await act(async () => [...document.body.querySelectorAll("button")].find(b => b.textContent === "Animate this character")!.click());
+  expect(document.body.textContent).toContain("Your character is saved"); expect(document.body.querySelector("img")).not.toBeNull();
+  await tick(10001); expect(document.body.textContent).toContain("This generation has expired");
+  expect([...document.body.querySelectorAll("button")].some(b => b.textContent === "Animate this character")).toBe(false);
 });
 
 it("keeps polling after a successful confirmation when the immediate status read fails", async () => {
@@ -280,11 +280,11 @@ it("keeps polling after a successful confirmation when the immediate status read
     if (failedReads++ === 0) return response({code: "generation_unavailable"}, 503);
     return response(generation());
   });
-  await render(); act(() => element.querySelector("img")!.dispatchEvent(new Event("load")));
-  await act(async () => [...element.querySelectorAll("button")].find(b => b.textContent === "Animate this character")!.click());
+  await render(); act(() => document.body.querySelector("img")!.dispatchEvent(new Event("load")));
+  await act(async () => [...document.body.querySelectorAll("button")].find(b => b.textContent === "Animate this character")!.click());
   await tick(5000);
-  expect(element.textContent).toContain("Your pet is ready");
-  expect(element.textContent).not.toContain("Animation requested. Refreshing progress");
+  expect(document.body.textContent).toContain("Ready");
+  expect(document.body.textContent).not.toContain("Animation requested. Refreshing progress");
   expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
 });
 
@@ -292,15 +292,15 @@ it("keeps a completed candidate private until another tab accepts it, refreshing
   const candidate={...generation().generation,expiresAt:new Date(Date.now()+86400000).toISOString(),animationRevision:{sourceGenerationId:"b".repeat(64),selectedStates:["idle"],corrections:{idle:["Tilt only"]},beforeSpritesheetUrl:"/before.webp"}};
   fetchMock.mockResolvedValue(response({generation:candidate}));
   await render(); await tick(5000);
-  expect(element.textContent).toContain("Проверьте новую версию");
-  expect(element.textContent).toContain("Tilt only");
-  expect(element.querySelector('a[href$="pet.zip"]')).toBeNull();expect(button()).toBeUndefined();
+  expect(document.body.textContent).toContain("Проверьте новую версию");
+  expect(document.body.textContent).toContain("Tilt only");
+  expect(document.body.querySelector('a[href$="pet.zip"]')).toBeNull();expect(button()).toBeUndefined();
   expect(fetchMock).toHaveBeenCalledTimes(1);
   fetchMock.mockResolvedValue(response({generation:{...candidate,animationRevision:{...candidate.animationRevision,acceptedAt:Date.now()}}}));
   await act(async()=>window.dispatchEvent(new Event("focus")));
-  expect(element.textContent).not.toContain("Проверьте новую версию");
-  expect(element.textContent).toContain("Tilt only");
-  expect(element.querySelector('a[href$="pet.zip"]')).not.toBeNull();expect(button()).toBeDefined();
+  expect(document.body.textContent).not.toContain("Проверьте новую версию");
+  expect(document.body.textContent).toContain("Tilt only");
+  expect(document.body.querySelector('a[href$="pet.zip"]')).not.toBeNull();expect(button()).toBeDefined();
 });
 
 it.each([404, 410])("disables stale candidate acceptance when status refresh returns %i", async status => {
@@ -308,12 +308,65 @@ it.each([404, 410])("disables stale candidate acceptance when status refresh ret
   let unavailable = false;
   fetchMock.mockImplementation(async () => unavailable ? response({code: status === 410 ? "generation_expired" : "not_found"}, status) : response({generation: candidate}));
   await render();
-  const accept = () => [...element.querySelectorAll("button")].find(button => button.textContent === "Принять новую версию")!;
+  const accept = () => [...document.body.querySelectorAll("button")].find(button => button.textContent === "Принять новую версию")!;
   expect(accept().disabled).toBe(false);
   unavailable = true;
   await act(async () => window.dispatchEvent(new Event("focus")));
-  expect(element.textContent).toContain("has expired");
+  expect(document.body.textContent).toContain("has expired");
   expect(accept().disabled).toBe(true);
   await act(async () => accept().click());
   expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+});
+
+it("keeps metadata drafts and gates while panels close, resize and polling refreshes", async () => {
+  const metadata = { displayName: "Demo", description: "Original", tags: ["blue"], revision: 0, editable: true, automaticState: "completed", edited: false };
+  fetchMock.mockImplementation((url, init) => url.endsWith("/slug-check") ? defaultFetch(url, init) : Promise.resolve(response({ generation: { ...generation(undefined, "completed", "Demo", 1).generation, metadata } })));
+  await render(); await tick();
+  const click = async (label: string) => act(async () => [...document.body.querySelectorAll("button")].find(b => b.textContent?.includes(label))!.click());
+  await click("Name, description & tags");
+  const name = document.querySelector<HTMLInputElement>("#generated-name")!;
+  await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(name, "Unsaved"); name.dispatchEvent(new Event("input", { bubbles: true })); });
+  expect(document.querySelector('a[href$="pet.zip"]')).toBeNull();
+  await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Close metadata panel"]')!.click());
+  await act(async () => window.dispatchEvent(new Event("resize"))); await tick(1000);
+  await click("Prepare gallery submission"); expect(button()?.disabled).toBe(true);
+  await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Close publication panel"]')!.click());
+  await click("Name, description & tags");
+  expect(document.querySelector("#generated-name")).toBe(name); expect(name.value).toBe("Unsaved");
+  expect(puts()).toHaveLength(0);
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST").every(([url]) => url.endsWith("/slug-check"))).toBe(true);
+});
+
+it("keeps instructions escaped and source and previous versions distinct in details", async () => {
+  const source = "b".repeat(64), previous = "c".repeat(64);
+  const prompt = "Move slowly\n<script>example</script>";
+  fetchMock.mockImplementation((url, init) => url.endsWith("/slug-check") ? defaultFetch(url, init) : Promise.resolve(response({ generation: { ...generation().generation, baseConfirmed: true, animationPrompt: prompt, continuation: { mode: "regenerate", sourceGenerationId: source } } })));
+  await act(async () => root.render(<ThemeProvider theme="light"><GeneratedPetPreview generationId={id} previousGenerationId={previous} /></ThemeProvider>));
+  await act(async () => [...document.querySelectorAll("button")].find(b => b.textContent?.startsWith("Generation details"))!.click());
+  const details = document.querySelector('[role="dialog"][aria-label="Generation details"]')!;
+  expect(details.textContent).toContain(prompt); expect(details.querySelector("script")).toBeNull();
+  expect(details.querySelector(`a[href="/generated/${source}"]`)?.textContent).toBe("Исходное задание");
+  expect(details.querySelector(`a[href="/generated/${previous}"]`)?.textContent).toBe("Open previous version");
+  expect(puts()).toHaveLength(0);
+});
+
+it("keeps an in-flight saved animation recovery alive when the initial read becomes ready", async () => {
+  const requestId = "11111111-1111-4111-8111-111111111111";
+  sessionStorage.setItem(`pets-animation-revision-v1:${id}`, JSON.stringify({requestId, states:["idle"], sourceMetadataRevision:0, hash:"d".repeat(64), expiresAt:Date.now()+86400000}));
+  let finishStatus!: (value: unknown) => void, finishRecovery!: (value: unknown) => void;
+  fetchMock.mockImplementation((url, init) => {
+    if (url.includes("/animation-revisions?")) return new Promise(resolve => {finishRecovery = resolve;});
+    if (url.endsWith(id)) return new Promise(resolve => {finishStatus = resolve;});
+    return defaultFetch(url, init);
+  });
+  await render();
+  await act(async () => [...document.querySelectorAll("button")].find(b => b.textContent === "Проверить отправленную версию")!.click());
+  const recovery = fetchMock.mock.calls.find(([url]) => url.includes("/animation-revisions?"))!;
+  expect(recovery[1].signal.aborted).toBe(false);
+  await act(async () => finishStatus(response(generation())));
+  expect(recovery[1].signal.aborted).toBe(false);
+  await act(async () => finishRecovery(response({generation:{generationId:"b".repeat(64),expiresAt:new Date(Date.now()+86400000).toISOString()}})));
+  expect(document.querySelector(`a[href="/generated/${"b".repeat(64)}"]`)?.textContent).toBe("Открыть новую версию");
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+  expect(sessionStorage.getItem(`pets-animation-revision-v1:${id}`)).toBeNull();
 });
