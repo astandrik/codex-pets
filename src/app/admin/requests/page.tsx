@@ -1,4 +1,7 @@
 import type { Metadata } from "next";
+import { notFound, redirect } from "next/navigation";
+import { AdminQueuePagination, adminQueueHref } from "@/components/AdminQueuePagination/AdminQueuePagination";
+import { parseCatalogPage } from "@/lib/pets/pagination";
 
 import {
   Button,
@@ -39,10 +42,20 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function AdminRequestsPage() {
+type PageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function AdminRequestsPage({ searchParams }: PageProps) {
   const principal = await getCurrentPrincipal();
   const isAdmin = isAdminUser(principal);
-  const requests = isAdmin ? await listGenerationRequests() : [];
+  const parsed = isAdmin ? parseCatalogPage(await searchParams) : { ok: true as const, page: 1 };
+  if (!parsed.ok) notFound();
+  const queue = isAdmin ? await listGenerationRequests(parsed.page) : null;
+  if (queue && queue.pagination.page !== parsed.page) {
+    redirect(adminQueueHref("/admin/requests", queue.pagination.page));
+  }
+  const requests = queue?.items ?? [];
   const rows: GenerationRequestRow[] = requests.map((request) => ({
     id: request.id,
     status: request.status,
@@ -71,6 +84,13 @@ export default async function AdminRequestsPage() {
         </Text>
       </Flex>
 
+      {queue ? (
+        <AdminQueuePagination
+          pagination={queue.pagination}
+          pathname="/admin/requests"
+          itemLabel="requests"
+        />
+      ) : null}
       <section className="page-section">
         {!principal ? (
           <PlaceholderContainer

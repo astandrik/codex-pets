@@ -129,11 +129,6 @@ export function SubmissionsTable({ rows }: SubmissionsTableProps) {
 
   return (
     <Flex direction="column" gap={3} className="submissions-table">
-      <Flex justifyContent="flex-end">
-        <Text variant="caption-2" color="secondary">
-          {rows.length} pending {rows.length === 1 ? "row" : "rows"}
-        </Text>
-      </Flex>
       <Table
         getRowId="id"
         data={rows}
