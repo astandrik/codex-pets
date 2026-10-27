@@ -24,7 +24,7 @@ export function GeneratedPetResult(props: GeneratedPetResultProps) {
   const ready = props.ready ?? true;
   const close = () => setOpenPanel(null);
   return <div className={ready ? "generated-pet-result" : undefined}>
-    <StatePreview petJsonUrl={props.petJsonUrl} spritesheetUrl={props.spritesheetUrl} layout="generation" active={ready} slots={{
+    <StatePreview petJsonUrl={props.petJsonUrl} spritesheetUrl={props.spritesheetUrl} layout="generation" active={ready} playbackSuspended={openPanel !== null} slots={{
       afterStage: <div className="generated-pet-result__download">{props.downloads}</div>,
       sidePanel: <>
         {ready && props.metadataEditor && <button type="button" className="generated-pet-result__panel-trigger" onClick={() => setOpenPanel("metadata")}>

@@ -370,3 +370,20 @@ it("keeps an in-flight saved animation recovery alive when the initial read beco
   expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
   expect(sessionStorage.getItem(`pets-animation-revision-v1:${id}`)).toBeNull();
 });
+
+it("does not create request identities or extra requests when result panels and viewport change", async () => {
+  const metadata = {displayName:"Demo",description:"Original",tags:[],revision:0,editable:true,automaticState:"completed",edited:false};
+  fetchMock.mockImplementation((url, init) => url.endsWith("/slug-check") ? defaultFetch(url, init) : Promise.resolve(response({generation:{...generation().generation,metadata,baseConfirmed:true,animationPrompt:"Wave slowly"}})));
+  const uuid = vi.spyOn(crypto, "randomUUID"), storage = vi.spyOn(Storage.prototype, "setItem");
+  try {
+    await render(); await tick(); const baseline = fetchMock.mock.calls.length; const initialIds = uuid.mock.calls.length, initialWrites = storage.mock.calls.length;
+    for (const [open, close] of [["Name, description & tags", "Close metadata panel"], ["Prepare gallery submission", "Close publication panel"], ["Generation details", "Close details panel"]]) {
+      await act(async () => [...document.querySelectorAll("button")].find(node => node.textContent?.startsWith(open))!.click());
+      await act(async () => document.querySelector<HTMLButtonElement>(`[aria-label="${close}"]`)!.click());
+      await tick();
+    }
+    await act(async () => window.dispatchEvent(new Event("resize")));
+    expect(fetchMock.mock.calls).toHaveLength(baseline);
+    expect(uuid).toHaveBeenCalledTimes(initialIds); expect(storage).toHaveBeenCalledTimes(initialWrites);
+  } finally {uuid.mockRestore(); storage.mockRestore();}
+});
