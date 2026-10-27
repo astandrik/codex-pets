@@ -1,88 +1,17 @@
 .footer {
-  margin-top: var(--spacing-5xl);
-  padding-block: var(--spacing-3xl);
-  border-top: 1px solid rgba(255, 255, 255, 0.14);
-
-  &__content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--spacing-md);
-  }
-
-  &__note {
-    order: 2;
-    text-align: center;
-  }
-
-  &__credits {
-    order: 1;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-sm) var(--spacing-3xl);
-    color: var(--g-color-text-secondary);
-    font-size: 14px;
-    line-height: 1.5;
-  }
-
-  &__credit {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    white-space: nowrap;
-  }
-
-  &__credit-label {
-    color: var(--g-color-text-secondary);
-  }
-
-  &__link {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-xs);
-    color: var(--g-color-text-link);
-    text-decoration: none;
-    font-size: 14px;
-
-    &:hover {
-      color: var(--g-color-text-link-hover);
-    }
-  }
-
-  &__icon {
-    display: block;
-  }
-
-  &__icon--ydb {
-    object-fit: cover;
-    object-position: left center;
-  }
-
-  &__learn {
-    order: 3;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--spacing-sm);
-  }
-
-  &__learn-title {
-    color: var(--g-color-text-secondary);
-    font-size: 14px;
-    font-weight: 600;
-  }
-
-  &__learn-links,
-  &__links {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: var(--spacing-md);
-  }
-
-  &__links {
-    order: 4;
-  }
+  padding: 32px;
+  color: var(--g-color-text-secondary);
+  &__content { display: flex; flex-direction: column; gap: 8px; }
+  &__note { font-size: 12px; }
+  &__resources summary { width: fit-content; min-height: 44px; padding-block: 10px; cursor: pointer; font-size: 13px; }
+  &__resources[open] { padding-bottom: 16px; }
+  &__credits, &__links, &__learn-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; margin-top: 16px; }
+  &__credit, &__link { display: inline-flex; align-items: center; gap: 8px; }
+  &__link { min-height: 32px; color: inherit; text-decoration: none; font-size: 13px; &:hover { text-decoration: underline; } }
+  &__credit-label { font-size: 12px; }
+  &__icon { flex-shrink: 0; object-fit: contain; }
+  &__learn { margin-top: 24px; }
+  &__learn-title { font-size: 13px; font-weight: 600; }
+  @media (max-width: 767px) { padding: 20px; }
 }
+.g-container.footer { max-width: 1280px; }

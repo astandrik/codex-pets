@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Button, Flex, Label } from "@/components/GravityUI/GravityUI";
-import { Plus, Star } from "@gravity-ui/icons";
-
+import { useEffect, useState } from "react";
+import { Button, Dialog, Label } from "@gravity-ui/uikit";
 import { withBasePath } from "@/lib/base-path";
+import { LEARN_LINKS, DOCUMENTATION_LINKS, GRAVITY_UI_URL, YDB_URL } from "@/components/SiteNavigation/navigation-links";
 
 type HeaderNavResponse = {
   principal: {
@@ -23,7 +23,10 @@ type HeaderNavResponse = {
 export function AppHeaderNav() {
   const [data, setData] = useState<HeaderNavResponse | null>(null);
   const pathname = usePathname();
-
+  const [menu, setMenu] = useState({ pathname, open: false });
+  if (menu.pathname !== pathname) setMenu({ pathname, open: false });
+  const open = menu.pathname === pathname && menu.open;
+  const close = () => setMenu({ pathname, open: false });
   useEffect(() => {
     const controller = new AbortController();
 
@@ -60,261 +63,36 @@ export function AppHeaderNav() {
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`);
 
-  const linkProps = (href: string, extraClassName?: string) => {
-    const active = isActive(href);
-    const activeClassName = active ? " app-header__link_active" : "";
-    const extraClass = extraClassName ? ` ${extraClassName}` : "";
 
-    return {
-      className: `app-header__link${activeClassName}${extraClass}`,
-      "aria-current": active ? "page" : undefined,
-    } as const;
-  };
-
-  const menuItemProps = (href: string) => {
-    const active = isActive(href);
-    return {
-      className: `app-header__menu-item${active ? " app-header__menu-item_active" : ""}`,
-      "aria-current": active ? "page" : undefined,
-    } as const;
-  };
-
-  return (
-    <Flex
-      as="nav"
-      alignItems="center"
-      gap={2}
-      wrap
-      aria-label="Primary"
-      className="app-header__nav"
-    >
-      <ul className="app-header__links">
-        <li>
-          <Link href="/" prefetch={false} {...linkProps("/")}>
-            Gallery
-          </Link>
-        </li>
-        <li>
-          <Link href="/about" prefetch={false} {...linkProps("/about")}>
-            About
-          </Link>
-        </li>
-        <li>
-          <Link href="/agents" prefetch={false} {...linkProps("/agents")}>
-            Agents
-          </Link>
-        </li>
-        <li>
-          <Link href="/developers" prefetch={false} {...linkProps("/developers")}>
-            Developers
-          </Link>
-        </li>
-        <li><a href={withBasePath("/my-generations")} {...linkProps("/my-generations")}>My generations</a></li>
-        {principal ? (
-          <li>
-            <HeaderMenu
-              label="My"
-              isActive={
-                isActive("/profile") ||
-                isActive("/my-pets") ||
-                isActive("/my-requests")
-              }
-            >
-              <Link
-                href="/profile"
-                prefetch={false}
-                {...menuItemProps("/profile")}
-              >
-                Profile
-              </Link>
-              <Link
-                href="/my-pets"
-                prefetch={false}
-                {...menuItemProps("/my-pets")}
-              >
-                My pets
-              </Link>
-              <Link
-                href="/my-requests"
-                prefetch={false}
-                {...menuItemProps("/my-requests")}
-              >
-                My requests
-              </Link>
-            </HeaderMenu>
-          </li>
-        ) : null}
-        {principal && isAdmin ? (
-          <li>
-            <HeaderMenu
-              label="Admin"
-              isActive={
-                isActive("/admin/submissions") || isActive("/admin/requests") || isActive("/admin/generation-limits")
-              }
-              badge={
-                pendingReviewCount + openRequestCount > 0
-                  ? pendingReviewCount + openRequestCount
-                  : null
-              }
-            >
-              <Link
-                href="/admin/submissions"
-                prefetch={false}
-                {...menuItemProps("/admin/submissions")}
-              >
-                <span>Review</span>
-                <Label
-                  theme={pendingReviewCount > 0 ? "warning" : "unknown"}
-                  size="s"
-                >
-                  {pendingReviewCount}
-                </Label>
-              </Link>
-              <Link
-                href="/admin/requests"
-                prefetch={false}
-                {...menuItemProps("/admin/requests")}
-              >
-                <span>Requests</span>
-                <Label
-                  theme={openRequestCount > 0 ? "warning" : "unknown"}
-                  size="s"
-                >
-                  {openRequestCount}
-                </Label>
-              </Link>
-              <Link href="/admin/generation-limits" prefetch={false} {...menuItemProps("/admin/generation-limits")}>
-                Generation limits
-              </Link>
-            </HeaderMenu>
-          </li>
-        ) : null}
-      </ul>
-
-      <span className="app-header__divider" aria-hidden="true" />
-
-      <div className="app-header__actions">
-        {principal ? (
-          <>
-            <Link
-              href={principal.profileSlug ? `/users/${principal.profileSlug}` : "/profile"}
-              prefetch={false}
-              className="app-header__user"
-              title={principal.email ?? undefined}
-            >
-              <span className="app-header__user-avatar" aria-hidden="true">
-                {(principal.name ?? principal.email ?? "?")
-                  .trim()
-                  .charAt(0)
-                  .toUpperCase()}
-              </span>
-              <span className="app-header__user-name">
-                {principal.name ?? principal.email ?? "Account"}
-              </span>
-            </Link>
-            <a href={withBasePath("/logout")} className="app-header__link">
-              Logout
-            </a>
-          </>
-        ) : (
-          <>
-            <Link
-              href="/login"
-              prefetch={false}
-              {...linkProps("/login")}
-            >
-              Login
-            </Link>
-            <Link
-              href="/register"
-              prefetch={false}
-              {...linkProps("/register")}
-            >
-              Register
-            </Link>
-          </>
-        )}
-        <Button view="action" size="m" href={withBasePath("/generate")} aria-current={isActive("/generate") ? "page" : undefined}>
-          <Button.Icon><Star /></Button.Icon>
-          Generate a pet
-        </Button>
-        <Button view="outlined" size="m" href={withBasePath("/request")}>
-          Request
-        </Button>
-        <Button view="outlined" size="m" href={withBasePath("/submit")}>
-          <Button.Icon>
-            <Plus />
-          </Button.Icon>
-          Submit
-        </Button>
-      </div>
-    </Flex>
-  );
-}
-
-type HeaderMenuProps = {
-  label: string;
-  isActive: boolean;
-  badge?: number | null;
-  children: ReactNode;
-};
-
-function HeaderMenu({ label, isActive, badge, children }: HeaderMenuProps) {
-  const [open, setOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const handlePointer = (event: MouseEvent) => {
-      if (!wrapperRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-
-    document.addEventListener("mousedown", handlePointer);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("mousedown", handlePointer);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [open]);
-
-  const triggerClass = `app-header__link app-header__menu-trigger${
-    isActive ? " app-header__link_active" : ""
-  }${open ? " app-header__menu-trigger_open" : ""}`;
-
-  return (
-    <div className="app-header__menu" ref={wrapperRef}>
-      <button
-        type="button"
-        className={triggerClass}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <span>{label}</span>
-        {badge != null ? (
-          <Label theme="warning" size="s">
-            {badge}
-          </Label>
-        ) : null}
-        <span className="app-header__menu-caret" aria-hidden="true">
-          ▾
-        </span>
-      </button>
-      {open ? (
-        <div
-          className="app-header__menu-popover"
-          role="menu"
-          onClick={() => setOpen(false)}
-        >
-          {children}
-        </div>
-      ) : null}
-    </div>
-  );
+  function link(href: string, label: string, badge?: number) {
+    const className = `app-header__menu-item${isActive(href) ? " app-header__menu-item_active" : ""}`;
+    const content = <><span>{label}</span>{badge !== undefined && <Label theme={badge > 0 ? "warning" : "unknown"} size="s">{badge}</Label>}</>;
+    return href === "/my-generations" ? <a key={`${href}:${label}`} href={withBasePath(href)} className={className} aria-current={isActive(href) ? "page" : undefined} onClick={close}>{content}</a>
+      : <Link key={`${href}:${label}`} href={href} prefetch={false} className={className} aria-current={isActive(href) ? "page" : undefined} onClick={close}>{content}</Link>;
+  }
+  return <nav aria-label="Primary" className="app-header__nav">
+    <div className="app-header__primary-links">{link("/", "Gallery")}{link("/generate", "Generate")}{link("/my-generations", "My generations")}</div>
+    <Button type="button" size="xl" view="outlined" className="app-header__menu-trigger" aria-haspopup="dialog" aria-expanded={open} onClick={() => setMenu({ pathname, open: true })}>
+      Menu{isAdmin && pendingReviewCount + openRequestCount > 0 && <Label theme="warning" size="s">{pendingReviewCount + openRequestCount}</Label>}
+    </Button>
+    <Dialog open={open} onClose={close} returnFocus contentOverflow="auto" size="m" className="app-header__menu-dialog" aria-label="Menu" hasCloseButton={false}>
+      <Dialog.Header caption="Menu" as="h1" className="app-header__menu-heading" insertAfter={<Button type="button" view="flat" size="xl" aria-label="Close menu" onClick={close}><Image src={withBasePath("/assets/s09-close.svg")} width={16} height={16} alt="" unoptimized /></Button>} />
+      <Dialog.Body>
+        <section><h2>Explore</h2>{link("/", "Gallery")}{link("/about", "About")}{link("/agents", "Agents")}{link("/developers", "Developers")}</section>
+        <section><h2>Create</h2>{link("/generate", "Generate a pet")}{link("/request", "Request a pet")}{link("/submit", "Submit a pet")}</section>
+        <section><h2>Your account</h2>
+          {principal ? <>
+            <p className="app-header__identity" title={principal.email ?? undefined}>{principal.name ?? principal.email ?? "Account"}</p>
+            {link(principal.profileSlug ? `/users/${principal.profileSlug}` : "/profile", "Public profile")}
+            {link("/profile", "Profile settings")}{link("/my-pets", "My pets")}{link("/my-requests", "My requests")}
+          </> : <>{link("/login", "Login")}{link("/register", "Register")}</>}
+          {link("/my-generations", "My generations")}
+          {principal && <a className="app-header__menu-item" href={withBasePath("/logout")}>Logout</a>}
+        </section>
+        {isAdmin && <section><h2>Admin</h2>{link("/admin/submissions", "Review submissions", pendingReviewCount)}{link("/admin/requests", "Generation requests", openRequestCount)}{link("/admin/generation-limits", "Generation limits")}</section>}
+        <section><h2>Learn &amp; resources</h2>{LEARN_LINKS.map(({href, label}) => link(href, label))}{DOCUMENTATION_LINKS.map(({href, label}) => link(href, label))}</section>
+        <section><h2>Created with</h2><a className="app-header__menu-item" href={GRAVITY_UI_URL} target="_blank" rel="noopener noreferrer">Gravity UI</a><a className="app-header__menu-item" href={YDB_URL} target="_blank" rel="noopener noreferrer">YDB</a></section>
+      </Dialog.Body>
+    </Dialog>
+  </nav>;
 }

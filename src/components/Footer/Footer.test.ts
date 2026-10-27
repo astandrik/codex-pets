@@ -48,3 +48,14 @@ describe("Footer Learn navigation", () => {
     expect(links.every(({ href }) => !href?.endsWith(".md"))).toBe(true);
   });
 });
+
+it("keeps resources inside a native disclosure in server HTML", () => {
+  const container = document.createElement("div");
+  container.innerHTML = renderToStaticMarkup(Footer());
+  const details = container.querySelector("details");
+  expect(details?.hasAttribute("open")).toBe(false);
+  expect(details?.querySelector("summary")?.textContent).toBe("Guides, developers & API");
+  for (const href of ["/about", "/developers", "/docs/api", "/openapi.json", "/llms-full.txt", "/api/manifest", "https://github.com/gravity-ui/uikit", "https://ydb.tech/"]) {
+    expect(details?.querySelector(`a[href="${href}"]`)).not.toBeNull();
+  }
+});
