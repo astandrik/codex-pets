@@ -25,7 +25,7 @@ describe("generation form payment guard",()=>{
   });
   it("does not submit empty/disabled forms and advertises its limits",async()=>{
     act(()=>root.render(<ThemeProvider theme="light"><PetGenerationForm enabled={false}/></ThemeProvider>));
-    await submit();expect(fetchMock).not.toHaveBeenCalled();expect(element.querySelector("textarea")?.disabled).toBe(true);expect(element.querySelector("textarea")?.disabled).toBe(true);
+    await submit();expect(fetchMock).not.toHaveBeenCalled();expect(element.querySelector("textarea")?.disabled).toBe(true);
     expect(element.textContent).toContain("Experimental feature");
     expect(element.textContent).toContain("animations and gaze directions may contain visual errors");
   });
