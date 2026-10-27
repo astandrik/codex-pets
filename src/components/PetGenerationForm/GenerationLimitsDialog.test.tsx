@@ -23,3 +23,24 @@ it('shows short and full conditions without network calls and returns focus on E
     expect(fetch).not.toHaveBeenCalled();
   } finally {await act(async()=>root.unmount());host.remove();trigger.remove();vi.unstubAllGlobals();}
 });
+
+it('locks page scroll only while the retained dialog is open', async () => {
+  const host = document.createElement('div'); document.body.append(host); const root = createRoot(host);
+  const close = vi.fn();
+  window.matchMedia ??= (() => ({matches:false,addEventListener(){},removeEventListener(){}})) as unknown as typeof window.matchMedia;
+  const render = async (open: boolean) => act(async () => root.render(<ThemeProvider theme="light"><GenerationLimitsDialog open={open} onClose={close} reviewBase/></ThemeProvider>));
+  try {
+    await render(false);
+    expect(document.body.style.overflow).not.toBe('hidden');
+    await render(true);
+    expect(document.body.style.overflow).toBe('hidden');
+    await act(async () => [...document.querySelectorAll('button')].find(button => button.textContent === 'Full details')!.click());
+    await render(false);
+    expect(document.body.style.overflow).not.toBe('hidden');
+    expect(document.getElementById('generation-limits-title')).not.toBeNull();
+    await render(true);
+    expect(document.body.style.overflow).toBe('hidden');
+    expect(document.getElementById('generation-limits-title')?.textContent).toBe('Generation details & privacy');
+  } finally {await act(async () => root.unmount());host.remove();}
+  expect(document.body.style.overflow).not.toBe('hidden');
+});

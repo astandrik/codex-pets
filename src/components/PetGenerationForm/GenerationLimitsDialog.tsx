@@ -19,7 +19,7 @@ export function GenerationLimitsDialog({ open, onClose, reviewBase }: {
     heading.current?.focus({preventScroll: true});
     body.current?.scrollTo?.({top: 0});
   }
-  return <Dialog open={open} onClose={onClose} returnFocus keepMounted contentOverflow="auto" size="m" className="generation-limits-dialog" aria-labelledby="generation-limits-title">
+  return <Dialog open={open} onClose={onClose} disableBodyScrollLock={!open} returnFocus keepMounted contentOverflow="auto" size="m" className="generation-limits-dialog" aria-labelledby="generation-limits-title">
     <Dialog.Header caption={<h2 ref={heading} tabIndex={-1} id="generation-limits-title">{full ? "Generation details & privacy" : "Before you create"}</h2>} />
     <div ref={body} className="generation-limits-dialog__body">
       <p>Generation is funded by this service. No account is needed.</p>
