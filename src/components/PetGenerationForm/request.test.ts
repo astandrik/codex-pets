@@ -105,3 +105,11 @@ it("retains a refinement identity for delayed acceptance without sliding its dea
   expect(await hasPendingRefinement(store, brief.sourceBaseId, start + 2 * day - 1)).toBe(true);
   expect(await hasPendingRefinement(store, brief.sourceBaseId, start + 2 * day)).toBe(false);
 });
+
+
+it('changes identity for name-only edits but not for renamed files with identical bytes', async () => {
+  vi.stubGlobal('crypto',webcrypto); const store=storage();
+  const first=await prepareGenerationRequest(store,{prompt:'Fox',displayName:'First',referenceImage:new Blob(['same'])});
+  expect((await prepareGenerationRequest(store,{prompt:'Fox',displayName:'First',referenceImage:new File(['same'],'other.png')})).requestId).toBe(first.requestId);
+  expect((await prepareGenerationRequest(store,{prompt:'Fox',displayName:'Second',referenceImage:new Blob(['same'])})).requestId).not.toBe(first.requestId);
+});
