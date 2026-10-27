@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { ThemeProvider } from "@gravity-ui/uikit";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { GeneratedPetResult } from "./GeneratedPetResult";
-vi.mock("@/components/StatePreview/StatePreview", () => ({ StatePreview: ({ slots }: { slots: { afterStage: ReactNode; sidePanel: ReactNode; afterControls: ReactNode } }) => <div>{slots.afterStage}{slots.sidePanel}{slots.afterControls}</div> }));
+vi.mock("@/components/StatePreview/StatePreview", () => ({ StatePreview: ({ slots, playbackSuspended }: { playbackSuspended: boolean; slots: { afterStage: ReactNode; sidePanel: ReactNode; afterControls: ReactNode } }) => <div data-playback-suspended={playbackSuspended}>{slots.afterStage}{slots.sidePanel}{slots.afterControls}</div> }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 window.matchMedia ??= ((query: string) => ({ matches: false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as typeof window.matchMedia;
 let root: Root, element: HTMLDivElement;
@@ -34,6 +34,14 @@ it("opens publication and details without submitting work", async () => {
   await act(async () => button("Generation details").click());
   expect(document.querySelector('[role="dialog"][aria-label="Generation details"]')?.textContent).toContain("Saved instructions");
   expect(mutation).not.toHaveBeenCalled();
+});
+
+it("suspends playback only while a result panel is open", async () => {
+  await render(); expect(element.querySelector('[data-playback-suspended="false"]')).not.toBeNull();
+  await act(async () => button("Generation details").click());
+  expect(element.querySelector('[data-playback-suspended="true"]')).not.toBeNull();
+  await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Close details panel"]')!.click());
+  expect(element.querySelector('[data-playback-suspended="false"]')).not.toBeNull();
 });
 
 it("does not let closed retained panels block scrolling", async () => {

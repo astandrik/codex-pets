@@ -22,20 +22,20 @@ async function render(hideControls = false) {
   await act(async () => root.render(<ThemeProvider theme="light"><StatePreview petJsonUrl="/pet.json" spritesheetUrl="/sprite.webp" layout="generation" hideControls={hideControls} slots={{ afterStage: <a href="/pet.zip">Download ZIP</a>, sidePanel: <div>Metadata actions</div>, afterControls: <div>Generation details</div> }} /></ThemeProvider>));
 }
 const button = (name: string) => [...document.body.querySelectorAll("button")].find(b => b.textContent?.includes(name))!;
-it("orders a single preview, downloads, controls, actions and details", async () => {
+it("orders one overview, downloads, gaze, actions and details", async () => {
   await render();
   const sections = [...element.querySelector(".state-preview")!.children];
   expect(sections.map(node => node.className)).toEqual(["state-preview__stage", "state-preview__downloads", "state-preview__generation-controls", "state-preview__actions", "state-preview__details"]);
-  expect(element.querySelectorAll(".state-preview__sprite")).toHaveLength(1);
-  expect(element.querySelectorAll(".state-preview__controls button")).toHaveLength(9);
-  expect(element.querySelectorAll("select option")).toHaveLength(9);
+  expect(element.querySelectorAll(".animation-overview__sprite")).toHaveLength(9);
+  expect(element.querySelectorAll(".animation-overview__card")).toHaveLength(9);
+  expect(element.querySelector("select")).toBeNull();
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
 it("pauses all sixteen gaze directions and resumes the same 140ms clock", async () => {
   await render(); await act(async () => button("Look directions").click());
   expect(document.querySelectorAll(".state-preview__directions button")).toHaveLength(16);
   await act(async () => document.querySelector<HTMLButtonElement>('.state-preview__directions button[title*="090"]')!.click());
-  const sprite = () => document.querySelector<HTMLElement>(".state-preview__sprite")!;
+  const sprite = () => document.querySelector<HTMLElement>(".state-preview__gaze-sprite")!;
   const position = sprite().style.backgroundPosition;
   await act(async () => vi.advanceTimersByTimeAsync(420));
   expect(sprite().style.backgroundPosition).toBe(position);
@@ -47,7 +47,7 @@ it("pauses all sixteen gaze directions and resumes the same 140ms clock", async 
   await act(async () => button("Look directions").click());
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
-it.each([[1, 1872], [2, 1872]])("omits gaze for declared %s and image height %s", async (declared, height) => {
+it.each([[1, 1872], [2, 1872], [2, 1000]])("omits gaze for declared %s and image height %s", async (declared, height) => {
   version = declared; imageHeight = height; await render();
   expect(button("Look directions")).toBeUndefined();
 });
@@ -65,11 +65,19 @@ it("keeps the side panel mounted while inactive without loading or playing a pre
   expect(fetchMock).toHaveBeenCalledTimes(1); expect(mounts).toBe(1);
 });
 
-it("lets the mobile chooser return directly from gaze to Idle", async () => {
+it("returns from gaze to all nine animations and opens Idle directly", async () => {
   await render(); await act(async () => button("Look directions").click());
   await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Close gaze panel"]')!.click());
-  const select = element.querySelector("select")!;
-  expect(select.value).toBe("");
-  await act(async () => { select.value = "idle"; select.dispatchEvent(new Event("change", {bubbles:true})); });
-  expect(element.querySelector('.state-preview__sprite')?.getAttribute("aria-label")).toBe("Idle preview");
+  expect(element.querySelectorAll(".animation-overview__card")).toHaveLength(9);
+  await act(async () => vi.advanceTimersByTimeAsync(300));
+  await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="Open Idle animation"]')!.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Idle");
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+it("retains a single controlled preview even in generation layout", async () => {
+  await act(async () => root.render(<ThemeProvider theme="light"><StatePreview petJsonUrl="/pet.json" spritesheetUrl="/sprite.webp" layout="generation" selectedKey="waving" frame={2}/></ThemeProvider>));
+  expect(element.querySelectorAll(".state-preview__sprite")).toHaveLength(1);
+  expect(element.querySelector(".animation-overview")).toBeNull();
+  expect(element.querySelector<HTMLElement>(".state-preview__sprite")!.style.backgroundPosition).toBe("28.57142857142857% 30%");
 });

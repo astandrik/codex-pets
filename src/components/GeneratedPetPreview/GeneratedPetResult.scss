@@ -61,3 +61,7 @@
 }
 .g-dialog.generated-pet-result__dialog { width: min(720px, calc(100vw - 40px)); max-width: 100%; }
 .g-root_theme_light .generated-pet-ready__back img { filter: brightness(0.45); }
+
+@media (max-width: 359px) {
+  .generated-pet-ready { padding-inline: 12px; }
+}

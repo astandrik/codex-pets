@@ -13,6 +13,7 @@ import {
   PET_STATES,
   type SpriteVersionNumber,
 } from "@/lib/pets/types";
+import { AnimationOverview } from "./AnimationOverview";
 import "./StatePreview.scss";
 
 type StatePreviewProps = {
@@ -23,13 +24,14 @@ type StatePreviewProps = {
   hideControls?: boolean;
   layout?: "default" | "generation";
   active?: boolean;
+  playbackSuspended?: boolean;
   slots?: { afterStage?: ReactNode; sidePanel?: ReactNode; afterControls?: ReactNode };
 };
 
 type PetStateKey = (typeof PET_STATES)[number]["key"];
 type PreviewKey = PetStateKey | "look-directions";
 
-export function StatePreview({ petJsonUrl, spritesheetUrl, selectedKey: controlledKey, frame: controlledFrame, hideControls = false, layout = "default", active = true, slots }: StatePreviewProps) {
+export function StatePreview({ petJsonUrl, spritesheetUrl, selectedKey: controlledKey, frame: controlledFrame, hideControls = false, layout = "default", active = true, playbackSuspended = false, slots }: StatePreviewProps) {
   const [localKey, setSelectedKey] = useState<PreviewKey>(
     PET_STATES[0].key,
   );
@@ -40,6 +42,7 @@ export function StatePreview({ petJsonUrl, spritesheetUrl, selectedKey: controll
   const [imageVersion, setImageVersion] =
     useState<SpriteVersionNumber | null>(null);
   const [gazeOpen, setGazeOpen] = useState(false);
+  const overview = layout === "generation" && !hideControls && controlledKey === undefined && controlledFrame === undefined;
   const selectedKey = controlledKey ?? localKey;
   const frame = controlledFrame ?? localFrame;
   const selected = useMemo(
@@ -104,11 +107,13 @@ export function StatePreview({ petJsonUrl, spritesheetUrl, selectedKey: controll
 
   useEffect(() => {
     if (!active || controlledFrame !== undefined || (isLookDirections && !lookPlaying)) return;
+    if (overview && (!gazeOpen || !isLookDirections || playbackSuspended)) return;
     const timer = window.setInterval(() => {
+      if (overview && document.hidden) return;
       setFrame((current) => (current + 1) % frameCount);
     }, 140);
     return () => window.clearInterval(timer);
-  }, [frameCount, isLookDirections, lookPlaying, controlledFrame, active]);
+  }, [frameCount, isLookDirections, lookPlaying, controlledFrame, active, overview, gazeOpen, playbackSuspended]);
 
   const x = column === 0 ? 0 : (column / (sheet.columns - 1)) * 100;
   const y = row === 0 ? 0 : (row / (sheet.rows - 1)) * 100;
@@ -147,13 +152,16 @@ export function StatePreview({ petJsonUrl, spritesheetUrl, selectedKey: controll
       ) : null;
 
   if (layout === "generation") {
-    return <section className={active ? "state-preview state-preview--generation" : undefined}>
+    return <section className={active ? `state-preview state-preview--generation${overview ? " state-preview--overview" : ""}` : undefined}>
       {active && <div className="state-preview__stage">
+        {overview ? <AnimationOverview spritesheetUrl={spritesheetUrl} sheet={sheet} suspended={playbackSuspended || gazeOpen}/> : <>
         <div className="state-preview__sprite" aria-label={`${previewLabel} preview`} style={spriteStyle} />
         <p className="state-preview__caption">{isLookDirections ? `${lookDirection?.displayDegrees} · ${lookDirection?.label}${lookPlaying ? "" : " · Paused"}` : `${selected.label} · ${selected.frames} frames`}</p>
+        </>}
       </div>}
       {active && slots?.afterStage && <div className="state-preview__downloads">{slots.afterStage}</div>}
       {active && !hideControls && <div className="state-preview__generation-controls">
+        {!overview && <>
         <label className="state-preview__chooser">Animation
           <select aria-label="Animation" value={isLookDirections ? "" : selectedKey} onChange={event => {
             const state = PET_STATES.find(item => item.key === event.target.value);
@@ -170,6 +178,7 @@ export function StatePreview({ petJsonUrl, spritesheetUrl, selectedKey: controll
             {state.label} · {state.frames} frames
           </button>)}
         </div>
+        </>}
         {spriteVersionNumber === 2 && <>
           <button type="button" className="state-preview__gaze-trigger" onClick={() => {
             if (!isLookDirections) { setSelectedKey("look-directions"); setFrame(0); setLookPlaying(true); }

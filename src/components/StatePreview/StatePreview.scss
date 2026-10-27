@@ -208,3 +208,15 @@
   .state-preview--generation .state-preview__stage { border-radius: 8px; }
   .state-preview--generation .state-preview__controls { border: 1px solid var(--line); border-radius: 8px; }
 }
+
+.state-preview--overview {
+  align-items: start;
+  .state-preview__stage { display: block; padding: 0; min-height: 0; border: 0; background: transparent; }
+  .state-preview__gaze-trigger { margin-top: 0; }
+  @media (min-width: 1024px) {
+    row-gap: 16px;
+    grid-template-areas: "stage downloads" "stage actions" "controls actions" "details actions";
+    .state-preview__downloads { margin-bottom: 0; }
+    .state-preview__details { margin-top: 0; }
+  }
+}
