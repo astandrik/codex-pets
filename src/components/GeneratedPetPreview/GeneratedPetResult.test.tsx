@@ -17,7 +17,7 @@ function Editor() {
 beforeEach(() => { mounted.mockReset(); mutation.mockReset(); element = document.createElement("div"); document.body.append(element); root = createRoot(element); });
 afterEach(async () => { await act(async () => root.unmount()); element.remove(); });
 const button = (text: string) => [...document.querySelectorAll("button")].find(node => node.textContent?.includes(text))!;
-async function render() { await act(async () => root.render(<ThemeProvider theme="light"><GeneratedPetResult petJsonUrl="/pet.json" spritesheetUrl="/sheet.webp" downloads={<a href="/pet.zip">Download ZIP</a>} metadataEditor={<Editor />} animationEditor={<div>Edit animations</div>} publicationForm={<form onSubmit={event => { event.preventDefault(); mutation(); }}><button type="submit">Submit for review</button></form>} generationDetails={<p>Saved instructions</p>} metadataBlocked={false} metadataConflict={false} submitted={false} /></ThemeProvider>)); }
+async function render(ready = true) { await act(async () => root.render(<ThemeProvider theme="light"><GeneratedPetResult ready={ready} petJsonUrl="/pet.json" spritesheetUrl="/sheet.webp" downloads={<a href="/pet.zip">Download ZIP</a>} metadataEditor={<Editor />} animationEditor={<div>Edit animations</div>} publicationForm={<form onSubmit={event => { event.preventDefault(); mutation(); }}><button type="submit">Submit for review</button></form>} generationDetails={<p>Saved instructions</p>} metadataBlocked={false} metadataConflict={false} submitted={false} /></ThemeProvider>)); }
 it("retains the same draft across closing, reopening and rerendering panels", async () => {
   await render(); await act(async () => button("Name, description & tags").click());
   const input = document.querySelector<HTMLInputElement>('[aria-label="Draft name"]')!;
@@ -42,4 +42,18 @@ it("suspends playback only while a result panel is open", async () => {
   expect(element.querySelector('[data-playback-suspended="true"]')).not.toBeNull();
   await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Close details panel"]')!.click());
   expect(element.querySelector('[data-playback-suspended="false"]')).not.toBeNull();
+});
+
+it("does not let closed retained panels block scrolling", async () => {
+  await render();
+  expect(document.body.style.overflow).not.toBe("hidden");
+  for (const [open, close] of [["Name, description & tags", "Close metadata panel"], ["Prepare gallery submission", "Close publication panel"], ["Generation details", "Close details panel"]]) {
+    await act(async () => button(open).click());
+    expect(document.body.style.overflow).toBe("hidden");
+    await act(async () => document.querySelector<HTMLButtonElement>(`[aria-label="${close}"]`)!.click());
+    expect(document.body.style.overflow).not.toBe("hidden");
+  }
+  await act(async () => button("Name, description & tags").click());
+  await render(false);
+  expect(document.body.style.overflow).not.toBe("hidden");
 });
