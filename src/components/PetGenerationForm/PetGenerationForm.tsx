@@ -27,10 +27,24 @@ const ERRORS: Record<string,string> = {
 type FormError = { kind: "image" | "server"; message: string } | { kind: "recovery"; message: string };
 type AcceptedTask = { url: string; expiresAt?: string };
 
+function transferFiles(data: DataTransfer): File[] {
+  const files = Array.from(data.files);
+  if (files.length) return files;
+  return Array.from(data.items)
+    .filter(item => item.kind === "file")
+    .map(item => item.getAsFile())
+    .filter((file): file is File => file !== null);
+}
+
+function hasFileTransfer(data: DataTransfer) {
+  return data.types.includes("Files") || Array.from(data.items).some(item => item.kind === "file");
+}
+
 export function PetGenerationForm({ enabled, reviewBase = false }: { enabled: boolean; reviewBase?: boolean }) {
   const [prompt, setPrompt] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [nameOpen, setNameOpen] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [limitsOpen, setLimitsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<FormError>();
@@ -41,6 +55,7 @@ export function PetGenerationForm({ enabled, reviewBase = false }: { enabled: bo
   const [recoveryRevision, setRecoveryRevision] = useState<number>();
   const submitting = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const dragDepth = useRef(0);
   const locked = busy || !enabled || Boolean(accepted);
   const imageError = error?.kind === "image";
   const recovering = recoveryRevision !== undefined;
@@ -49,28 +64,58 @@ export function PetGenerationForm({ enabled, reviewBase = false }: { enabled: bo
 
   function editDraft() { setDraftRevision(value => value + 1); }
   function clearImage() {
-    if (locked) return;
+    if (locked || submitting.current) return;
     setReference(undefined);
     setError(undefined);
     if (fileInput.current) fileInput.current.value = "";
     editDraft();
   }
-  function selectImage(files: FileList | null) {
-    if (locked || !files?.length) return;
+  function selectImage(inputFiles: FileList | readonly File[] | null) {
+    if (locked || submitting.current || !inputFiles?.length) return;
+    const files = Array.from(inputFiles);
+    if (fileInput.current) fileInput.current.value = "";
     editDraft();
     setReference(undefined);
     if (files.length !== 1 || !["image/png", "image/jpeg", "image/webp"].includes(files[0].type) || !files[0].size) {
-      if (fileInput.current) fileInput.current.value = "";
       setError({kind: "image", message: "Choose one PNG, JPEG or WebP image, or remove it to continue with text only."});
       return;
     }
     if (files[0].size > 5 * 1024 * 1024) {
-      if (fileInput.current) fileInput.current.value = "";
       setError({kind: "image", message: ERRORS.reference_image_too_large});
       return;
     }
     setReference({file: files[0], url: URL.createObjectURL(files[0])});
     setError(undefined);
+  }
+  function pasteImage(event: React.ClipboardEvent<HTMLFormElement>) {
+    if (!reviewBase) return;
+    const files = transferFiles(event.clipboardData);
+    if (!files.length) return;
+    event.preventDefault();
+    selectImage(files);
+  }
+  function resetDrag() { dragDepth.current = 0; setDragging(false); }
+  function enterDrag(event: React.DragEvent<HTMLFormElement>) {
+    if (!reviewBase || !hasFileTransfer(event.dataTransfer)) return;
+    event.preventDefault();
+    dragDepth.current++;
+    if (!locked && !submitting.current) setDragging(true);
+  }
+  function leaveDrag() {
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (!dragDepth.current) setDragging(false);
+  }
+  function dragOver(event: React.DragEvent<HTMLFormElement>) {
+    if (!hasFileTransfer(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = reviewBase && !locked && !submitting.current ? "copy" : "none";
+  }
+  function dropImage(event: React.DragEvent<HTMLFormElement>) {
+    resetDrag();
+    const files = transferFiles(event.dataTransfer);
+    if (!files.length && !hasFileTransfer(event.dataTransfer)) return;
+    event.preventDefault();
+    if (reviewBase) selectImage(files);
   }
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -119,7 +164,7 @@ export function PetGenerationForm({ enabled, reviewBase = false }: { enabled: bo
     </header>
     {reviewBase && !accepted && <ol className="pet-generation-screen__stages" aria-label="Generation stages"><li aria-current="step">1 Create character</li><li>2 Review</li><li>3 Animate</li></ol>}
     <div className="pet-generation-screen__columns">
-      <form onSubmit={submit} className="pet-generation-form" aria-label="Pet generation">
+      <form onSubmit={submit} onPaste={pasteImage} onDragEnter={enterDrag} onDragOver={dragOver} onDragLeave={leaveDrag} onDragEnd={resetDrag} onDrop={dropImage} className={`pet-generation-form${dragging && !locked ? " pet-generation-form--dragging" : ""}`} aria-label="Pet generation">
         {accepted ? <div className="pet-generation-form__accepted" role="status">
           <h2>Task accepted</h2>
           <p>{reviewBase ? "Follow progress and review your character before its animations are created." : "Follow progress and preview your animated pet."}</p>
@@ -136,7 +181,7 @@ export function PetGenerationForm({ enabled, reviewBase = false }: { enabled: bo
           <div className="pet-generation-form__label"><label htmlFor="pet-generation-prompt">{reference ? "What should change? (optional)" : "Describe your pet"}</label><span id="pet-generation-count" aria-live="off">{prompt.length} / 2000</span></div>
           <TextArea id="pet-generation-prompt" value={prompt} onUpdate={value => {setPrompt(value); editDraft();}} size="l" minRows={5} controlProps={{maxLength: 2000, "aria-required": !reference, "aria-describedby": "pet-generation-count"}} disabled={locked} placeholder={reference ? "Keep the glasses, but make the sweater red…" : "An orange fox with a green scarf, soft fur and a curious expression…"} />
           {reference && <p className="pet-generation-form__hint">Leave this blank to keep the appearance in your reference.</p>}
-          {reviewBase && <div className="pet-generation-form__reference" onDragOver={event => event.preventDefault()} onDrop={event => {event.preventDefault(); selectImage(event.dataTransfer.files);}}>
+          {reviewBase && <div className="pet-generation-form__reference" role="group" aria-label="Reference image" tabIndex={locked ? -1 : 0}>
             <input ref={fileInput} id="pet-generation-reference" className="pet-generation-form__file" type="file" aria-label="Character image (optional)" accept="image/png,image/jpeg,image/webp" disabled={locked} onChange={event => selectImage(event.target.files)} />
             {reference ? <>
               <div className="pet-generation-form__file-info">
@@ -151,10 +196,10 @@ export function PetGenerationForm({ enabled, reviewBase = false }: { enabled: bo
               </div>
             </> : <>
               <div className="pet-generation-form__choose"><span>Reference image<small>Optional</small></span><Button type="button" view="outlined" size="l" disabled={locked} onClick={() => fileInput.current?.click()}>Choose image</Button></div>
-              <p className="pet-generation-form__hint">Drop one image here · PNG, JPEG or WebP · up to 5 MiB</p>
+              <p className="pet-generation-form__hint">Paste an image (Ctrl/⌘V) or drop it anywhere in this form. PNG, JPEG or WebP · up to 5 MiB</p>
             </>}
             {imageError && <div role="alert" className="pet-generation-form__image-error"><p>{error.message}</p><Button type="button" view="outlined" disabled={locked} onClick={clearImage}>Use description only</Button></div>}
-            <p className="pet-generation-form__hint">Sent to AI when you submit. Private for up to 24h.</p>
+            <p className="pet-generation-form__hint">{reference && "Paste or drop to replace. "}Sent to AI when you submit. Private for up to 24h.</p>
           </div>}
           <Button type="button" view="outlined" size="xl" width="max" className="pet-generation-form__name-toggle" aria-expanded={nameOpen} aria-controls="pet-generation-name-panel" onClick={() => setNameOpen(value => !value)}>{nameOpen ? "Pet name (optional) −" : "Add a name (optional) +"}</Button>
           <div id="pet-generation-name-panel" hidden={!nameOpen}>
