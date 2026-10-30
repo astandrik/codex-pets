@@ -93,6 +93,8 @@
   &__label { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
   &__label span { color: var(--generation-muted); font-size: 12px; flex-shrink: 0; }
   &__hint { color: var(--generation-muted); font-size: 12px; line-height: 1.5; }
+  &--dragging { border-color: var(--generation-focus); box-shadow: inset 0 0 0 2px var(--generation-focus); }
+  &__reference:focus-visible { outline: 2px solid var(--generation-focus); outline-offset: 3px; }
   &__reference { display: grid; gap: 12px; padding: 12px; border: 1px solid var(--generation-line); border-radius: 8px; background: var(--generation-bg); min-width: 0; }
   &__choose { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   &__choose small { display: block; color: var(--generation-muted); }
