@@ -3,7 +3,7 @@ import {useEffect, useRef, useState} from "react";
 import {Button} from "@gravity-ui/uikit";
 import {StatePreview} from "@/components/StatePreview/StatePreview";
 import {PET_STATES} from "@/lib/pets/types";
-import {PREVIEW_FRAME_MS} from "@/lib/pets/preview-timing";
+import {previewFrameDurationMs} from "@/lib/pets/preview-timing";
 import {withBasePath} from "@/lib/base-path";
 import {notifyGenerationHistory} from "@/lib/pets/generation/history";
 import type {AnimationState} from "@/lib/pets/generation/animation-revision-input";
@@ -24,9 +24,9 @@ export function AnimationRevisionComparison(props: Props) {
   const frameCount = PET_STATES.find(item => item.key === state)!.frames;
   useEffect(() => {
     if (!playing) return;
-    const timer = setInterval(() => setFrame(value => (value + 1) % frameCount), PREVIEW_FRAME_MS);
-    return () => clearInterval(timer);
-  }, [frameCount, playing]);
+    const timer = setTimeout(() => setFrame(value => (value + 1) % frameCount), previewFrameDurationMs(state, frame));
+    return () => clearTimeout(timer);
+  }, [frameCount, state, frame, playing]);
   useEffect(() => () => controller.current?.abort(), []);
   async function accept() {
     if (pending.current || unavailable) return;

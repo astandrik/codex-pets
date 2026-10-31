@@ -71,9 +71,9 @@
     max-width: none;
     height: auto;
     image-rendering: pixelated;
-    animation: pet-card-sprite-idle
-      var(--pet-card-frame-duration, 2100ms)
-      steps(var(--pet-card-frame-count, 6))
+    animation: pet-idle-preview
+      var(--pet-card-frame-duration, 6600ms)
+      steps(1, end)
       infinite;
     will-change: transform;
   }
@@ -246,16 +246,6 @@
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     color: var(--acc);
     font-weight: 650;
-  }
-}
-
-@keyframes pet-card-sprite-idle {
-  from {
-    transform: translate3d(0, 0, 0);
-  }
-
-  to {
-    transform: translate3d(-100%, 0, 0);
   }
 }
 

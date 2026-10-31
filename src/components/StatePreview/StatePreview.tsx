@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, Dialog } from "@gravity-ui/uikit";
 
 import { parseClientPetJson } from "@/lib/pets/client-validation";
-import { PREVIEW_FRAME_MS } from "@/lib/pets/preview-timing";
+import { previewFrameDurationMs } from "@/lib/pets/preview-timing";
 import {
   getLookDirectionCell,
   getPetSheet,
@@ -109,12 +109,16 @@ export function StatePreview({ petJsonUrl, spritesheetUrl, selectedKey: controll
   useEffect(() => {
     if (!active || controlledFrame !== undefined || (isLookDirections && !lookPlaying)) return;
     if (overview && (!gazeOpen || !isLookDirections || playbackSuspended)) return;
-    const timer = window.setInterval(() => {
-      if (overview && document.hidden) return;
-      setFrame((current) => (current + 1) % frameCount);
-    }, PREVIEW_FRAME_MS);
-    return () => window.clearInterval(timer);
-  }, [frameCount, isLookDirections, lookPlaying, controlledFrame, active, overview, gazeOpen, playbackSuspended]);
+    let timer: number;
+    const schedule = () => {
+      timer = window.setTimeout(() => {
+        if (overview && document.hidden) { schedule(); return; }
+        setFrame((current) => (current + 1) % frameCount);
+      }, previewFrameDurationMs(selectedKey, frame));
+    };
+    schedule();
+    return () => window.clearTimeout(timer);
+  }, [frameCount, selectedKey, frame, isLookDirections, lookPlaying, controlledFrame, active, overview, gazeOpen, playbackSuspended]);
 
   const x = column === 0 ? 0 : (column / (sheet.columns - 1)) * 100;
   const y = row === 0 ? 0 : (row / (sheet.rows - 1)) * 100;

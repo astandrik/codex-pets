@@ -28,12 +28,12 @@ async function renderCandidate() {
   await act(async () => root.render(<ThemeProvider theme="light"><AnimationRevisionComparison generationId={"b".repeat(64)} sourceGenerationId={"a".repeat(64)} expiresAt={new Date(Date.now() + 1000).toISOString()} petJsonUrl="/pet.json" spritesheetUrl="/after.webp" beforeSpritesheetUrl="/before.webp" selectedStates={["idle"]} onAccepted={accepted}/></ThemeProvider>));
 }
 
-it("keeps both previews synchronized at 350ms after switching states", async () => {
+it("keeps both previews synchronized with Codex frame holds after switching states", async () => {
   fetchMock.mockImplementation(async () => previewResponse());
   await renderCandidate();
   const positions = () => [...element.querySelectorAll<HTMLElement>(".state-preview__sprite")].map(node => node.style.backgroundPosition);
   const first = positions();
-  await act(async () => vi.advanceTimersByTimeAsync(349));
+  await act(async () => vi.advanceTimersByTimeAsync(1679));
   expect(positions()).toEqual(first);
   await act(async () => vi.advanceTimersByTimeAsync(1));
   expect(positions()[0]).not.toBe(first[0]);
@@ -44,7 +44,7 @@ it("keeps both previews synchronized at 350ms after switching states", async () 
     select.dispatchEvent(new Event("change", {bubbles: true}));
   });
   const working = positions();
-  await act(async () => vi.advanceTimersByTimeAsync(349));
+  await act(async () => vi.advanceTimersByTimeAsync(119));
   expect(positions()).toEqual(working);
   await act(async () => vi.advanceTimersByTimeAsync(1));
   expect(positions()[0]).not.toBe(working[0]);
