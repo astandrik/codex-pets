@@ -424,7 +424,7 @@
     height: auto;
     image-rendering: pixelated;
     animation: home-hero-pet-idle
-      var(--home-hero-frame-duration, 840ms)
+      var(--home-hero-frame-duration, 2100ms)
       steps(var(--home-hero-frame-count, 6))
       infinite;
     will-change: transform;

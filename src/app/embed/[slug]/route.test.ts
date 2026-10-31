@@ -64,6 +64,7 @@ describe("GET /embed/[slug]", () => {
     );
     expect(body).not.toContain("private@example.com");
     expect(body).toContain("space");
+    expect(body).toContain("--pet-duration:2100ms");
   });
 
   it("applies safe embed query options", async () => {
@@ -86,6 +87,7 @@ describe("GET /embed/[slug]", () => {
     expect(body).toContain('class="embed-card embed-card--compact"');
     expect(body).toContain("--pet-row-y:-3328px");
     expect(body).toContain("--pet-frames:6");
+    expect(body).toContain("--pet-duration:2100ms");
     expect(body).not.toContain("Creator");
     expect(body).not.toContain('<p class="embed-card__tags">');
     expect(body).not.toContain('<a class="embed-card__install"');
@@ -113,6 +115,7 @@ describe("GET /embed/[slug]", () => {
     expect(body).toContain("background-size:3072px auto");
     expect(body).toContain("--pet-row-y:-2912px");
     expect(body).toContain("--pet-end-x:-2304px");
+    expect(body).toContain("--pet-duration:2100ms");
     expect(body).not.toContain("View in registry");
     expect(body).not.toContain("<h1>");
     expect(body).not.toContain('class="embed-card__meta"');

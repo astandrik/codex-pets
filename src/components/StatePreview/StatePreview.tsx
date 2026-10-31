@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, Dialog } from "@gravity-ui/uikit";
 
 import { parseClientPetJson } from "@/lib/pets/client-validation";
+import { PREVIEW_FRAME_MS } from "@/lib/pets/preview-timing";
 import {
   getLookDirectionCell,
   getPetSheet,
@@ -111,7 +112,7 @@ export function StatePreview({ petJsonUrl, spritesheetUrl, selectedKey: controll
     const timer = window.setInterval(() => {
       if (overview && document.hidden) return;
       setFrame((current) => (current + 1) % frameCount);
-    }, 140);
+    }, PREVIEW_FRAME_MS);
     return () => window.clearInterval(timer);
   }, [frameCount, isLookDirections, lookPlaying, controlledFrame, active, overview, gazeOpen, playbackSuspended]);
 

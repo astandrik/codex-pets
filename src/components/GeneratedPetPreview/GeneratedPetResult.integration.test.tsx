@@ -34,7 +34,7 @@ it("integrates nine previews, gaze and persistent drafts without passive mutatio
   const gaze = document.querySelector<HTMLElement>(".state-preview__gaze-sprite")!;
   await click(document.querySelector<HTMLButtonElement>('.state-preview__direction[title*="090"]')!); const direction=gaze.style.backgroundPosition;
   await act(async () => vi.advanceTimersByTimeAsync(420)); expect(gaze.style.backgroundPosition).toBe(direction);
-  await click(button("Resume")); await act(async () => vi.advanceTimersByTimeAsync(140)); expect(gaze.style.backgroundPosition).not.toBe(direction);
+  await click(button("Resume")); await act(async () => vi.advanceTimersByTimeAsync(350)); expect(gaze.style.backgroundPosition).not.toBe(direction);
   await click(document.querySelector<HTMLButtonElement>('[aria-label="Close gaze panel"]')!);
   await click(button("Prepare gallery submission")); await click(document.querySelector<HTMLButtonElement>('[aria-label="Close publication panel"]')!);
   await click(button("Generation details")); expect(document.body.textContent).toContain("Saved instructions");

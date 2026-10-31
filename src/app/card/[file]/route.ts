@@ -13,6 +13,7 @@ import {
   type PetAnimationState,
 } from "@/lib/pets/sprite-rendering";
 import { PET_SHEET, type PublicPet } from "@/lib/pets/types";
+import { PREVIEW_FRAME_MS } from "@/lib/pets/preview-timing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -89,7 +90,7 @@ async function renderAnimatedCard(
 
   return sharp(frames, { join: { animated: true } })
     .gif({
-      delay: Array.from({ length: state.frames }, () => 140),
+      delay: Array.from({ length: state.frames }, () => PREVIEW_FRAME_MS),
       dither: 0,
       effort: 6,
       keepDuplicateFrames: true,

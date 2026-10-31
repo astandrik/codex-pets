@@ -25,10 +25,10 @@ const cards = () => [...host.querySelectorAll<HTMLButtonElement>(".animation-ove
 const frames = () => [...host.querySelectorAll<HTMLElement>(".animation-overview__sprite")].map(node => node.style.backgroundPosition);
 const control = (name: string) => document.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!;
 async function click(node: HTMLButtonElement) {await act(async () => {node.focus(); node.click();});}
-async function tick(count = 1) {await act(async () => vi.advanceTimersByTimeAsync(count * 140));}
+async function tick(count = 1) {await act(async () => vi.advanceTimersByTimeAsync(count * 350));}
 const detail = () => document.querySelector<HTMLElement>(".animation-overview__large-sprite")!;
 
-it.each([1, 2] as const)("plays all nine complete atlas v%s loops with one clock and no requests", async version => {
+it.each([1, 2] as const)("plays all nine atlas v%s loops at 350ms with one clock and no requests", async version => {
   await render(false, version);
   expect(cards()).toHaveLength(9); expect(host.textContent).not.toMatch(/\d+ frames/);
   expect(vi.getTimerCount()).toBe(1);
@@ -40,6 +40,26 @@ it.each([1, 2] as const)("plays all nine complete atlas v%s loops with one clock
     await tick();
   }
   expect(fetchMock).not.toHaveBeenCalled();
+});
+it("advances every state at 350ms in the grid and detail", async () => {
+  await render();
+  const first = frames();
+  await act(async () => vi.advanceTimersByTimeAsync(349));
+  expect(frames()).toEqual(first);
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  frames().forEach((position, index) => expect(position).not.toBe(first[index]));
+  await click(cards()[0]);
+  const idle = detail().style.backgroundPosition;
+  await act(async () => vi.advanceTimersByTimeAsync(349));
+  expect(detail().style.backgroundPosition).toBe(idle);
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(detail().style.backgroundPosition).not.toBe(idle);
+  await click(control("Next animation"));
+  const right = detail().style.backgroundPosition;
+  await act(async () => vi.advanceTimersByTimeAsync(349));
+  expect(detail().style.backgroundPosition).toBe(right);
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(detail().style.backgroundPosition).not.toBe(right);
 });
 it("keeps grid pause independent from detail playback and restores it on close", async () => {
   await render(); await click(control("Pause all animations")); const before = frames();

@@ -2,6 +2,7 @@ import sharp from "sharp";
 
 import { getPetAssetIdFromSpritesheetUrl } from "@/lib/pets/asset-urls";
 import { readPetSpritesheetAsset } from "@/lib/pets/assets-repository";
+import { PREVIEW_FRAME_MS } from "@/lib/pets/preview-timing";
 import { PET_SHEET, PET_STATES, type PublicPet } from "@/lib/pets/types";
 
 export type PetAnimationState = (typeof PET_STATES)[number];
@@ -9,7 +10,6 @@ export type PetAnimationState = (typeof PET_STATES)[number];
 export const DEFAULT_ANIMATION_STATE = PET_STATES[0];
 export const DEFAULT_SPRITE_SCALE = 2;
 export const MAX_SPRITE_SCALE = 4;
-export const SPRITE_FRAME_DELAY_MS = 140;
 
 export function readPetAnimationState(value: string | null): PetAnimationState {
   return PET_STATES.find((state) => state.key === value) ?? DEFAULT_ANIMATION_STATE;
@@ -50,7 +50,7 @@ export async function renderAnimatedSpriteGif(input: {
     .gif({
       delay: Array.from(
         { length: input.state.frames },
-        () => SPRITE_FRAME_DELAY_MS,
+        () => PREVIEW_FRAME_MS,
       ),
       dither: 0,
       effort: 6,
@@ -89,7 +89,7 @@ export function spriteCssValues(input: {
     width: `${PET_SHEET.cellWidth * input.scale}px`,
     height: `${PET_SHEET.cellHeight * input.scale}px`,
     frames: input.state.frames,
-    duration: `${input.state.frames * SPRITE_FRAME_DELAY_MS}ms`,
+    duration: `${input.state.frames * PREVIEW_FRAME_MS}ms`,
   };
 }
 

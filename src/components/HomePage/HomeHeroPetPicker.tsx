@@ -9,6 +9,7 @@ import { Button, Flex, Text } from "@/components/GravityUI/GravityUI";
 import { withBasePath } from "@/lib/base-path";
 import { trackGoal } from "@/lib/metrics/yandex";
 import { getPetIdleStripUrl } from "@/lib/pets/asset-urls";
+import { PREVIEW_FRAME_MS } from "@/lib/pets/preview-timing";
 import { PET_SHEET, PET_STATES } from "@/lib/pets/types";
 import type { PublicPetSummary } from "@/lib/pets/types";
 import { pickRandomHeroPetIndex } from "@/components/HomePage/home-hero-random";
@@ -37,7 +38,6 @@ type StripStyle = CSSProperties & {
 };
 
 const PREVIEW_STATE = PET_STATES[0];
-const PREVIEW_FRAME_MS = 140;
 const PREVIEW_FRAME_DURATION = `${PREVIEW_STATE.frames * PREVIEW_FRAME_MS}ms`;
 const PREVIEW_STRIP_WIDTH = PET_SHEET.cellWidth * PREVIEW_STATE.frames;
 const RECENT_HERO_PET_LIMIT = 5;
