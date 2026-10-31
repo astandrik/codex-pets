@@ -34,6 +34,7 @@ export function GeneratedPetPreview({ generationId, previousGenerationId, animat
 
 function GeneratedPetPreviewContent({ generationId, previousGenerationId, animationHintsEnabled = false, animationRevisionsEnabled = false, continuationEnabled = false }: { generationId: string; previousGenerationId?: string; animationHintsEnabled?: boolean; animationRevisionsEnabled?: boolean; continuationEnabled?: boolean }) {
   const [differentAnimationPrompt, setDifferentAnimationPrompt] = useState(false);
+  const [recoveryVisible,setRecoveryVisible]=useState(false);
   // Survive BaseReview unmount when status refresh observes another tab's confirmation.
   const animationPromptIntent = useRef<string | null>(null);
   const [previousUnavailable, setPreviousUnavailable] = useState(false);
@@ -269,23 +270,23 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
     {generation?.animationRevision && <p><a href={withBasePath(`/generated/${generation.animationRevision.sourceGenerationId}`)}>Исходная версия анимаций</a></p>}
     {previousGenerationId && <p><a href={withBasePath(`/generated/${generationId}`)}>Open this version</a>{" · "}<a href={withBasePath(`/generated/${previousGenerationId}`)}>Open previous version</a></p>}
   </>;
-  return <Container as="main" maxWidth={ready ? undefined : "xl"} gutters={5} className={ready ? "page-shell generated-pet-ready" : "page-shell"}>
+  return <Container as="main" maxWidth={ready ? undefined : "xl"} gutters={recoveryVisible ? 2 : 5} className={ready ? "page-shell generated-pet-ready" : "page-shell"}>
     <a className={ready ? "generated-pet-ready__back" : undefined} href={withBasePath("/my-generations")}>{ready && <Image src={withBasePath("/assets/s09-arrow-left.svg")} alt="" width={16} height={16} unoptimized />}My generations</a>
-    <div className={ready ? "generated-pet-ready__heading" : undefined}><h1>{generation?.pet?.displayName ?? "Generated pet"}</h1>{ready && <span className="generated-pet-ready__status" role="status">Ready</span>}</div>
+    <div hidden={recoveryVisible} className={ready ? "generated-pet-ready__heading" : undefined}><h1>{generation?.pet?.displayName ?? "Generated pet"}</h1>{ready && <span className="generated-pet-ready__status" role="status">Ready</span>}</div>
     {ready && <p className="generated-pet-ready__intro">Preview your pet, then download its pack.</p>}
     {generation?.status==="processing"&&generation.metadata?.automaticState==="inflight"&&<p role="status">Preparing the name, description and tags…</p>}
 
     {!ready && metadataEditor}
-    {(!ready || error) && <p role="status" aria-live="polite">{error || (generation ? pendingAcceptance && generation.status === "completed" ? "Новая версия на проверке" : STATUS_LABELS[generation.status] : "Loading generation…")}</p>}
+    {!recoveryVisible && (!ready || error) && <p role="status" aria-live="polite">{error || (generation ? pendingAcceptance && generation.status === "completed" ? "Новая версия на проверке" : STATUS_LABELS[generation.status] : "Loading generation…")}</p>}
     {!ready && generation?.progress && generation.status !== "failed" && <p>{generation.progress.completedSteps} of {generation.progress.totalSteps} generation steps completed.</p>}
     {differentAnimationPrompt && <p role="status">Анимации уже подтверждены в другой вкладке с другими пожеланиями. Показан сохранённый вариант.</p>}
     {!ready && generation?.baseConfirmed && (generation.animationPrompt || differentAnimationPrompt) && <section className="generated-pet-animation-hints" aria-label="Принятые пожелания">
       <h2>Пожелания к движениям</h2><p>{generation.animationPrompt || "Без дополнительных пожеланий."}</p>
     </section>}
     {!showBaseReview && (unavailable || (generation && generation.status !== "awaiting_confirmation")) && <RefinementRecovery generationId={generationId} />}
-    <GenerationContinuation generationId={generationId} enabled={continuationEnabled && Boolean(generation?.canContinue)} onContinued={()=>{setRefreshVersion(v=>v+1);}}/>
+    <GenerationContinuation onVisibilityChange={setRecoveryVisible} generationId={generationId} enabled={continuationEnabled && Boolean(generation?.canContinue)} onContinued={()=>{setRefreshVersion(v=>v+1);}}/>
     {!ready && generation?.continuation?.mode==="regenerate"&&<p><a href={withBasePath(`/generated/${generation.continuation.sourceGenerationId}`)}>Исходное задание</a></p>}
-    {failed && <div role="alert"><p>{failure.message}</p><p>{continuationEnabled && generation?.canContinue ? "Можно проверить сохранённые изображения и продолжить это задание." : failure.hint}</p></div>}
+    {failed && !recoveryVisible && <div role="alert"><p>{failure.message}</p><p>{continuationEnabled && generation?.canContinue ? "Можно проверить сохранённые изображения и продолжить это задание." : failure.hint}</p></div>}
     {!ready && previousGenerationId && <p><a href={withBasePath(`/generated/${generationId}`)}>Open this version</a>{" · "}<a href={withBasePath(`/generated/${previousGenerationId}`)}>Open previous version</a></p>}
     <div className={previousGenerationId ? "generated-pet-versions" : undefined}>
       {previousGenerationId && <section className="generated-pet-base">

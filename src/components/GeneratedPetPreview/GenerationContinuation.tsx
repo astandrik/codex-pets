@@ -7,20 +7,21 @@ import { rememberGeneration, notifyGenerationHistory } from "@/lib/pets/generati
 import { publicGenerationError } from "@/lib/pets/generation/public-error";
 import { CONTINUATION_STATES, type ContinuationInput, type ContinuationOptions, type ContinuationState } from "@/lib/pets/generation/continuation-model";
 import { readContinuationId, rememberContinuation, clearContinuation, continuationReplySchema, continuationOptionsSchema } from "./continuation-request";
+import {GenerationRecoveryView} from "./GenerationRecoveryView";
 import "./GenerationContinuation.scss";
-const LABELS: Record<ContinuationState, string> = { idle: "Покой", running: "Работа", "running-left": "Движение влево", "running-right": "Движение вправо", waving: "Приветствие", jumping: "Прыжок", waiting: "Ожидание", failed: "Неудача", review: "Размышление", "look-0-157": "Взгляд: направления 1–8", "look-180-337": "Взгляд: направления 9–16" };
 const DEFINITE = new Set(["invalid_argument", "invalid_origin", "body_too_large", "base_not_ready", "continuation_disabled", "continuation_busy", "continuation_source_conflict", "continuation_selection_conflict", "continuation_limit", "continuation_cooldown", "generation_paused", "generation_disabled", "queue_full", "rate_limited", "budget_exhausted", "client_ip_unavailable", "saved_stage_unavailable", "generation_expired", "not_found"]);
 const subscribe = () => () => { };
 type Props = {
     generationId: string;
     enabled: boolean;
     onContinued: () => void;
+    onVisibilityChange?: (visible:boolean) => void;
 };
 export function GenerationContinuation(props: Props) {
     const browser = useSyncExternalStore(subscribe, () => true, () => false);
     return browser ? <ContinuationForm key={props.generationId} {...props}/> : null;
 }
-function ContinuationForm({ generationId, enabled, onContinued }: Props) {
+function ContinuationForm({ generationId, enabled, onContinued, onVisibilityChange }: Props) {
     const router = useRouter(), pendingRef = useRef(false), controller = useRef<AbortController | null>(null);
     const [requestId, setRequestId] = useState<string | null>(() => {
         try {
@@ -35,6 +36,9 @@ function ContinuationForm({ generationId, enabled, onContinued }: Props) {
     const [sourceUnavailable, setSourceUnavailable] = useState(false);
     const [options, setOptions] = useState<ContinuationOptions | null>(null), [mode, setMode] = useState<"rebuild" | "regenerate">("regenerate"), [states, setStates] = useState<ContinuationState[]>([]);
     const [acceptedUrl, setAcceptedUrl] = useState("");
+    const [manualConfirmed,setManualConfirmed]=useState(false),[checkAttempted,setCheckAttempted]=useState(false);
+    const visible=Boolean((enabled||requestId||submitted)&&(opened||requestId));
+    useEffect(()=>{onVisibilityChange?.(visible);return()=>onVisibilityChange?.(false);},[visible,onVisibilityChange]);
     const endpoint = withBasePath(`/api/pet-generations/${generationId}/continuations`);
     useEffect(() => () => controller.current?.abort(), []);
     function begin() { if (pendingRef.current)
@@ -64,10 +68,12 @@ function ContinuationForm({ generationId, enabled, onContinued }: Props) {
                 }
                 throw Error("Продолжение недоступно: обновите страницу или начните новое задание.");
             }
-            const o = continuationOptionsSchema.parse(data && typeof data === "object" && "options" in data ? data.options : null);
+            const parsed = continuationOptionsSchema.safeParse(data && typeof data === "object" && "options" in data ? data.options : null);
+            if(!parsed.success)throw Error("Не удалось прочитать сохранённые изображения. Повторите проверку.");
+            const o=parsed.data;
             setSourceUnavailable(false);
             setOptions(o);
-            setStates(o.requiredStates);
+            if(!submitted)setStates(current=>options?CONTINUATION_STATES.filter(state=>o.requiredStates.includes(state)||(current.includes(state)&&o.strips.some(s=>s.state===state))):o.requiredStates);
         }
         catch (e) {
             if (!c.signal.aborted)
@@ -78,7 +84,9 @@ function ContinuationForm({ generationId, enabled, onContinued }: Props) {
         }
     }
     function receipt(data: unknown, id: string) {
-        const result = continuationReplySchema.parse(data);
+        const parsed=continuationReplySchema.safeParse(data);
+        if(!parsed.success)throw Error("Не удалось подтвердить ответ. Сохранённый запрос остаётся доступным.");
+        const result=parsed.data;
         if (result.operation.id !== id)
             throw Error("invalid_receipt");
         if (result.operation.state === "rejected") {
@@ -126,6 +134,7 @@ function ContinuationForm({ generationId, enabled, onContinued }: Props) {
         if (!c)
             return;
         setOpened(true);
+        setCheckAttempted(true);
         try {
             const r = await fetch(endpoint + "?requestId=" + id, { cache: "no-store", signal: c.signal });
             const data: unknown = await r.json();
@@ -150,7 +159,7 @@ function ContinuationForm({ generationId, enabled, onContinued }: Props) {
         }
     }
     async function submit() {
-        if (receiptExpired || sourceUnavailable || acceptedUrl || (!submitted && !options))
+        if (receiptExpired || sourceUnavailable || acceptedUrl || (!submitted && !options) || (requestId&&!submitted&&!manualConfirmed))
             return;
         const c = begin();
         if (!c)
@@ -200,32 +209,6 @@ function ContinuationForm({ generationId, enabled, onContinued }: Props) {
         return null;
     if (!opened && !requestId)
         return <section className="generation-continuation"><Button onClick={() => void loadOptions()}>Продолжить генерацию</Button></section>;
-    const locked = busy || Boolean(submitted) || Boolean(acceptedUrl) || receiptExpired || sourceUnavailable;
-    return <section className="generation-continuation" lang="ru">
-    <h2>Продолжить генерацию</h2>
-    {options && <>
-      {options.activeRequestId && <p>Продолжение уже начато в другой вкладке. <Button disabled={busy} onClick={() => void check(options.activeRequestId)}>Проверить продолжение</Button></p>}
-      <fieldset disabled={locked}><legend>Что сделать?</legend>
-        <label><input type="radio" name="continuation-mode" checked={mode === "rebuild"} disabled={!options.canRebuild} onChange={() => setMode("rebuild")}/>Повторить сборку</label>
-        <label><input type="radio" name="continuation-mode" checked={mode === "regenerate"} disabled={!options.canRegenerate} onChange={() => setMode("regenerate")}/>Перегенерировать выбранное</label>
-      </fieldset>
-      {mode === "rebuild" ? <p>Без новой попытки и генерации изображений. Срок хранения прежний. Ещё не начатая карточка может быть подготовлена штатным AI-шагом. Осталось сборок: {options.rebuildsRemaining}.</p> : <>
-        <fieldset disabled={locked}><legend>Выберите полосы</legend>
-          {options.strips.map(s => <label key={s.state}><input type="checkbox" checked={states.includes(s.state)} disabled={options.requiredStates.includes(s.state)} onChange={e => setStates(v => e.target.checked ? [...v, s.state] : v.filter(n => n !== s.state))}/>{LABELS[s.state]} — {s.status === "saved" ? "сохранено" : s.status === "missing" ? "нужна генерация" : "ошибка сборки"}{s.uncertain ? "; прежний запрос мог быть оплачен" : ""}</label>)}
-        </fieldset>
-        <p>Весь выбранный набор — 1 обычная попытка. Новая версия хранится 24 часа; прежняя сохраняется. Базовый образ и остальные результаты переиспользуются.</p>
-      </>}
-      {!!options.issues.length && <ul>{options.issues.map((i, n) => <li key={n}>{LABELS[i.state]}: {i.frame === undefined ? "не удалось разделить позы" : `проблема с кадром ${i.frame + 1}`}{i.actual === undefined ? "" : ` (${i.actual} пикселей)`}.</li>)}</ul>}
-    </>}
-    {requestId && !submitted && <p>Сохранён UUID прежнего запроса. Сначала проверьте результат; при отсутствии ответа выберите тот же режим и набор.</p>}
-    <div className="generation-continuation__actions">
-      {(options || submitted) && <Button view="action" loading={busy} disabled={busy || receiptExpired || sourceUnavailable || Boolean(acceptedUrl) || (!submitted && mode === "regenerate" && !states.length)} onClick={() => void submit()}>{submitted ? "Повторить тот же запрос" : "Продолжить"}</Button>}
-      {requestId && <Button disabled={busy || receiptExpired} onClick={() => void check()}>Проверить запрос</Button>}
-      {!submitted && <Button disabled={busy || receiptExpired} onClick={() => void loadOptions()}>Обновить изображения</Button>}
-      {!requestId && !submitted && <Button disabled={busy} onClick={() => setOpened(false)}>Закрыть</Button>}
-    </div>
-    {error && <p role="alert">{error}</p>}
-    {(receiptExpired || sourceUnavailable) && <p><a href={withBasePath("/generate")}>Начать новую генерацию</a></p>}
-    {acceptedUrl && <p><a href={acceptedUrl}>Открыть результат</a></p>}
-  </section>;
+    return <GenerationRecoveryView generationId={generationId} options={options} mode={mode} states={states} busy={busy} error={error} requestId={requestId} submitted={Boolean(submitted)} receiptExpired={receiptExpired} sourceUnavailable={sourceUnavailable} acceptedUrl={acceptedUrl} manualConfirmed={manualConfirmed} checkAttempted={checkAttempted}
+      onMode={value=>{setMode(value);setManualConfirmed(false);}} onStates={value=>{setStates(value);setManualConfirmed(false);}} onManualConfirmed={setManualConfirmed} onSubmit={()=>void submit()} onCheck={id=>void check(id)} onRefresh={()=>void loadOptions()} onClose={()=>setOpened(false)} />;
 }

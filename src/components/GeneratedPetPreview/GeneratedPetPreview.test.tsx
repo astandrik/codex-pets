@@ -387,3 +387,20 @@ it("does not create request identities or extra requests when result panels and 
     expect(uuid).toHaveBeenCalledTimes(initialIds); expect(storage).toHaveBeenCalledTimes(initialWrites);
   } finally {uuid.mockRestore(); storage.mockRestore();}
 });
+
+it.each(["queued", "completed"])("restores the page title and status after another tab moves recovery to %s", async statusAfterRefresh => {
+  localStorage.clear();
+  let status = "failed";
+  fetchMock.mockImplementation(async url => url.endsWith("/continuations")
+    ? response({options: {sourceRevision: "f".repeat(64), canRebuild: true, canRegenerate: true, requiredStates: [], strips: [], rebuildsRemaining: 3, issues: []}})
+    : response({generation: {...generation(undefined, status).generation, canContinue: status === "failed", reviewBase: true, baseConfirmed: true}}));
+  await act(async () => root.render(<ThemeProvider theme="light"><GeneratedPetPreview generationId={id} continuationEnabled /></ThemeProvider>));
+  await act(async () => [...element.querySelectorAll("button")].find(b => b.textContent === "Продолжить генерацию")!.click());
+  expect(element.querySelector(".generation-recovery")).not.toBeNull();
+  status = statusAfterRefresh;
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(element.querySelector(".generation-recovery")).toBeNull();
+  expect(element.querySelector("h1")!.closest("[hidden]")).toBeNull();
+  expect(element.textContent).toContain(status === "queued" ? "Waiting in the queue" : "Ready");
+  expect(fetchMock.mock.calls.every(([, init]) => init?.method !== "POST")).toBe(true);
+});
