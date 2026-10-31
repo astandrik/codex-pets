@@ -1,14 +1,8 @@
+import {HOME_ASK_AI} from "@/lib/product-copy";
+
 export const ASK_AI_PRODUCT_NAME = "codex-pets";
 
-export const ASK_AI_HOME = {
-  label: "Ask AI to pick a Codex pet",
-  helperText:
-    "Open an AI assistant with the gallery context and ask for recommendations.",
-  page: "home",
-  promptVariant: "homepage",
-  prompt:
-    "Act as a Codex user looking for animated desktop companions. Using current information from https://pets.ydb-qdrant.tech/, explain what Codex Pets is, how to browse and install pet packs, how MCP/API access works, how to request or submit a pet, and recommend a few pets for different styles such as cute, pixel, anime, minimal, fantasy, and unusual.",
-} as const;
+export const ASK_AI_HOME = {...HOME_ASK_AI,helperText:HOME_ASK_AI.helper,page:"home",promptVariant:"homepage"} as const;
 
 export const ASK_AI_PET_DETAIL = {
   label: "Ask AI about this pet",

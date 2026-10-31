@@ -6,11 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const metricsMocks = vi.hoisted(() => ({
   trackGoal: vi.fn(),
+  add: vi.fn(),
 }));
 
 vi.mock("@/lib/metrics/yandex", () => metricsMocks);
 vi.mock("@gravity-ui/uikit", () => ({
-  useToaster: () => ({ add: vi.fn() }),
+  useToaster: () => ({ add: metricsMocks.add }),
 }));
 
 import { PetCardMetrics } from "@/components/PetCard/PetCardMetrics";
@@ -26,14 +27,17 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   metricsMocks.trackGoal.mockClear();
+  metricsMocks.add.mockClear();
+  localStorage.clear();
 });
 
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  vi.unstubAllGlobals();
 });
 
-function renderMetrics(related: boolean) {
+function renderMetrics(related: boolean, layout: "default" | "home" = "default") {
   act(() =>
     root.render(
       <PetCardMetrics
@@ -43,6 +47,7 @@ function renderMetrics(related: boolean) {
         likeCount={1}
         downloadCount={2}
         installCount={3}
+        layout={layout}
         relatedContext={
           related
             ? {
@@ -90,5 +95,56 @@ describe("PetCardMetrics download attribution", () => {
       slug: "star-fox",
       surface: "card",
     });
+  });
+});
+
+describe.each(["default", "home"] as const)("PetCardMetrics %s Like failures", (layout) => {
+  it.each(["network", "invalid JSON"])("shows a safe error for %s and retries only after a click", async (failure) => {
+    const request = vi.fn();
+    if (failure === "network") request.mockRejectedValueOnce(new TypeError("PRIVATE_NETWORK_DETAIL"));
+    else request.mockResolvedValueOnce(new Response("PRIVATE_INVALID_JSON"));
+    vi.stubGlobal("fetch", request);
+    renderMetrics(false, layout);
+    const button = container.querySelector<HTMLButtonElement>('button[aria-label^="Like Star Fox"]')!;
+
+    await act(async () => button.click());
+
+    expect(metricsMocks.add).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      theme: "danger", title: "Like failed",
+      content: expect.any(String),
+    }));
+    expect(JSON.stringify(metricsMocks.add.mock.calls)).not.toContain("PRIVATE_");
+    expect(button.disabled).toBe(false);
+    expect(localStorage.getItem("codex-pets-liked:star-fox")).toBeNull();
+    expect(metricsMocks.trackGoal).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledTimes(1);
+
+    request.mockResolvedValueOnce(Response.json({ likeCount: 2 }));
+    await act(async () => button.click());
+
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute("aria-label")).toBe("Liked Star Fox: 2 likes");
+    expect(localStorage.getItem("codex-pets-liked:star-fox")).toBe("1");
+  });
+
+  it("preserves HTTP errors and prevents duplicate pending or completed likes", async () => {
+    const request = vi.fn().mockResolvedValueOnce(new Response("", { status: 500 }));
+    vi.stubGlobal("fetch", request);
+    renderMetrics(false, layout);
+    const button = container.querySelector<HTMLButtonElement>('button[aria-label^="Like Star Fox"]')!;
+    await act(async () => button.click());
+    expect(metricsMocks.add).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ content: "Status 500" }));
+    expect(button.disabled).toBe(false);
+
+    let finish!: (response: Response) => void;
+    request.mockReturnValueOnce(new Promise<Response>((resolve) => { finish = resolve; }));
+    await act(async () => button.click());
+    expect(button.disabled).toBe(true);
+    await act(async () => button.click());
+    expect(request).toHaveBeenCalledTimes(2);
+    await act(async () => finish(Response.json({ likeCount: 2 })));
+    await act(async () => button.click());
+    expect(request).toHaveBeenCalledTimes(2);
   });
 });

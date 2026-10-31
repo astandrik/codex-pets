@@ -4,6 +4,7 @@ import {
   FormEvent,
   KeyboardEvent,
   useEffect,
+  useId,
   useRef,
   useState,
   useTransition,
@@ -34,6 +35,7 @@ type GalleryFilterProps = {
   defaultKind: PetKind | "all";
   defaultTags: string[];
   suggestedTags: string[];
+  layout?: "default" | "home";
 };
 
 const KIND_OPTIONS = [
@@ -50,8 +52,12 @@ export function GalleryFilter({
   defaultKind,
   defaultTags,
   suggestedTags,
+  layout = "default",
 }: GalleryFilterProps) {
   const router = useRouter();
+  const [tagsOpen,setTagsOpen] = useState(true);
+  const tagsId = useId();
+  const tagsTrigger = useRef<HTMLButtonElement>(null);
   const [query, setQuery] = useState(defaultQuery);
   const [kind, setKind] = useState(defaultKind);
   const [tags, setTags] = useState(defaultTags);
@@ -212,7 +218,7 @@ export function GalleryFilter({
   }
 
   return (
-    <Card view="filled" type="container" className="gallery-filter-card">
+    <Card view="filled" type="container" className={`gallery-filter-card${layout === "home" ? " gallery-filter-card_home" : ""}`}>
       <form onSubmit={onSubmit}>
         <Flex gap={3} direction="row" alignItems="center" wrap>
           <Flex grow={1} className="gallery-filter-card__search">
@@ -240,6 +246,7 @@ export function GalleryFilter({
               options={KIND_OPTIONS}
             />
           </Flex>
+          {layout === "home" && suggestedTags.length > 0 && <Button ref={tagsTrigger} type="button" view="outlined" size="l" aria-expanded={tagsOpen} aria-controls={tagsId} onClick={()=>setTagsOpen(v=>!v)}>Tags{tags.length ? ` (${tags.length})` : ""} ▾</Button>}
           <Flex gap={2} className="gallery-filter-card__actions">
             <Button
               type="button"
@@ -261,6 +268,9 @@ export function GalleryFilter({
         {suggestedTags.length > 0 ? (
           <div
             className="gallery-filter-card__tags"
+            id={tagsId}
+            hidden={layout === "home" && !tagsOpen}
+            onKeyDown={event=>{if(layout === "home" && event.key === "Escape"){setTagsOpen(false);tagsTrigger.current?.focus();}}}
             aria-label="Suggested tags"
           >
             {suggestedTags.map((tag) => {

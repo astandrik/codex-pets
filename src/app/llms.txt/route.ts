@@ -1,3 +1,4 @@
+import {PRODUCT_SUMMARY,RECOMMENDED_AGENT_TASKS} from "@/lib/product-copy";
 import { toPublicUrl } from "@/lib/base-path";
 import { AGENT_WHEN_TO_USE_GUIDANCE, escapeMarkdownInlineText } from "@/lib/agent-markdown";
 import { listApprovedPets } from "@/lib/pets/repository";
@@ -41,7 +42,7 @@ export async function GET(): Promise<Response> {
       "",
       `> ${SITE_DESCRIPTION}`,
       "",
-      "Codex Pets is a moderated community gallery for downloadable Codex pet packs. Each public pet page describes one approved animated companion and links to its ZIP package, pet.json metadata, and spritesheet.",
+      PRODUCT_SUMMARY,
       "Codex Pets is also an agent-readable registry. Catalog and share tools expose approved read-only pet data. The remote MCP also offers generate_pet (a server-paid operation with side effects) and get_pet_generation; generation uses the website queue and limits and never publishes automatically.",
       "",
       "Important notes:",
@@ -55,6 +56,7 @@ export async function GET(): Promise<Response> {
       `- Generated at ${generatedAt}.`,
       "",
       "## Recommended assistant tasks",
+      ...RECOMMENDED_AGENT_TASKS.map(task => `- ${task}`),
       "",
       "- Pick a pet by style.",
       "- Explain a pet detail page.",
@@ -69,7 +71,7 @@ export async function GET(): Promise<Response> {
       `- [Gallery](${toPublicUrl("/")}): Browse approved Codex pet packs and search by name, description, kind, or tag.`,
       `- [About](${toPublicUrl("/about")}): Learn how Codex Pets works, including the package format, npm CLI installer, and moderation flow.`,
       `- [Agents](${toPublicUrl("/agents")}): Connect coding agents through MCP or the HTTP contract.`,
-      `- [AI pet generator](${toPublicUrl("/guides/ai-pet-generator")}): Experimental text-to-pet generation, private previews, v2 ZIP downloads, limits and moderation.`,
+      `- [AI pet generator](${toPublicUrl("/guides/ai-pet-generator")}): Create on the website from text or an image, review the character, animate and download. Includes limits and privacy.`,
       `- [AI pet generator Markdown](${toPublicUrl("/guides/ai-pet-generator.md")}): Machine-readable generation guide.`,
       `- [Developer portal](${toPublicUrl("/developers")}): Find Codex Pets API docs, OpenAPI, MCP, authentication notes, and webhooks status.`,
       `- [API docs](${toPublicUrl("/docs/api")}): Developer-facing Codex Pets HTTP API reference.`,

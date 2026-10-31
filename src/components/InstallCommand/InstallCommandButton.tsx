@@ -18,12 +18,14 @@ type InstallCommandButtonProps = {
   slug: string;
   surface: "card" | "detail";
   relatedContext?: RelatedPetContext;
+  layout?: "default" | "home";
 };
 
 export function InstallCommandButton({
   slug,
   surface,
   relatedContext,
+  layout = "default",
 }: InstallCommandButtonProps) {
   const [status, setStatus] = useState<"idle" | "copied" | "error">("idle");
   const command = buildPetInstallCommand(slug);
@@ -49,7 +51,7 @@ export function InstallCommandButton({
   }
 
   return (
-    <div className={`install-command install-command_${surface}`}>
+    <div className={`install-command install-command_${surface}${layout === "home" ? " install-command_home" : ""}`}>
       <TerminalLine width={16} height={16} className="install-command__icon" />
       {surface === "card" ? (
         <code className="install-command__code" title={command}>
@@ -72,7 +74,7 @@ export function InstallCommandButton({
         ) : (
           <Copy width={16} height={16} />
         )}
-        <span className="install-command__button-text">{buttonText}</span>
+        <span className="install-command__button-text">{layout === "home" && status === "idle" ? "Copy install command" : buttonText}</span>
       </Button>
     </div>
   );

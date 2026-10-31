@@ -1,3 +1,4 @@
+import {ABOUT_COPY,ABOUT_SEO} from "@/lib/product-copy";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Check, Plus, TerminalLine } from "@gravity-ui/icons";
@@ -22,7 +23,7 @@ import { AboutResourceLinks } from "./AboutResourceLinks";
 import "./about.scss";
 
 const ABOUT_DESCRIPTION =
-  "Learn how Codex Pets works: a moderated community gallery, MCP registry, npm CLI installer, and Codex-compatible pet pack format.";
+  ABOUT_SEO.description;
 const INSTALL_COMMAND = "npx @astandrik/codex-pets install zero-two-2";
 const GITHUB_REPOSITORY_URL = "https://github.com/astandrik/codex-pets";
 const NPM_PACKAGE_URL = "https://www.npmjs.com/package/@astandrik/codex-pets";
@@ -57,7 +58,7 @@ const faqs = [
   {
     question: "Can I submit my own pet?",
     answer:
-      "Yes. Upload a ZIP, or upload pet.json plus spritesheet.webp or spritesheet.png from the submit page. If you need a new pet generated first, send a request instead.",
+      "Yes. Upload a ZIP, or upload pet.json plus spritesheet.webp or spritesheet.png from the submit page. To create a new pet yourself, start at /generate. Use /request for help from the administrators.",
   },
   {
     question: "What files does a pack need?",
@@ -67,23 +68,23 @@ const faqs = [
 ];
 
 export const metadata: Metadata = {
-  title: "About Codex Pets",
+  title: ABOUT_SEO.title,
   description: ABOUT_DESCRIPTION,
-  other: getPageViewOtherMetadata("/about", "About Codex Pets"),
+  other: getPageViewOtherMetadata("/about", ABOUT_SEO.title),
   alternates: {
     canonical: withBasePath("/about"),
   },
   openGraph: {
     type: "website",
     siteName: SITE_NAME,
-    title: "About Codex Pets",
+    title: ABOUT_SEO.title,
     description: ABOUT_DESCRIPTION,
     url: withBasePath("/about"),
     images: getOpenGraphImages(),
   },
   twitter: {
     card: "summary_large_image",
-    title: "About Codex Pets",
+    title: ABOUT_SEO.title,
     description: ABOUT_DESCRIPTION,
     images: getTwitterImages(),
   },
@@ -94,7 +95,7 @@ export default function AboutPage() {
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "AboutPage",
-    name: "About Codex Pets",
+    name: ABOUT_SEO.title,
     url: toPublicUrl("/about"),
     description: ABOUT_DESCRIPTION,
     sameAs: [GITHUB_REPOSITORY_URL, NPM_PACKAGE_URL],
@@ -122,19 +123,20 @@ export default function AboutPage() {
           <Flex direction="column" gap={3} className="about-hero__copy">
             <Label theme="info">About</Label>
             <Text variant="display-2" as="h1">
-              Codex Pets is the gallery for Codex companions
+              {ABOUT_COPY.title}
             </Text>
             <Text variant="body-2" color="secondary" className="about-hero__lead">
-              Browse community-made animated pet packs, install one with the
-              npm CLI or MCP tools, or submit your own two-file pack for
-              moderation.
+              {ABOUT_COPY.lead}
             </Text>
             <div className="about-command" aria-label="Example install command">
               <TerminalLine width={18} height={18} className="about-command__icon" />
               <code className="about-command__code">{INSTALL_COMMAND}</code>
             </div>
             <Flex gap={2} wrap className="about-hero__actions">
-              <Button view="action" size="l" href={withBasePath("/")}>
+              <Button view="action" size="l" href={withBasePath("/generate")}>
+                Create your pet
+              </Button>
+              <Button view="outlined" size="l" href={withBasePath("/")}>
                 Browse gallery
                 <ArrowRight />
               </Button>
@@ -172,6 +174,12 @@ export default function AboutPage() {
       </section>
 
       <section className="page-section about-sections" aria-label="How Codex Pets works">
+        {ABOUT_COPY.sections.map(section => (
+          <article key={section.title} className="about-section">
+            <Text variant="display-1" as="h2">{section.title}</Text>
+            <Text variant="body-2" color="secondary">{section.body}</Text>
+          </article>
+        ))}
         <article className="about-section">
           <Text variant="display-1" as="h2">
             What Codex Pets is

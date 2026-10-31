@@ -1,36 +1,17 @@
-import {
-  Button,
-  Card,
-  Container,
-  Flex,
-  Label,
-  Text,
-} from "@/components/GravityUI/GravityUI";
-import {
-  ArrowDownToLine,
-  ArrowRight,
-  Persons,
-  Plus,
-  Star,
-} from "@gravity-ui/icons";
+import {Button, Container, Text} from "@/components/GravityUI/GravityUI";
 import Link from "next/link";
-import type { ReactNode } from "react";
-
-import { AskAIPanel } from "@/components/AskAI/AskAIPanel";
-import {
-  ASK_AI_HOME,
-  ASK_AI_PRODUCT_NAME,
-} from "@/components/AskAI/ask-ai-content";
-import { BEST_CODEX_PETS_GUIDE_PATH } from "@/lib/guides/best-codex-pets";
-import { AI_PET_GENERATOR_PATH } from "@/lib/guides/ai-pet-generator";
-import {
-  HomeHeroPetPicker,
-  type HomeHeroPet,
-} from "@/components/HomePage/HomeHeroPetPicker";
-import { withBasePath } from "@/lib/base-path";
-import { pickRandomHeroPetIndex } from "@/components/HomePage/home-hero-random";
-import { buildHomeRecommendationEntryPoints } from "@/components/HomePage/recommendation-entry-points";
-import type { PublicPetSummary } from "@/lib/pets/types";
+import type {ReactNode} from "react";
+import {AskAIPanel} from "@/components/AskAI/AskAIPanel";
+import {ASK_AI_HOME, ASK_AI_PRODUCT_NAME} from "@/components/AskAI/ask-ai-content";
+import {BEST_CODEX_PETS_GUIDE_PATH} from "@/lib/guides/best-codex-pets";
+import {withBasePath} from "@/lib/base-path";
+import {HOME_COPY, HOME_STEPS, HOME_FAQ, HOME_TEXT_ONLY_AI_PROMPT} from "@/lib/product-copy";
+import type {PublicPetSummary} from "@/lib/pets/types";
+import {HomeHeroPetPicker, type HomeHeroPet} from "./HomeHeroPetPicker";
+import {HomeGeneratedPetExample} from "./HomeGeneratedPetExample";
+import {pickRandomHeroPetIndex} from "./home-hero-random";
+import {buildHomeRecommendationEntryPoints} from "./recommendation-entry-points";
+import "./HomePage.scss";
 
 type HomePageProps = {
   pets: PublicPetSummary[];
@@ -38,265 +19,124 @@ type HomePageProps = {
   catalogTotalPets: number;
   showLandingContent: boolean;
   catalog: ReactNode;
+  generationAvailable?: boolean;
+  reviewBase?: boolean;
 };
 
+const TEXT_ONLY_STEPS = [
+  {title: "Describe your character", body: "Start with a description and an optional name."},
+  {title: "Generate your pet", body: "Create the character and all animation states."},
+  {title: "Preview and download", body: "Inspect every animation and download your pet pack."},
+];
+
 export function HomePage({
-  pets,
-  totalPets,
-  catalogTotalPets,
-  showLandingContent,
-  catalog,
+  pets, catalogTotalPets, showLandingContent, catalog,
+  generationAvailable = true, reviewBase = true,
 }: HomePageProps) {
   const heroPets = showLandingContent ? pets.map(toHomeHeroPet) : [];
-  const initialHeroPetIndex = pickRandomHeroPetIndex(heroPets.length) ?? 0;
-  const recommendationEntryPoints = showLandingContent
-    ? buildHomeRecommendationEntryPoints(pets)
-    : { styleTags: [], popularPets: [], recentPets: [] };
-  const hasRecommendationEntryPoints =
-    recommendationEntryPoints.styleTags.length > 0 ||
-    recommendationEntryPoints.popularPets.length > 0 ||
-    recommendationEntryPoints.recentPets.length > 0;
+  const recommendations = showLandingContent ? buildHomeRecommendationEntryPoints(pets) : null;
+  const example = pets.find(pet => pet.slug === "trolleybus" && pet.status === "approved") ?? null;
+  const steps = reviewBase ? HOME_STEPS.items : TEXT_ONLY_STEPS;
+  const faq = reviewBase ? HOME_FAQ.items : [
+    {question: "How do I start?", answer: "Describe your character and add an optional name. The form shows the currently available generation options."},
+    ...HOME_FAQ.items.slice(1),
+  ];
 
   return (
-    <Container as="main" maxWidth="xl" gutters={5} className="page-shell">
-      {showLandingContent ? (
-        <>
-          <Card view="filled" type="container" className="home-hero-card">
-            <Flex
-              as="section"
-              gap={8}
-              alignItems="flex-start"
-              justifyContent="space-between"
-              className="home-hero"
-              wrap
-            >
-              <Flex direction="column" gap={6} className="home-hero__main">
-                <Flex direction="column" gap={3} className="home-hero__copy">
-                  <Text
-                    variant="caption-2"
-                    color="brand"
-                    className="home-hero__eyebrow"
-                  >
-                    The Codex pet registry
-                  </Text>
-                  <Text variant="display-2" as="h1">
-                    Codex Pets
-                  </Text>
-                  <Text
-                    variant="body-2"
-                    color="secondary"
-                    className="home-hero__lead"
-                  >
-                    Browse community-made pets or generate your own from a description. Preview
-                    every animation state, and download a ZIP that drops into{" "}
-                    <code>~/.codex/pets/&lt;slug&gt;</code>.
-                  </Text>
-                  <Flex gap={2} wrap className="home-hero__actions">
-                    <Button
-                      view="action"
-                      size="l"
-                      href={withBasePath("/generate")}
-                    >
-                      <Star />
-                      Generate a pet
-                    </Button>
-                    <Button
-                      view="outlined"
-                      size="l"
-                      href={withBasePath("/submit")}
-                    >
-                      <Plus />
-                      Submit a pet
-                    </Button>
-                    <Button
-                      view="outlined"
-                      size="l"
-                      href={withBasePath("/#gallery")}
-                    >
-                      Browse gallery
-                      <ArrowRight />
-                    </Button>
-                    <Button
-                      view="outlined"
-                      size="l"
-                      href={withBasePath(BEST_CODEX_PETS_GUIDE_PATH)}
-                    >
-                      Best Codex pets guide
-                      <ArrowRight />
-                    </Button>
-                  </Flex>
-                  <Flex direction="column" gap={2} alignItems="flex-start" className="home-hero__generation">
-                    <Label theme="warning">Experimental AI generation</Label>
-                    <Text variant="body-2" color="secondary">
-                      No account needed. Describe a character, preview its animations,
-                      and download a v2 pet pack. Results expire 24 hours after your
-                      task is accepted. Check the animations and look directions before sharing.
-                    </Text>
-                    <a href={withBasePath(AI_PET_GENERATOR_PATH)}>How generation works, limits and publishing →</a>
-                  </Flex>
-                </Flex>
-                <div
-                  className="home-hero__stats"
-                  aria-label="Registry highlights"
-                >
-                  <div className="home-hero__stat">
-                    <span className="home-hero__stat-icon">
-                      <Star />
-                    </span>
-                    <span>
-                      <strong>{totalPets} approved pets</strong>
-                      <small>and growing</small>
-                    </span>
-                  </div>
-                  <div className="home-hero__stat">
-                    <span className="home-hero__stat-icon">
-                      <Persons />
-                    </span>
-                    <span>
-                      <strong>Community-submitted</strong>
-                      <small>by creators like you</small>
-                    </span>
-                  </div>
-                  <div className="home-hero__stat">
-                    <span className="home-hero__stat-icon">
-                      <ArrowDownToLine />
-                    </span>
-                    <span>
-                      <strong>ZIP-ready</strong>
-                      <small>drop in and enjoy</small>
-                    </span>
-                  </div>
-                </div>
-              </Flex>
-              <div className="home-hero__visual">
-                <HomeHeroPetPicker
-                  pets={heroPets}
-                  initialIndex={initialHeroPetIndex}
-                />
-              </div>
-            </Flex>
-          </Card>
-
-          <section className="page-section home-ask-ai">
-            <AskAIPanel
-              productName={ASK_AI_PRODUCT_NAME}
-              label={ASK_AI_HOME.label}
-              helperText={ASK_AI_HOME.helperText}
-              prompt={ASK_AI_HOME.prompt}
-              page={ASK_AI_HOME.page}
-              promptVariant={ASK_AI_HOME.promptVariant}
-            />
-          </section>
-        </>
-      ) : null}
-      <section id="gallery" className="page-section home-gallery">
-        <Flex
-          as="header"
-          className="section-heading"
-          alignItems="center"
-          gap={3}
-          wrap
-        >
-          {showLandingContent ? (
-            <Text variant="display-1" as="h2">
-              Codex Pets gallery
-            </Text>
-          ) : (
-            <Text variant="display-2" as="h1">
-              Codex Pets gallery
-            </Text>
-          )}
-          <span className="section-heading__badge">
-            {catalogTotalPets} approved pets
-          </span>
-        </Flex>
-        <Text variant="body-2" color="secondary">
-          Browse every approved animated pet pack. Use the page links or keep
-          scrolling to load the next page.
-        </Text>
-
-        {showLandingContent && hasRecommendationEntryPoints ? (
-          <div className="home-recommendations">
-            <Flex
-              as="header"
-              className="section-heading"
-              alignItems="center"
-              gap={3}
-              wrap
-            >
-              <Text variant="subheader-3" as="h2" className="home-recommendations__title">
-                Find by vibe, not keywords
-              </Text>
-            </Flex>
-            <Text variant="body-2" color="secondary">
-              Describe a mood, style, color, character, or coding energy —
-              semantic search will find the closest approved pets.
-            </Text>
-            <div className="home-recommendations__groups">
-              {recommendationEntryPoints.styleTags.length > 0 ? (
-                <RecommendationGroup title="Styles">
-                  {recommendationEntryPoints.styleTags.map((entry) => (
-                    <Link
-                      key={entry.tag}
-                      href={entry.href}
-                      className="home-recommendations__link"
-                    >
-                      #{entry.tag}
-                    </Link>
-                  ))}
-                </RecommendationGroup>
-              ) : null}
-              {recommendationEntryPoints.popularPets.length > 0 ? (
-                <RecommendationGroup title="Popular">
-                  {recommendationEntryPoints.popularPets.map((pet) => (
-                    <Link
-                      key={pet.slug}
-                      href={pet.href}
-                      className="home-recommendations__link"
-                    >
-                      {pet.displayName}
-                    </Link>
-                  ))}
-                </RecommendationGroup>
-              ) : null}
-              {recommendationEntryPoints.recentPets.length > 0 ? (
-                <RecommendationGroup title="Recently added">
-                  {recommendationEntryPoints.recentPets.map((pet) => (
-                    <Link
-                      key={pet.slug}
-                      href={pet.href}
-                      className="home-recommendations__link"
-                    >
-                      {pet.displayName}
-                    </Link>
-                  ))}
-                </RecommendationGroup>
-              ) : null}
+    <Container as="main" maxWidth="xl" gutters={0} className="page-shell home-page">
+      {showLandingContent && <>
+        <section className="home-create-hero home-hero-card">
+          <div className="home-create-hero__copy">
+            <p className="home-create-hero__eyebrow">{HOME_COPY.eyebrow}</p>
+            <h1>{HOME_COPY.title}</h1>
+            <p className="home-create-hero__lead">
+              {reviewBase ? HOME_COPY.description : "Describe a character to create an animated pet. Preview all nine animations and download your pack."}
+            </p>
+            <div className="home-hero__actions">
+              {generationAvailable ? (
+                <Button view="action" size="xl" href={withBasePath(HOME_COPY.primaryHref)}>{HOME_COPY.primary}</Button>
+              ) : (
+                <Button view="action" size="xl" disabled>Generation unavailable</Button>
+              )}
+              <Button view="outlined" size="xl" href={withBasePath(HOME_COPY.secondaryHref)}>{HOME_COPY.secondary}</Button>
             </div>
+            <p className="home-create-hero__support">{HOME_COPY.support}</p>
+            <a href={withBasePath(HOME_COPY.detailsHref)}>{HOME_COPY.details} ↗</a>
           </div>
-        ) : null}
-
+          <HomeGeneratedPetExample key={example?.spritesheetUrl ?? "missing"} pet={example}/>
+        </section>
+        <section className="home-steps">
+          <h2>{HOME_STEPS.title}</h2>
+          <ol>{steps.map((step, index) => (
+            <li key={step.title}>
+              <span className="home-steps__number">0{index + 1}</span>
+              <h3>{step.title}</h3>
+              <p>{step.body}</p>
+            </li>
+          ))}</ol>
+        </section>
+      </>}
+      <section id="gallery" className="home-gallery">
+        {showLandingContent ? <h2>Explore the community gallery</h2> : <h1>Codex Pets gallery</h1>}
+        <p className="home-gallery__lead">
+          Find inspiration or choose a ready-made pet. <span>{catalogTotalPets} approved pets</span>
+        </p>
+        {recommendations && (
+          <details className="home-recommendations">
+            <summary>Explore styles and popular pets</summary>
+            <h3 className="home-recommendations__title">Find by vibe, not keywords</h3>
+            <p>Describe a mood, style, color, character, or coding energy — semantic search will find the closest approved pets.</p>
+            <div className="home-recommendations__groups">
+              {recommendations.styleTags.length > 0 && (
+                <RecommendationGroup title="Styles">
+                  {recommendations.styleTags.map(item => <Link key={item.tag} href={item.href} className="home-recommendations__link">#{item.tag}</Link>)}
+                </RecommendationGroup>
+              )}
+              {recommendations.popularPets.length > 0 && (
+                <RecommendationGroup title="Popular">
+                  {recommendations.popularPets.map(item => <Link key={item.slug} href={item.href} className="home-recommendations__link">{item.displayName}</Link>)}
+                </RecommendationGroup>
+              )}
+              {recommendations.recentPets.length > 0 && (
+                <RecommendationGroup title="Recently added">
+                  {recommendations.recentPets.map(item => <Link key={item.slug} href={item.href} className="home-recommendations__link">{item.displayName}</Link>)}
+                </RecommendationGroup>
+              )}
+            </div>
+            <Link href={BEST_CODEX_PETS_GUIDE_PATH}>Best Codex pets guide ↗</Link>
+          </details>
+        )}
+        {showLandingContent && <HomeHeroPetPicker pets={heroPets} initialIndex={pickRandomHeroPetIndex(heroPets.length) ?? 0} layout="compact"/>}
         {catalog}
       </section>
+      {showLandingContent && <>
+        <section className="home-faq">
+          <h2>{HOME_FAQ.title}</h2>
+          <div>
+            {faq.map((item, index) => (
+              <details key={item.question} open={index === 0}>
+                <summary>{item.question}</summary>
+                <p>{item.answer}</p>
+              </details>
+            ))}
+            <a href={withBasePath(HOME_FAQ.href)}>{HOME_FAQ.details} ↗</a>
+          </div>
+        </section>
+        <section className="home-ask-ai">
+          <AskAIPanel productName={ASK_AI_PRODUCT_NAME} label={ASK_AI_HOME.label}
+            helperText={ASK_AI_HOME.helperText} prompt={reviewBase ? ASK_AI_HOME.prompt : HOME_TEXT_ONLY_AI_PROMPT}
+            page={ASK_AI_HOME.page} promptVariant={ASK_AI_HOME.promptVariant} layout="home"/>
+        </section>
+      </>}
     </Container>
   );
 }
 
-function RecommendationGroup({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="home-recommendations__group">
-      <Text variant="body-2" as="h3" className="home-recommendations__group-title">
-        {title}
-      </Text>
-      <div className="home-recommendations__links">{children}</div>
-    </div>
-  );
+function RecommendationGroup({title, children}: {title: string; children: ReactNode}) {
+  return <div className="home-recommendations__group">
+    <Text as="h3" variant="body-2">{title}</Text>
+    <div className="home-recommendations__links">{children}</div>
+  </div>;
 }
 
 function toHomeHeroPet(pet: PublicPetSummary): HomeHeroPet {

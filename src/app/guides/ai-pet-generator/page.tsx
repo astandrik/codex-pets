@@ -4,6 +4,7 @@ import { Button, Container, Flex, Label, Text } from "@/components/GravityUI/Gra
 import { withBasePath } from "@/lib/base-path";
 import {
   AI_PET_GENERATOR_DATE,
+  AI_PET_GENERATOR_UPDATED_DATE,
   AI_PET_GENERATOR_DESCRIPTION,
   AI_PET_GENERATOR_PATH,
   AI_PET_GENERATOR_SECTIONS,
@@ -37,7 +38,7 @@ export default function AiPetGeneratorGuidePage() {
         <Label theme="warning">Experimental AI generation</Label>
         <Text variant="display-2" as="h1">{AI_PET_GENERATOR_TITLE}</Text>
         <Text variant="body-2" color="secondary" className="page-section-header__lead">{AI_PET_GENERATOR_DESCRIPTION}</Text>
-        <Text className="guide-byline">{formatGuideByline({ datePublished: AI_PET_GENERATOR_DATE, dateModified: AI_PET_GENERATOR_DATE })}</Text>
+        <Text className="guide-byline">{formatGuideByline({ datePublished: AI_PET_GENERATOR_DATE, dateModified: AI_PET_GENERATOR_UPDATED_DATE })}</Text>
         <Flex gap={2} wrap>
           <Button view="action" size="l" href={withBasePath("/generate")}>Generate a pet <ArrowRight /></Button>
           <Button view="outlined" size="l" href={withBasePath("/pets/trolleybus")}>See a generated pet</Button>

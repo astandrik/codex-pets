@@ -1,7 +1,9 @@
 "use client";
 
 import { Card, Text } from "@/components/GravityUI/GravityUI";
-import type { SVGProps } from "react";
+import {useState,type SVGProps} from "react";
+import {Button} from "@gravity-ui/uikit";
+import {copyText} from "@/lib/clipboard";
 
 import { trackGoal } from "@/lib/metrics/yandex";
 import {
@@ -19,6 +21,7 @@ type AskAIPanelProps = {
   page: string;
   promptVariant: string;
   petSlug?: string;
+  layout?: "default" | "home";
 };
 
 export function AskAIPanel({
@@ -29,7 +32,17 @@ export function AskAIPanel({
   page,
   promptVariant,
   petSlug,
+  layout = "default",
 }: AskAIPanelProps) {
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+  async function copyPrompt() {
+    try {
+      await copyText(prompt);
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("error");
+    }
+  }
   const links = buildAskAIProviderLinks(prompt);
   const providersById = new Map(
     ASK_AI_PROVIDERS.map((provider) => [provider.id, provider]),
@@ -46,7 +59,7 @@ export function AskAIPanel({
   }
 
   return (
-    <Card view="raised" className="ask-ai-panel">
+    <Card view="raised" className={`ask-ai-panel${layout === "home" ? " ask-ai-panel_home" : ""}`}>
       <div className="ask-ai-panel__content">
         <div className="ask-ai-panel__body">
           <Text variant="subheader-2" as="h2" className="ask-ai-panel__title">
@@ -78,6 +91,7 @@ export function AskAIPanel({
               </a>
             );
           })}
+          {layout === "home" && <Button type="button" view="outlined" size="l" onClick={()=>void copyPrompt()}><span aria-live="polite">{copyStatus === "copied" ? "Copied" : copyStatus === "error" ? "Copy failed — try again" : "Copy prompt"}</span></Button>}
         </div>
       </div>
     </Card>

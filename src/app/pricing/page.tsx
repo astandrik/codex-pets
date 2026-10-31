@@ -99,7 +99,7 @@ export default function PricingPage() {
         </Text>
         <ul>
           <li>Public pet search, manifest, and MCP discovery are free to use.</li>
-          <li>There are no paid plans, quotas, invoices, or commercial terms.</li>
+          <li>The public catalog has no paid plans or invoices. AI generation is service-funded and subject to daily limits, queue capacity and availability.</li>
           <li>Submissions and generation requests are moderated before listing.</li>
           <li>Public APIs are best-effort and do not include a paid SLA.</li>
         </ul>

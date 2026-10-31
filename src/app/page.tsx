@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 
+import { generationEnabled, generationReviewFlowEnabled } from "@/lib/pets/generation/model";
 import { GalleryFilter } from "@/components/GalleryFilter/GalleryFilter";
 import { HomePage } from "@/components/HomePage/HomePage";
 import { PetCatalog } from "@/components/PetCatalog/PetCatalog";
@@ -129,12 +130,15 @@ export default async function Home({ searchParams }: HomeProps) {
       />
       <HomePage
         pets={pets}
+        generationAvailable={generationEnabled()}
+        reviewBase={generationReviewFlowEnabled()}
         totalPets={pets.length}
         catalogTotalPets={result.total}
         showLandingContent={showLandingContent}
         catalog={
           <>
             <GalleryFilter
+              layout="home"
               defaultQuery={filters.query}
               defaultKind={filters.kind}
               defaultTags={filters.tags}
@@ -145,6 +149,7 @@ export default async function Home({ searchParams }: HomeProps) {
                 ...filters,
                 page: pageResult.page,
               })}
+              cardLayout="home"
               initialPets={initialPets}
               initialPage={pageResult.page}
               pageSize={CATALOG_PAGE_SIZE}

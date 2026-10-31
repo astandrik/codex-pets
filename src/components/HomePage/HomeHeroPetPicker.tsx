@@ -29,6 +29,7 @@ export type HomeHeroPet = Pick<
 type HomeHeroPetPickerProps = {
   pets: HomeHeroPet[];
   initialIndex: number;
+  layout?: "default" | "compact";
 };
 
 type StripStyle = CSSProperties & {
@@ -45,6 +46,7 @@ const RECENT_HERO_PET_LIMIT = 5;
 export function HomeHeroPetPicker({
   pets,
   initialIndex,
+  layout = "default",
 }: HomeHeroPetPickerProps) {
   const [selectedIndex, setSelectedIndex] = useState(() =>
     normalizeInitialIndex(pets.length, initialIndex),
@@ -108,7 +110,7 @@ export function HomeHeroPetPicker({
   const petHref = withBasePath(`/pets/${pet.slug}`);
 
   return (
-    <div className="home-hero-pet" aria-label="Random featured pet">
+    <div className={`home-hero-pet${layout === "compact" ? " home-hero-pet_compact" : ""}`} aria-label="Random featured pet">
       <a
         href={petHref}
         className="home-hero-pet__stage-link"
@@ -188,13 +190,13 @@ export function HomeHeroPetPicker({
       </Flex>
       <Flex gap={2} wrap justifyContent="center" className="home-hero-pet__actions">
         <Button
-          view="action"
+          view={layout === "compact" ? "outlined" : "action"}
           size="l"
           onClick={handleShuffleClick}
           disabled={pets.length < 2}
         >
           <Shuffle width={16} height={16} />
-          I&apos;m feeling lucky
+          {layout === "compact" ? "Surprise me" : "I’m feeling lucky"}
         </Button>
         <Button
           view="outlined"

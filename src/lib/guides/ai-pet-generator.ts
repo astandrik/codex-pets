@@ -4,15 +4,16 @@ import { buildGuideArticleJsonLd } from "@/lib/guides/shared";
 export const AI_PET_GENERATOR_PATH = "/guides/ai-pet-generator";
 export const AI_PET_GENERATOR_TITLE = "AI pet generator for Codex";
 export const AI_PET_GENERATOR_DESCRIPTION =
-  "Create an animated Codex pet from a text description. Preview nine animations and 16 look directions, download a v2 ZIP, and submit it for moderation.";
+  "Create an animated Codex pet from a description or image. Preview nine animations and 16 look directions, download a v2 ZIP, and submit it for moderation.";
 export const AI_PET_GENERATOR_DATE = "2026-10-11";
+export const AI_PET_GENERATOR_UPDATED_DATE = "2026-10-31";
 export const AI_PET_GENERATOR_WARNING =
   "Generation is experimental. Animation continuity and look directions can be imperfect. Review the preview before using or submitting a pet; a successful generation does not guarantee visual quality.";
 export const AI_PET_GENERATOR_SECTIONS = [
   {
-    title: "From a description to an animated pet",
+    title: "From text or an image to an animated pet",
     paragraphs: [
-      "Describe your character, its colors and style. You can add a name, and no account is required. For example: a mint-green cat with oversized round glasses, or a friendly yellow trolleybus with a tiny face.",
+      "Start with a description, an image, or both. Describe your character, its colors and style; you can add a name, and no account is required. Paste, drag, or choose one PNG, JPEG or WebP image up to 5 MiB. Your reference must be readable, single-frame and no larger than 25 million pixels. Review and refine the character before confirming it for animation. Available options are shown in the form.",
       "After the images are generated, one additional AI request drafts a name, description and tags. Review and edit them on the private result page, then save before downloading or sending the pet for moderation. Saving edits does not regenerate images or make another paid request.",
       "Open the private progress page after submitting. Once the pet is ready, inspect every animation and look direction in the player, then download the ZIP, pet.json or spritesheet. The v2 pack has a transparent 1536×2288 atlas, nine animation states and 16 look directions.",
     ],
@@ -47,7 +48,7 @@ export function getAiPetGeneratorJsonLd() {
     title: AI_PET_GENERATOR_TITLE,
     description: AI_PET_GENERATOR_DESCRIPTION,
     datePublished: AI_PET_GENERATOR_DATE,
-    dateModified: "2026-10-12",
+    dateModified: AI_PET_GENERATOR_UPDATED_DATE,
   });
 }
 
