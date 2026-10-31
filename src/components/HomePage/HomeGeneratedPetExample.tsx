@@ -4,6 +4,7 @@ import Image from "next/image";
 import {useEffect, useState, type CSSProperties} from "react";
 import {Button} from "@/components/GravityUI/GravityUI";
 import {getPetIdleStripUrl} from "@/lib/pets/asset-urls";
+import {previewCycleDurationMs} from "@/lib/pets/preview-timing";
 import {PET_SHEET, PET_STATES, type PublicPetSummary} from "@/lib/pets/types";
 import {withBasePath} from "@/lib/base-path";
 import "./HomeGeneratedPetExample.scss";
@@ -31,7 +32,7 @@ export function HomeGeneratedPetExample({pet}: {pet: PublicPetSummary | null}) {
   const imageFailed = failedUrl === url;
   const style = {
     "--example-frames": PET_STATES[0].frames,
-    "--example-duration": `${PET_STATES[0].frames * 140}ms`,
+    "--example-duration": `${previewCycleDurationMs(PET_STATES[0].key)}ms`,
     animationPlayState: playing && visible ? "running" : "paused",
   } as CSSProperties;
 

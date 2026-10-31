@@ -26,7 +26,7 @@
     max-width:none;
     width:calc(var(--example-frames)*100%);
     height:auto;
-    animation:home-example-idle var(--example-duration) steps(var(--example-frames)) infinite;
+    animation:pet-idle-preview var(--example-duration) steps(1, end) infinite;
     image-rendering:pixelated;
   }
   &__heading {
@@ -43,11 +43,6 @@
   &_empty {
     display:grid;
     align-content:center;
-  }
-}
-@keyframes home-example-idle {
-  to {
-    transform:translateX(-100%);
   }
 }
 @media(max-width:767px) {
