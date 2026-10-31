@@ -30,7 +30,7 @@ it('shows short and full conditions without network calls and returns focus on E
     const dialog=document.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain('200');expect(dialog.textContent).toContain('10 per IP');expect(dialog.textContent).toContain('24 hours from task acceptance');
     const full=[...dialog.querySelectorAll('button')].find(b=>b.textContent==='Full details')!;act(()=>full.click());
-    expect(dialog.textContent).toContain('30 minutes');expect(dialog.textContent).toContain('additional AI request');expect(dialog.textContent).toContain('retried once');expect(dialog.textContent).toContain('midnight Moscow');
+    expect(dialog.textContent).toContain('60 minutes');expect(dialog.textContent).toContain('additional AI request');expect(dialog.textContent).toContain('retried once');expect(dialog.textContent).toContain('midnight Moscow');
     expect(document.activeElement?.tagName).toBe('H2');
     act(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true})));expect(close).toHaveBeenCalledOnce();
     render(false);await act(async()=>{await new Promise(r=>setTimeout(r,350));});expect(document.activeElement).toBe(trigger);

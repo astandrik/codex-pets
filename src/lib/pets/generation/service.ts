@@ -30,7 +30,7 @@ import { readFailureDiagnostic } from "@/lib/pets/generation/failure-diagnostic"
 import {CARD_METADATA_FALLBACK, normalizeCardMetadata, cardMetadataEditSchema, type CardMetadataFields, type CardMetadataRecord, type PublicCardMetadata} from "@/lib/pets/generation/card-metadata";
 import type {CardMetadataResult} from "@/lib/pets/generation/card-provider";
 import {publicJob} from "@/lib/pets/generation/public-job";
-import {scheduler, saveScheduler, expireQueue, requireJobWithActiveWorkerLease} from "@/lib/pets/generation/scheduler";
+import {scheduler, saveScheduler, expireQueue, requireQueueCapacity, requireJobWithActiveWorkerLease} from "@/lib/pets/generation/scheduler";
 import {createBaseReviewService, readSavedGenerationBase} from "@/lib/pets/generation/base-review";
 import {normalizeSavedGenerationBase} from "@/lib/pets/generation/reference-image";
 

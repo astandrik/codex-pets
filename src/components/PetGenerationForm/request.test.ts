@@ -113,3 +113,22 @@ it('changes identity for name-only edits but not for renamed files with identica
   expect((await prepareGenerationRequest(store,{prompt:'Fox',displayName:'First',referenceImage:new File(['same'],'other.png')})).requestId).toBe(first.requestId);
   expect((await prepareGenerationRequest(store,{prompt:'Fox',displayName:'Second',referenceImage:new Blob(['same'])})).requestId).not.toBe(first.requestId);
 });
+
+it("replays the main form without allocating an identity or replacing saved name and image metadata", async () => {
+  vi.stubGlobal("crypto", webcrypto);
+  const store = storage();
+  const brief = {prompt: "Synthetic fox", displayName: "Fox", referenceImage: new Blob(["same bytes"])};
+  const first = await prepareGenerationRequest(store, brief, 100);
+  const saved = [...store.rows];
+  const uuid = vi.spyOn(webcrypto, "randomUUID");
+  try {
+    expect(await prepareGenerationRequest(store, {...brief, referenceImage: new File(["same bytes"], "renamed.png"), replayOnly: true}, 101)).toEqual(first);
+    await expect(prepareGenerationRequest(store, {...brief, displayName: "Changed", replayOnly: true}, 101)).rejects.toThrow("refinement_replay_mismatch");
+    await expect(prepareGenerationRequest(store, {...brief, referenceImage: new Blob(["different bytes"]), replayOnly: true}, 101)).rejects.toThrow("refinement_replay_mismatch");
+    await expect(prepareGenerationRequest(store, {...brief, replayOnly: true}, 86_400_101)).rejects.toThrow("refinement_replay_mismatch");
+    expect(uuid).not.toHaveBeenCalled();
+    expect([...store.rows]).toEqual(saved);
+  } finally {
+    uuid.mockRestore();
+  }
+});

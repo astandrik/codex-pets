@@ -9,7 +9,7 @@ import {normalizeSavedGenerationBase} from "@/lib/pets/generation/reference-imag
 import {validateGeneratedSheet} from "@/lib/pets/generation/package";
 import {validatePetJson} from "@/lib/pets/validation";
 import {publicJob} from "@/lib/pets/generation/public-job";
-import {scheduler, expireQueue, saveScheduler} from "@/lib/pets/generation/scheduler";
+import {scheduler, expireQueue, requireQueueCapacity, saveScheduler} from "@/lib/pets/generation/scheduler";
 import {readDailyQuota, consumeDailyQuota} from "@/lib/pets/generation/quota-grants";
 import {startBudgetTracking} from "@/lib/pets/generation/budget";
 
@@ -96,7 +96,7 @@ export function createAnimationRevisionService(store: GenerationStore, options: 
             const now = options.now();
             const state = await scheduler(tx, now); await expireQueue(tx, state, now);
             if (state.pauseReason) throw new GenerationError("generation_paused");
-            if (state.queue.length >= 5) throw new GenerationError("queue_full");
+            requireQueueCapacity(state);
             // Read the clock after potentially slow database reads for current-day accounting.
             const admittedAt = options.now();
             const quota = await readDailyQuota(tx, secret, clientIp, admittedAt);

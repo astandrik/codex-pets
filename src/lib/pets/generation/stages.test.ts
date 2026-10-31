@@ -14,7 +14,6 @@ function fixture(budgetUsd = 50) {
 const usage = { textInputTokens: 1, imageInputTokens: 0, outputTokens: 1, costUsd: 0.04 };
 
 describe("durable row generation", () => {
-  it("uses the approved thirty minute waiting limit", () => expect(WAIT_MS).toBe(30 * 60_000));
   it("saves a row atomically and resumes without starting that paid stage again", async () => {
     const f = fixture(); const accepted = await f.service.generate(f.input(), "203.0.113.1");
     const job = (await f.service.claim("first"))!;

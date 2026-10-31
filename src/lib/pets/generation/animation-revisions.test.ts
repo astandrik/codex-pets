@@ -47,7 +47,7 @@ describe("animation revisions", () => {
     if (cause === "metadata") input.sourceMetadataRevision = 1;
     if (cause === "corrupt") f.store.artifacts.get(f.source.id + ":stage-base.png")!.bytes = Buffer.from("broken");
     if (cause === "disabled") vi.stubEnv("PET_GENERATION_ANIMATION_REVISIONS_ENABLED", "false");
-    if (cause === "queue") { for (let i=0;i<5;i++) await f.service.generate({prompt:"pet",requestId:randomUUID()},`203.0.113.${i}`); }
+    if (cause === "queue") { vi.stubEnv("PET_GENERATION_QUEUE_LIMIT", "5"); for (let i=0;i<5;i++) await f.service.generate({prompt:"pet",requestId:randomUUID()},`203.0.113.${i}`); }
     const before = {jobs: structuredClone([...f.store.jobs]), ledger: structuredClone([...f.store.ledger]), artifacts: [...f.store.artifacts]};
     if (cause === "write") { const transaction = f.store.transaction.bind(f.store); vi.spyOn(f.store,"transaction").mockImplementation(op => transaction(tx => op({...tx, putJob: async () => {throw Error("write failure");}}))); }
     await expect(f.service.reviseAnimations(f.source.id, input, "203.0.113.9")).rejects.toBeDefined();

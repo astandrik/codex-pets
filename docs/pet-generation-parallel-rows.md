@@ -1,8 +1,10 @@
 # Eleven rows with recorded-spend accounting
 
 The worker generates the base reference first, then requests the eleven animation
-rows in one batch. One pet is active for the whole service, with up to five waiting
-tasks. Model, prompts, image dimensions, twelve-image-stage maximum, English card
+rows in one batch. One pet is active for the whole service, with up to 30 waiting
+tasks by default (`PET_GENERATION_QUEUE_LIMIT`, integer 1–200, configured identically
+in web and worker). Queued work times out after 60 minutes; the 24-hour lifetime
+still starts at acceptance. Invalid nonempty queue settings fail closed. Model, prompts, image dimensions, twelve-image-stage maximum, English card
 metadata and proxy routing are unchanged.
 
 ## Durable calls and diagnostics
@@ -148,7 +150,7 @@ idempotency; normalized-image hash protects the saved artifact. The reference is
 private, expires with the job, and is never copied into gallery assets or the ZIP.
 
 A review job releases its worker lease and scheduler slot while awaiting approval.
-Confirmation queues the same job once, reuses its base and starts a fresh 30-minute
+Confirmation queues the same job once, reuses its base and starts a fresh 60-minute
 queue clock. It consumes no new daily attempt and preserves recorded expenses and
 unknown accounting markers. The original 24-hour expiry never moves. An explicit
 new attempt creates a new job and consumes another daily attempt; refreshing or

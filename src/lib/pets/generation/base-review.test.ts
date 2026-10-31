@@ -1,9 +1,11 @@
 import {randomUUID} from "node:crypto";
-import {describe, expect, it, vi} from "vitest";
+import {afterEach, describe, expect, it, vi} from "vitest";
 import {createGenerationService} from "./service";
 import {createSpriteGenerationWorker} from "./sprite-worker";
 import {MemoryStore} from "./test-store";
 import {STAGE_NAMES, type StageName} from "./model";
+
+afterEach(() => vi.unstubAllEnvs());
 
 function fixture() {
   const store = new MemoryStore();
@@ -87,6 +89,8 @@ it("sets a new queue clock, preserves the deadline and never revives a timed-out
   const queued = await f.service.confirm(accepted.generationId);
   expect(queued.generation.status).toBe("queued"); expect(queued.generation.expiresAt).toBe(accepted.expiresAt);
   f.config.now += 31 * 60_000;
+  expect((await f.service.get(accepted.generationId)).status).toBe("queued");
+  f.config.now += 29 * 60_000;
   expect((await f.service.get(accepted.generationId)).error?.code).toBe("queue_timeout");
   expect(await f.worker("two")).toBe("idle");
   const again = await f.service.confirm(accepted.generationId);
@@ -108,6 +112,7 @@ it("keeps the character waiting when the queue, budget or service cannot accept 
   f.store.ledger.get("budget")!.value = JSON.stringify({...budget, spent: {"2026-10-17": 50_000_000}});
   await expect(f.service.confirm(accepted.generationId)).rejects.toMatchObject({code: "budget_exhausted"});
   f.store.ledger.get("budget")!.value = JSON.stringify(budget);
+  vi.stubEnv("PET_GENERATION_QUEUE_LIMIT", "5");
   for (let i = 0; i < 5; i++) await f.service.generate(f.input(), "203.0.113.6");
   await expect(f.service.confirm(accepted.generationId)).rejects.toMatchObject({code: "queue_full"});
   expect((await f.service.get(accepted.generationId)).status).toBe("awaiting_confirmation");

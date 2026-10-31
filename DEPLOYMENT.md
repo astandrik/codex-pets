@@ -599,7 +599,14 @@ an explicit manual enable step.
    including while intake is disabled.
    `node scripts/pet-generation-worker.mjs --once` processes at most one task.
 5. Set `PET_GENERATION_BUDGET_USD=6` only for the bounded three-task candidate;
-   production defaults to50USD/day. For a closed candidate, bind its HTTP port to loopback and use a separate
+   production defaults to50USD/day. Keep the recorded-spend threshold unchanged
+   when changing queue capacity. Set `PET_GENERATION_QUEUE_LIMIT` identically in
+   web and worker (default 30, integer 1–200); queued tasks time out after 60 minutes.
+   Invalid nonempty queue settings block new admission; `/generate` remains
+   available to replay a matching saved request. Accepted tasks retain
+   their 24-hour expiry from acceptance. Replay by request UUID remains available
+   when the queue is full. A larger queue does not increase processing concurrency.
+   For a closed candidate, bind its HTTP port to loopback and use a separate
    loopback nginx listener that overwrites `X-Pets-Client-IP` with `$remote_addr`.
    Enable `PET_GENERATION_ENABLED=true` only in the candidate and its worker.
    Exercise three synthetic prompts, using one test IP and fresh UUID request

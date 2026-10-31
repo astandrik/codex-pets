@@ -1,7 +1,7 @@
 import {createHash} from "node:crypto";
 import {GENERATION_ID, GenerationError, generationConfirmationSchema, generationAnimationHintsEnabled, type GenerationJob} from "@/lib/pets/generation/model";
 import type {GenerationStore, GenerationTransaction} from "@/lib/pets/generation/store";
-import {scheduler, saveScheduler, expireQueue, requireJobWithActiveWorkerLease} from "@/lib/pets/generation/scheduler";
+import {scheduler, saveScheduler, expireQueue, requireQueueCapacity, requireJobWithActiveWorkerLease} from "@/lib/pets/generation/scheduler";
 import {settleBudget, startBudgetTracking} from "@/lib/pets/generation/budget";
 import {publicJob} from "@/lib/pets/generation/public-job";
 
@@ -63,7 +63,7 @@ export function createBaseReviewService(store: GenerationStore, options: {now: (
           const state = await scheduler(tx, now);
           await expireQueue(tx, state, now);
           if (state.pauseReason) throw new GenerationError("generation_paused");
-          if (state.queue.length >= 5) throw new GenerationError("queue_full");
+          requireQueueCapacity(state);
           await startBudgetTracking(tx, id, now, options.budgetUsd());
           const decisionTime = options.now();
           liveJob(id, job, decisionTime);

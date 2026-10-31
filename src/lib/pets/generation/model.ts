@@ -12,9 +12,20 @@ import {cliCauseSchema,readCliCause,type CliCause,errorDetailsSchema,readErrorDe
 import { failureDiagnosticSchema, readFailureDiagnostic, type FailureDiagnostic } from "@/lib/pets/generation/failure-diagnostic";
 import {retryInputMetadataSchema} from "@/lib/pets/generation/base-retry-model";
 
+import {DEFAULT_GENERATION_QUEUE_LIMIT, MAX_GENERATION_QUEUE_LIMIT} from "@/lib/pets/generation/queue-policy";
+
 export const DAY = 86_400_000;
-export const WAIT_MS = 30 * 60_000;
+export {GENERATION_QUEUE_WAIT_MS as WAIT_MS} from "@/lib/pets/generation/queue-policy";
 export const LEASE_MS = 10 * 60_000;
+export function generationQueueLimit() {
+  const raw = process.env.PET_GENERATION_QUEUE_LIMIT?.trim();
+  if (!raw) return DEFAULT_GENERATION_QUEUE_LIMIT;
+  const value = Number(raw);
+  if (!/^[0-9]+$/.test(raw) || !Number.isSafeInteger(value) || value < 1 || value > MAX_GENERATION_QUEUE_LIMIT) {
+    throw new GenerationError("generation_not_configured");
+  }
+  return value;
+}
 export const GENERATION_MODEL = "gpt-image-2.5-sunburst";
 export const PROMPT_REVISION = "pet-v2-rows-20261010-1";
 export const STAGE_NAMES = ["base", "idle", "running", "running-left", "running-right", "waving", "jumping", "waiting", "failed", "review", "look-0-157", "look-180-337"] as const;

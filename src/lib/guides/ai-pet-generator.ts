@@ -21,7 +21,7 @@ export const AI_PET_GENERATOR_SECTIONS = [
     title: "Daily limits and availability",
     paragraphs: [
       "Generation is funded by this service. The default limit is 10 accepted tasks per IP and 200 for the whole service per Moscow day. Administrators can grant extra IP attempts, but those do not bypass the global limit or the service spending threshold. Allowances reset at midnight Moscow time.",
-      "One pet is generated at a time, with up to five tasks waiting. A task can wait in the queue for up to 30 minutes; this is not a promise of completion within 30 minutes. Accepted tasks count toward the daily allowance even if generation later fails. An AI safety refusal or network failure can stop a task; a failed image stage may receive one delayed retry. Successful image stages are kept, and metadata generation is not retried.",
+      "One pet is generated at a time, with up to 30 tasks waiting by default (the service administrator can configure capacity). A task can wait in the queue for up to 60 minutes; this is not a promise of completion within 60 minutes. Accepted tasks count toward the daily allowance even if generation later fails. An AI safety refusal or network failure can stop a task; a failed image stage may receive one delayed retry. Successful image stages are kept, and metadata generation is not retried.",
       "People behind the same network or MCP gateway share the IP limit. If a limit is reached, the form explains whether it is your IP allowance, the global allowance or the spending budget.",
     ],
   },

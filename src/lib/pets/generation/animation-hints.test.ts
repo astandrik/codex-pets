@@ -69,6 +69,7 @@ it("keeps the first accepted text under concurrent confirmations with different 
 it.each(["queue", "budget", "expiry", "write"])("does not save hints on %s failure", async failure => {
   const f = await fixture();
   if (failure === "queue") {
+    vi.stubEnv("PET_GENERATION_QUEUE_LIMIT", "5");
     const state = JSON.parse(f.store.ledger.get("scheduler")!.value); state.queue = Array.from({length: 5}, (_, i) => String(i));
     // Keep queued entries live so expireQueue cannot remove them.
     const base = (await f.store.readJob(f.id))!;

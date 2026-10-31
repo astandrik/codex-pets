@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGenerationService } from "@/lib/pets/generation/service";
 import { createGenerationWorker } from "@/lib/pets/generation/worker";
 import { DAY, LEASE_MS, WAIT_MS, readGenerationClientIp, moscowDay, type GenerationJob } from "@/lib/pets/generation/model";
@@ -56,6 +56,8 @@ function fixture() {
   return { store, service, config, input };
 }
 
+afterEach(() => vi.unstubAllEnvs());
+
 describe("pet generation admission and privacy", () => {
   it("serializes concurrent idempotent requests without charging twice or leaking input", async () => {
     const f = fixture(); const input = f.input();
@@ -96,6 +98,7 @@ describe("pet generation admission and privacy", () => {
     expect(moscowDay(f.config.now)).toBe("2026-10-10");
   });
   it("caps the waiting queue and expires queued work without a provider call", async () => {
+    vi.stubEnv("PET_GENERATION_QUEUE_LIMIT", "5");
     const f = fixture(); let id = "";
     for (let i = 0; i < 5; i += 1) id = (await f.service.generate(f.input(), "203.0.113." + (i + 1))).generationId;
     await expect(f.service.generate(f.input(), "198.51.100.1")).rejects.toMatchObject({ code: "queue_full" });

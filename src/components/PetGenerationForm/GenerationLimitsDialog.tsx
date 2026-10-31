@@ -2,15 +2,17 @@
 
 import { useRef, useState } from "react";
 import { Button, Dialog } from "@gravity-ui/uikit";
+import {DEFAULT_GENERATION_QUEUE_LIMIT, GENERATION_QUEUE_WAIT_MINUTES} from "@/lib/pets/generation/queue-policy";
 import { ANIMATION_AUTO_REPAIR_NOTICE, generationExperimentNotice } from "@/lib/pets/generation/disclosure";
 import { withBasePath } from "@/lib/base-path";
 import "./GenerationLimitsDialog.scss";
 
-export function GenerationLimitsDialog({ open, onClose, reviewBase, automaticAnimationRepair = false }: {
+export function GenerationLimitsDialog({ open, onClose, reviewBase, automaticAnimationRepair = false, queueLimit = DEFAULT_GENERATION_QUEUE_LIMIT }: {
   open: boolean;
   onClose: () => void;
   reviewBase: boolean;
   automaticAnimationRepair?: boolean;
+  queueLimit?: number | null;
 }) {
   const [full, setFull] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -27,7 +29,9 @@ export function GenerationLimitsDialog({ open, onClose, reviewBase, automaticAni
       {automaticAnimationRepair && <p>{ANIMATION_AUTO_REPAIR_NOTICE}</p>}
       <ul>
         <li>Up to 200 accepted tasks per day and 10 per IP, resetting at midnight Moscow time.</li>
-        <li>One pet at a time. Up to five tasks may wait for up to 30 minutes.</li>
+        <li>{queueLimit === null
+          ? <>Queue capacity is temporarily unavailable. Accepted tasks may wait for up to {GENERATION_QUEUE_WAIT_MINUTES} minutes.</>
+          : <>One pet at a time. Up to {queueLimit} {queueLimit === 1 ? "task" : "tasks"} may wait for up to {GENERATION_QUEUE_WAIT_MINUTES} minutes.</>}</li>
         <li>Accepted tasks count toward the limit even if generation fails or the result is unsuitable.</li>
         <li>Your result is private for 24 hours from task acceptance, including time in the queue.</li>
       </ul>

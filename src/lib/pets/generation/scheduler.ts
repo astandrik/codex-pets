@@ -1,6 +1,10 @@
-import {WAIT_MS, GenerationError, schedulerSchema, type GenerationJob, type Scheduler} from "@/lib/pets/generation/model";
+import {WAIT_MS, GenerationError, generationQueueLimit, schedulerSchema, type GenerationJob, type Scheduler} from "@/lib/pets/generation/model";
 import type {GenerationTransaction} from "@/lib/pets/generation/store";
 import {settleBudget} from "@/lib/pets/generation/budget";
+
+export function requireQueueCapacity(state: Scheduler) {
+  if (state.queue.length >= generationQueueLimit()) throw new GenerationError("queue_full");
+}
 
 const SCHEDULER_EXPIRY = Date.UTC(2099, 0, 1);
 export async function scheduler(tx: GenerationTransaction, now: number): Promise<Scheduler> {
