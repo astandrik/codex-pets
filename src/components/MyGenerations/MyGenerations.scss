@@ -30,5 +30,51 @@
     align-items: center;
     flex-wrap: wrap;
     gap: var(--g-spacing-3);
+    min-width: 0;
+  }
+
+  &__identity {
+    display: flex;
+    align-items: center;
+    gap: var(--g-spacing-3);
+    width: 100%;
+    min-width: 0;
+  }
+
+  &__thumbnail {
+    display: grid;
+    place-items: center;
+    flex: 0 0 64px;
+    width: 64px;
+    height: 64px;
+    overflow: hidden;
+    border-radius: var(--g-border-radius-m);
+    background: var(--g-color-base-generic);
+    color: var(--g-color-text-secondary);
+
+    > * { grid-area: 1 / 1; }
+  }
+
+  &__thumbnail-image {
+    display: block;
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+
+    &_loading { visibility: hidden; }
+  }
+
+  &__thumbnail-frame {
+    width: 56px;
+    aspect-ratio: 192 / 208;
+    overflow: hidden;
+  }
+
+  &__thumbnail-atlas {
+    display: block;
+    width: calc(56px * 8);
+    height: auto;
+    max-width: none;
+    image-rendering: pixelated;
   }
 }

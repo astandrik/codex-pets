@@ -4,6 +4,7 @@ import {useEffect,useState,useSyncExternalStore} from "react";
 import {Button,Label,Text} from "@gravity-ui/uikit";
 import {withBasePath} from "@/lib/base-path";
 import {HISTORY_PREFIX,parseHistoryGeneration,readGenerationHistory,pruneGenerationHistory,type GenerationHistoryEntry,type HistoryGeneration} from "@/lib/pets/generation/history";
+import {GenerationThumbnail} from "./GenerationThumbnail";
 import "./MyGenerations.scss";
 
 type Result={generation?:HistoryGeneration; unavailable?:boolean; failedReads:number};
@@ -92,7 +93,10 @@ function BrowserGenerations({onRefresh}:{onRefresh:()=>void}){
         const expired=row.expired||row.unavailable;
         const status=statusLabel(row,Boolean(expired));
         return <li key={row.generationId} className="my-generations__item">
-          <div className="my-generations__heading"><Text variant="subheader-2" as="h2">{row.generation?.pet?.displayName??"Pet generation"}</Text><Label theme={statusTheme(row,Boolean(expired))}>{status}</Label></div>
+          <div className="my-generations__identity">
+            <GenerationThumbnail generationId={row.generationId} generation={row.generation} expired={Boolean(expired)}/>
+            <div className="my-generations__heading"><Text variant="subheader-2" as="h2">{row.generation?.pet?.displayName??"Pet generation"}</Text><Label theme={statusTheme(row,Boolean(expired))}>{status}</Label></div>
+          </div>
           {row.generation?.continuation&&<p>{row.generation.continuation.mode === "rebuild" ? "Повторная сборка" : "Продолжение предыдущей генерации"}</p>}
           {!expired&&row.generation?.canContinue&&<p><a href={withBasePath(`/generated/${row.generationId}`)}>Продолжить генерацию</a></p>}
           <Text variant="body-1" color="secondary">Saved {new Date(row.savedAt).toLocaleString()}</Text>

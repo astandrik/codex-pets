@@ -123,6 +123,7 @@ const historyGenerationSchema = z.object({
     completedSteps: z.number().int().min(0).max(12), totalSteps: z.number().int().min(1).max(12),
   }).refine((value) => value.completedSteps <= value.totalSteps),
   canContinue: z.boolean().optional(),
+  baseUrl: z.string().optional(),
   continuation: z.object({sourceGenerationId:z.string().regex(ID),mode:z.enum(["rebuild","regenerate"])}).optional(),
   pet: z.object({ displayName: z.string().min(1).max(80) }).optional(),
   animationRevision: z.object({acceptedAt: z.number().optional()}).optional(),
