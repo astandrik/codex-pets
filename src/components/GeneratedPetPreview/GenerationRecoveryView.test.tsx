@@ -18,7 +18,7 @@ it('keeps accepted private link available when copying fails',async()=>{
 it('keeps receipt checking available and gates manual replay until both modes were visible',async()=>{
  const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const check=vi.fn(),submit=vi.fn();let modesVisible=false;
  vi.stubGlobal('innerWidth',320);vi.stubGlobal('innerHeight',568);
- vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(function(this:HTMLElement){return this.tagName==='FIELDSET'?new DOMRect(0,modesVisible?0:1000,320,150):new DOMRect(0,0,320,70);});
+ vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(function(this:HTMLElement){return this.tagName==='FIELDSET'||this.hasAttribute('data-recovery-mode')?new DOMRect(0,modesVisible?0:1000,320,150):new DOMRect(0,0,320,70);});
  function Fixture(){const [confirmed,setConfirmed]=useState(false);return <GenerationRecoveryView {...props} requestId="ea191c89-d657-4eec-a7d2-4a2e1e4a7ec7" checkAttempted manualConfirmed={confirmed} onManualConfirmed={setConfirmed} onCheck={check} onSubmit={submit}/>;}
  try{
   await act(async()=>root.render(<ThemeProvider theme="dark"><Fixture/></ThemeProvider>));
@@ -48,5 +48,24 @@ it('shows the exact source deadline and tolerates older options without characte
   expect(host.textContent).toContain('не продлевает');
   await act(async()=>root.render(<ThemeProvider theme="light"><GenerationRecoveryView {...props} options={{...props.options!,character:undefined}} mode="rebuild"/></ThemeProvider>));
   expect(host.querySelector('time')).toBeNull();expect(host.textContent).toContain('Срок хранения прежний');expect(host.textContent).not.toContain('Invalid Date');
+ }finally{await act(async()=>root.unmount());host.remove();}
+});
+
+it.each([100,240])('accepts sequentially viewed modes when each option is %spx high',async height=>{
+ const host=document.createElement('div');document.body.append(host);const root=createRoot(host);let scroll=0;
+ vi.stubGlobal('innerWidth',320);vi.stubGlobal('innerHeight',200);
+ vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(function(this:HTMLElement){
+  if(this.tagName==='FIELDSET')return new DOMRect(0,-scroll,320,2*height+30);
+  if(this.tagName==='LABEL')return new DOMRect(0,(this.textContent?.includes('Повторить сборку')?height+30:0)-scroll,320,height);
+  return new DOMRect(0,130,320,70);
+ });
+ try{
+  await act(async()=>root.render(<ThemeProvider theme="light"><GenerationRecoveryView {...props}/></ThemeProvider>));
+  const button=host.querySelector<HTMLButtonElement>('[data-continuation-submit]')!;
+  expect(button.disabled).toBe(true);
+  for(const position of [0,height-100]){scroll=position;await act(async()=>window.dispatchEvent(new Event('scroll')));}
+  expect(button.disabled).toBe(true);
+  for(const position of [height+30,2*height-70]){scroll=position;await act(async()=>window.dispatchEvent(new Event('scroll')));}
+  expect(button.disabled).toBe(false);expect(button.closest('[inert]')).toBeNull();
  }finally{await act(async()=>root.unmount());host.remove();}
 });

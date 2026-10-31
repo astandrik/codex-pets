@@ -23,7 +23,18 @@ export function GenerationRecoveryView(p:RecoveryViewProps){
  useEffect(()=>{
   if(!needsChoice)return;
   let active=true;
-  const check=()=>{const rect=choices.current?.getBoundingClientRect();if(active&&rect&&(innerWidth>=768||rect.top>=0&&rect.bottom<=innerHeight-(bar.current?.getBoundingClientRect().height??70)-12))setSeenContext(context);};
+  // A tall option can be read in parts; its edges need not be visible together.
+  const seenEdges=new Map<Element,{top:boolean;bottom:boolean}>();
+  const check=()=>{
+   const modes=choices.current?.querySelectorAll<HTMLElement>('[data-recovery-mode]');
+   if(!active||!modes?.length)return;
+   const bottom=innerHeight-(bar.current?.getBoundingClientRect().height??70)-12;
+   for(const mode of modes){
+    const rect=mode.getBoundingClientRect(),previous=seenEdges.get(mode);
+    seenEdges.set(mode,{top:Boolean(previous?.top)||rect.top>=0&&rect.top<=bottom,bottom:Boolean(previous?.bottom)||rect.bottom>=0&&rect.bottom<=bottom});
+   }
+   if(innerWidth>=768||[...modes].every(mode=>seenEdges.get(mode)?.top&&seenEdges.get(mode)?.bottom))setSeenContext(context);
+  };
   queueMicrotask(check);window.addEventListener('scroll',check,{passive:true});window.addEventListener('resize',check);return()=>{active=false;window.removeEventListener('scroll',check);window.removeEventListener('resize',check);};
  },[needsChoice,context]);
  const count=p.states.filter(s=>!s.startsWith('look-')).length,groups=p.states.length-count;
@@ -38,7 +49,7 @@ export function GenerationRecoveryView(p:RecoveryViewProps){
  <header className="generation-recovery__identity">{p.options?.character?.baseUrl&&<img src={p.options.character.baseUrl} alt="Сохранённый образ персонажа" onError={e=>{e.currentTarget.hidden=true;}}/>}{/* eslint-disable-line @next/next/no-img-element */}<div><small>ВОССТАНОВЛЕНИЕ ГЕНЕРАЦИИ</small><h1>{title}</h1>{p.options?.character?.description&&<p>{p.options.character.description}</p>}<span>{p.acceptedUrl?'Продолжение принято':terminal?'Срок хранения истёк':recovering?'Проверяем отправленный запрос':'Сборка не завершена'}</span></div></header>
  {p.error&&<p role="alert" className="generation-recovery__notice">{p.error}</p>}
  {p.acceptedUrl?<section className="generation-recovery__accepted"><h2>Результат принят</h2><p>Сохраните приватную ссылку. Повторно отправлять запрос не нужно.</p><label>Ссылка на результат<input ref={link} readOnly value={absoluteUrl} onClick={e=>e.currentTarget.select()}/></label><button type="button" data-copy-result onClick={()=>void copy()}>Скопировать ссылку</button><p role="status">{copyMessage}</p><a href={p.acceptedUrl}>Открыть результат →</a></section>:<div className="generation-recovery__layout">
- {modeVisible&&<fieldset ref={choices} className="generation-recovery__modes" disabled={locked||recovering&&!manual}><legend>Как продолжить?</legend><label className={p.mode==='regenerate'?'selected':''}><input type="radio" name="continuation-mode" value="regenerate" checked={p.mode==='regenerate'} disabled={!p.options?.canRegenerate} onChange={()=>p.onMode('regenerate')}/><span><strong>Пересоздать выбранное</strong><small>1 попытка за весь набор</small></span></label><label className={p.mode==='rebuild'?'selected':''}><input type="radio" name="continuation-mode" value="rebuild" checked={p.mode==='rebuild'} disabled={!p.options?.canRebuild} onChange={()=>p.onMode('rebuild')}/><span><strong>Повторить сборку</strong><small>Без новой попытки · осталось {p.options?.rebuildsRemaining??0}</small></span></label></fieldset>}
+ {modeVisible&&<fieldset ref={choices} className="generation-recovery__modes" disabled={locked||recovering&&!manual}><legend>Как продолжить?</legend><label data-recovery-mode="regenerate" className={p.mode==='regenerate'?'selected':''}><input type="radio" name="continuation-mode" value="regenerate" checked={p.mode==='regenerate'} disabled={!p.options?.canRegenerate} onChange={()=>p.onMode('regenerate')}/><span><strong>Пересоздать выбранное</strong><small>1 попытка за весь набор</small></span></label><label data-recovery-mode="rebuild" className={p.mode==='rebuild'?'selected':''}><input type="radio" name="continuation-mode" value="rebuild" checked={p.mode==='rebuild'} disabled={!p.options?.canRebuild} onChange={()=>p.onMode('rebuild')}/><span><strong>Повторить сборку</strong><small>Без новой попытки · осталось {p.options?.rebuildsRemaining??0}</small></span></label></fieldset>}
  <div className="generation-recovery__images">{p.options&&!p.sourceUnavailable?<GenerationRecoveryPreview strips={p.options.strips} required={p.options.requiredStates} selected={p.states} disabled={locked||unknown&&!manual} rebuild={p.mode==='rebuild'||unknown&&!manual} onChange={p.onStates}/>:<p className="generation-recovery__notice">{p.busy?'Проверяем сохранённые изображения…':recovering?'Сначала проверьте сохранённый запрос. Его результат может быть ещё доступен.':'Сохранённые изображения пока недоступны.'}</p>}
  {!!p.options?.issues.length&&<details><summary>Почему сборка остановилась</summary><ul>{p.options.issues.map((i,n)=><li key={n}>{RECOVERY_LABELS[i.state]}: {i.frame===undefined?'не удалось разделить позы':`проблема с кадром ${i.frame+1}`}{i.actual===undefined?'':` (${i.actual} пикселей)`}.</li>)}</ul></details>}</div>
  <aside className="generation-recovery__summary"><h2>{terminal?'Можно начать заново':recovering?'Проверить продолжение':p.mode==='rebuild'?'Повторим сборку':'Пересоздадим выбранное'}</h2>
