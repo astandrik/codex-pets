@@ -94,3 +94,113 @@ it("prunes expired records only after the history DOM is committed", async () =>
   expect(committedAtRemoval.every(Boolean)).toBe(true);
   expect(localStorage.getItem(HISTORY_PREFIX + staleId)).toBeNull();
 });
+
+describe("generation thumbnails", () => {
+  const imageUrl = () => new URL(element.querySelector("img")!.getAttribute("src")!, window.location.href);
+  function withBase(status = "failed") {
+    const response = reply(status);
+    return {...response, json: async () => ({generation: {
+      ...(await response.json()).generation,
+      baseUrl: "https://untrusted.example/private-image.png",
+      canContinue: true,
+    }})};
+  }
+
+  it("shows the saved character using only the current capability URL", async () => {
+    rememberGeneration(id, expiry());
+    const saved = localStorage.getItem(HISTORY_PREFIX + id);
+    request.mockResolvedValue(withBase());
+    await render();
+    const image = element.querySelector("img")!;
+    expect(image).not.toBeNull();
+    expect(imageUrl().pathname).toBe(`/api/pet-generations/${id}/base`);
+    expect(imageUrl().origin).toBe(window.location.origin);
+    expect(image.getAttribute("loading")).toBe("lazy");
+    expect(image.getAttribute("referrerpolicy")).toBe("no-referrer");
+    expect(image.getAttribute("alt")).toBe("");
+    expect(element.textContent).toContain("Продолжить генерацию");
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem(HISTORY_PREFIX + id)).toBe(saved);
+  });
+
+  it("uses a static atlas frame for a ready legacy result without a base", async () => {
+    rememberGeneration(id, expiry());
+    request.mockResolvedValue(reply("completed"));
+    await render();
+    expect(imageUrl().pathname).toBe(`/api/pet-generations/${id}/files/spritesheet.webp`);
+    expect(element.querySelector(".my-generations__thumbnail-frame")).not.toBeNull();
+    expect(element.textContent).toContain("Synthetic fox");
+  });
+
+  it.each([[1536, 1872], [1536, 2288]])("shows a valid %i×%i legacy atlas", async (width, height) => {
+    rememberGeneration(id, expiry());
+    request.mockResolvedValue(reply("completed"));
+    await render();
+    const image = element.querySelector("img")!;
+    Object.defineProperties(image, {naturalWidth: {value: width}, naturalHeight: {value: height}});
+    await act(async () => image.dispatchEvent(new Event("load")));
+    expect(element.querySelector("img")).toBe(image);
+    expect(image.classList.contains("my-generations__thumbnail-image_loading")).toBe(false);
+  });
+
+  it("hides an incorrectly sized atlas without losing the ready result", async () => {
+    rememberGeneration(id, expiry());
+    request.mockResolvedValue(reply("completed"));
+    await render();
+    const image = element.querySelector("img")!;
+    Object.defineProperties(image, {naturalWidth: {value: 512}, naturalHeight: {value: 512}});
+    await act(async () => image.dispatchEvent(new Event("load")));
+    expect(element.querySelector("img")).toBeNull();
+    expect(element.textContent).toContain("Synthetic fox");
+    expect(element.textContent).toContain("Open pet");
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("adds a thumbnail when polling first reports that the base is ready", async () => {
+    rememberGeneration(id, expiry());
+    request.mockResolvedValueOnce(reply("generating")).mockResolvedValue(withBase("awaiting_confirmation"));
+    await render();
+    expect(element.querySelector("img")).toBeNull();
+    await tick();
+    expect(imageUrl().pathname).toBe(`/api/pet-generations/${id}/base`);
+    expect(element.textContent).toContain("Review character");
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the recovery link and selection history when the image is unavailable", async () => {
+    rememberGeneration(id, expiry());
+    const saved = localStorage.getItem(HISTORY_PREFIX + id);
+    request.mockResolvedValue(withBase());
+    await render();
+    await act(async () => element.querySelector("img")!.dispatchEvent(new Event("error")));
+    expect(element.querySelector("img")).toBeNull();
+    expect(element.querySelector(".my-generations__thumbnail")).not.toBeNull();
+    expect(element.textContent).toContain("Продолжить генерацию");
+    expect(element.textContent).toContain("Failed");
+    expect(localStorage.getItem(HISTORY_PREFIX + id)).toBe(saved);
+    await tick(15000);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes the thumbnail at expiry without another image or status request", async () => {
+    rememberGeneration(id, new Date(Date.now() + 1000).toISOString());
+    request.mockResolvedValue(withBase());
+    await render();
+    expect(element.querySelector("img")).not.toBeNull();
+    await tick(1001);
+    expect(element.querySelector("img")).toBeNull();
+    expect(element.textContent).toContain("Expired");
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an already loaded image mounted while the status changes", async () => {
+    rememberGeneration(id, expiry());
+    request.mockResolvedValueOnce(withBase("generating")).mockResolvedValue(withBase("processing"));
+    await render();
+    const image = element.querySelector("img");
+    await tick();
+    expect(element.querySelector("img")).toBe(image);
+    expect(element.textContent).toContain("Processing");
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+});
