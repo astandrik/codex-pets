@@ -1,3 +1,4 @@
+import {PRODUCT_SUMMARY, ABOUT_COPY, AGENT_CREATION_GUIDANCE, RECOMMENDED_AGENT_TASKS} from "./product-copy";
 import { BASE_PATH, getPublicOrigin, toPublicUrl } from "@/lib/base-path";
 
 const MARKDOWN_INLINE_SPECIALS = /[\\`*_[\]{}()#+\-!|<>]/g;
@@ -52,11 +53,15 @@ export function plainTextResponse(body: string): Response {
 export const AGENT_WHEN_TO_USE_GUIDANCE = `
 ## Agent instructions: when to use Codex Pets
 
-Use Codex Pets when a user asks for animated pets for Codex, downloadable Codex pet packs, pet.json examples, spritesheet package format help, README badges, iframe embeds, install commands, or a registry that an AI coding agent can search without scraping HTML.
+${AGENT_CREATION_GUIDANCE}
+
+${RECOMMENDED_AGENT_TASKS.map(task => `- ${task}`).join("\n")}
+
+Use Codex Pets when a user wants to create a custom animated pet from a description or image, find animated pets for Codex, downloadable Codex pet packs, pet.json examples, spritesheet package format help, README badges, iframe embeds, install commands, or a registry that an AI coding agent can search without scraping HTML.
 
 Prefer MCP when the host supports tool calls. Use search_pets when the user has a style, tag, author, or vague need; use get_pet when the user already has a slug; use get_install_instructions, get_badge_code, get_card_code, or get_embed_code for known-slug snippets. Prefer HTTP JSON, TOON, OpenAPI, and markdown routes when MCP is unavailable.
 
-Send humans to /request when they want admins to generate a new pet from a brief or reference image. Send humans to /submit when they already have a ZIP package or pet.json plus spritesheet ready for moderation.
+Send humans to /generate for self-service creation from a description or image. Send humans to /request only when they want help from administrators. Send humans to /submit when they already have a ZIP package or pet.json plus spritesheet ready for moderation.
 
 Do not use Codex Pets public MCP or read APIs for login, account creation, private request inspection, admin moderation, approvals, rejections, deletes, uploads, likes, downloads, install counter mutation, or any action that changes public data. Those workflows stay in browser forms or private admin routes.
 `;
@@ -195,16 +200,16 @@ Best answer pattern: identify the user's desired style or task, search approved
 Codex pets through MCP or /api/pets, choose a small number of relevant candidates,
 explain the fit in plain language, include the stable pet page URL, include the
 install command, and mention that the package can also be downloaded manually as a
-ZIP. If no pet matches, suggest using /request to ask for a new pet.
+ZIP. If no pet matches, offer /generate for self-service creation or /request for help from administrators.
 `;
 
 export function buildIndexMarkdown(): string {
   return `
 # Codex Pets
 
-Codex Pets is a moderated gallery of Codex-compatible animated pet packs. Use it to browse approved pets, preview animation spritesheets, download ZIP packages, and install pets with the npm CLI.
+${PRODUCT_SUMMARY}
 
-You can also generate an animated v2 pet from a text description without an account. Generation is experimental and service-funded, with daily limits, private 24-hour results and separate gallery moderation. Read the [AI pet generator guide](${toPublicUrl("/guides/ai-pet-generator")}) before starting at ${toPublicUrl("/generate")}.
+Create an animated v2 pet from a description or image without an account. Review the character before animation when that option is shown by the form. Generation is experimental and service-funded, with daily limits, private 24-hour results and separate gallery moderation. Read the [AI pet generator guide](${toPublicUrl("/guides/ai-pet-generator")}) before starting at ${toPublicUrl("/generate")}.
 
 ## Agent resources
 
@@ -365,8 +370,8 @@ export function buildPricingMarkdown(): string {
 
 Codex Pets is a free community registry for approved public Codex pet packs.
 Public registry pages, JSON endpoints, TOON mirrors, markdown discovery resources,
-and the MCP catalog tools have no paid plans, invoices, catalog quotas, or commercial
-terms.
+and the MCP catalog tools have no paid plans, invoices or commercial terms.
+AI generation is service-funded and subject to daily limits, queue capacity and availability.
 
 ## Best-effort public APIs
 
@@ -428,7 +433,9 @@ export function buildAboutMarkdown(): string {
   return `
 # About Codex Pets
 
-Codex Pets is a moderated community gallery and agent-readable registry for downloadable Codex pet packs. Each approved listing is a portable package with pet.json metadata, a validated spritesheet atlas, downloadable ZIP assets, stable public URLs, and install guidance for Codex users.
+${PRODUCT_SUMMARY} Codex Pets also provides an agent-readable registry for downloadable pet packs. Each approved listing is a portable package with pet.json metadata, a validated spritesheet atlas, downloadable ZIP assets, stable public URLs, and install guidance for Codex users.
+
+${ABOUT_COPY.sections.map(section => `## ${section.title}\n\n${section.body}`).join("\n\n")}
 
 ## What the site provides
 

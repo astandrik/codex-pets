@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { AI_PET_GENERATOR_UPDATED_DATE } from "@/lib/guides/ai-pet-generator";
 import { unstable_cache } from "next/cache";
 
 import { toPublicUrl } from "@/lib/base-path";
@@ -83,6 +84,7 @@ async function buildSitemap(): Promise<MetadataRoute.Sitemap> {
     },
     {
       url: toPublicUrl("/guides/ai-pet-generator"),
+      lastModified: AI_PET_GENERATOR_UPDATED_DATE,
       changeFrequency: "weekly",
       priority: 0.7,
     },

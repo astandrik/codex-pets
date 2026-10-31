@@ -71,7 +71,7 @@ export function AppHeaderNav() {
       : <Link key={`${href}:${label}`} href={href} prefetch={false} className={className} aria-current={isActive(href) ? "page" : undefined} onClick={close}>{content}</Link>;
   }
   return <nav aria-label="Primary" className="app-header__nav">
-    <div className="app-header__primary-links">{link("/", "Gallery")}{link("/generate", "Generate")}{link("/my-generations", "My generations")}</div>
+    <div className="app-header__primary-links">{link("/generate", "Create a pet")}{link("/", "Gallery")}{link("/my-generations", "My generations")}</div>
     <Button type="button" size="xl" view="outlined" className="app-header__menu-trigger" aria-haspopup="dialog" aria-expanded={open} onClick={() => setMenu({ pathname, open: true })}>
       Menu{isAdmin && pendingReviewCount + openRequestCount > 0 && <Label theme="warning" size="s">{pendingReviewCount + openRequestCount}</Label>}
     </Button>

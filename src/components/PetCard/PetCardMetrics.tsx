@@ -26,6 +26,7 @@ type PetCardMetricsProps = {
   downloadCount: number;
   installCount: number;
   relatedContext?: RelatedPetContext;
+  layout?: "default" | "home";
 };
 
 type LikeResponse = {
@@ -40,6 +41,7 @@ export function PetCardMetrics({
   downloadCount,
   installCount,
   relatedContext,
+  layout = "default",
 }: PetCardMetricsProps) {
   const { add } = useToaster();
   const [count, setCount] = useState(likeCount);
@@ -101,13 +103,14 @@ export function PetCardMetrics({
   }
 
   return (
-    <div className="pet-card__metrics" aria-label="Pet metrics">
+    <div className={`pet-card__metrics${layout === "home" ? " pet-card__metrics_home" : ""}`} aria-label="Pet metrics">
       {isApproved ? (
         <>
           <button
             type="button"
             onClick={likePet}
             disabled={busy || isLiked}
+            aria-busy={busy}
             className={
               isLiked
                 ? "pet-card__metric pet-card__metric-action pet-card__metric-action_liked"
@@ -125,8 +128,9 @@ export function PetCardMetrics({
             ) : (
               <Heart width={16} height={16} />
             )}
-            {formatMetricCount(count)} {metricLabel(count, "like")}
+            {layout === "home" ? `${busy ? "Saving" : isLiked ? "Liked" : "Like"} ${formatMetricCount(count)}` : `${formatMetricCount(count)} ${metricLabel(count, "like")}`}
           </button>
+          {layout === "home" && <span className="pet-card__download-count">{downloadMetricText}</span>}
           <a
             href={withBasePath(`/api/pets/${slug}/download`)}
             className="pet-card__metric pet-card__metric-action"
@@ -135,8 +139,7 @@ export function PetCardMetrics({
             title="Download ZIP"
           >
             <ArrowDownToLine width={16} height={16} />
-            {formatMetricCount(downloadCount)}{" "}
-            {metricLabel(downloadCount, "download")}
+            {layout === "home" ? "Download ZIP" : <>{formatMetricCount(downloadCount)} {metricLabel(downloadCount, "download")}</>}
           </a>
         </>
       ) : (
@@ -147,8 +150,7 @@ export function PetCardMetrics({
           </span>
           <span className="pet-card__metric">
             <ArrowDownToLine width={16} height={16} />
-            {formatMetricCount(downloadCount)}{" "}
-            {metricLabel(downloadCount, "download")}
+            {formatMetricCount(downloadCount)} {metricLabel(downloadCount, "download")}
           </span>
         </>
       )}

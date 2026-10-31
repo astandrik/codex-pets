@@ -12,7 +12,7 @@ export function Footer() {
     <Container as="footer" gutters={5} className="footer">
       <div className="footer__content">
         <Text variant="caption-2" color="secondary" className="footer__note">
-          Community-made pet packs for Codex.
+          Create and discover animated pets for Codex.
         </Text>
         <details className="footer__resources">
           <summary>Guides, developers &amp; API</summary>

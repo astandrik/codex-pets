@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import {HOME_SEO,CATALOG_SEO,PRODUCT_SUMMARY} from "./product-copy";
 
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import {
@@ -15,15 +16,15 @@ import {
 } from "@/lib/metrics/page-view-metadata";
 
 export const SITE_NAME = "Codex Pets";
-export const SITE_TAGLINE = "Animated pet packs for AI coding agents";
-export const SITE_TITLE = `${SITE_NAME} - ${SITE_TAGLINE}`;
+export const SITE_TAGLINE = "Create your own animated pet for Codex";
+export const SITE_TITLE = HOME_SEO.title;
 export const SITE_DESCRIPTION =
-  "Browse, preview, upload, and download community-made animated pet packs for Codex.";
+  PRODUCT_SUMMARY;
 export const SITE_IMAGE_ALT =
-  "Codex Pets gallery for animated Codex companions";
+  HOME_SEO.imageAlt;
 const CATALOG_TITLE = "Codex Pets gallery";
 const CATALOG_DESCRIPTION =
-  "Browse every approved Codex pet pack with crawlable pages, animation previews, and ZIP downloads.";
+  CATALOG_SEO.description;
 
 export const SITE_KEYWORDS = [
   "Codex Pets",
@@ -352,7 +353,7 @@ export function buildCatalogPageMetadata(
   const socialTitle = isHomepage ? SITE_TITLE : buildPageTitle(title);
   const description = hasNormalizedFilters
     ? getGalleryFilterDescription(normalizedFilters)
-    : CATALOG_DESCRIPTION;
+    : isHomepage ? HOME_SEO.description : CATALOG_DESCRIPTION;
   const path = buildGalleryHref({ ...normalizedFilters, page });
   const apiSearch = [
     serializeGalleryFilters(normalizedFilters),
@@ -363,7 +364,7 @@ export function buildCatalogPageMetadata(
     .join("&");
 
   return {
-    title,
+    title: isHomepage ? {absolute: title} : title,
     description,
     other: getPageViewOtherMetadata(pageViewPath ?? path, title, {
       applyTitleTemplate: false,
@@ -537,7 +538,7 @@ export function getCatalogJsonLdGraph(
     "@graph": [
       {
         "@type": "CollectionPage",
-        "@id": `${pageUrl}#webpage`,
+        "@id": page === 1 && !serializeGalleryFilters(normalizeGalleryFilters(filters)) ? `${pageUrl}#gallery` : `${pageUrl}#webpage`,
         name: page > 1 ? `${CATALOG_TITLE} – Page ${page}` : CATALOG_TITLE,
         url: pageUrl,
         description: CATALOG_DESCRIPTION,

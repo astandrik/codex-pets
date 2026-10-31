@@ -40,6 +40,7 @@ type PetCatalogProps = {
   snapshotVersion: string;
   rankingVersion: string;
   filters: GalleryFilters;
+  cardLayout?: "default" | "home";
 };
 
 type LoadedPage = {
@@ -93,6 +94,7 @@ export function PetCatalog({
 
 function PetCatalogState({
   initialPets,
+  cardLayout = "default",
   initialPage,
   pageSize,
   totalItems,
@@ -310,7 +312,7 @@ function PetCatalogState({
             {loadedPage.pets.length > 0 ? (
               <div className="pet-grid">
                 {loadedPage.pets.map((pet) => (
-                  <PetCard key={pet.slug} pet={pet} />
+                  <PetCard key={pet.slug} pet={pet} layout={cardLayout} />
                 ))}
               </div>
             ) : loadedPage.page === 1 ? (

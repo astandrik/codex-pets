@@ -1,3 +1,4 @@
+import {PRODUCT_SUMMARY,RECOMMENDED_AGENT_TASKS} from "@/lib/product-copy";
 import { toPublicUrl } from "@/lib/base-path";
 import { AGENT_WHEN_TO_USE_GUIDANCE, escapeMarkdownInlineText } from "@/lib/agent-markdown";
 import { listApprovedPets } from "@/lib/pets/repository";
@@ -46,14 +47,20 @@ export async function GET(): Promise<Response> {
       "",
       "## Product",
       "",
-      "Codex Pets is a moderated community registry for downloadable Codex pet packs. Each approved pet has a public detail page, a package ZIP, pet.json metadata, a spritesheet atlas, share snippets, and install instructions.",
+      PRODUCT_SUMMARY,
+      "Each approved gallery pet has a public detail page, a package ZIP, pet.json metadata, a spritesheet atlas, share snippets, and install instructions.",
+      "",
+      "## Recommended assistant tasks",
+      "",
+      ...RECOMMENDED_AGENT_TASKS.map(task => `- ${task}`),
+      "",
       `Pet v1 spritesheets use an ${PET_SHEETS[1].columns}x${PET_SHEETS[1].rows} atlas at ${PET_SHEETS[1].width}x${PET_SHEETS[1].height}; spriteVersionNumber may be omitted or set to 1.`,
       `Pet v2 spritesheets set spriteVersionNumber to 2 and use an ${PET_SHEETS[2].columns}x${PET_SHEETS[2].rows} atlas at ${PET_SHEETS[2].width}x${PET_SHEETS[2].height}, with 16 look directions in rows 9 and 10.`,
       "Catalog tools read approved pets and install guidance. generate_pet starts a server-paid text-to-pet task (200/day global,10/IP,Moscow time); get_pet_generation reads status and24-hour unlisted preview/ZIP links. Supply a unique random requestId and reuse it for retries. Generation never publishes a pet.",
       "",
       "## Developer resources",
       "",
-      `- [AI pet generator](${toPublicUrl("/guides/ai-pet-generator")}): Experimental text-to-pet generation, private previews, v2 ZIP downloads, limits and moderation.`,
+      `- [AI pet generator](${toPublicUrl("/guides/ai-pet-generator")}): Create on the website from text or an image, review the character, animate and download. Includes limits and privacy.`,
       `- [AI pet generator Markdown](${toPublicUrl("/guides/ai-pet-generator.md")}): Machine-readable generation guide.`,
       `- [Developer portal](${toPublicUrl("/developers")}): Codex Pets Developer Portal with links to API docs, OpenAPI, MCP, and auth notes.`,
       `- [API docs](${toPublicUrl("/docs/api")}): Codex Pets API docs for public JSON, TOON, MCP, request, and submission routes.`,
@@ -114,7 +121,7 @@ export async function GET(): Promise<Response> {
       "",
       "## Pricing, terms, and versioning",
       "",
-      "- Codex Pets is a free community registry with no paid plans, invoices, quotas, or SLA.",
+      "- The public catalog has no paid plans or invoices. AI generation is service-funded and subject to daily limits, queue capacity and availability. There is no paid SLA.",
       "- Public APIs and MCP tools are best-effort.",
       "- Submissions and generation requests are moderated before public listing.",
       "- Current unversioned public endpoints are stable v1. Additive fields and new routes may be added without notice.",

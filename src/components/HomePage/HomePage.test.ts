@@ -53,12 +53,12 @@ describe("HomePage visible content", () => {
     const container = renderHomePage();
 
     const guideLink = container.querySelector(
-      '.home-hero__actions a[href="/guides/best-codex-pets-for-ai-coding-agents"]',
+      '.home-recommendations a[href="/guides/best-codex-pets-for-ai-coding-agents"]',
     );
 
     expect(guideLink).not.toBeNull();
     expect(guideLink?.textContent?.replace(/\s+/g, " ").trim()).toBe(
-      "Best Codex pets guide",
+      "Best Codex pets guide ↗",
     );
   });
 
@@ -66,7 +66,7 @@ describe("HomePage visible content", () => {
     const container = renderHomePage();
     const firstAction = container.querySelector(".home-hero__actions a");
     expect(firstAction?.getAttribute("href")).toBe("/generate");
-    expect(firstAction?.textContent).toContain("Generate a pet");
+    expect(firstAction?.textContent).toContain("Create your pet");
     expect(container.querySelector('a[href="/guides/ai-pet-generator"]')).not.toBeNull();
     expect(container.textContent).toContain("Experimental AI generation");
     expect(container.querySelector('a[href^="/generated/"]')).toBeNull();

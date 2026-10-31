@@ -62,7 +62,7 @@ describe("social metadata images", () => {
       {
         url: "https://example.test/codex-pets/opengraph-image",
         secureUrl: "https://example.test/codex-pets/opengraph-image",
-        alt: "Codex Pets gallery for animated Codex companions",
+        alt: "An animated pet created with Codex Pets, shown with the creation steps.",
         type: "image/png",
         width: 1200,
         height: 630,
@@ -231,7 +231,7 @@ describe("gallery page metadata", () => {
       ).toEqual({
         other: {
           "codex-pets-page-view": JSON.stringify({
-            title: "Codex Pets - Animated pet packs for AI coding agents",
+            title: "AI Pet Generator for Codex | Codex Pets",
             url: expectedPageViewPath,
           }),
         },
@@ -267,7 +267,7 @@ describe("gallery page metadata", () => {
     ).toEqual({
       other: {
         "codex-pets-page-view": JSON.stringify({
-          title: "Codex Pets - Animated pet packs for AI coding agents",
+          title: "AI Pet Generator for Codex | Codex Pets",
           url: "/?utm_source=agent",
         }),
       },
@@ -289,8 +289,8 @@ describe("catalog page metadata", () => {
     );
 
     const homepageTitle =
-      "Codex Pets - Animated pet packs for AI coding agents";
-    expect(metadata.title).toBe(homepageTitle);
+      "AI Pet Generator for Codex | Codex Pets";
+    expect(metadata.title).toEqual({absolute: homepageTitle});
     expect(metadata.openGraph).toMatchObject({ title: homepageTitle });
     expect(metadata.twitter).toMatchObject({ title: homepageTitle });
 
@@ -587,4 +587,14 @@ describe("pet resource alternates", () => {
 
     vi.unstubAllEnvs();
   });
+});
+
+
+it("keeps the homepage and gallery JSON-LD identities distinct", async () => {
+  const {getHomepageJsonLdGraph, getCatalogJsonLdGraph} = await import("./site-metadata");
+  const home = getHomepageJsonLdGraph()["@graph"][0];
+  const gallery = getCatalogJsonLdGraph([], 1, 24, 0)["@graph"][0];
+  expect(home["@id"]).toMatch(/#webpage$/);
+  expect(gallery["@id"]).toMatch(/#gallery$/);
+  expect(home["@id"]).not.toBe(gallery["@id"]);
 });

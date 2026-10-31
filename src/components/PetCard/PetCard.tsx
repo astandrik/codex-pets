@@ -18,6 +18,7 @@ type PetCardProps = {
   pet: PublicPetSummary;
   showStatus?: boolean;
   relatedContext?: RelatedPetContext;
+  layout?: "default" | "home";
 };
 
 type StripStyle = CSSProperties & {
@@ -36,6 +37,7 @@ export function PetCard({
   pet,
   showStatus = false,
   relatedContext,
+  layout = "default",
 }: PetCardProps) {
   const authorName = pet.ownerName ?? "Anonymous";
   const authorInitial = authorName.trim().charAt(0).toUpperCase() || "U";
@@ -48,7 +50,7 @@ export function PetCard({
   };
 
   return (
-    <Card view="raised" type="container" className="pet-card">
+    <Card view="raised" type="container" className={`pet-card${layout === "home" ? " pet-card_home" : ""}`}>
       <Link
         href={`/pets/${pet.slug}`}
         className="pet-card__overlay"
@@ -87,9 +89,14 @@ export function PetCard({
             </Label>
           ) : null}
         </Flex>
-        <Text variant="subheader-2" as="p" ellipsis>
-          {pet.displayName}
-        </Text>
+        {layout === "home" ? (
+          <div className="pet-card__heading">
+            <Text variant="subheader-2" as="p">{pet.displayName}</Text>
+            <span className="pet-card__details">View pet <ArrowRight width={16} height={16}/></span>
+          </div>
+        ) : (
+          <Text variant="subheader-2" as="p" ellipsis>{pet.displayName}</Text>
+        )}
         <Text
           variant="caption-2"
           color="secondary"
@@ -149,6 +156,7 @@ export function PetCard({
           likeCount={pet.likeCount}
           downloadCount={pet.downloadCount}
           installCount={pet.installCount}
+          layout={layout}
           relatedContext={relatedContext}
         />
       </Flex>
@@ -156,13 +164,13 @@ export function PetCard({
         <InstallCommandButton
           slug={pet.slug}
           surface="card"
+          layout={layout}
           relatedContext={relatedContext}
         />
       ) : null}
-      <span className="pet-card__details">
-        View details
-        <ArrowRight width={16} height={16} />
-      </span>
+      {layout === "default" && <span className="pet-card__details">
+        View details <ArrowRight width={16} height={16}/>
+      </span>}
     </Card>
   );
 }

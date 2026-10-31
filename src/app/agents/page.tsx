@@ -197,7 +197,7 @@ export default function AgentsPage() {
             and embed snippets.
           </li>
           <li>
-            <code>/request</code> is the public form for asking admins to
+            <code>/generate</code> is the website form for creating a pet from text or an image. <code>/request</code> is the form for asking admins to
             generate a new Codex pet.
           </li>
           <li>

@@ -10,7 +10,7 @@ import {
 describe("Ask AI content", () => {
   it("keeps the static prompts exact", () => {
     expect(ASK_AI_HOME.prompt).toBe(
-      "Act as a Codex user looking for animated desktop companions. Using current information from https://pets.ydb-qdrant.tech/, explain what Codex Pets is, how to browse and install pet packs, how MCP/API access works, how to request or submit a pet, and recommend a few pets for different styles such as cute, pixel, anime, minimal, fantasy, and unusual.",
+      "Using current information from https://pets.ydb-qdrant.tech/ and https://pets.ydb-qdrant.tech/guides/ai-pet-generator, help me create or choose an animated Codex pet. Explain how I can start from a description or image, review the character, animate it, and download the pack. Suggest three distinct character ideas with short descriptions I can use in the generator, and offer existing gallery pets if I prefer a ready-made option. Link to /generate for self-service creation and mention the current limits and 24-hour retention. Do not submit a generation or call a paid/mutating tool without my explicit request.",
     );
     expect(ASK_AI_AGENTS.prompt).toBe(
       "Act as a coding agent user setting up Codex Pets. Using current information from https://pets.ydb-qdrant.tech/agents and https://pets.ydb-qdrant.tech/llms.txt, explain how the MCP endpoint, manifest JSON, manifest TOON, pet search endpoints, and install commands work. Give me the shortest reliable setup path.",

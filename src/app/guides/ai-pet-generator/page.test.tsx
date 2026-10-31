@@ -4,13 +4,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import Guide, { metadata } from "./page";
 import { GET } from "@/app/guides/ai-pet-generator.md/route";
-import { AI_PET_GENERATOR_SECTIONS, getAiPetGeneratorJsonLd } from "@/lib/guides/ai-pet-generator";
+import { AI_PET_GENERATOR_SECTIONS, AI_PET_GENERATOR_DATE, AI_PET_GENERATOR_UPDATED_DATE, getAiPetGeneratorJsonLd } from "@/lib/guides/ai-pet-generator";
 
 describe("public generator guide", () => {
   it("provides indexable canonical article metadata without private capabilities", () => {
     expect(metadata.robots).toEqual({ index:true, follow:true });
     expect(metadata.alternates?.canonical).toBe("/guides/ai-pet-generator");
-    expect(getAiPetGeneratorJsonLd()).toMatchObject({"@type":"Article",headline:"AI pet generator for Codex"});
+    expect(getAiPetGeneratorJsonLd()).toMatchObject({"@type":"Article",headline:"AI pet generator for Codex",datePublished:AI_PET_GENERATOR_DATE,dateModified:AI_PET_GENERATOR_UPDATED_DATE});
     expect(JSON.stringify(metadata)).not.toContain("/generated/");
   });
   it("renders the same important terms in HTML and Markdown", async () => {

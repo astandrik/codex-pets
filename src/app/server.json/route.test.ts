@@ -24,7 +24,7 @@ describe("GET /server.json", () => {
       name: "tech.ydb-qdrant.pets/codex-pets-ydb-qdrant",
       title: "Codex Pets Registry",
       description:
-        "Search and preview community Codex pets, or generate an unlisted animated pet from text.",
+        "Generate an unlisted animated Codex pet from text, or search and preview approved community pets.",
       version: "1.1.0",
       websiteUrl: "https://pets.example/",
       remotes: [
@@ -70,7 +70,7 @@ describe("GET /server.json", () => {
       endpoint: "https://pets.example/mcp",
       serverUrl: "https://pets.example/mcp",
       description:
-        "Search and preview community Codex pets, or generate an unlisted animated pet from text.",
+        "Generate an unlisted animated Codex pet from text, or search and preview approved community pets.",
       version: "1.1.0",
       instructions: expect.stringContaining("server-paid"),
       tools: expect.arrayContaining([

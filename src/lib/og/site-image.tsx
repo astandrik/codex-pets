@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
+import {HOME_SEO} from "@/lib/product-copy";
 
 import {
-  SITE_DESCRIPTION,
   SITE_IMAGE_ALT,
   SITE_NAME,
   SITE_TAGLINE,
@@ -144,7 +144,7 @@ export function renderSiteOgImage(): ImageResponse {
           <div
             style={{
               display: "flex",
-              width: 388,
+              width: 550,
               padding: "12px 18px",
               borderRadius: 999,
               background: "rgba(255, 189, 74, 0.14)",
@@ -153,7 +153,7 @@ export function renderSiteOgImage(): ImageResponse {
               fontWeight: 700,
             }}
           >
-            The Codex pet registry
+            Your idea. Your own Codex pet.
           </div>
           <div
             style={{
@@ -175,7 +175,7 @@ export function renderSiteOgImage(): ImageResponse {
             <div
               style={{
                 color: "#ffbd4a",
-                fontSize: 48,
+                fontSize: 42,
                 lineHeight: 1.1,
                 fontWeight: 700,
                 letterSpacing: 0,
@@ -187,12 +187,12 @@ export function renderSiteOgImage(): ImageResponse {
           <div
             style={{
               color: "#cad2dd",
-              fontSize: 32,
+              fontSize: 25,
               lineHeight: 1.35,
               width: 660,
             }}
           >
-            {SITE_DESCRIPTION}
+            {HOME_SEO.ogDescription}
           </div>
         </div>
       </div>
