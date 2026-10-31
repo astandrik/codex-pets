@@ -17,13 +17,17 @@ export async function saveScheduler(tx: GenerationTransaction, state: Scheduler)
 }
 
 export async function expireQueue(tx: GenerationTransaction, state: Scheduler, now: number) {
+  if (!state.queue.length) return;
+  const jobs = await tx.getJobs(state.queue);
   const ready: string[] = [];
   for (const id of state.queue) {
-    const job = await tx.getJob(id);
+    const job = jobs.get(id);
     if (!job || job.expiresAt <= now) { await settleBudget(tx, id, now); continue; }
     if (job.status !== "queued") continue;
     if ((job.queuedAt ?? job.createdAt) + WAIT_MS <= now) {
-      await tx.putJob({ ...job, status: "failed", error: "queue_timeout", prompt: "" });
+      const failed: GenerationJob = { ...job, status: "failed", error: "queue_timeout", prompt: "" };
+      await tx.putJob(failed);
+      jobs.set(id, failed);
       await settleBudget(tx, id, now);
     } else ready.push(id);
   }

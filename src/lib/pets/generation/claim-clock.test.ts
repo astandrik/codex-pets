@@ -17,7 +17,7 @@ function fixture() {
 }
 afterEach(() => vi.restoreAllMocks());
 
-it.each(["transaction", "scheduler", "candidate"])("does not call the provider when queue deadline passes during %s", async boundary => {
+it.each(["transaction", "scheduler", "batch", "candidate"])("does not call the provider when queue deadline passes during %s", async boundary => {
   const f = fixture(), first = await f.admit();
   const deadline = f.clock.now + WAIT_MS; f.clock.now = deadline - 1;
   const transaction = f.store.transaction.bind(f.store);
@@ -25,6 +25,7 @@ it.each(["transaction", "scheduler", "candidate"])("does not call the provider w
     if (boundary === "transaction") f.clock.now = deadline + 1000;
     return operation({...tx,
       getLedger: async (...args) => {const value = await tx.getLedger(...args); if (boundary === "scheduler" && args[0] === "scheduler") f.clock.now = deadline + 1000; return value;},
+      getJobs: async ids => {const value = await tx.getJobs(ids); if (boundary === "batch") f.clock.now = deadline + 1000; return value;},
       getJob: async id => {const value = await tx.getJob(id); if (boundary === "candidate") f.clock.now = deadline + 1000; return value;},
     });
   }));

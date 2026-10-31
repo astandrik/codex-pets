@@ -19,6 +19,11 @@ class MemoryStore implements GenerationStore {
         listTakenSlugs: async () => [],
         saveSubmission: async () => { throw new Error("Submission is outside this admission fixture"); },
         getJob: async (id) => jobs.get(id) ?? null,
+        getJobs: async ids => {
+          const result = new Map<string, GenerationJob>();
+          for (const id of ids) {const job = jobs.get(id); if (job) result.set(id, job);}
+          return result;
+        },
         putJob: async (job) => { jobs.set(job.id, structuredClone(job)); },
         getLedger: async (key, now) => { const row = ledger.get(key); return row && row.expiresAt > now ? row.value : null; },
         putLedger: async (key, value, expiresAt) => { ledger.set(key, { value, expiresAt }); },
