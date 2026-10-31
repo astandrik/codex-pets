@@ -1,3 +1,4 @@
+import {buildContinuationPreviews,readContinuationPreview} from "@/lib/pets/generation/continuation-preview";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { CONTINUATION_STATES, continuationEnabled, continuationInputSchema, type ContinuationOperation, type ContinuationPlan, type ContinuationState } from "@/lib/pets/generation/continuation-model";
@@ -57,6 +58,7 @@ export function createContinuationService(store: GenerationStore, options: {
         return { policy: 1, mode, sourceGenerationId: snapshot.job.id, baseSha256: sha(snapshot.base), generationStages: selected, compositionStages: snapshot.atlas ? CONTINUATION_STATES.filter(n => snapshot.targets.includes(n) || selected.includes(n)) : [...CONTINUATION_STATES], ...(snapshot.atlas ? { atlas: { kind: mode === "rebuild" ? snapshot.atlasKind! : "continuation-source.webp", sha256: sha(snapshot.atlas) } } : {}), ...(snapshot.job.continuation?.corrections ?? snapshot.job.animationRevision?.corrections ? { corrections: snapshot.job.continuation?.corrections ?? snapshot.job.animationRevision?.corrections } : {}) };
     }
     return {
+        getContinuationPreview: (id: string, asset: string, version: string) => readContinuationPreview(store, id, asset, version, options.now),
         async getContinuationOptions(id: string) {
             if (!GENERATION_ID.test(id))
                 throw new GenerationError("invalid_argument");
@@ -64,7 +66,7 @@ export function createContinuationService(store: GenerationStore, options: {
                 throw new GenerationError("continuation_disabled");
             const snapshot = await inspectContinuationSource(store, id, options.now());
             const busy = await store.transaction(tx => active(tx, id));
-            return { ...snapshot.options, canRebuild: continuationEnabled() && snapshot.options.canRebuild && snapshot.options.rebuildsRemaining > 0, canRegenerate: continuationEnabled(), ...(busy ? { activeRequestId: busy.id, ...(busy.state === "accepted" ? { activeGenerationId: busy.targetId } : {}) } : {}), ...(!continuationEnabled() ? { reason: "continuation_disabled" } : {}) };
+            return { ...snapshot.options, ...buildContinuationPreviews(snapshot), canRebuild: continuationEnabled() && snapshot.options.canRebuild && snapshot.options.rebuildsRemaining > 0, canRegenerate: continuationEnabled(), ...(busy ? { activeRequestId: busy.id, ...(busy.state === "accepted" ? { activeGenerationId: busy.targetId } : {}) } : {}), ...(!continuationEnabled() ? { reason: "continuation_disabled" } : {}) };
         },
         async findContinuation(id: string, requestId: string) {
             if (!GENERATION_ID.test(id) || !z.uuid().safeParse(requestId).success)

@@ -15,7 +15,9 @@ export const continuationPlanSchema = z.object({ policy: z.literal(1), mode: z.e
     .refine(p => p.generationStages.every(s => p.compositionStages.includes(s)) && (p.mode !== "rebuild" || !p.generationStages.length));
 export type ContinuationPlan = z.infer<typeof continuationPlanSchema>;
 export const rebuildHistorySchema = z.array(z.object({ operationId: z.uuid(), at: z.number(), error: z.string().max(80), issues: assemblyIssuesSchema.optional() })).max(3);
+export type ContinuationPreview = {kind: "source-image"; url: string} | {kind: "atlas-row"; url: string; row: number; frames: number};
 export type ContinuationOptions = {
+    character?: {displayName?: string; description?: string; baseUrl: string; expiresAt: string};
     sourceRevision: string;
     canRebuild: boolean;
     canRegenerate: boolean;
@@ -25,6 +27,7 @@ export type ContinuationOptions = {
         state: ContinuationState;
         status: "saved" | "missing" | "invalid";
         uncertain: boolean;
+        preview?: ContinuationPreview;
     }[];
     rebuildsRemaining: number;
     retryAt?: number;

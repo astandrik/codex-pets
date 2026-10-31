@@ -387,3 +387,39 @@ it("does not create request identities or extra requests when result panels and 
     expect(uuid).toHaveBeenCalledTimes(initialIds); expect(storage).toHaveBeenCalledTimes(initialWrites);
   } finally {uuid.mockRestore(); storage.mockRestore();}
 });
+
+it.each(["queued", "completed"])("restores the page title and status after another tab moves recovery to %s", async statusAfterRefresh => {
+  localStorage.clear();
+  let status = "failed";
+  fetchMock.mockImplementation(async url => url.endsWith("/continuations")
+    ? response({options: {sourceRevision: "f".repeat(64), canRebuild: true, canRegenerate: true, requiredStates: [], strips: [], rebuildsRemaining: 3, issues: []}})
+    : response({generation: {...generation(undefined, status).generation, canContinue: status === "failed", reviewBase: true, baseConfirmed: true}}));
+  await act(async () => root.render(<ThemeProvider theme="light"><GeneratedPetPreview generationId={id} continuationEnabled /></ThemeProvider>));
+  await act(async () => [...element.querySelectorAll("button")].find(b => b.textContent === "Продолжить генерацию")!.click());
+  expect(element.querySelector(".generation-recovery")).not.toBeNull();
+  status = statusAfterRefresh;
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(element.querySelector(".generation-recovery")).toBeNull();
+  expect(element.querySelector("h1")!.closest("[hidden]")).toBeNull();
+  expect(element.textContent).toContain(status === "queued" ? "Waiting in the queue" : "Ready");
+  expect(fetchMock.mock.calls.every(([, init]) => init?.method !== "POST")).toBe(true);
+});
+
+it.each([404, 410])("keeps status expiry warnings and receipt recovery visible after %s", async status => {
+  localStorage.clear();
+  const requestId = "ea191c89-d657-4eec-a7d2-4a2e1e4a7ec7";
+  localStorage.setItem(`pets-continuation-v1:${id}`, JSON.stringify({requestId}));
+  let expired = false;
+  fetchMock.mockImplementation(async url => url.endsWith("/continuations")
+    ? response({options: {sourceRevision: "f".repeat(64), canRebuild: true, canRegenerate: true, requiredStates: [], strips: [], rebuildsRemaining: 3, issues: []}})
+    : expired ? response({code: "generation_expired"}, status)
+      : response({generation: {...generation(undefined, "failed").generation, canContinue: true, reviewBase: true, baseConfirmed: true}}));
+  await act(async () => root.render(<ThemeProvider theme="light"><GeneratedPetPreview generationId={id} continuationEnabled /></ThemeProvider>));
+  await act(async () => [...element.querySelectorAll("button")].find(b => b.textContent === "Обновить изображения")!.click());
+  expired = true;
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(element.querySelector('[role="status"]')?.textContent).toBe("This generation is unavailable or has expired.");
+  expect(element.querySelector<HTMLButtonElement>('[data-continuation-check]')?.disabled).toBe(false);
+  expect(JSON.parse(localStorage.getItem(`pets-continuation-v1:${id}`)!)).toEqual({requestId});
+  expect(fetchMock.mock.calls.every(([, init]) => init?.method !== "POST")).toBe(true);
+});
