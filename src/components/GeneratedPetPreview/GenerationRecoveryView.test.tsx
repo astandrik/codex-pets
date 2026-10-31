@@ -4,10 +4,59 @@ import {createRoot} from 'react-dom/client';
 import {ThemeProvider} from '@gravity-ui/uikit';
 import {afterEach,expect,it,vi} from 'vitest';
 import {GenerationRecoveryView,type RecoveryViewProps} from './GenerationRecoveryView';
+import {failedAnimationRevisionFixture} from '@/lib/pets/generation/continuation-fixture.test-utils';
 (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
 window.matchMedia??=(()=>({matches:false,addEventListener(){},removeEventListener(){}})) as typeof window.matchMedia;
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();});
 const props:RecoveryViewProps={generationId:'a'.repeat(64),options:{sourceRevision:'f'.repeat(64),canRebuild:true,canRegenerate:true,requiredStates:[],strips:[],rebuildsRemaining:2,issues:[],character:{baseUrl:'/base',expiresAt:'2030-01-01T00:00:00Z'}},mode:'regenerate',states:['idle'],busy:false,error:'',requestId:null,submitted:false,receiptExpired:false,sourceUnavailable:false,acceptedUrl:'',manualConfirmed:false,checkAttempted:false,onMode(){},onStates(){},onManualConfirmed(){},onSubmit(){},onCheck(){},onRefresh(){},onClose(){}};
+
+it.each(['light','dark'] as const)('does not present historical issues as current repairs for a verified atlas in %s',async theme=>{
+ vi.stubEnv('PET_GENERATION_CONTINUATION_ENABLED','true');
+ const f=await failedAnimationRevisionFixture();
+ f.store.jobs.set(f.job.id,{...f.job,assemblyIssues:[{state:'failed',kind:'invalid',frame:1,actual:389,expected:9003}]});
+ f.store.artifacts.set(f.job.id+':source.png',{bytes:f.atlas,expiresAt:f.job.expiresAt});
+ const options=await f.service.getContinuationOptions(f.job.id);
+ expect(options.requiredStates).toEqual([]);expect(options.issues).toHaveLength(1);
+ const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const onStates=vi.fn();
+ vi.stubGlobal('fetch',vi.fn(async()=>({ok:true,blob:async()=>new Blob(['atlas'])})));
+ vi.spyOn(URL,'createObjectURL').mockReturnValue('blob:verified');vi.spyOn(URL,'revokeObjectURL').mockImplementation(()=>{});
+ try{
+  await act(async()=>root.render(<ThemeProvider theme={theme}><GenerationRecoveryView {...props} options={options} states={['idle']} onStates={onStates}/></ThemeProvider>));
+  expect(host.textContent).toContain('Сохранённый атлас прошёл проверку');
+  expect(host.textContent).not.toContain('Нужно исправить');expect(host.textContent).not.toContain('Извлечённый кадр 2');
+  const card=host.querySelector<HTMLButtonElement>('[aria-label="Просмотреть: Неудача"]')!;
+  expect(card.hasAttribute('aria-describedby')).toBe(false);
+  expect(host.querySelector<HTMLInputElement>('[aria-label="Пересоздать: Покой"]')?.checked).toBe(true);
+  await act(async()=>card.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('Извлечённый кадр 2');
+  expect(onStates).not.toHaveBeenCalled();
+ }finally{await act(async()=>root.unmount());host.remove();vi.unstubAllEnvs();}
+});
+
+it.each(['light','dark'] as const)('shows the affected animation and relative frame size before the grid in %s',async theme=>{
+ const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
+ const issue={state:'failed' as const,kind:'invalid' as const,frame:1,actual:389,expected:9003};
+ const options={...props.options!,requiredStates:['failed' as const],issues:[issue],strips:[{state:'failed' as const,status:'invalid' as const,uncertain:false}]};
+ try{
+  await act(async()=>root.render(<ThemeProvider theme={theme}><GenerationRecoveryView {...props} options={options} states={['failed']}/></ThemeProvider>));
+  const notice=host.querySelector('.generation-recovery__diagnostics')!;
+  expect(notice.textContent).toContain('Нужно исправить: Неудача');
+  expect(notice.textContent).toContain('Извлечённый кадр 2 значительно меньше остальных');
+  expect(notice.textContent).toContain('медиана 9003');
+  expect(notice.compareDocumentPosition(host.querySelector('.recovery-preview')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(host.querySelector<HTMLInputElement>('[aria-label="Пересоздать: Неудача"]')?.disabled).toBe(true);
+  expect(host.querySelector('.recovery-preview__card_invalid')?.textContent).toContain('Извлечённый кадр 2');
+ }finally{await act(async()=>root.unmount());host.remove();}
+});
+
+it('makes absent diagnostics explicit without inventing a broken animation',async()=>{
+ const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
+ try{
+  await act(async()=>root.render(<ThemeProvider theme="dark"><GenerationRecoveryView {...props}/></ThemeProvider>));
+  expect(host.textContent).toContain('Точная причина ошибки пока недоступна');
+  expect(host.querySelector('.recovery-preview__card_invalid')).toBeNull();
+ }finally{await act(async()=>root.unmount());host.remove();}
+});
 it('keeps accepted private link available when copying fails',async()=>{
  const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const copy=vi.fn().mockRejectedValue(Error('denied'));Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:copy}});
  await act(async()=>root.render(<ThemeProvider theme="dark"><GenerationRecoveryView generationId={'a'.repeat(64)} mode="regenerate" states={[]} busy={false} error="История недоступна" requestId="" submitted={false} receiptExpired={false} sourceUnavailable={false} acceptedUrl="/generated/accepted" manualConfirmed={false} checkAttempted={false} onMode={()=>{}} onStates={()=>{}} onManualConfirmed={()=>{}} onSubmit={()=>{}} onCheck={()=>{}} onRefresh={()=>{}} onClose={()=>{}} /></ThemeProvider>));

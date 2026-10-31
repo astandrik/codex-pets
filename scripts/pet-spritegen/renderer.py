@@ -13,17 +13,18 @@ from urllib.parse import urlsplit
 from PIL import Image, ImageDraw
 from http_diagnostics import PREFIX, read_http_diagnostic
 from animation_revision import selected_rows, compose_revision
-from extraction_diagnostics import extraction_issues
+from extraction_diagnostics import extraction_issues, issues_from_report, read_extraction_report
 
 MODEL = 'gpt-image-2.5-sunburst'
 PROVIDER_ERROR_CODES = frozenset(json.loads((Path(__file__).resolve().parents[2] / 'src/lib/pets/generation/provider-error-codes.json').read_text()))
 class RenderError(Exception):
-    def __init__(self, code, provider_failure=None, failure_diagnostic=None, cli_cause=None, error_details=None):
+    def __init__(self, code, provider_failure=None, failure_diagnostic=None, cli_cause=None, error_details=None, assembly_issues=None):
         super().__init__(code)
         self.provider_failure = provider_failure
         self.failure_diagnostic = failure_diagnostic
         self.cli_cause = cli_cause
         self.error_details = error_details
+        self.assembly_issues = assembly_issues
 
 def failure_diagnostic(boundary, reason, started=None, **measurements):
     result = {'boundary': boundary, 'reason': reason}
@@ -265,7 +266,6 @@ def compose(root,job):
     for row in rows:
         target=run/raw_rel(request,row['name']); target.parent.mkdir(parents=True,exist_ok=True)
         shutil.copyfile(root/(row['name']+'.png'),target)
-    (run/'extract-failure.json').unlink(missing_ok=True)
     # Match QA to the matte's existing key radius. The CLI's broader QA default
     # (150) also rejects opaque pink/lilac material that the matte preserves.
     key_threshold = '96'
@@ -273,8 +273,16 @@ def compose(root,job):
                     '--chroma-adjacent-threshold', key_threshold]
     if job.get('animationRevision') or job.get('continuation'):
         extract_args += ['--states', ','.join(row['name'] for row in rows)]
+    def extract_current():
+        # A failed attempt must never inherit an older successful manifest.
+        (run/'extract-failure.json').unlink(missing_ok=True)
+        try:
+            run_tool(root,extract_args)
+        except RenderError as error:
+            error.assembly_issues = extraction_issues(run)
+            raise
     try:
-        run_tool(root,extract_args)
+        extract_current()
     except RenderError as error:
         diagnostic = error.failure_diagnostic or {}
         if (str(error) != 'invalid_sprite_extraction' or diagnostic.get('boundary') != 'renderer_process'
@@ -285,9 +293,12 @@ def compose(root,job):
             raise
         # Re-run only local extraction, once. Provider stages and saved originals
         # are untouched; the ordinary manifest and package checks still apply.
-        run_tool(root,extract_args)
-    manifest=json.loads((run/'frames/frames-manifest.json').read_text())
-    if not manifest.get('ok') or manifest.get('errors') or manifest.get('warnings'): raise RenderError('invalid_sprite_extraction')
+        extract_current()
+    manifest=read_extraction_report(run/'frames/frames-manifest.json')
+    if not manifest or not manifest.get('ok') or manifest.get('errors') or manifest.get('warnings'):
+        raise RenderError('invalid_sprite_extraction',
+                          failure_diagnostic=failure_diagnostic('renderer_process','invalid_image'),
+                          assembly_issues=issues_from_report(manifest))
     if job.get('continuation', {}).get('atlas') or job.get('animationRevision'):
         compose_revision(root, rows, manifest, max_row=10 if job.get('continuation') else 8)
         return {'ok': True}
@@ -314,6 +325,7 @@ def main():
         failure = failure or failure_diagnostic('renderer_process','unclassified')
         cause = error.cli_cause if isinstance(error, RenderError) else None
         details = error.error_details if isinstance(error, RenderError) else None
-        print(json.dumps({'error':code, 'failureDiagnostic':failure, **({'assemblyIssues':extraction_issues(root/'run')} if action=='compose' else {}), **({'cliCause':cause} if cause else {}), **({'errorDetails':details} if details else {}), **({'providerFailure': diagnostic} if diagnostic else {})})); sys.exit(1)
+        issues = error.assembly_issues if isinstance(error, RenderError) else None
+        print(json.dumps({'error':code, 'failureDiagnostic':failure, **({'assemblyIssues':issues or []} if action=='compose' else {}), **({'cliCause':cause} if cause else {}), **({'errorDetails':details} if details else {}), **({'providerFailure': diagnostic} if diagnostic else {})})); sys.exit(1)
 
 if __name__=='__main__': main()

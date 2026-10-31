@@ -101,6 +101,47 @@ it('preserves an unsent selection when options are refreshed',async()=>{
  expect(fetchMock.mock.calls.every(([,init])=>init?.method!=='POST')).toBe(true);expect(localStorage.length).toBe(0);
 });
 
+it('adds a diagnosed required row to the draft without creating an operation',async()=>{
+ let diagnosed=false;const createId=vi.spyOn(crypto,'randomUUID');
+ fetchMock.mockImplementation(async()=>response({options:diagnosed?{...options(),sourceRevision:'e'.repeat(64),requiredStates:['running-right','failed'],issues:[{state:'failed',kind:'invalid',frame:1,actual:389,expected:9003}],strips:options().strips.map(s=>s.state==='failed'?{...s,status:'invalid'}:s)}:options()}));
+ await open();await act(async()=>element.querySelector<HTMLInputElement>('[aria-label="Пересоздать: Покой"]')!.click());
+ diagnosed=true;await act(async()=>button('Обновить изображения').click());await act(async()=>window.dispatchEvent(new Event('resize')));
+ for(const state of ['Покой','Движение вправо','Неудача'])expect(element.querySelector<HTMLInputElement>(`[aria-label="Пересоздать: ${state}"]`)!.checked).toBe(true);
+ expect(element.textContent).toContain('Извлечённый кадр 2 значительно меньше остальных');
+ expect(fetchMock.mock.calls.every(([,init])=>init?.method!=='POST')).toBe(true);expect(createId).not.toHaveBeenCalled();expect(localStorage.length).toBe(0);
+});
+
+it('preserves an unsent selection when a verified atlas makes the old issue historical',async()=>{
+ let verified=false;const createId=vi.spyOn(crypto,'randomUUID');
+ vi.spyOn(URL,'createObjectURL').mockReturnValue('blob:verified');vi.spyOn(URL,'revokeObjectURL').mockImplementation(()=>{});
+ fetchMock.mockImplementation(async url=>String(url)==='/atlas'?{ok:true,blob:async()=>new Blob(['atlas'])}:response({options:{...options(),
+  sourceRevision:verified?'e'.repeat(64):'f'.repeat(64),requiredStates:verified?[]:['running-right'],
+  issues:[{state:'running-right',kind:'invalid',frame:1,actual:389,expected:9003}],
+  strips:CONTINUATION_STATES.map((state,row)=>({state,status:!verified&&state==='running-right'?'invalid':'saved',uncertain:false,...(verified?{preview:{kind:'atlas-row',url:'/atlas',row,frames:6}}:{})}))}}));
+ await open();await act(async()=>element.querySelector<HTMLInputElement>('[aria-label="Пересоздать: Покой"]')!.click());
+ expect(element.textContent).toContain('Нужно исправить: Движение вправо');
+ verified=true;await act(async()=>button('Обновить изображения').click());
+ await act(async()=>root.render(<ThemeProvider theme="dark"><GenerationContinuation generationId={id} enabled onContinued={continued}/></ThemeProvider>));
+ await act(async()=>window.dispatchEvent(new Event('resize')));
+ expect(element.textContent).toContain('Сохранённый атлас прошёл проверку');expect(element.textContent).not.toContain('Нужно исправить');
+ for(const name of ['Покой','Движение вправо'])expect(element.querySelector<HTMLInputElement>(`[aria-label="Пересоздать: ${name}"]`)!.checked).toBe(true);
+ expect(element.querySelector<HTMLInputElement>('[aria-label="Пересоздать: Движение вправо"]')!.disabled).toBe(false);
+ expect(fetchMock.mock.calls.every(([,init])=>init?.method!=='POST')).toBe(true);expect(createId).not.toHaveBeenCalled();expect(localStorage.length).toBe(0);
+});
+
+it('keeps a frozen request unchanged after the server diagnostic revision changes',async()=>{
+ let diagnosed=false;let posts=0;
+ fetchMock.mockImplementation(async(_url,init)=>{
+  if(init?.method==='POST'){posts++;if(posts===1)throw Error('lost');return response({code:'continuation_source_conflict'},409);}
+  return response({options:diagnosed?{...options(),sourceRevision:'e'.repeat(64),requiredStates:['failed'],issues:[{state:'failed',kind:'invalid',frame:1,actual:389,expected:9003}],strips:options().strips.map(s=>s.state==='failed'?{...s,status:'invalid'}:s)}:options()});
+ });
+ await open();await act(async()=>button('Продолжить').click());const saved=localStorage.getItem(CONTINUATION_PENDING+id);const original=fetchMock.mock.calls.find(([,init])=>init?.method==='POST')![1].body;
+ diagnosed=true;expect(button('Обновить изображения')).toBeUndefined();
+ await act(async()=>root.render(<ThemeProvider theme="dark"><GenerationContinuation generationId={id} enabled onContinued={continued}/></ThemeProvider>));
+ await act(async()=>window.dispatchEvent(new Event('resize')));await act(async()=>button('Повторить тот же запрос').click());
+ const attempts=fetchMock.mock.calls.filter(([,init])=>init?.method==='POST');expect(attempts).toHaveLength(2);expect(attempts[1][1].body).toBe(original);expect(localStorage.getItem(CONTINUATION_PENDING+id)).toBe(saved);
+});
+
 it('restores an unknown selection with the original UUID and keeps replay frozen after flag-off and theme changes',async()=>{
  const uuid=crypto.randomUUID();rememberContinuation(localStorage,id,uuid);const createId=vi.spyOn(crypto,'randomUUID');let posts=0;
  fetchMock.mockImplementation(async(url,init)=>{

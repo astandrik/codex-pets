@@ -54,8 +54,8 @@ export function spritegenEnvironment(apiKey: string): NodeJS.ProcessEnv {
 }
 export const spriteRenderer: SpriteRenderer = {
   async cleanupExpired(now) { await cleanupSpriteWorkspaces(tmpdir(), now); },
-  async open(job, saved, reference, revisionAtlas) {
-    const needsImages=!job.continuation || job.continuation.generationStages.length>0;
+  async open(job, saved, reference, revisionAtlas, {diagnosticOnly=false}={}) {
+    const needsImages=!diagnosticOnly&&(!job.continuation || job.continuation.generationStages.length>0);
     const keyFile = needsImages?process.env.PET_GENERATION_OPENAI_KEY_FILE?.trim():undefined;
     let key: string;
     try {
@@ -114,6 +114,7 @@ export const spriteRenderer: SpriteRenderer = {
     return {
       async prepare() { await command("prepare"); },
       async generate(name) {
+        if (diagnosticOnly) throw new GenerationError("invalid_stage");
         if (job.continuation && (name === "base" || !job.continuation.generationStages.includes(name))) throw new GenerationError("invalid_stage");
         const result = await command("generate", name);
         let bytes:Buffer;
