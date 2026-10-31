@@ -137,6 +137,59 @@ class RendererTests(unittest.TestCase):
         self.assertIn('No walking', text)
         self.assertNotIn('Action: running', text)
 
+    def test_directional_states_request_locomotion_with_the_existing_anatomy(self):
+        for policy in [None, 1]:
+            for direction in ['left', 'right']:
+                with self.subTest(policy=policy, direction=direction):
+                    job = {'prompt': 'pet', 'animationAnatomyPolicy': policy}
+                    row = {'name': 'running-' + direction, 'frames': 8, 'action': 'old action'}
+                    text = renderer.row_prompt(job, row)
+                    self.assertIn('RUN CYCLE', text)
+                    self.assertIn('screen ' + direction.upper(), text)
+                    self.assertIn('8 consecutive moments', text)
+                    self.assertIn('biped or quadruped gait', text)
+                    self.assertIn('NO LEGS', text)
+                    self.assertIn('never invent legs', text)
+                    self.assertIn('running in place', text)
+                    self.assertIn('no speed lines, motion marks, trails or detached effects', text)
+                    self.assertNotIn('old action', text)
+                    self.assertNotIn('may float or tilt', text)
+
+    def test_locomotion_contract_does_not_leak_into_other_states(self):
+        for policy in [None, 1]:
+            for state in ['idle', 'running', 'waving', 'jumping', 'waiting', 'failed', 'review', 'look-0-157', 'look-180-337']:
+                with self.subTest(policy=policy, state=state):
+                    text = renderer.row_prompt({'prompt': 'pet', 'animationAnatomyPolicy': policy},
+                                               {'name': state, 'frames': 6, 'action': 'default action'})
+                    self.assertNotIn('RUN CYCLE', text)
+                    if state == 'running':
+                        self.assertIn('while stationary', text)
+                        self.assertIn('No walking', text)
+
+    def test_directional_locomotion_reaches_the_provider_with_both_references(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); (root/'run').mkdir()
+            (root/'run/sprite-request.json').write_text('{}')
+            renderer.Image.new('RGB', (1024,1024), 'green').save(root/'base.png')
+            guides = root/'run/references/layout-guides'; guides.mkdir(parents=True)
+            for direction in ['left', 'right']:
+                name = 'running-' + direction
+                guide = guides/(name + '.png')
+                renderer.Image.new('RGB', (1536,208), 'white').save(guide)
+                row = {'name': name, 'frames': 8, 'action': 'old action'}
+                job = {'prompt': '', 'reviewBase': True, 'animationAnatomyPolicy': 1, 'rows': [row]}
+                class StopBeforeProvider(Exception): pass
+                def capture(_root, args):
+                    text = Path(args[args.index('--prompt-file') + 1]).read_text()
+                    self.assertIn('RUN CYCLE', text)
+                    self.assertIn('screen ' + direction.upper(), text)
+                    self.assertIn('never invent legs', text)
+                    self.assertEqual([args[i+1] for i, value in enumerate(args) if value == '--ref'],
+                                     [str(root/'base.png'), str(guide)])
+                    raise StopBeforeProvider()
+                with patch.object(renderer, 'run_tool', side_effect=capture):
+                    with self.assertRaises(StopBeforeProvider): renderer.generate(root, job, name)
+
     def test_gaze_prompts_cover_all_sixteen_ordered_directions(self):
         first = renderer.row_prompt({'prompt': 'fox'}, {'name': 'look-0-157', 'frames': 8, 'action': ''})
         second = renderer.row_prompt({'prompt': 'fox'}, {'name': 'look-180-337', 'frames': 8, 'action': ''})
