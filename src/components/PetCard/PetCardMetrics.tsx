@@ -89,6 +89,13 @@ export function PetCardMetrics({
         slug,
         surface: "card",
       });
+    } catch {
+      add({
+        name: `pet-card-like-${slug}`,
+        theme: "danger",
+        title: "Like failed",
+        content: "Could not confirm the like. Check your connection before trying again.",
+      });
     } finally {
       setBusy(false);
     }
