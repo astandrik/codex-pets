@@ -8,7 +8,7 @@ import { InstallCommandButton } from "@/components/InstallCommand/InstallCommand
 import { PetCardMetrics } from "@/components/PetCard/PetCardMetrics";
 import type { RelatedPetContext } from "@/lib/metrics/related-pet-attribution";
 import { getPetIdleStripUrl } from "@/lib/pets/asset-urls";
-import { PREVIEW_FRAME_MS } from "@/lib/pets/preview-timing";
+import { previewCycleDurationMs } from "@/lib/pets/preview-timing";
 import { kindLabelTheme, statusLabelText, statusLabelTheme } from "@/lib/ui/labels";
 import { PET_SHEET, PET_STATES } from "@/lib/pets/types";
 import type { PublicPetSummary } from "@/lib/pets/types";
@@ -29,7 +29,7 @@ type StripStyle = CSSProperties & {
 
 const PREVIEW_STATE = PET_STATES[0];
 const PREVIEW_FRAME_WIDTH = PET_SHEET.cellWidth;
-const PREVIEW_FRAME_DURATION = `${PREVIEW_STATE.frames * PREVIEW_FRAME_MS}ms`;
+const PREVIEW_FRAME_DURATION = `${previewCycleDurationMs(PREVIEW_STATE.key)}ms`;
 const PREVIEW_STRIP_WIDTH = PREVIEW_FRAME_WIDTH * PREVIEW_STATE.frames;
 
 export function PetCard({

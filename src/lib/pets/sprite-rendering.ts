@@ -2,7 +2,7 @@ import sharp from "sharp";
 
 import { getPetAssetIdFromSpritesheetUrl } from "@/lib/pets/asset-urls";
 import { readPetSpritesheetAsset } from "@/lib/pets/assets-repository";
-import { PREVIEW_FRAME_MS } from "@/lib/pets/preview-timing";
+import { previewCycleDurationMs, previewFrameDurationsMs, previewFrameStops } from "@/lib/pets/preview-timing";
 import { PET_SHEET, PET_STATES, type PublicPet } from "@/lib/pets/types";
 
 export type PetAnimationState = (typeof PET_STATES)[number];
@@ -48,10 +48,7 @@ export async function renderAnimatedSpriteGif(input: {
 
   return sharp(frames, { join: { animated: true } })
     .gif({
-      delay: Array.from(
-        { length: input.state.frames },
-        () => PREVIEW_FRAME_MS,
-      ),
+      delay: [...previewFrameDurationsMs(input.state.key)],
       dither: 0,
       effort: 6,
       keepDuplicateFrames: true,
@@ -81,6 +78,7 @@ export function spriteCssValues(input: {
   height: string;
   frames: number;
   duration: string;
+  keyframes: string;
 } {
   return {
     backgroundSize: `${PET_SHEET.width * input.scale}px auto`,
@@ -89,7 +87,10 @@ export function spriteCssValues(input: {
     width: `${PET_SHEET.cellWidth * input.scale}px`,
     height: `${PET_SHEET.cellHeight * input.scale}px`,
     frames: input.state.frames,
-    duration: `${input.state.frames * PREVIEW_FRAME_MS}ms`,
+    duration: `${previewCycleDurationMs(input.state.key)}ms`,
+    keyframes: previewFrameStops(input.state.key).map(({frame, percent}) =>
+      `${percent}%{background-position:-${frame * PET_SHEET.cellWidth * input.scale}px var(--pet-row-y)}`,
+    ).join("") + "100%{background-position:0 var(--pet-row-y)}",
   };
 }
 

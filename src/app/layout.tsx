@@ -7,6 +7,7 @@ import "@/styles/globals.scss";
 import { AppHeader } from "@/components/AppHeader/AppHeader";
 import { Footer } from "@/components/Footer/Footer";
 import { WebMCPRegistrar } from "@/components/WebMCP/WebMCPRegistrar";
+import { PetPreviewStyles } from "@/components/StatePreview/PetPreviewStyles";
 import { Providers } from "@/app/Providers";
 import YandexMetrika from "@/app/YandexMetrika";
 import { getPublicOrigin, toPublicUrl, withBasePath } from "@/lib/base-path";
@@ -101,6 +102,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={rootClassName}>
+        <PetPreviewStyles />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: serializeJsonLd(websiteJsonLd) }}

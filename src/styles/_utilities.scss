@@ -423,9 +423,9 @@
     max-width: none;
     height: auto;
     image-rendering: pixelated;
-    animation: home-hero-pet-idle
-      var(--home-hero-frame-duration, 2100ms)
-      steps(var(--home-hero-frame-count, 6))
+    animation: pet-idle-preview
+      var(--home-hero-frame-duration, 6600ms)
+      steps(1, end)
       infinite;
     will-change: transform;
   }
@@ -818,16 +818,6 @@
   50% {
     opacity: 0.86;
     transform: translateX(7px);
-  }
-}
-
-@keyframes home-hero-pet-idle {
-  from {
-    transform: translate3d(0, 0, 0);
-  }
-
-  to {
-    transform: translate3d(-100%, 0, 0);
   }
 }
 

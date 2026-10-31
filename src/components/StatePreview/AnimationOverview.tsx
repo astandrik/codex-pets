@@ -3,7 +3,7 @@
 import {useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties} from "react";
 import {Dialog} from "@gravity-ui/uikit";
 import {PET_STATES, type PetSheet} from "@/lib/pets/types";
-import {PREVIEW_FRAME_MS} from "@/lib/pets/preview-timing";
+import {previewFrameDurationMs} from "@/lib/pets/preview-timing";
 import "./AnimationOverview.scss";
 
 type Props = {spritesheetUrl: string; sheet: PetSheet; suspended: boolean};
@@ -27,6 +27,7 @@ export function AnimationOverview({spritesheetUrl, sheet, suspended}: Props) {
   const visible = useSyncExternalStore(subscribeVisibility, isVisible, serverVisible);
   const [playPreference, setPlayPreference] = useState<boolean | null>(null);
   const [frames, setFrames] = useState(() => PET_STATES.map(() => 0));
+  const currentFrames = useRef(frames);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailFrame, setDetailFrame] = useState(0);
@@ -41,12 +42,30 @@ export function AnimationOverview({spritesheetUrl, sheet, suspended}: Props) {
 
   useEffect(() => {
     if (!running) return;
-    const timer = window.setInterval(() => {
-      if (detailOpen) setDetailFrame(frame => (frame + 1) % selected.frames);
-      else setFrames(current => current.map((frame, index) => (frame + 1) % PET_STATES[index].frames));
-    }, PREVIEW_FRAME_MS);
-    return () => window.clearInterval(timer);
-  }, [running, detailOpen, selected.frames]);
+    if (detailOpen) {
+      const timer = window.setTimeout(() => setDetailFrame(frame => (frame + 1) % selected.frames), previewFrameDurationMs(selected.key, detailFrame));
+      return () => window.clearTimeout(timer);
+    }
+    const remaining = PET_STATES.map((state, index) => previewFrameDurationMs(state.key, currentFrames.current[index]));
+    let timer: number;
+    const schedule = () => {
+      const delay = Math.min(...remaining);
+      timer = window.setTimeout(() => {
+        currentFrames.current = currentFrames.current.map((frame, index) => {
+          remaining[index] -= delay;
+          if (remaining[index] > 0) return frame;
+          const state = PET_STATES[index];
+          const next = (frame + 1) % state.frames;
+          remaining[index] = previewFrameDurationMs(state.key, next);
+          return next;
+        });
+        setFrames(currentFrames.current);
+        schedule();
+      }, delay);
+    };
+    schedule();
+    return () => window.clearTimeout(timer);
+  }, [running, detailOpen, selected.key, selected.frames, detailFrame]);
 
   const changeAnimation = useCallback((direction: number) => {
     const next = (selectedIndex + direction + PET_STATES.length) % PET_STATES.length;

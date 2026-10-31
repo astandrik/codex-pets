@@ -28,35 +28,45 @@ async function click(node: HTMLButtonElement) {await act(async () => {node.focus
 async function tick(count = 1) {await act(async () => vi.advanceTimersByTimeAsync(count * 350));}
 const detail = () => document.querySelector<HTMLElement>(".animation-overview__large-sprite")!;
 
-it.each([1, 2] as const)("plays all nine atlas v%s loops at 350ms with one clock and no requests", async version => {
+const nativeDurations = [
+  [1680, 660, 660, 840, 840, 1920], [120, 120, 120, 120, 120, 120, 120, 220],
+  [120, 120, 120, 120, 120, 120, 120, 220], [140, 140, 140, 280],
+  [140, 140, 140, 140, 280], [140, 140, 140, 140, 140, 140, 140, 240],
+  [150, 150, 150, 150, 150, 260], [120, 120, 120, 120, 120, 220], [150, 150, 150, 150, 150, 280],
+];
+function expectedFrame(index: number, elapsed: number) {
+  const durations = nativeDurations[index];
+  let time = elapsed % durations.reduce((sum, duration) => sum + duration, 0);
+  for (let frame = 0; frame < durations.length; frame++) {
+    if (time < durations[frame]) return frame;
+    time -= durations[frame];
+  }
+  throw Error("Invalid native fixture");
+}
+it.each([1, 2] as const)("plays all nine atlas v%s loops with Codex timing, one clock and no requests", async version => {
   await render(false, version);
   expect(cards()).toHaveLength(9); expect(host.textContent).not.toMatch(/\d+ frames/);
-  expect(vi.getTimerCount()).toBe(1);
-  for (let tickIndex = 0; tickIndex < 16; tickIndex++) {
+  let elapsed = 0;
+  for (const checkpoint of [0, 119, 120, 139, 140, 149, 150, 699, 700, 819, 820, 1009, 1010, 1030, 1060, 1219, 1220, 1679, 1680, 2340, 3000, 3840, 4680, 6599, 6600]) {
+    await act(async () => vi.advanceTimersByTimeAsync(checkpoint - elapsed)); elapsed = checkpoint;
+    expect(vi.getTimerCount()).toBe(1);
     frames().forEach((position, index) => {
       const state = PET_STATES[index];
-      expect(position).toBe(`${(tickIndex % state.frames) / 7 * 100}% ${state.row / (getPetSheet(version).rows - 1) * 100}%`);
+      expect(position).toBe(`${expectedFrame(index, elapsed) / 7 * 100}% ${state.row / (getPetSheet(version).rows - 1) * 100}%`);
     });
-    await tick();
   }
   expect(fetchMock).not.toHaveBeenCalled();
 });
-it("advances every state at 350ms in the grid and detail", async () => {
-  await render();
-  const first = frames();
-  await act(async () => vi.advanceTimersByTimeAsync(349));
-  expect(frames()).toEqual(first);
-  await act(async () => vi.advanceTimersByTimeAsync(1));
-  frames().forEach((position, index) => expect(position).not.toBe(first[index]));
-  await click(cards()[0]);
+it("uses the long idle hold and short run frames in detail", async () => {
+  await render(); await click(cards()[0]);
   const idle = detail().style.backgroundPosition;
-  await act(async () => vi.advanceTimersByTimeAsync(349));
+  await act(async () => vi.advanceTimersByTimeAsync(1679));
   expect(detail().style.backgroundPosition).toBe(idle);
   await act(async () => vi.advanceTimersByTimeAsync(1));
   expect(detail().style.backgroundPosition).not.toBe(idle);
   await click(control("Next animation"));
   const right = detail().style.backgroundPosition;
-  await act(async () => vi.advanceTimersByTimeAsync(349));
+  await act(async () => vi.advanceTimersByTimeAsync(119));
   expect(detail().style.backgroundPosition).toBe(right);
   await act(async () => vi.advanceTimersByTimeAsync(1));
   expect(detail().style.backgroundPosition).not.toBe(right);
@@ -105,7 +115,11 @@ it("starts paused in SSR and reduced motion, allows manual play, and clears its 
   reduced = true;
   expect(renderToString(<AnimationOverview spritesheetUrl="/sheet.webp" sheet={getPetSheet(2)} suspended={false}/>)).toContain("Play all animations");
   await render(); expect(control("Play all animations")).not.toBeNull(); expect(vi.getTimerCount()).toBe(0);
-  const interval = vi.spyOn(window, "setInterval"), clear = vi.spyOn(window, "clearInterval");
-  await click(control("Play all animations")); expect(interval).toHaveBeenCalledTimes(1);
-  await act(async () => root.render(null)); expect(clear).toHaveBeenCalledWith(interval.mock.results[0].value);
+  const timeout = vi.spyOn(window, "setTimeout"), clear = vi.spyOn(window, "clearTimeout");
+  await click(control("Play all animations"));
+  await act(async () => vi.advanceTimersByTimeAsync(0));
+  expect(vi.getTimerCount()).toBe(1);
+  const animationTimer = timeout.mock.calls.findIndex(([, delay]) => delay === 120);
+  expect(animationTimer).toBeGreaterThanOrEqual(0);
+  await act(async () => root.render(null)); expect(clear).toHaveBeenCalledWith(timeout.mock.results[animationTimer].value);
 });
