@@ -3,6 +3,7 @@
 import {useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties} from "react";
 import {Dialog} from "@gravity-ui/uikit";
 import {PET_STATES, type PetSheet} from "@/lib/pets/types";
+import {PREVIEW_FRAME_MS} from "@/lib/pets/preview-timing";
 import "./AnimationOverview.scss";
 
 type Props = {spritesheetUrl: string; sheet: PetSheet; suspended: boolean};
@@ -43,7 +44,7 @@ export function AnimationOverview({spritesheetUrl, sheet, suspended}: Props) {
     const timer = window.setInterval(() => {
       if (detailOpen) setDetailFrame(frame => (frame + 1) % selected.frames);
       else setFrames(current => current.map((frame, index) => (frame + 1) % PET_STATES[index].frames));
-    }, 140);
+    }, PREVIEW_FRAME_MS);
     return () => window.clearInterval(timer);
   }, [running, detailOpen, selected.frames]);
 

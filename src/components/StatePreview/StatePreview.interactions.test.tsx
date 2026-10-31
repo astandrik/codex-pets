@@ -22,6 +22,22 @@ async function render(hideControls = false) {
   await act(async () => root.render(<ThemeProvider theme="light"><StatePreview petJsonUrl="/pet.json" spritesheetUrl="/sprite.webp" layout="generation" hideControls={hideControls} slots={{ afterStage: <a href="/pet.zip">Download ZIP</a>, sidePanel: <div>Metadata actions</div>, afterControls: <div>Generation details</div> }} /></ThemeProvider>));
 }
 const button = (name: string) => [...document.body.querySelectorAll("button")].find(b => b.textContent?.includes(name))!;
+it("keeps idle and another six-frame state at the same 350ms cadence", async () => {
+  const draw = (selectedKey: "idle" | "running") => <ThemeProvider theme="light"><StatePreview petJsonUrl="/pet.json" spritesheetUrl="/sprite.webp" selectedKey={selectedKey}/></ThemeProvider>;
+  await act(async () => root.render(draw("idle")));
+  const position = () => element.querySelector<HTMLElement>(".state-preview__sprite")!.style.backgroundPosition;
+  const first = position();
+  await act(async () => vi.advanceTimersByTimeAsync(349));
+  expect(position()).toBe(first);
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(position()).not.toBe(first);
+  await act(async () => root.render(draw("running")));
+  const working = position();
+  await act(async () => vi.advanceTimersByTimeAsync(349));
+  expect(position()).toBe(working);
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(position()).not.toBe(working);
+});
 it("orders one overview, downloads, gaze, actions and details", async () => {
   await render();
   const sections = [...element.querySelector(".state-preview")!.children];
@@ -31,7 +47,7 @@ it("orders one overview, downloads, gaze, actions and details", async () => {
   expect(element.querySelector("select")).toBeNull();
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
-it("pauses all sixteen gaze directions and resumes the same 140ms clock", async () => {
+it("pauses all sixteen gaze directions and resumes the same 350ms clock", async () => {
   await render(); await act(async () => button("Look directions").click());
   expect(document.querySelectorAll(".state-preview__directions button")).toHaveLength(16);
   await act(async () => document.querySelector<HTMLButtonElement>('.state-preview__directions button[title*="090"]')!.click());
@@ -41,7 +57,9 @@ it("pauses all sixteen gaze directions and resumes the same 140ms clock", async 
   expect(sprite().style.backgroundPosition).toBe(position);
   expect(document.body.textContent).toContain("Paused");
   await act(async () => button("Resume").click());
-  await act(async () => vi.advanceTimersByTimeAsync(140));
+  await act(async () => vi.advanceTimersByTimeAsync(349));
+  expect(sprite().style.backgroundPosition).toBe(position);
+  await act(async () => vi.advanceTimersByTimeAsync(1));
   expect(sprite().style.backgroundPosition).not.toBe(position);
   await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Close gaze panel"]')!.click());
   await act(async () => button("Look directions").click());

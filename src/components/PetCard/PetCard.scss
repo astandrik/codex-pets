@@ -72,7 +72,7 @@
     height: auto;
     image-rendering: pixelated;
     animation: pet-card-sprite-idle
-      var(--pet-card-frame-duration, 840ms)
+      var(--pet-card-frame-duration, 2100ms)
       steps(var(--pet-card-frame-count, 6))
       infinite;
     will-change: transform;

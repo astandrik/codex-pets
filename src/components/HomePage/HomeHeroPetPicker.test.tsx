@@ -41,5 +41,6 @@ describe("HomeHeroPetPicker public author email", () => {
       container.querySelector('a[href="mailto:creator+public@example.com"]')
         ?.textContent,
     ).toBe("creator+public@example.com");
+    expect(container.querySelector<HTMLElement>(".home-hero-pet__sprite-viewport")?.style.getPropertyValue("--home-hero-frame-duration")).toBe("2100ms");
   });
 });

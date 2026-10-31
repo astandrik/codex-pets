@@ -66,6 +66,7 @@ describe("GET /card/[file]", () => {
     expect(metadata.format).toBe("gif");
     expect(metadata.width).toBe(384);
     expect(metadata.pages).toBe(6);
+    expect(metadata.delay).toEqual(Array(6).fill(350));
     expect(metadata.pageHeight).toBe(416);
     expect(response.headers.get("X-Codex-Pet-Width")).toBe("384");
     expect(response.headers.get("X-Codex-Pet-Height")).toBe("416");
@@ -97,6 +98,7 @@ describe("GET /card/[file]", () => {
 
     expect(response.status).toBe(200);
     expect(metadata.width).toBe(640);
+    expect(metadata.delay).toEqual(Array(6).fill(350));
     expect(metadata.pageHeight).toBe(360);
     expect(response.headers.get("X-Codex-Pet-Width")).toBeNull();
     expect(response.headers.get("X-Codex-Pet-Height")).toBeNull();

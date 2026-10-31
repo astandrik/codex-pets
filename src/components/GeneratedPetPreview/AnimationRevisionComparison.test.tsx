@@ -14,7 +14,7 @@ it("synchronizes real preview frames and accepts only on explicit click",async()
   await act(async()=>root.render(<ThemeProvider theme="light"><AnimationRevisionComparison generationId={"b".repeat(64)} sourceGenerationId={"a".repeat(64)} expiresAt={new Date(Date.now()+86400000).toISOString()} petJsonUrl="/pet.json" spritesheetUrl="/after.webp" beforeSpritesheetUrl="/before.webp" selectedStates={["waving"]} onAccepted={accepted}/></ThemeProvider>));
   const sprites=()=>[...element.querySelectorAll<HTMLElement>(".state-preview__sprite")];
   expect(sprites()).toHaveLength(2);
-  await act(async()=>vi.advanceTimersByTimeAsync(280));
+  await act(async()=>vi.advanceTimersByTimeAsync(700));
   expect(sprites()[0].style.backgroundPosition).toBe(sprites()[1].style.backgroundPosition);
   expect(sprites()[0].style.backgroundImage).toContain("before.webp");expect(sprites()[1].style.backgroundImage).toContain("after.webp");
   expect(fetchMock.mock.calls.filter(([,init])=>init?.method==="POST")).toHaveLength(0);
@@ -27,6 +27,29 @@ const previewResponse = () => ({ok: true, text: async () => JSON.stringify({id: 
 async function renderCandidate() {
   await act(async () => root.render(<ThemeProvider theme="light"><AnimationRevisionComparison generationId={"b".repeat(64)} sourceGenerationId={"a".repeat(64)} expiresAt={new Date(Date.now() + 1000).toISOString()} petJsonUrl="/pet.json" spritesheetUrl="/after.webp" beforeSpritesheetUrl="/before.webp" selectedStates={["idle"]} onAccepted={accepted}/></ThemeProvider>));
 }
+
+it("keeps both previews synchronized at 350ms after switching states", async () => {
+  fetchMock.mockImplementation(async () => previewResponse());
+  await renderCandidate();
+  const positions = () => [...element.querySelectorAll<HTMLElement>(".state-preview__sprite")].map(node => node.style.backgroundPosition);
+  const first = positions();
+  await act(async () => vi.advanceTimersByTimeAsync(349));
+  expect(positions()).toEqual(first);
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(positions()[0]).not.toBe(first[0]);
+  expect(positions()[0]).toBe(positions()[1]);
+  await act(async () => {
+    const select = element.querySelector("select")!;
+    select.value = "running";
+    select.dispatchEvent(new Event("change", {bubbles: true}));
+  });
+  const working = positions();
+  await act(async () => vi.advanceTimersByTimeAsync(349));
+  expect(positions()).toEqual(working);
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(positions()[0]).not.toBe(working[0]);
+  expect(positions()[0]).toBe(positions()[1]);
+});
 
 it.each([404, 410].flatMap(status => ["json", "empty", "html"].map(body => ({status, body}))))("disables acceptance after terminal $status with $body body", async ({status, body}) => {
   const json = vi.fn(async () => {

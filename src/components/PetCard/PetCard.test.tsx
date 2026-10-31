@@ -30,7 +30,7 @@ vi.mock("@/components/PetCard/PetCardMetrics", () => ({
 }));
 
 describe("PetCard public author email", () => {
-  it("renders the approved public address as a mailto link", () => {
+  it("renders the approved public address and a 2.1-second idle loop", () => {
     const markup = renderToStaticMarkup(
       <PetCard
         pet={{
@@ -59,6 +59,7 @@ describe("PetCard public author email", () => {
     );
     const container = document.createElement("div");
     container.innerHTML = markup;
+    expect(container.querySelector<HTMLElement>(".pet-card__sprite-viewport")?.style.getPropertyValue("--pet-card-frame-duration")).toBe("2100ms");
 
     expect(
       container.querySelector('a[href="mailto:creator+public@example.com"]')
