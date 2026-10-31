@@ -114,8 +114,6 @@ def row_prompt(job, row):
         actions = {
             'idle': 'Rest calmly with subtle natural motion of the existing character.',
             'running': 'FOCUSED TASK PROCESSING / THINKING while stationary. Small deliberate motions of existing parts only. No walking, stepping, running or hopping.',
-            'running-left': 'Move toward the left using the existing anatomy; a bodyless character may float or tilt left.',
-            'running-right': 'Move toward the right using the existing anatomy; a bodyless character may float or tilt right.',
             'waving': 'Express a greeting using existing parts only, for example a friendly tilt when there are no limbs.',
             'jumping': 'Perform a short upward hop using the existing shape without growing or shrinking.',
             'waiting': 'Wait attentively for user input, with a small patient motion.',
@@ -126,6 +124,21 @@ def row_prompt(job, row):
             action = actions[name]
         elif name.startswith('look-'):
             action = action.split('. Same front-facing body', 1)[0] + '. Keep the approved silhouette still. Follow image3 directions using existing eyes only; do not add eyes or other anatomy. The diagram is a direction guide, not a character reference. No labels.'
+    if name in ('running-left', 'running-right'):
+        direction = 'LEFT' if name == 'running-left' else 'RIGHT'
+        action = (f'PHYSICAL LOCOMOTION toward screen {direction}, using only the approved character anatomy. '
+                  f'For a character WITH LEGS, show a looping RUN CYCLE facing screen {direction} in side profile. '
+                  f'Show {row["frames"]} consecutive moments of one continuous fast stride, with visibly different poses: '
+                  'extended stride, foot contact, compression, passing pose, push-off and airborne extension, then the opposite contacts. '
+                  'Use the natural biped or quadruped gait and preserve the exact number of limbs. '
+                  'Existing arms or forelegs participate in locomotion; the body leans into travel and rises and falls. '
+                  'Animate running in place inside each slot, keeping the body center near the same position; the app supplies screen translation. '
+                  f'For a character with NO LEGS, instead show a coherent gliding, flying or rolling cycle toward screen {direction} '
+                  'using its existing shape and parts, with a consistent directional lean and changing motion poses. '
+                  'Keep its recognizable silhouette and face visible; never invent legs, arms, wings or a torso. '
+                  'Communicate movement through the character poses alone: no speed lines, motion marks, trails or detached effects. '
+                  'Keep all poses separate with generous empty gaps, and connect the last pose smoothly to the first. '
+                  'This is bodily travel, not stationary hand gestures, work, thinking or just a head turn.')
     guidance = ''
     states = {'idle': 'resting', 'running-right': 'moving to the right', 'running-left': 'moving to the left',
               'waving': 'greeting', 'jumping': 'jumping', 'failed': 'failure or blocked',
