@@ -8,6 +8,17 @@ import {CONTINUATION_STATES,type ContinuationOptions} from '@/lib/pets/generatio
 (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
 window.matchMedia??=(()=>({matches:false,addEventListener(){},removeEventListener(){}})) as typeof window.matchMedia;
 afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks();vi.unstubAllGlobals();});
+it('explains a bad extracted frame in its card and dialog while keeping raw images static',async()=>{
+ const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const change=vi.fn();
+ vi.stubGlobal('fetch',vi.fn(async()=>({ok:true,blob:async()=>new Blob(['raw'])})));vi.spyOn(URL,'createObjectURL').mockReturnValue('blob:raw');vi.spyOn(URL,'revokeObjectURL').mockImplementation(()=>{});
+ try{
+  await act(async()=>root.render(<ThemeProvider theme="light"><GenerationRecoveryPreview strips={[{state:'failed',status:'invalid',uncertain:false,preview:{kind:'source-image',url:'/raw'}}]} issues={[{state:'failed',kind:'invalid',frame:1,actual:389,expected:9003}]} required={['failed']} selected={['failed']} disabled={false} rebuild={false} onChange={change}/></ThemeProvider>));
+  const button=host.querySelector<HTMLButtonElement>('[aria-label="Просмотреть: Неудача"]')!;expect(button.getAttribute('aria-describedby')).toBe('recovery-issues-failed');
+  await act(async()=>button.click());const dialog=document.querySelector('[role="dialog"]')!;
+  expect(dialog.textContent).toContain('Извлечённый кадр 2 значительно меньше остальных');expect(dialog.textContent).toContain('медиана 9003');expect(dialog.textContent).not.toContain('Пауза');
+  expect(dialog.querySelector<HTMLInputElement>('input')?.disabled).toBe(true);expect(change).not.toHaveBeenCalled();
+ }finally{await act(async()=>root.unmount());host.remove();}
+});
 it('loads a shared atlas once and preserves playback pause, selection and focus',async()=>{
  const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const changed=vi.fn();
  const fetch=vi.fn(async()=>({ok:true,blob:async()=>new Blob(['image'])}));vi.stubGlobal('fetch',fetch);vi.spyOn(URL,'createObjectURL').mockReturnValue('blob:atlas');vi.spyOn(URL,'revokeObjectURL').mockImplementation(()=>{});

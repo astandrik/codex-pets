@@ -1,6 +1,7 @@
 import { z } from "zod";
 export const CONTINUATION_STATES = ["idle", "running", "running-left", "running-right", "waving", "jumping", "waiting", "failed", "review", "look-0-157", "look-180-337"] as const;
 export type ContinuationState = typeof CONTINUATION_STATES[number];
+export const continuationLockKey = (id:string) => 'continuation-lock:' + id;
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 export const continuationStatesSchema = z.array(z.enum(CONTINUATION_STATES)).max(11)
     .refine(v => new Set(v).size === v.length)

@@ -16,7 +16,7 @@ export type SpriteSession = {
   compose(): Promise<Buffer>;
   cleanup(): Promise<void>;
 };
-export type SpriteRenderer = { open(job: GenerationJob, saved: Map<StageName, Buffer>, reference?: Buffer, revisionAtlas?: Buffer): Promise<SpriteSession>; cleanupExpired?(now: number): Promise<void> };
+export type SpriteRenderer = { open(job: GenerationJob, saved: Map<StageName, Buffer>, reference?: Buffer, revisionAtlas?: Buffer, options?: {diagnosticOnly?: boolean}): Promise<SpriteSession>; cleanupExpired?(now: number): Promise<void> };
 type Service = ReturnType<typeof createGenerationService>;
 
 export function createSpriteGenerationWorker(options: {

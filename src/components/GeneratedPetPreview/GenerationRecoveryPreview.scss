@@ -12,6 +12,8 @@
  &__empty{color:var(--recovery-muted);font-size:12px;padding:12px;overflow-wrap:anywhere}
  &__choice{display:flex;gap:8px;padding:10px;border-top:1px solid var(--recovery-line);cursor:pointer;align-items:flex-start;min-height:60px;input{margin:3px 0 0;width:16px;height:16px;flex-shrink:0}span{min-width:0}strong{font-size:12px;overflow-wrap:anywhere;hyphens:auto}small{font-size:11px;margin-top:4px}}
  &__warning{font-size:11px;color:var(--g-color-text-warning);padding:10px}
+ &__card_invalid{border:2px solid var(--recovery-focus)}
+ &__issue{padding:10px;font-size:12px;overflow-wrap:anywhere;small{margin-top:4px;font-size:11px}}
  &__dialog-header{display:flex;align-items:center;justify-content:space-between;padding:16px;gap:12px;border-bottom:1px solid var(--recovery-line)}
  &__controls{display:flex;gap:8px;margin-bottom:12px;button{flex:1}} &__dialog p{margin-top:12px}
 }

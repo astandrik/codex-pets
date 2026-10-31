@@ -1,7 +1,7 @@
 import {buildContinuationPreviews,readContinuationPreview} from "@/lib/pets/generation/continuation-preview";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { CONTINUATION_STATES, continuationEnabled, continuationInputSchema, type ContinuationOperation, type ContinuationPlan, type ContinuationState } from "@/lib/pets/generation/continuation-model";
+import { CONTINUATION_STATES, continuationEnabled, continuationInputSchema, continuationLockKey, type ContinuationOperation, type ContinuationPlan, type ContinuationState } from "@/lib/pets/generation/continuation-model";
 import { inspectContinuationSource, jobRevision, requireContinuationSource, sha, type SourceSnapshot } from "@/lib/pets/generation/continuation-source";
 import { DAY, GENERATION_ID, GenerationError, generationDigest, moscowDay, nextMoscowDay, type GenerationJob } from "@/lib/pets/generation/model";
 import { publicJob } from "@/lib/pets/generation/public-job";
@@ -22,7 +22,7 @@ export function createContinuationService(store: GenerationStore, options: {
     budgetUsd: () => number;
 }) {
     const key = (requestId: string) => "continuation:" + generationDigest(options.secret(), "request", requestId);
-    const lockKey = (id: string) => "continuation-lock:" + id;
+    const lockKey = continuationLockKey;
     const read = async (tx: GenerationTransaction, k: string) => { const raw = await tx.getLedger(k, options.now()); return raw ? receiptSchema.parse(JSON.parse(raw)) : null; };
     const save = async (tx: GenerationTransaction, r: Receipt, updateLock = true) => { await tx.putLedger(key(r.id), JSON.stringify(r), r.createdAt + 7 * DAY); if (updateLock)
         await tx.putLedger(lockKey(r.sourceId), JSON.stringify(r), r.createdAt + 7 * DAY); };

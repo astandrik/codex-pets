@@ -1,8 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { spritegenEnvironment, parseSpritegenReply, processFailureDiagnostic } from "./sprite-renderer";
+import { spriteRenderer, spritegenEnvironment, parseSpritegenReply, processFailureDiagnostic } from "./sprite-renderer";
+import {continuationFixture} from './continuation-fixture.test-utils';
 
 afterEach(() => vi.unstubAllEnvs());
 describe("sprite renderer private transport", () => {
+  it('opens a diagnostic-only session without credentials and forbids generation',async()=>{
+    const f=await continuationFixture();
+    vi.stubEnv('PET_GENERATION_OPENAI_KEY_FILE','/missing-test-key');
+    vi.stubEnv('PET_GENERATION_PROXY_URL','');
+    const session=await spriteRenderer.open(f.job,new Map([['base',f.image]]),undefined,undefined,{diagnosticOnly:true});
+    try{await expect(session.generate('idle')).rejects.toMatchObject({code:'invalid_stage'});}
+    finally{await session.cleanup();}
+  });
+  it("preserves the current frame diagnostic through an error reply",()=>{
+    const issue={state:'failed',kind:'invalid',frame:1,actual:389,expected:9003};
+    try{parseSpritegenReply(JSON.stringify({error:'invalid_sprite_extraction',failureDiagnostic:{boundary:'renderer_process',reason:'invalid_image'},assemblyIssues:[issue],stderr:'private'}));expect.unreachable();}
+    catch(error){expect(error).toMatchObject({code:'invalid_sprite_extraction',assemblyIssues:[issue],diagnostic:{boundary:'renderer_process',reason:'invalid_image'}});expect(JSON.stringify(error)).not.toContain('private');}
+  });
   it("accepts the dedicated per-request SSH proxy without leaking unrelated environment", () => {
     vi.stubEnv("PET_GENERATION_PROXY_URL", "http://172.17.0.1:18090");
     expect(spritegenEnvironment("synthetic-key").HTTPS_PROXY).toBe("http://172.17.0.1:18090");

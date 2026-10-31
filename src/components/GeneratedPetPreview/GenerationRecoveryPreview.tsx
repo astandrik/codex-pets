@@ -2,9 +2,10 @@
 import {useCallback,useEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react';
 import {Dialog} from '@gravity-ui/uikit';
 import {getPetSheet} from '@/lib/pets/types';
-import {CONTINUATION_STATES,type ContinuationOptions,type ContinuationState} from '@/lib/pets/generation/continuation-model';
+import {CONTINUATION_STATES,type AssemblyIssue,type ContinuationOptions,type ContinuationState} from '@/lib/pets/generation/continuation-model';
+import {RECOVERY_LABELS,recoveryIssueMessage,recoveryIssueMeasurements} from './recovery-issues';
+export {RECOVERY_LABELS} from './recovery-issues';
 import './GenerationRecoveryPreview.scss';
-export const RECOVERY_LABELS:Record<ContinuationState,string>={idle:'Покой',running:'Работа','running-left':'Движение влево','running-right':'Движение вправо',waving:'Приветствие',jumping:'Прыжок',waiting:'Ожидание',failed:'Неудача',review:'Размышление','look-0-157':'Направления 1–8','look-180-337':'Направления 9–16'};
 type Strip=ContinuationOptions['strips'][number];
 type ImageState={url?:string;error?:boolean};
 const subscribeMotion=(fn:()=>void)=>{const m=matchMedia('(prefers-reduced-motion: reduce)');m.addEventListener('change',fn);return()=>m.removeEventListener('change',fn);};
@@ -41,7 +42,7 @@ function useImages(urls:string[],visible:Set<string>){
  },[urls,visible,attempt]); // URLs, not descriptor identity, define the image cache.
  return {images,retry:(url:string)=>{delete cache.current[url];setAttempt(x=>x+1);}};
 }
-export function GenerationRecoveryPreview({strips,required,selected,disabled,rebuild,onChange}:{strips:Strip[];required:ContinuationState[];selected:ContinuationState[];disabled:boolean;rebuild:boolean;onChange:(s:ContinuationState[])=>void}){
+export function GenerationRecoveryPreview({strips,required,selected,disabled,rebuild,onChange,issues=[]}:{strips:Strip[];required:ContinuationState[];selected:ContinuationState[];disabled:boolean;rebuild:boolean;onChange:(s:ContinuationState[])=>void;issues?:AssemblyIssue[]}){
  const grid=useRef<HTMLDivElement>(null),cards=useRef(new Map<string,HTMLButtonElement>()),returnFocus=useRef<HTMLElement|null>(null),close=useRef<HTMLButtonElement>(null);
  const [visible,setVisible]=useState(new Set<string>()),[inView,setInView]=useState(new Set<string>()),[detail,setDetail]=useState<ContinuationState|null>(null),[tick,setTick]=useState(0),[detailTick,setDetailTick]=useState(0),[preference,setPreference]=useState<boolean|null>(null),[detailPlaying,setDetailPlaying]=useState(false);
  const motion=useSyncExternalStore(subscribeMotion,reduced,()=>true),notVisible=useSyncExternalStore(subscribeVisibility,hidden,()=>true);
@@ -77,16 +78,23 @@ export function GenerationRecoveryPreview({strips,required,selected,disabled,reb
   const sheet=getPetSheet(2),frame=(large?detailTick:tick)%preview.frames;
   return <span role="img" aria-label={RECOVERY_LABELS[s.state]} className={large?'recovery-preview__sprite recovery-preview__sprite_large':'recovery-preview__sprite'} style={{backgroundImage:`url(${asset.url})`,backgroundSize:'800% 1100%',backgroundPosition:`${frame/(sheet.columns-1)*100}% ${preview.row/(sheet.rows-1)*100}%`}}/>;
  }
- function card(s:Strip){return <article key={s.state} className={`recovery-preview__card${!rebuild&&selected.includes(s.state)?' recovery-preview__card_selected':''}`} data-preview-url={s.preview?.url} data-preview-state={s.state}>
-  <button ref={node=>{if(node)cards.current.set(s.state,node);else cards.current.delete(s.state);}} type="button" className="recovery-preview__image" disabled={!s.preview} onClick={()=>open(s)} aria-label={`Просмотреть: ${RECOVERY_LABELS[s.state]}`}>{content(s)}{s.preview?.kind==='source-image'&&<small>Исходная полоса</small>}</button>
-  <label className="recovery-preview__choice">{!rebuild&&<input type="checkbox" checked={selected.includes(s.state)} disabled={disabled||required.includes(s.state)} onChange={e=>select(s.state,e.target.checked)} aria-label={`Пересоздать: ${RECOVERY_LABELS[s.state]}`}/>}<span><strong>{RECOVERY_LABELS[s.state]}</strong><small>{s.status==='missing'?'Изображения нет':s.status==='invalid'?rebuild?'Исходник сохранён':'Нужно пересоздать':'Сохранено'}</small></span></label>
+ function issueDetails(state:ContinuationState){return issues.filter(issue=>issue.state===state).map((issue,index)=><p key={index} className="recovery-preview__issue">{recoveryIssueMessage(issue)}<small>{recoveryIssueMeasurements(issue)}</small></p>);}
+ function statusLabel(s:Strip){
+  if(s.status==='missing')return 'Изображения нет';
+  if(s.status==='invalid')return 'Нужно исправить';
+  return s.preview?.kind==='atlas-row'?'Проверенный атлас':'Исходник сохранён';
+ }
+ function card(s:Strip){const invalid=s.status==='invalid';const hasIssues=issues.some(issue=>issue.state===s.state);return <article key={s.state} className={`recovery-preview__card${!rebuild&&selected.includes(s.state)?' recovery-preview__card_selected':''}${invalid?' recovery-preview__card_invalid':''}`} data-preview-url={s.preview?.url} data-preview-state={s.state}>
+  <button ref={node=>{if(node)cards.current.set(s.state,node);else cards.current.delete(s.state);}} type="button" className="recovery-preview__image" disabled={!s.preview} onClick={()=>open(s)} aria-label={`Просмотреть: ${RECOVERY_LABELS[s.state]}`} aria-describedby={hasIssues?`recovery-issues-${s.state}`:undefined}>{content(s)}{s.preview?.kind==='source-image'&&<small>Исходная полоса</small>}</button>
+  <label className="recovery-preview__choice">{!rebuild&&<input type="checkbox" checked={selected.includes(s.state)} disabled={disabled||required.includes(s.state)} onChange={e=>select(s.state,e.target.checked)} aria-label={`Пересоздать: ${RECOVERY_LABELS[s.state]}`}/>}<span><strong>{RECOVERY_LABELS[s.state]}</strong><small>{statusLabel(s)}</small></span></label>
+  {hasIssues&&<div id={`recovery-issues-${s.state}`}>{issueDetails(s.state)}</div>}
   {s.uncertain&&<p className="recovery-preview__warning">Прежний запрос мог быть оплачен</p>}
  </article>;}
  return <section className="recovery-preview"><div className="recovery-preview__heading"><div><h2>Сохранённые изображения</h2><p>Нажмите на изображение, чтобы рассмотреть его.</p></div>{hasAtlasFrames&&<button type="button" onClick={()=>setPreference(!playing)}>{playing?'Пауза':'Воспроизвести'}</button>}</div>
  <div ref={grid}><div className="recovery-preview__grid">{strips.filter(s=>!s.state.startsWith('look-')).map(card)}</div><h3>Направления взгляда</h3><div className="recovery-preview__gaze">{strips.filter(s=>s.state.startsWith('look-')).map(card)}</div></div>
  <Dialog open={detail!==null} onClose={()=>setDetail(null)} initialFocus={close} returnFocus={returnFocus} hasCloseButton={false} contentOverflow="auto" className="recovery-preview__dialog" aria-label={current?RECOVERY_LABELS[current.state]:'Просмотр изображения'}>
  <div className="recovery-preview__dialog-header"><h2>{current&&RECOVERY_LABELS[current.state]}</h2><button ref={close} type="button" onClick={()=>setDetail(null)} aria-label="Закрыть просмотр">×</button></div>
- <Dialog.Body>{current&&content(current,true)}<p>{current?.preview?.kind==='source-image'?'Сохранённая исходная полоса. Это не готовая анимация.':'Кадры из проверенного атласа.'}</p>{current?.preview&&images[current.preview.url]?.error&&<button onClick={()=>retry(current.preview!.url)} type="button">Повторить загрузку</button>}</Dialog.Body>
+ <Dialog.Body>{current&&content(current,true)}{current&&issueDetails(current.state)}<p>{current?.preview?.kind==='source-image'?'Сохранённая исходная полоса. Это не готовая анимация.':'Кадры из проверенного атласа.'}</p>{current?.preview&&images[current.preview.url]?.error&&<button onClick={()=>retry(current.preview!.url)} type="button">Повторить загрузку</button>}</Dialog.Body>
  <Dialog.Footer><div className="recovery-preview__controls"><button type="button" onClick={()=>change(-1)} aria-label="Предыдущее изображение">←</button>{current?.preview?.kind==='atlas-row'&&!current.state.startsWith('look-')&&<button type="button" onClick={()=>setDetailPlaying(v=>!v)}>{detailPlaying?'Пауза':'Воспроизвести'}</button>}<button type="button" onClick={()=>change(1)} aria-label="Следующее изображение">→</button></div>{current&&!rebuild&&<label><input type="checkbox" checked={selected.includes(current.state)} disabled={disabled||required.includes(current.state)} onChange={e=>select(current.state,e.target.checked)}/> Пересоздать: {RECOVERY_LABELS[current.state]}</label>}</Dialog.Footer>
  </Dialog></section>;
 }

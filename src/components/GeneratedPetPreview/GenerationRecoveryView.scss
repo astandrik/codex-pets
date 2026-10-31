@@ -17,6 +17,7 @@
  &__submit{display:grid;gap:8px}
  &__jump{display:none}
  &__notice{padding:16px;background:var(--recovery-surface);border-left:3px solid var(--g-color-text-warning);border-radius:8px;margin-bottom:20px;overflow-wrap:anywhere}
+ &__diagnostics{h2{font-size:18px}ul{margin:12px 0;padding-left:20px}li+li{margin-top:8px}small{margin-top:4px}}
  &__manual{display:flex;align-items:flex-start;gap:8px}
  &__terms{color:var(--recovery-muted);font-size:12px}
  &__accepted{display:grid;gap:16px;max-width:700px;padding:24px;background:var(--recovery-surface);border-radius:12px;label{display:grid;gap:8px}input{width:100%;min-width:0;padding:12px;border-radius:8px;background:var(--recovery-bg);color:var(--recovery-text);border:1px solid var(--recovery-border)}}
