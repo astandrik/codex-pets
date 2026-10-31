@@ -70,7 +70,7 @@ const faqs = [
 export const metadata: Metadata = {
   title: ABOUT_SEO.title,
   description: ABOUT_DESCRIPTION,
-  other: getPageViewOtherMetadata("/about", "About Codex Pets"),
+  other: getPageViewOtherMetadata("/about", ABOUT_SEO.title),
   alternates: {
     canonical: withBasePath("/about"),
   },

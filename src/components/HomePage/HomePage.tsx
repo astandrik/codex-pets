@@ -7,7 +7,7 @@ import {BEST_CODEX_PETS_GUIDE_PATH} from "@/lib/guides/best-codex-pets";
 import {withBasePath} from "@/lib/base-path";
 import {HOME_COPY, HOME_STEPS, HOME_FAQ, HOME_TEXT_ONLY_AI_PROMPT} from "@/lib/product-copy";
 import type {PublicPetSummary} from "@/lib/pets/types";
-import {HomeHeroPetPicker} from "./HomeHeroPetPicker";
+import {HomeHeroPetPicker, type HomeHeroPet} from "./HomeHeroPetPicker";
 import {HomeGeneratedPetExample} from "./HomeGeneratedPetExample";
 import {pickRandomHeroPetIndex} from "./home-hero-random";
 import {buildHomeRecommendationEntryPoints} from "./recommendation-entry-points";
@@ -33,6 +33,7 @@ export function HomePage({
   pets, catalogTotalPets, showLandingContent, catalog,
   generationAvailable = true, reviewBase = true,
 }: HomePageProps) {
+  const heroPets = showLandingContent ? pets.map(toHomeHeroPet) : [];
   const recommendations = showLandingContent ? buildHomeRecommendationEntryPoints(pets) : null;
   const example = pets.find(pet => pet.slug === "trolleybus" && pet.status === "approved") ?? null;
   const steps = reviewBase ? HOME_STEPS.items : TEXT_ONLY_STEPS;
@@ -105,7 +106,7 @@ export function HomePage({
             <Link href={BEST_CODEX_PETS_GUIDE_PATH}>Best Codex pets guide ↗</Link>
           </details>
         )}
-        {showLandingContent && <HomeHeroPetPicker pets={pets} initialIndex={pickRandomHeroPetIndex(pets.length) ?? 0} layout="compact"/>}
+        {showLandingContent && <HomeHeroPetPicker pets={heroPets} initialIndex={pickRandomHeroPetIndex(heroPets.length) ?? 0} layout="compact"/>}
         {catalog}
       </section>
       {showLandingContent && <>
@@ -136,4 +137,17 @@ function RecommendationGroup({title, children}: {title: string; children: ReactN
     <Text as="h3" variant="body-2">{title}</Text>
     <div className="home-recommendations__links">{children}</div>
   </div>;
+}
+
+function toHomeHeroPet(pet: PublicPetSummary): HomeHeroPet {
+  return {
+    slug: pet.slug,
+    displayName: pet.displayName,
+    description: pet.description,
+    kind: pet.kind,
+    ownerName: pet.ownerName,
+    ownerProfileSlug: pet.ownerProfileSlug,
+    publicAuthorEmail: pet.publicAuthorEmail ?? null,
+    spritesheetUrl: pet.spritesheetUrl,
+  };
 }

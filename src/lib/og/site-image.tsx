@@ -153,7 +153,7 @@ export function renderSiteOgImage(): ImageResponse {
               fontWeight: 700,
             }}
           >
-            Your idea. Your own Codex pet.
+            {HOME_SEO.ogTitle}
           </div>
           <div
             style={{

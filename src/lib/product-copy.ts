@@ -68,7 +68,7 @@ export const CATALOG_SEO = {
 
 export const ABOUT_COPY = {
   "title": "Create a pet that is yours",
-  "lead": "Codex Pets helps you create your own animated pet for Codex from a description or image. You can review and refine the character, generate its animations, and download the pet pack. You can also browse and install ready-made pets from the moderated community gallery.",
+  "lead": PRODUCT_SUMMARY,
   "sections": [
     {
       "title": "Start with your own idea",
