@@ -47,6 +47,56 @@ it.each([1, 2])("propagates storage failure at write %s", failedWrite => {
   const set = s.setItem;s.setItem = (key, value) => {if (++calls === failedWrite) throw Error("storage unavailable");set(key, value);};
   expect(() => requests.rememberContinuationInput(s, source, body)).toThrow("storage unavailable");
   expect(requests.readContinuationId(s, source)).toBeNull();
+  expect(s.values.size).toBe(0);
+});
+
+it("restores the previous snapshot when updating its pointer fails", () => {
+  const s = storage(), body = input();
+  requests.rememberContinuationInput(s, source, body);
+  const before = new Map(s.values), set = s.setItem;
+  s.setItem = (key, value) => {
+    if (key === requests.CONTINUATION_PENDING + source) throw Error("pointer write failed");
+    set(key, value);
+  };
+  expect(() => requests.rememberContinuationInput(s, source, {...body, maxRetries: 12})).toThrow("pointer write failed");
+  expect(s.values).toEqual(before);
+  expect(requests.readContinuationInput(s, source, body.requestId)).toEqual(body);
+});
+
+it("does not overwrite recovery data when reading the previous snapshot fails", () => {
+  const s = storage(), body = input();
+  requests.rememberContinuationInput(s, source, body);
+  const before = new Map(s.values);
+  s.getItem = () => {throw Error("read unavailable");};
+  expect(() => requests.rememberContinuationInput(s, source, {...body, maxRetries: 12})).toThrow("read unavailable");
+  expect(s.values).toEqual(before);
+});
+
+it("preserves an identical replay snapshot when its pointer cannot be saved", () => {
+  const s = storage(), body = input();
+  requests.rememberContinuationInput(s, source, body);
+  const before = new Map(s.values), set = s.setItem;
+  s.setItem = (key, value) => {
+    if (key === requests.CONTINUATION_PENDING + source) throw Error("pointer write failed");
+    set(key, value);
+  };
+  s.removeItem = () => {throw Error("remove unavailable");};
+  expect(() => requests.rememberContinuationInput(s, source, body)).toThrow("pointer write failed");
+  expect(s.values).toEqual(before);
+});
+
+it("keeps the original save error if removing an unsubmitted snapshot also fails", () => {
+  const s = storage(), first = input(), next = input();
+  requests.rememberContinuationInput(s, source, first);
+  const set = s.setItem;
+  s.setItem = (key, value) => {
+    if (key === requests.CONTINUATION_PENDING + source) throw Error("pointer write failed");
+    set(key, value);
+  };
+  s.removeItem = () => {throw Error("cleanup failed");};
+  expect(() => requests.rememberContinuationInput(s, source, next)).toThrow("pointer write failed");
+  expect(requests.readContinuationId(s, source)).toBe(first.requestId);
+  expect(requests.readContinuationInput(s, source, first.requestId)).toEqual(first);
 });
 
 it("does not delete the pointer or snapshot of another operation", () => {
@@ -67,6 +117,7 @@ it.each([false, true])("preserves the pending payload after another pointer writ
     s.values.set(requests.CONTINUATION_PAYLOAD + source, JSON.stringify({requestId: first.requestId, input: first}));
   } else requests.rememberContinuationInput(s, source, first);
   const set = s.setItem;
+  const before = new Map(s.values);
   s.setItem = (key, value) => {
     if (key === requests.CONTINUATION_PENDING + source) throw Error("pointer write failed");
     set(key, value);
@@ -74,6 +125,7 @@ it.each([false, true])("preserves the pending payload after another pointer writ
   expect(() => requests.rememberContinuationInput(s, source, next)).toThrow("pointer write failed");
   expect(requests.readContinuationId(s, source)).toBe(first.requestId);
   expect(requests.readContinuationInput(s, source, first.requestId)).toEqual(first);
+  expect(s.values).toEqual(before);
 });
 
 it("clears only its own payload when an older tab has saved another operation", () => {

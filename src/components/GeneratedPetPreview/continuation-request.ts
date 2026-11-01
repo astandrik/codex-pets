@@ -24,12 +24,23 @@ export function readContinuationInput(storage: Pick<Storage, "getItem">, sourceI
         return parseSavedInput(raw, requestId);
     } catch { return null; }
 }
-export function rememberContinuationInput(storage: Pick<Storage, "setItem">, sourceId: string, input: ContinuationInput) {
+export function rememberContinuationInput(storage: Pick<Storage, "getItem" | "setItem" | "removeItem">, sourceId: string, input: ContinuationInput) {
     const saved = savedInputSchema.parse({requestId: input.requestId, input});
     const raw = JSON.stringify(saved);
     if (new TextEncoder().encode(raw).length > 4096) throw Error("Continuation input is too large");
-    storage.setItem(payloadKey(sourceId, input.requestId), raw);
-    rememberContinuation(storage, sourceId, input.requestId);
+    const key = payloadKey(sourceId, input.requestId), previous = storage.getItem(key);
+    storage.setItem(key, raw);
+    try {
+        rememberContinuation(storage, sourceId, input.requestId);
+    } catch (error) {
+        try {
+            if (previous !== raw && storage.getItem(key) === raw) {
+                if (previous === null) storage.removeItem(key);
+                else storage.setItem(key, previous);
+            }
+        } catch { /* A failed rollback must still prevent sending the request. */ }
+        throw error;
+    }
 }
 export function readContinuationId(storage: Pick<Storage, "getItem">, sourceId: string): string | null {
     try {

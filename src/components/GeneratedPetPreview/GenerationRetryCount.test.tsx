@@ -5,7 +5,7 @@ import {ThemeProvider} from "@gravity-ui/uikit";
 import {afterEach, beforeEach, expect, it, vi} from "vitest";
 import {GenerationContinuation} from "./GenerationContinuation";
 import {CONTINUATION_STATES} from "@/lib/pets/generation/continuation-model";
-import {CONTINUATION_PENDING, readContinuationInput, rememberContinuation, rememberContinuationInput} from "./continuation-request";
+import {CONTINUATION_PENDING, CONTINUATION_PAYLOAD, readContinuationInput, rememberContinuation, rememberContinuationInput} from "./continuation-request";
 
 const {push} = vi.hoisted(() => ({push: vi.fn()}));
 vi.mock("next/navigation", () => ({useRouter: () => ({push})}));
@@ -89,6 +89,50 @@ it.each([1, 2])("does not POST when snapshot/pointer write %s fails", async fail
   expect(host.textContent).toContain("Запрос не отправлен");
   expect(fetchMock.mock.calls.every(([, init]) => init?.method !== "POST")).toBe(true);
   expect(field().value).toBe("5");
+});
+
+it("does not accumulate snapshots after repeated pointer failures and later acceptance", async () => {
+  fetchMock.mockImplementation(async (_url, init) => {
+    if (init?.method !== "POST") return response({options: options()});
+    const body = JSON.parse(init.body), generationId = "c".repeat(64);
+    return response({operation: {id: body.requestId, mode: "regenerate", state: "accepted", generationId},
+      generation: {generationId, status: "queued", expiresAt: new Date(Date.now() + 3600000).toISOString()}}, 202);
+  });
+  await open();await enter("8");
+  let blockPointer = true;
+  const set = Storage.prototype.setItem;
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+    if (blockPointer && key === CONTINUATION_PENDING + id) throw Error("pointer unavailable");
+    set.call(this, key, value);
+  });
+  for (let attempt = 0; attempt < 2; attempt++) await act(async () => submit().click());
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+  expect(localStorage.getItem(CONTINUATION_PENDING + id)).toBeNull();
+  expect(field().value).toBe("8");
+  blockPointer = false;
+  await act(async () => submit().click());
+  const posts = fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+  expect(posts).toHaveLength(1);
+  expect(JSON.parse(posts[0][1].body).maxRetries).toBe(8);
+  expect(push).toHaveBeenCalledWith("/generated/" + "c".repeat(64));
+  expect(localStorage.getItem(CONTINUATION_PENDING + id)).toBeNull();
+  const payloads = Object.keys(localStorage).filter(key => key.startsWith(CONTINUATION_PAYLOAD + id));
+  expect(payloads).toEqual([]);
+});
+
+it("does not POST or lose the draft if both pointer save and rollback fail", async () => {
+  await open();await enter("12");
+  const set = Storage.prototype.setItem;
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+    if (key === CONTINUATION_PENDING + id) throw Error("pointer unavailable");
+    set.call(this, key, value);
+  });
+  vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {throw Error("remove unavailable");});
+  await act(async () => submit().click());
+  expect(host.textContent).toContain("Запрос не отправлен");
+  expect(field().value).toBe("12");expect(field().disabled).toBe(false);
+  expect(localStorage.getItem(CONTINUATION_PENDING + id)).toBeNull();
+  expect(fetchMock.mock.calls.every(([, init]) => init?.method !== "POST")).toBe(true);
 });
 
 it.each([undefined, 0, 50])("restores unknown recovery with its explicit old retry setting: %s", async maxRetries => {
