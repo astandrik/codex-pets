@@ -63,3 +63,21 @@ it("offers an unpersisted timeout through GET and admits it once through POST", 
  expect(replay.reused).toBe(true);
  expect(f.store.jobs.size).toBe(3);
 });
+
+it("advertises and validates optional base retry limits in all three HTTP input modes",async()=>{
+ const f=await setup();const response=await GET(new Request("https://pets.example/api"),context(f.id));
+ expect((await response.json()).options.baseRetries).toEqual({min:0,default:5,max:50});
+ const input=await f.input();
+ for(const maxRetries of [-1,51,1.1,"5",null])expect((await POST(request({...input,maxRetries}),context(f.id))).status).toBe(400);
+ expect(f.store.jobs.size).toBe(1);
+ const accepted=await POST(request({...input,maxRetries:5}),context(f.id));expect(accepted.status).toBe(202);
+ const body=await accepted.json();expect(body.generation.baseRepair).toEqual({maxAttempts:6,attempts:0,phase:"active"});
+ expect((await POST(request({...input,maxRetries:1}),context(f.id))).status).toBe(409);
+ f.config.retry=false;f.config.review=false;
+ expect((await POST(request({...input,maxRetries:5}),context(f.id))).status).toBe(202);
+ const recovered=await GET(new Request("https://pets.example/api?requestId="+input.requestId),context(f.id));expect((await recovered.json()).generation.baseRepair).toEqual(body.generation.baseRepair);
+ for(const mode of ["legacy-image-only","legacy-text"] as const){
+  const legacy=await baseRetryFixture(true);vi.spyOn(petGeneration,"retryBaseGeneration").mockImplementation(legacy.service.retryBaseGeneration);
+  expect((await POST(request({...await legacy.input(mode),maxRetries:0}),context(legacy.id))).status).toBe(202);
+ }
+});

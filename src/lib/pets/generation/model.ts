@@ -1,3 +1,4 @@
+import {validBaseRepairSequence} from "@/lib/pets/generation/base-repair";
 import {continuationPlanSchema, assemblyIssuesSchema, rebuildHistorySchema, CONTINUATION_STATES, REGENERATION_RETRIES, type AssemblyIssue} from "@/lib/pets/generation/continuation-model";
 import {animationStatesSchema, animationCorrectionsSchema} from "@/lib/pets/generation/animation-revision-input";
 export {animationRevisionInputSchema} from "@/lib/pets/generation/animation-revision-input";
@@ -86,6 +87,31 @@ export const animationRepairSchema = z.object({
   });
 }, "Invalid attempt sequence");
 export type AnimationRepairState = z.infer<typeof animationRepairSchema>;
+export const baseAttemptSchema = z.object({
+  ordinal: z.number().int().min(1).max(51), token: z.uuid(),
+  reason: z.enum(["initial", "transport", "moderation", "rate_limit"]),
+  status: z.enum(["reserved", "started", "saved", "failed", "unknown"]),
+  reservedAt: z.number().finite(), notBefore: z.number().finite(),
+  startedAt: z.number().finite().optional(), finishedAt: z.number().finite().optional(),
+  resultSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  usage: usageSchema.optional(), generationMs: z.number().finite().nonnegative().optional(),
+  failure: z.object({code:z.enum(ANIMATION_ATTEMPT_FAILURE_CODES),retryAt:z.iso.datetime().optional(),diagnostic:failureDiagnosticSchema.optional(),cliCause:cliCauseSchema.optional(),providerFailure:providerFailureSchema.optional()}).strict().optional(),
+}).strict().refine(a => a.notBefore >= a.reservedAt &&
+  (a.ordinal === 1 ? a.reason === "initial" : a.reason !== "initial") &&
+  (a.status === "reserved" ? a.startedAt === undefined && a.finishedAt === undefined : a.startedAt !== undefined) &&
+  (a.startedAt === undefined || a.startedAt >= a.notBefore) &&
+  (a.status !== "saved" || (a.finishedAt !== undefined && a.resultSha256 !== undefined && a.generationMs !== undefined)) &&
+  (!["failed", "unknown"].includes(a.status) || (a.finishedAt !== undefined && a.failure !== undefined)) &&
+  (a.finishedAt === undefined || (a.startedAt !== undefined && a.finishedAt >= a.startedAt)) &&
+  (a.status === "saved" || a.resultSha256 === undefined) &&
+  (a.usage === undefined || a.status === "saved" || (a.status === "failed" && a.failure?.code === "provider_rate_limited" && a.failure.providerFailure?.httpStatus === 429 && Object.values(a.usage).every(value=>value===0))) &&
+  (["failed","unknown"].includes(a.status) || a.failure === undefined), "Invalid base attempt transition");
+export type BaseAttempt = z.infer<typeof baseAttemptSchema>;
+export const baseRepairSchema = z.object({
+  policy:z.literal(1), maxAttempts:z.number().int().min(1).max(51), phase:z.enum(["active","complete","stopped"]),
+  attempts:z.array(baseAttemptSchema).max(51),
+}).strict().refine(validBaseRepairSequence, "Invalid base attempt sequence");
+export type BaseRepairState = {policy:1;maxAttempts:number;phase:"active"|"complete"|"stopped";attempts:BaseAttempt[]};
 export const stageSchema = z.object({
   name: z.enum(STAGE_NAMES), status: z.enum(["inflight", "completed"]),
   sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(), usage: usageSchema.optional(),
@@ -130,6 +156,7 @@ export const jobSchema = z.object({
   rowAttemptLogs:z.array(rowAttemptLogSchema).max(24).optional(),
   rowRetries:z.array(rowRetrySchema).max(12).optional(),
   animationRepair: animationRepairSchema.optional(),
+  baseRepair: baseRepairSchema.optional(),
   cliFailureCauses:z.array(stageCliCauseSchema).max(12).optional(),
   usage: usageSchema.optional(),
   providerRequestId: z.string().optional(),
@@ -150,6 +177,11 @@ export const jobSchema = z.object({
   : job.pipelineVersion === 3
   ? Boolean(job.animationRevision && job.animationAnatomyPolicy === 1 && job.reviewBase && job.baseConfirmedAt !== undefined && !job.reference)
   : job.animationRevision === undefined, "Invalid animation revision policy")
+  // Free rebuilds retain the completed audit; no active base policy crosses into a continuation.
+  .refine(job => !job.baseRepair || (job.pipelineVersion === 2 && job.reviewBase === true && Boolean(job.baseRetrySourceId) && !job.animationRevision && (!job.continuation || (job.continuation.mode==="rebuild" && job.baseRepair.phase==="complete")) && !job.rowAttemptLogs?.some(log=>log.stage==="base") && !job.rowRetries?.some(retry=>retry.stage==="base")), "Invalid base repair scope")
+  .refine(job => !job.baseRepair || (!job.baseRepair.attempts.length ? job.stages.length===0 : job.baseRepair.attempts.at(-1)?.status==="saved"
+    ? job.stages[0]?.name==="base" && job.stages[0].status==="completed" && job.stages[0].sha256===job.baseRepair.attempts.at(-1)?.resultSha256
+    : job.stages.length===1 && job.stages[0].name==="base" && job.stages[0].status==="inflight"), "Invalid base repair checkpoint")
   .refine(job => !job.animationRepair || (job.pipelineVersion >= 2 && job.pipelineVersion <= 4 &&
     [...job.animationRepair.pending, ...job.animationRepair.attempts.map(a => a.state)].every(state =>
       (job.continuation?.mode === "rebuild" ? CONTINUATION_STATES : job.continuation?.generationStages ?? job.animationRevision?.selectedStates ?? CONTINUATION_STATES).includes(state))), "Invalid animation repair scope");

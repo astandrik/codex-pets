@@ -254,3 +254,9 @@ it("documents private base retry admission and read-only recovery",async()=>{
  expect(route.get.operationId).toBe("getPetBaseRetry");
  expect(route.post.requestBody.content["application/json"].schema.oneOf).toHaveLength(3);
 });
+it("documents optional bounded base retry count without a server default",async()=>{
+ const {buildOpenApiSpec}=await import("@/lib/openapi");const route=buildOpenApiSpec().paths["/api/pet-generations/{id}/base-retries"];
+ for(const mode of route.post.requestBody.content["application/json"].schema.oneOf){
+  expect(mode.required).not.toContain("maxRetries");expect(mode.properties).toHaveProperty("maxRetries",{type:"integer",minimum:0,maximum:50});
+ }
+});

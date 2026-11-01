@@ -1,6 +1,8 @@
 .base-generation-retry {
   margin-block: 16px;
   &__dialog {
+    --recovery-border: #776f80;
+    --recovery-focus: #805000;
     width: min(640px, calc(100vw - 32px));
     max-width: 100%;
     border-radius: 12px;
@@ -15,4 +17,9 @@
   }
   &__reference { display: block; max-width: 100%; max-height: 160px; object-fit: contain; border-radius: 8px; }
   &__description { white-space: pre-wrap; overflow-wrap: anywhere; }
+}
+
+.g-root_theme_dark .base-generation-retry__dialog {
+  --recovery-border: #8c8494;
+  --recovery-focus: #ffc85f;
 }

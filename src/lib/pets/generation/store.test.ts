@@ -115,6 +115,32 @@ describe("production generation store read contracts", () => {
     expect(read).toEqual(job);expect(read!.animationRepair!.attempts).toHaveLength(561);
   });
 
+  it("round-trips all 51 base attempts through the production store codec", async () => {
+    const {generationStore}=await import("./store");
+    const attempts=Array.from({length:51},(_,index)=>({ordinal:index+1,token:randomUUID(),reason:index?"moderation" as const:"initial" as const,
+      status:"failed" as const,reservedAt:now,notBefore:now,startedAt:now,finishedAt:now,
+      failure:{code:"provider_rejected" as const,providerFailure:{httpStatus:400,code:"moderation_blocked",moderationStage:"output" as const}}}));
+    const job={...currentJob,reviewBase:true,baseRetrySourceId:"c".repeat(64),status:"failed" as const,stages:[{name:"base" as const,status:"inflight" as const,startedAt:now}],
+      baseRepair:{policy:1 as const,maxAttempts:51,phase:"stopped" as const,attempts}};
+    await generationStore.transaction(tx=>tx.putJob(job));
+    const serialized=session.executeQuery.mock.calls[0][1].$payload.value.textValue;
+    session.executeQuery.mockResolvedValueOnce(textResult(serialized));
+    expect(await generationStore.readJob(id)).toEqual(job);
+  });
+
+  it("round-trips a completed base audit retained by a free rebuild", async () => {
+    const {generationStore}=await import("./store");
+    const sha256="c".repeat(64);
+    const job={...currentJob,reviewBase:true,baseConfirmedAt:now,baseRetrySourceId:"d".repeat(64),
+      stages:[{name:"base" as const,status:"completed" as const,startedAt:now,sha256}],
+      baseRepair:{policy:1 as const,maxAttempts:6,phase:"complete" as const,attempts:[{ordinal:1,token:randomUUID(),reason:"initial" as const,status:"saved" as const,reservedAt:now,notBefore:now,startedAt:now,finishedAt:now,resultSha256:sha256,generationMs:1}]},
+      continuation:{policy:1 as const,mode:"rebuild" as const,sourceGenerationId:id,generationStages:[],compositionStages:[],baseSha256:sha256}};
+    await generationStore.transaction(tx=>tx.putJob(job));
+    const serialized=session.executeQuery.mock.calls[0][1].$payload.value.textValue;
+    session.executeQuery.mockResolvedValueOnce(textResult(serialized));
+    expect(await generationStore.readJob(id)).toEqual(job);
+  });
+
   it("normalizes legacy rows without pipeline, worker or stage fields", async () => {
     const { generationStore } = await import("@/lib/pets/generation/store");
     const legacy: Partial<typeof currentJob> = { ...currentJob };

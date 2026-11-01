@@ -1,3 +1,4 @@
+import {getBaseRepairSummary,canResumeBaseRepair} from "@/lib/pets/generation/base-repair";
 import {continuationEnabled} from "@/lib/pets/generation/continuation-model";
 import {withQueueTimeout, requiredStageNames, usesStageCheckpoints, isUnacceptedAnimationRevision, generationBaseRetryEnabled, generationReviewFlowEnabled, type GenerationJob} from "@/lib/pets/generation/model";
 import {baseRetryEligibility} from "@/lib/pets/generation/base-retry-model";
@@ -8,7 +9,7 @@ import {getAnimationRepairSummary, canResumeAnimationRepair, hasUnsettledAnimati
 
 export function publicJob(record: GenerationJob, now: number, metadata?:PublicCardMetadata) {
   let job = withQueueTimeout(record, now);
-  if (record.status === "generating" && record.leaseUntil && record.leaseUntil <= now && !canResumeAnimationRepair(record) && (!usesStageCheckpoints(record) || record.stages.some(stage => stage.status === "inflight") || hasUnsettledAnimationAttempt(record))) {
+  if (record.status === "generating" && record.leaseUntil && record.leaseUntil <= now && !canResumeAnimationRepair(record) && !canResumeBaseRepair(record) && (!usesStageCheckpoints(record) || record.stages.some(stage => stage.status === "inflight") || hasUnsettledAnimationAttempt(record))) {
     job = { ...record, status: "failed", error: "outcome_unknown" };
   }
   const root = `/api/pet-generations/${job.id}/files/`;
@@ -25,6 +26,7 @@ export function publicJob(record: GenerationJob, now: number, metadata?:PublicCa
       ...(job.baseRetrySourceId?{baseRetrySourceId:job.baseRetrySourceId}:{}),
     status: job.status,
     progress: {completedSteps,totalSteps},
+    ...(job.baseRepair ? {baseRepair:getBaseRepairSummary(job,now)} : {}),
     ...(job.animationRepair ? {animationRepair: getAnimationRepairSummary(job, now)} : {}),
     expiresAt: new Date(job.expiresAt).toISOString(),
     pollAfterSeconds: job.status === "queued" || job.status === "generating" || job.status === "processing" ? 5 : undefined,
