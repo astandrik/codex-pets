@@ -1,0 +1,8 @@
+.generation-recovery {
+ &__retries{display:grid;gap:8px;>label{font-weight:600}}
+ &__retry-controls{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;gap:8px;input{min-width:0;width:100%;height:44px;padding:8px;border:1px solid var(--recovery-border, var(--g-color-line-generic));border-radius:8px;background:var(--recovery-bg, var(--g-color-base-background));color:var(--recovery-text, var(--g-color-text-primary));font:inherit;text-align:center}button{padding:8px;font-size:20px}}
+ &__legacy-retries{display:flex;align-items:flex-start;gap:8px;font-size:12px;font-weight:400;input{flex-shrink:0;margin-top:3px}}
+ &__retry-controls button {min-width:44px;min-height:44px;border:1px solid var(--recovery-border, var(--g-color-line-generic));border-radius:8px;background:var(--recovery-bg, var(--g-color-base-background));color:var(--recovery-text, var(--g-color-text-primary));cursor:pointer;}
+ &__retry-controls button:disabled {opacity:.5;cursor:default;}
+ &__retry-controls :focus-visible, &__legacy-retries input:focus-visible {outline:2px solid var(--recovery-focus, var(--g-color-line-focus));outline-offset:2px;}
+}

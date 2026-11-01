@@ -1,3 +1,5 @@
+import {createBaseRepairService} from "@/lib/pets/generation/base-repair-service";
+import {reserveInitialBaseAttempt,canResumeBaseRepair,latestBaseAttempt,baseFailureRetryReason} from "@/lib/pets/generation/base-repair";
 import {reserveInitialAnimationAttempts, canResumeAnimationRepair, hasUnsettledAnimationAttempt, latestAnimationAttempt, isAnimationState, getRepairScope, animationFailureRetryReason} from "@/lib/pets/generation/animation-repair";
 import {admitGeneration} from "@/lib/pets/generation/admission";
 import {createBaseRetryService} from "@/lib/pets/generation/base-retries";
@@ -65,14 +67,16 @@ export function createGenerationService(store: GenerationStore, options: {
         || current.stages.some((stage, index) => stage.status !== "completed" || stage.name !== requiredStageNames(current)[index])
         || names.some((name, index) => name !== next[index])) throw new GenerationError("invalid_stage");
       await checkStageBudget(tx, job.id, now, budgetUsd());
-      const updated = reserveInitialAnimationAttempts({ ...current, stages: [...current.stages, ...names.map(name => ({ name, status: "inflight" as const, startedAt: now }))] }, names, now, randomUUID);
+      let updated = reserveInitialAnimationAttempts({ ...current, stages: [...current.stages, ...names.map(name => ({ name, status: "inflight" as const, startedAt: now }))] }, names, now, randomUUID);
+      if(names.length===1&&names[0]==="base")updated=reserveInitialBaseAttempt(updated,now,randomUUID);
       await tx.putJob(updated);
-      if (state.active) state.active.inflight = true;
+      if (state.active) state.active.inflight = !(names.length===1&&names[0]==="base"&&updated.baseRepair);
       await saveScheduler(tx, state);
       return updated;
     });
   }
   return {
+    ...createBaseRepairService(store,{now:clock,enabled:options.enabled,budgetUsd}),
     ...createBaseRetryService(store,{now:clock,enabled:options.enabled,secret:options.secret,createId,budgetUsd,baseRetries:options.baseRetries??(()=>false),reviewFlow:options.reviewFlow??generationReviewFlowEnabled,automaticAnimationRepair:options.automaticAnimationRepair,automaticCardMetadata:options.automaticCardMetadata}),
     ...createAnimationRepairService(store, {now: clock, enabled: options.enabled, automaticAnimationRepair: options.automaticAnimationRepair ?? (() => false), budgetUsd}),
     ...createContinuationService(store, {now: clock, enabled: options.enabled, secret: options.secret, createId, budgetUsd, automaticAnimationRepair: options.automaticAnimationRepair}),
@@ -270,7 +274,7 @@ export function createGenerationService(store: GenerationStore, options: {
             state.active={id:abandoned.id,owner,until:now+LEASE_MS,inflight:true};
             const recovered={...abandoned,worker:owner,leaseUntil:now+LEASE_MS};await tx.putJob(recovered);await saveScheduler(tx,state);return recovered;
           }
-          if (abandoned && abandoned.expiresAt > now && (state.active.inflight !== true || canResumeAnimationRepair(abandoned)) && (abandoned.status === "processing" || (usesStageCheckpoints(abandoned) && abandoned.status === "generating" && (!abandoned.stages.some(stage => stage.status === "inflight") || canResumeAnimationRepair(abandoned))))) {
+          if (abandoned && abandoned.expiresAt > now && (state.active.inflight !== true || (canResumeAnimationRepair(abandoned) || canResumeBaseRepair(abandoned))) && (abandoned.status === "processing" || (usesStageCheckpoints(abandoned) && abandoned.status === "generating" && (!abandoned.stages.some(stage => stage.status === "inflight") || (canResumeAnimationRepair(abandoned) || canResumeBaseRepair(abandoned)))))) {
             state.active = { id: abandoned.id, owner, until: now + LEASE_MS, inflight: false };
             const recovered = { ...abandoned, worker: owner, leaseUntil: now + LEASE_MS };
             await tx.putJob(recovered);
@@ -494,6 +498,7 @@ export function createGenerationService(store: GenerationStore, options: {
         });
         const causes=cliCauses.slice(0,12).flatMap(entry=>{const parsed=stageCliCauseSchema.safeParse(entry);return parsed.success?[parsed.data]:[];});
         await tx.putJob({ ...current, status: "failed", error: code, prompt: "",
+          ...(current.baseRepair && current.baseRepair.phase!=="complete"?{baseRepair:{...current.baseRepair,phase:"stopped" as const}}:{}),
           ...(current.animationRepair && current.animationRepair.phase !== "complete" ? {animationRepair: {...current.animationRepair, phase: "stopped" as const}} : {}),
           ...(diagnostic ? { providerFailure: diagnostic } : {}),
           ...(failure ? {failureDiagnostic:failure}:{}),
@@ -507,18 +512,20 @@ export function createGenerationService(store: GenerationStore, options: {
         // Only fully recorded provider failures are local to this terminal job.
         // Missing checkpoints, retry acknowledgements and leases still stop the queue.
         const terminalProviderFailure=code==="outcome_unknown"&&usesStageCheckpoints(current)
-          &&current.status==="generating"&&failure?.boundary==="provider_cli"
+          &&current.status==="generating"&&(failure?.boundary==="provider_cli" || (current.baseRepair && !failure))
           &&unresolved.length>0&&causes.length===unresolved.length
           &&unresolved.every(stage=>{
             const matches=causes.filter(entry=>entry.stage===stage.name);
             const attempts=(current.rowAttemptLogs??[]).filter(log=>log.stage===stage.name);
             const repairLast=repairScope.has(stage.name)&&isAnimationState(stage.name)?latestAnimationAttempt(current,stage.name):undefined;
-            const last=repairScope.has(stage.name)
+            const last=stage.name==="base"&&current.baseRepair
+              ? (latestBaseAttempt(current)?.status==="failed"?latestBaseAttempt(current)?.failure:undefined)
+              : repairScope.has(stage.name)
               ? (repairLast?.status==="failed"?repairLast.failure:undefined)
               : (attempts.find(log=>log.attempt===2)??attempts.find(log=>log.attempt===1));
-            if(matches.length!==1||!last||last.diagnostic?.boundary!=="provider_cli")return false;
+            if(matches.length!==1||!last||(last.diagnostic?.boundary!=="provider_cli" && !(stage.name==="base"&&current.baseRepair&&!last.diagnostic)))return false;
             const cause=matches[0].cause;
-            const reason=animationFailureRetryReason(last);
+            const reason=stage.name==="base"&&current.baseRepair?baseFailureRetryReason(last):animationFailureRetryReason(last);
             return (reason==="transport"||(reason==="moderation"&&cause.kind==="http_error"&&cause.httpStatus===400))
               &&last.cliCause?.kind===cause.kind&&last.cliCause?.httpStatus===cause.httpStatus;
           });

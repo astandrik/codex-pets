@@ -1,3 +1,4 @@
+import {baseRepairProgressSchema} from "@/lib/pets/generation/base-repair-progress";
 import { z } from "zod";
 import {animationRepairProgressSchema} from "@/lib/pets/generation/animation-repair-progress";
 
@@ -126,6 +127,7 @@ const historyGenerationSchema = z.object({
   canContinue: z.boolean().optional(),
   baseUrl: z.string().optional(),
   animationRepair: animationRepairProgressSchema.optional(),
+  baseRepair: baseRepairProgressSchema.optional(),
   continuation: z.object({sourceGenerationId:z.string().regex(ID),mode:z.enum(["rebuild","regenerate"])}).optional(),
   pet: z.object({ displayName: z.string().min(1).max(80) }).optional(),
   animationRevision: z.object({acceptedAt: z.number().optional()}).optional(),

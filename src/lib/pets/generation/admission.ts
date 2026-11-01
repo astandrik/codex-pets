@@ -12,7 +12,7 @@ export type AdmissionOptions = {
 };
 export type PreparedAdmission = {
   id:string; input:GenerationInput; reviewBase?:boolean; reference?:GenerationReference;
-  acceptedAt:number; sourceDeadline?:number; baseRetrySourceId?:string;
+  acceptedAt:number; sourceDeadline?:number; baseRetrySourceId?:string; baseMaxRetries?:number;
 };
 
 export async function admitGeneration(tx:GenerationTransaction,prepared:PreparedAdmission,clientIp:string|null,options:AdmissionOptions):Promise<GenerationJob> {
@@ -33,6 +33,7 @@ export async function admitGeneration(tx:GenerationTransaction,prepared:Prepared
     ...(reference?{reference:reference.metadata}:{}),pipelineVersion:2,stages:[],
     ...(generationAnimationRevisionsEnabled()?{animationAnatomyPolicy:1 as const}:{}),nameSource:input.displayName===undefined?"automatic":"user",
     ...(options.automaticCardMetadata?.()?{cardMetadata:{policy:1 as const,state:"pending" as const,revision:0,edited:false}}:{}),
+    ...(prepared.baseMaxRetries!==undefined?{baseRepair:{policy:1 as const,maxAttempts:prepared.baseMaxRetries+1,phase:"active" as const,attempts:[]}}:{}),
     ...(prepared.baseRetrySourceId?{baseRetrySourceId:prepared.baseRetrySourceId}:{})};
   if(reference)await tx.putArtifact(id,"reference.png",reference.bytes,job.expiresAt);
   if(reviewBase&&options.baseRetries()){

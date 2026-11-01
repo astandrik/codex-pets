@@ -128,7 +128,7 @@ export async function composeWithAnimationRepairs(context: Context, job: Generat
 export function repairGenerationTotals(job: GenerationJob): {generationMs: number; usage?: ImageUsage} {
   const base = job.stages.find(s => s.name === "base");
   const attempts = job.animationRepair?.attempts ?? [];
-  const rows = [...(base ? [base] : []), ...attempts];
+  const rows = [...(job.baseRepair?.attempts ?? (base ? [base] : [])), ...(job.animationRepair ? attempts : job.stages.filter(s=>s.name!=="base"))];
   const generationMs = rows.reduce((sum, row) => sum + (row.generationMs ?? 0), 0);
   if (rows.some(row => !row.usage)) return {generationMs};
   const usage = rows.reduce((sum, row) => ({textInputTokens: sum.textInputTokens + row.usage!.textInputTokens,

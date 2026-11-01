@@ -1,4 +1,6 @@
 import {z} from "zod";
+import {baseRepairProgressSchema} from "@/lib/pets/generation/base-repair-progress";
+import {baseFailureRetryReason,validBaseRepairSequence} from "@/lib/pets/generation/base-repair";
 import type {GenerationJob} from "@/lib/pets/generation/model";
 import {isOutputModerationFailure} from "@/lib/pets/generation/provider-failure";
 
@@ -10,7 +12,7 @@ export const storedGenerationInputSchema = z.object({
 }).strict().refine(input => Boolean(input.prompt.trim() || input.reference), "Missing generation input");
 export type StoredGenerationInput = z.infer<typeof storedGenerationInputSchema>;
 
-const request = {requestId:z.uuid(),sourceRevision:digestSchema};
+const request = {requestId:z.uuid(),sourceRevision:digestSchema,maxRetries:z.number().int().min(0).max(50).optional()};
 export const baseRetryInputSchema = z.discriminatedUnion("mode",[
   z.object({...request,mode:z.literal("saved")}).strict(),
   z.object({...request,mode:z.literal("legacy-image-only")}).strict(),
@@ -18,12 +20,12 @@ export const baseRetryInputSchema = z.discriminatedUnion("mode",[
 ]);
 export type BaseRetryInput = z.infer<typeof baseRetryInputSchema>;
 export type BaseRetryMode = BaseRetryInput["mode"];
-export const retryGenerationSchema = z.object({generationId:digestSchema,status:z.enum(["queued","generating","awaiting_confirmation","processing","completed","failed"]),expiresAt:z.iso.datetime(),previewUrl:z.string()});
+export const retryGenerationSchema = z.object({generationId:digestSchema,status:z.enum(["queued","generating","awaiting_confirmation","processing","completed","failed"]),expiresAt:z.iso.datetime(),previewUrl:z.string(),baseRepair:baseRepairProgressSchema.optional()});
 export const baseRetryReplySchema = z.object({requestId:z.uuid(),sourceGenerationId:digestSchema,reused:z.boolean(),generation:retryGenerationSchema});
 export type BaseRetryReply = z.infer<typeof baseRetryReplySchema>;
 export const baseRetryOptionsSchema = z.union([
   z.object({existingGeneration:retryGenerationSchema}),
-  z.object({sourceRevision:digestSchema,sourceExpiresAt:z.iso.datetime(),inputState:z.enum(["saved","legacy"]),prompt:z.string().max(2000).optional(),displayName:z.string().max(80).optional(),referenceUrl:z.string().optional(),availableModes:z.array(z.enum(["saved","legacy-image-only","legacy-text"])),blockedReason:z.string().optional()}),
+  z.object({sourceRevision:digestSchema,sourceExpiresAt:z.iso.datetime(),inputState:z.enum(["saved","legacy"]),prompt:z.string().max(2000).optional(),displayName:z.string().max(80).optional(),referenceUrl:z.string().optional(),availableModes:z.array(z.enum(["saved","legacy-image-only","legacy-text"])),blockedReason:z.string().optional(),baseRetries:z.object({min:z.literal(0),default:z.literal(5),max:z.literal(50)}).optional()}),
 ]);
 export type BaseRetryOptions = z.infer<typeof baseRetryOptionsSchema>;
 
@@ -31,6 +33,15 @@ export function baseRetryEligibility(job: GenerationJob): boolean {
   if (job.status!=="failed" || job.pipelineVersion!==2 || !job.reviewBase || job.baseConfirmedAt!==undefined || job.continuation || job.animationRevision || job.stages.some(s=>s.name==="base"&&s.status==="completed")) return false;
   if (job.error==="queue_timeout") return job.stages.length===0 && !job.rowAttemptLogs?.length && !job.rowRetries?.length;
   if(job.stages.length!==1 || job.stages[0].name!=="base" || job.stages[0].status!=="inflight" || job.animationRepair?.attempts.length || job.animationRepair?.pending.length)return false;
+  if(job.baseRepair){
+    const repair=job.baseRepair,last=repair.attempts.at(-1);
+    return Boolean(validBaseRepairSequence(repair) && job.baseRetrySourceId && repair.phase==="stopped" && repair.attempts.length===repair.maxAttempts &&
+      repair.attempts.every((a,i)=>a.ordinal===i+1 && a.status==="failed" && a.failure && baseFailureRetryReason(a.failure)) &&
+      new Set(repair.attempts.map(a=>a.token)).size===repair.attempts.length && !job.rowAttemptLogs?.length && !job.rowRetries?.length &&
+      last?.failure && last.failure.code===job.error && JSON.stringify(last.failure.providerFailure)===JSON.stringify(job.providerFailure) &&
+      JSON.stringify(last.failure.diagnostic)===JSON.stringify(job.failureDiagnostic) &&
+      (!job.cliFailureCauses?.length || (job.cliFailureCauses.length===1 && job.cliFailureCauses[0].stage==="base" && JSON.stringify(job.cliFailureCauses[0].cause)===JSON.stringify(last.failure.cliCause))));
+  }
   const logs=job.rowAttemptLogs??[];
   if(logs.some(log=>log.stage!=="base") || new Set(logs.map(log=>log.attempt)).size!==logs.length || (job.retryInput && !logs.length))return false;
   const last=logs.find(log=>log.attempt===2)??logs.find(log=>log.attempt===1);

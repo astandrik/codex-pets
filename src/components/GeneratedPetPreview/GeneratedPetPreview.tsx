@@ -17,6 +17,7 @@ import {AnimationRevisionEditor, AnimationRevisionCorrections} from "./Animation
 import {AnimationRevisionComparison} from "./AnimationRevisionComparison";
 import {BaseReview} from "./BaseReview";
 import "./GeneratedPetPreview.scss";
+import {baseRepairProgressText} from "@/lib/pets/generation/base-repair-progress";
 import {animationRepairProgressText} from "@/lib/pets/generation/animation-repair-progress";
 
 const STATUS_LABELS = { queued: "Waiting in the queue", generating: "Creating your pet", awaiting_confirmation: "Your character is ready for review", processing: "Checking and packaging your pet", completed: "Your pet is ready", failed: "Generation could not be completed" };
@@ -280,8 +281,8 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
     {generation?.status==="processing"&&generation.metadata?.automaticState==="inflight"&&<p role="status">Preparing the name, description and tags…</p>}
 
     {!ready && metadataEditor}
-    {(error || (!recoveryVisible && !ready)) && <p role="status" aria-live="polite">{error || animationRepairProgressText(generation?.animationRepair) || (generation ? pendingAcceptance && generation.status === "completed" ? "Новая версия на проверке" : STATUS_LABELS[generation.status] : "Loading generation…")}</p>}
-    {!ready && generation?.progress && generation.status !== "failed" && !animationRepairProgressText(generation.animationRepair) && <p>{generation.progress.completedSteps} of {generation.progress.totalSteps} generation steps completed.</p>}
+    {(error || (!recoveryVisible && !ready)) && <p role="status" aria-live="polite">{error || baseRepairProgressText(generation?.baseRepair) || animationRepairProgressText(generation?.animationRepair) || (generation ? pendingAcceptance && generation.status === "completed" ? "Новая версия на проверке" : STATUS_LABELS[generation.status] : "Loading generation…")}</p>}
+    {!ready && generation?.progress && generation.status !== "failed" && !baseRepairProgressText(generation.baseRepair) && !animationRepairProgressText(generation.animationRepair) && <p>{generation.progress.completedSteps} of {generation.progress.totalSteps} generation steps completed.</p>}
     {differentAnimationPrompt && <p role="status">Анимации уже подтверждены в другой вкладке с другими пожеланиями. Показан сохранённый вариант.</p>}
     {!ready && generation?.baseConfirmed && (generation.animationPrompt || differentAnimationPrompt) && <section className="generated-pet-animation-hints" aria-label="Принятые пожелания">
       <h2>Пожелания к движениям</h2><p>{generation.animationPrompt || "Без дополнительных пожеланий."}</p>

@@ -1,12 +1,14 @@
 "use client";
 import {useId} from "react";
+import "./GenerationRetryControl.scss";
 import {parseMaxRetriesInput} from "./continuation-request";
 
 type Props = {
+  subject?: "animations" | "base";
   value: string; max: number; disabled: boolean; legacy: boolean; allowLegacy: boolean;
   onChange: (value: string) => void; onLegacy: (value: boolean) => void;
 };
-export function GenerationRetryControl({value, max, disabled, legacy, allowLegacy, onChange, onLegacy}: Props) {
+export function GenerationRetryControl({value, max, disabled, legacy, allowLegacy, onChange, onLegacy, subject = "animations"}: Props) {
   const id = useId(), count = parseMaxRetriesInput(value, max);
   const invalid = !legacy && count === null;
   let description: string;
@@ -15,7 +17,7 @@ export function GenerationRetryControl({value, max, disabled, legacy, allowLegac
   else if (count === 0) description = "Одна попытка, без автоповторов.";
   else {
     const attempts = count + 1, noun = attempts % 10 === 1 && attempts % 100 !== 11 ? "попытки" : "попыток";
-    description = `До ${attempts} ${noun} на каждую выбранную анимацию или группу взгляда. Удачные результаты сохраняются.`;
+    description = subject === "base" ? `До ${attempts} ${noun} создания базового образа. Удачный результат нужно подтвердить перед созданием анимаций.` : `До ${attempts} ${noun} на каждую выбранную анимацию или группу взгляда. Удачные результаты сохраняются.`;
   }
   return <div className="generation-recovery__retries">
     <label htmlFor={id}>Автоповторы при ошибке</label>

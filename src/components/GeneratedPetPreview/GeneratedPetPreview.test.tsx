@@ -438,3 +438,14 @@ it.each([404, 410])("keeps status expiry warnings and receipt recovery visible a
   expect(JSON.parse(localStorage.getItem(`pets-continuation-v1:${id}`)!)).toEqual({requestId});
   expect(fetchMock.mock.calls.every(([, init]) => init?.method !== "POST")).toBe(true);
 });
+
+it.each(["active","stopped"])("prefers base repair progress to animation and generic summary: %s",async phase=>{
+ localStorage.clear();
+ fetchMock.mockResolvedValue(response({generation:{...generation(undefined,phase==="stopped"?"failed":"generating").generation,baseRepair:{maxAttempts:6,attempts:2,phase},progress:{completedSteps:1,totalSteps:12},animationRepair:{maxAttempts:4,phase:"repairing",rows:[{state:"failed",attempts:3,retrying:true}]}}}));await render();
+ expect(element.textContent).toContain(phase==="active"?"Base attempt 2 of 6":"Base generation stopped after 2 of 6 attempts");expect(element.textContent).not.toContain("generation steps completed");expect(element.textContent).not.toContain("retry 2 of 3");expect(fetchMock.mock.calls.every(([,init])=>init?.method!=="POST")).toBe(true);
+});
+it("keeps successful base repair at explicit character confirmation",async()=>{
+ localStorage.clear();
+ fetchMock.mockResolvedValue(response({generation:{...generation(undefined,"awaiting_confirmation").generation,expiresAt:new Date(Date.now()+86400000).toISOString(),reviewBase:true,baseConfirmed:false,baseRepair:{maxAttempts:6,attempts:2,phase:"complete"}}}));await render();
+ expect(document.body.textContent).toContain("Animate this character");expect(document.body.textContent).not.toContain("Base attempt");expect(fetchMock.mock.calls.every(([,init])=>init?.method!=="POST")).toBe(true);
+});

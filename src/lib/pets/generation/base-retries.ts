@@ -13,7 +13,7 @@ const receiptSchema=z.object({version:z.literal(1),requestId:z.uuid(),sourceId:d
 type Receipt=z.infer<typeof receiptSchema>;
 type Options=AdmissionOptions&{createId:()=>string;reviewFlow:()=>boolean};
 class DayChanged extends Error {}
-const version=(job:GenerationJob)=>createHash("sha256").update(JSON.stringify({id:job.id,status:job.status,error:job.error,providerFailure:job.providerFailure,expiresAt:job.expiresAt,baseConfirmedAt:job.baseConfirmedAt,base:job.stages.filter(s=>s.name==="base"),reference:job.reference,retryInput:job.retryInput,nameSource:job.nameSource,displayName:job.nameSource==="user"?job.displayName:undefined})).digest("hex");
+const version=(job:GenerationJob)=>createHash("sha256").update(JSON.stringify({id:job.id,status:job.status,error:job.error,providerFailure:job.providerFailure,expiresAt:job.expiresAt,baseConfirmedAt:job.baseConfirmedAt,baseRepair:job.baseRepair,base:job.stages.filter(s=>s.name==="base"),reference:job.reference,retryInput:job.retryInput,nameSource:job.nameSource,displayName:job.nameSource==="user"?job.displayName:undefined})).digest("hex");
 
 export function createBaseRetryService(store:GenerationStore,options:Options){
   const requestKey=(id:string)=>"base-retry:request:"+generationDigest(options.secret(),"request",id);
@@ -41,7 +41,7 @@ export function createBaseRetryService(store:GenerationStore,options:Options){
     if(!job||job.expiresAt<=options.now())throw new GenerationError("generation_expired");
     if(job.baseRetrySourceId!==sourceId)throw new GenerationError("base_retry_unavailable");
     const g=publicJob(job,options.now());
-    return {requestId,sourceGenerationId:sourceId,reused,generation:{generationId:g.generationId,status:g.status,expiresAt:g.expiresAt,previewUrl:g.previewUrl}};
+    return {requestId,sourceGenerationId:sourceId,reused,generation:{generationId:g.generationId,status:g.status,expiresAt:g.expiresAt,previewUrl:g.previewUrl,...(g.baseRepair?{baseRepair:g.baseRepair}:{})}};
   }
   async function existing(tx:GenerationTransaction,id:string,requestId:string,fingerprint?:string){
     const own=await read(tx,requestKey(requestId));
@@ -72,6 +72,7 @@ export function createBaseRetryService(store:GenerationStore,options:Options){
         return {sourceRevision:version(job),sourceExpiresAt:new Date(job.expiresAt).toISOString(),inputState:input?"saved":"legacy",
           ...(input?{prompt:input.prompt}:{}),...(displayName!==undefined?{displayName}:{}),
           ...(ref?{referenceUrl:toPublicUrl(`/api/pet-generations/${id}/base-retries/reference?v=${ref.metadata.sha256}`)}:{}),
+          ...(!blockedReason?{baseRetries:{min:0 as const,default:5 as const,max:50 as const}}:{}),
           availableModes:input?["saved"]:ref?["legacy-image-only","legacy-text"]:["legacy-text"],...(blockedReason?{blockedReason}:{})};
       });
     },
@@ -103,7 +104,7 @@ export function createBaseRetryService(store:GenerationStore,options:Options){
             const ref=await readSavedGenerationReference(job,tx.getArtifact,options.now);
             const values=await restoredInput(job,body,tx);
             const now=options.now();
-            await admitGeneration(tx,{id:targetId,input:{...values,requestId:body.requestId},reference:ref,reviewBase:true,acceptedAt:now,sourceDeadline:job.expiresAt,baseRetrySourceId:id},clientIp,options);
+            await admitGeneration(tx,{id:targetId,input:{...values,requestId:body.requestId},reference:ref,reviewBase:true,acceptedAt:now,sourceDeadline:job.expiresAt,baseRetrySourceId:id,...(body.maxRetries!==undefined?{baseMaxRetries:body.maxRetries}:{})},clientIp,options);
             const receipt:Receipt={version:1,requestId:body.requestId,sourceId:id,targetId,fingerprint,createdAt:now};
             const encoded=JSON.stringify(receipt);
             await tx.putLedger(requestKey(body.requestId),encoded,now+7*DAY);
