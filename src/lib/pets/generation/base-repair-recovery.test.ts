@@ -1,5 +1,5 @@
 import {randomUUID} from "node:crypto";
-import {expect,it} from "vitest";
+import {expect,it,vi} from "vitest";
 import {baseRetryFixture} from "./base-retry-fixture.test-utils";
 import {continuationFixture} from "./continuation-fixture.test-utils";
 import {CONTINUATION_STATES} from "./continuation-model";
@@ -7,6 +7,7 @@ import {jobSchema,GenerationError,LEASE_MS,type AnimationAttempt} from "./model"
 import {canResumeBaseRepair} from "./base-repair";
 import {canResumeAnimationRepair} from "./animation-repair";
 import {createSpriteGenerationWorker} from "./sprite-worker";
+import type {FailureDiagnostic} from "./failure-diagnostic";
 
 it.each([
  {withBase:false,status:"started" as const}, {withBase:true,status:"started" as const},
@@ -68,4 +69,47 @@ it("finalizes checkpointed input moderation after restart without another call o
  expect(scheduler.active).toBeNull();expect(scheduler.pauseReason).toBeUndefined();
  expect(budget.spent).toEqual(spent);expect(budget.reservations[current.id]).toBeUndefined();
  expect((await f.service.claim("next"))?.id).toBe(next.generationId);
+});
+
+it.each([
+ {diagnostic:{boundary:"provider_cli",reason:"process_exit"} as FailureDiagnostic,cliCause:{kind:"timeout" as const}},
+ {diagnostic:{boundary:"renderer_process",reason:"process_timeout",elapsedMs:230000} as FailureDiagnostic,cliCause:undefined},
+])("preserves recorded timeout diagnostics from $diagnostic.boundary without retrying",async({diagnostic,cliCause})=>{
+ const f=await baseRetryFixture(),input={...await f.input(),maxRetries:5};
+ const reply=await f.service.retryBaseGeneration(f.id,input,"203.0.113.8");
+ const before=structuredClone(JSON.parse(f.store.ledger.get("budget")!.value).spent);
+ const generate=vi.fn(async()=>{throw new GenerationError("outcome_unknown",undefined,undefined,undefined,diagnostic,cliCause);});
+ const worker=createSpriteGenerationWorker({service:f.service,store:f.store,now:()=>f.config.now,renderer:{open:async()=>({
+  generate,prepare:async()=>undefined,compose:async()=>{throw Error("must not compose an unknown base");},cleanup:async()=>undefined,
+ })}});
+ expect(await worker("owner")).toBe("failed");
+ const job=f.store.jobs.get(reply.generation.generationId)!,attempt=job.baseRepair!.attempts[0];
+ expect(generate).toHaveBeenCalledTimes(1);expect(job.baseRepair!.attempts).toHaveLength(1);
+ expect(attempt.status).toBe("unknown");expect(attempt.failure?.diagnostic).toEqual(diagnostic);
+ expect(job.failureDiagnostic).toEqual(diagnostic);expect(job.stageFailureDiagnostics).toEqual([{stage:"base",diagnostic}]);
+ const scheduler=JSON.parse(f.store.ledger.get("scheduler")!.value),budget=JSON.parse(f.store.ledger.get("budget")!.value);
+ expect(scheduler.active).toBeNull();expect(scheduler.pauseReason).toBe("outcome_unknown");
+ expect(budget.spent).toEqual(before);expect(budget.reservations[job.id]).toEqual({remainingMicroUsd:0,unknown:true});
+ expect((await f.service.findBaseRetry(f.id,input.requestId)).generation.generationId).toBe(job.id);
+ expect(await worker("restarted")).toBe("idle");expect(generate).toHaveBeenCalledTimes(1);
+ expect((await f.store.readJob(job.id))?.baseRepair?.attempts[0].token).toBe(attempt.token);
+});
+
+it("keeps the checkpoint diagnostic when a timeout failure cannot be recorded",async()=>{
+ const f=await baseRetryFixture();
+ const reply=await f.service.retryBaseGeneration(f.id,{...await f.input(),maxRetries:5},"203.0.113.8");
+ const generate=vi.fn(async()=>{throw new GenerationError("outcome_unknown",undefined,undefined,undefined,
+  {boundary:"renderer_process",reason:"process_timeout",elapsedMs:230000});});
+ vi.spyOn(f.service,"failBaseAttempt").mockRejectedValue(Error("checkpoint unavailable"));
+ const worker=createSpriteGenerationWorker({service:f.service,store:f.store,now:()=>f.config.now,renderer:{open:async()=>({
+  generate,prepare:async()=>undefined,compose:async()=>{throw Error("must not compose an unknown base");},cleanup:async()=>undefined,
+ })}});
+ expect(await worker("owner")).toBe("failed");expect(generate).toHaveBeenCalledTimes(1);
+ const job=f.store.jobs.get(reply.generation.generationId)!;
+ expect(job.baseRepair!.attempts).toHaveLength(1);expect(job.baseRepair!.attempts[0].status).toBe("started");
+ expect(job.baseRepair!.attempts[0].failure).toBeUndefined();
+ expect(job.failureDiagnostic).toEqual({boundary:"checkpoint",reason:"unconfirmed_write"});
+ expect(job.stageFailureDiagnostics).toEqual([{stage:"base",diagnostic:job.failureDiagnostic}]);
+ expect(JSON.parse(f.store.ledger.get("scheduler")!.value).pauseReason).toBe("outcome_unknown");
+ expect(JSON.parse(f.store.ledger.get("budget")!.value).reservations[job.id]).toEqual({remainingMicroUsd:0,unknown:true});
 });

@@ -19,10 +19,10 @@ export async function generateRepairBase(context:Context,job:GenerationJob,sessi
   while(true){
     const current=await currentJob(context,job),attempt=latestBaseAttempt(current);
     if(!current.baseRepair||!attempt)throw uncertain("intent");
-    if(attempt.status==="failed"&&attempt.failure){
+    if((attempt.status==="failed"||attempt.status==="unknown")&&attempt.failure){
       const failure=new GenerationError(attempt.failure.code,attempt.failure.retryAt,attempt.failure.providerFailure,undefined,attempt.failure.diagnostic,attempt.failure.cliCause);
       const reason=baseFailureRetryReason(failure);
-      if(!reason||attempt.ordinal>=current.baseRepair.maxAttempts)throw failure;
+      if(attempt.status==="unknown"||!reason||attempt.ordinal>=current.baseRepair.maxAttempts)throw failure;
       try{await context.mutate(()=>context.service.reserveBaseAttempt(job,reason));}
       catch(error){
         if(error instanceof GenerationError)throw error;
