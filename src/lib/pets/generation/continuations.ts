@@ -2,7 +2,7 @@ import {initialAnimationRepair} from "@/lib/pets/generation/animation-repair";
 import {buildContinuationPreviews,readContinuationPreview} from "@/lib/pets/generation/continuation-preview";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { CONTINUATION_STATES, continuationEnabled, continuationInputSchema, continuationLockKey, type ContinuationOperation, type ContinuationPlan, type ContinuationState } from "@/lib/pets/generation/continuation-model";
+import { CONTINUATION_STATES, REGENERATION_RETRIES, continuationEnabled, continuationInputSchema, continuationLockKey, type ContinuationOperation, type ContinuationPlan, type ContinuationState } from "@/lib/pets/generation/continuation-model";
 import { inspectContinuationSource, jobRevision, requireContinuationSource, sha, type SourceSnapshot } from "@/lib/pets/generation/continuation-source";
 import { DAY, GENERATION_ID, GenerationError, generationDigest, moscowDay, nextMoscowDay, type GenerationJob } from "@/lib/pets/generation/model";
 import { publicJob } from "@/lib/pets/generation/public-job";
@@ -50,9 +50,12 @@ export function createContinuationService(store: GenerationStore, options: {
         }
         return null;
     }
-    function guard() { if (!continuationEnabled())
-        throw new GenerationError("continuation_disabled"); if (!options.enabled())
-        throw new GenerationError("generation_disabled"); }
+    function guard(maxRetries?: number) {
+        if (!continuationEnabled()) throw new GenerationError("continuation_disabled");
+        const automaticRepair = options.automaticAnimationRepair?.() ?? false;
+        if (!options.enabled() || (maxRetries !== undefined && !automaticRepair)) throw new GenerationError("generation_disabled");
+        return automaticRepair;
+    }
     async function queue(tx: GenerationTransaction) { const state = await scheduler(tx, options.now()); await expireQueue(tx, state, options.now()); if (state.pauseReason)
         throw new GenerationError("generation_paused"); if (state.queue.length >= 5)
         throw new GenerationError("queue_full"); return state; }
@@ -68,7 +71,7 @@ export function createContinuationService(store: GenerationStore, options: {
                 throw new GenerationError("continuation_disabled");
             const snapshot = await inspectContinuationSource(store, id, options.now());
             const busy = await store.transaction(tx => active(tx, id));
-            return { ...snapshot.options, ...buildContinuationPreviews(snapshot), canRebuild: continuationEnabled() && snapshot.options.canRebuild && snapshot.options.rebuildsRemaining > 0, canRegenerate: continuationEnabled(), ...(busy ? { activeRequestId: busy.id, ...(busy.state === "accepted" ? { activeGenerationId: busy.targetId } : {}) } : {}), ...(!continuationEnabled() ? { reason: "continuation_disabled" } : {}) };
+            return { ...snapshot.options, ...buildContinuationPreviews(snapshot), ...(options.automaticAnimationRepair?.() ? {regenerationRetries: REGENERATION_RETRIES} : {}), canRebuild: continuationEnabled() && snapshot.options.canRebuild && snapshot.options.rebuildsRemaining > 0, canRegenerate: continuationEnabled(), ...(busy ? { activeRequestId: busy.id, ...(busy.state === "accepted" ? { activeGenerationId: busy.targetId } : {}) } : {}), ...(!continuationEnabled() ? { reason: "continuation_disabled" } : {}) };
         },
         async findContinuation(id: string, requestId: string) {
             if (!GENERATION_ID.test(id) || !z.uuid().safeParse(requestId).success)
@@ -90,7 +93,7 @@ export function createContinuationService(store: GenerationStore, options: {
                 return reply(previous);
             if (previous && previous.until > options.now())
                 return reply(previous);
-            guard();
+            guard(body.maxRetries);
             const snapshot = await inspectContinuationSource(store, id, options.now());
             if (snapshot.options.sourceRevision !== body.sourceRevision)
                 throw new GenerationError("continuation_source_conflict");
@@ -108,7 +111,7 @@ export function createContinuationService(store: GenerationStore, options: {
                                 throw new GenerationError("request_id_conflict");
                             return existing;
                         }
-                        guard();
+                        guard(body.maxRetries);
                         if (await active(tx, id))
                             throw new GenerationError("continuation_busy");
                         const job = requireContinuationSource(await tx.getJob(id), options.now());
@@ -153,7 +156,7 @@ export function createContinuationService(store: GenerationStore, options: {
                     return existing;
                 if (existing && existing.until > options.now())
                     return existing;
-                guard();
+                guard(body.maxRetries);
                 const busy = await active(tx, id);
                 if (busy && busy.id !== body.requestId)
                     throw new GenerationError("continuation_busy");
@@ -213,7 +216,7 @@ export function createContinuationService(store: GenerationStore, options: {
                                 return r;
                             if (!r || r.owner !== owner || r.until <= options.now())
                                 throw new GenerationError("continuation_busy");
-                            guard();
+                            guard(body.maxRetries);
                             const current = requireContinuationSource(await tx.getJob(id), options.now());
                             if (jobRevision(current) !== snapshot.jobRevision)
                                 throw new GenerationError("continuation_source_conflict");
@@ -230,8 +233,9 @@ export function createContinuationService(store: GenerationStore, options: {
                                 if (!await tx.hasArtifact(r.targetId, kind, now))
                                     throw new GenerationError("saved_stage_unavailable");
                             await startBudgetTracking(tx, r.targetId, now, options.budgetUsd());
+                            const automaticRepair = guard(body.maxRetries);
                             const stages = execution.compositionStages.filter(n => !selected.includes(n)).map(name => ({ name, status: "completed" as const, sha256: sha(copies.get(`stage-${name}.png`)!), startedAt: now }));
-                            const job: GenerationJob = { ...(options.automaticAnimationRepair?.() ? {animationRepair: initialAnimationRepair()} : {}), id: r.targetId, prompt: "", displayName: current.displayName, nameSource: current.nameSource, status: "queued", createdAt: now, queuedAt: now, expiresAt: now + DAY, worker: "", reviewBase: true, baseConfirmedAt: now, pipelineVersion: 4, promptRevision: current.promptRevision, stages, continuation: execution, animationAnatomyPolicy: current.animationAnatomyPolicy, ...(current.animationPrompt ? { animationPrompt: current.animationPrompt } : {}), ...(current.cardMetadata ? { cardMetadata: { ...structuredClone(current.cardMetadata), usage: undefined, ...(current.cardMetadata.state === "inflight" ? { state: "failed" as const, error: "outcome_unknown" as const } : {}) } } : {}) };
+                            const job: GenerationJob = { ...(automaticRepair ? {animationRepair: initialAnimationRepair(body.maxRetries === undefined ? undefined : body.maxRetries + 1)} : {}), id: r.targetId, prompt: "", displayName: current.displayName, nameSource: current.nameSource, status: "queued", createdAt: now, queuedAt: now, expiresAt: now + DAY, worker: "", reviewBase: true, baseConfirmedAt: now, pipelineVersion: 4, promptRevision: current.promptRevision, stages, continuation: execution, animationAnatomyPolicy: current.animationAnatomyPolicy, ...(current.animationPrompt ? { animationPrompt: current.animationPrompt } : {}), ...(current.cardMetadata ? { cardMetadata: { ...structuredClone(current.cardMetadata), usage: undefined, ...(current.cardMetadata.state === "inflight" ? { state: "failed" as const, error: "outcome_unknown" as const } : {}) } } : {}) };
                             await tx.setArtifactExpiry(job.id, [...copies.keys()], job.expiresAt);
                             await tx.putJob(job);
                             await consumeDailyQuota(tx, options.secret(), clientIp, now, quota);

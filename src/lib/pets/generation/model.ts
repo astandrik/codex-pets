@@ -1,4 +1,4 @@
-import {continuationPlanSchema, assemblyIssuesSchema, rebuildHistorySchema, CONTINUATION_STATES, type AssemblyIssue} from "@/lib/pets/generation/continuation-model";
+import {continuationPlanSchema, assemblyIssuesSchema, rebuildHistorySchema, CONTINUATION_STATES, REGENERATION_RETRIES, type AssemblyIssue} from "@/lib/pets/generation/continuation-model";
 import {animationStatesSchema, animationCorrectionsSchema} from "@/lib/pets/generation/animation-revision-input";
 export {animationRevisionInputSchema} from "@/lib/pets/generation/animation-revision-input";
 import { createHmac, randomBytes } from "node:crypto";
@@ -53,7 +53,7 @@ export const usageSchema = z.object({
 export type ImageUsage = z.infer<typeof usageSchema>;
 export const ANIMATION_ATTEMPT_FAILURE_CODES = ["outcome_unknown", "provider_rejected", "provider_rate_limited", "invalid_sprite_extraction", "invalid_stage", "missing_animation_frame"] as const;
 export const animationAttemptSchema = z.object({
-  state: z.enum(CONTINUATION_STATES), ordinal: z.number().int().min(1).max(4), token: z.uuid(),
+  state: z.enum(CONTINUATION_STATES), ordinal: z.number().int().min(1).max(REGENERATION_RETRIES.max + 1), token: z.uuid(),
   reason: z.enum(["initial", "transport", "quality", "moderation"]),
   status: z.enum(["reserved", "started", "saved", "failed", "unknown"]),
   reservedAt: z.number().finite(), notBefore: z.number().finite(),
@@ -72,16 +72,17 @@ export const animationAttemptSchema = z.object({
   (a.finishedAt === undefined || (a.startedAt !== undefined && a.finishedAt >= a.startedAt)), "Invalid attempt transition");
 export type AnimationAttempt = z.infer<typeof animationAttemptSchema>;
 export const animationRepairSchema = z.object({
-  policy: z.literal(1), maxAttempts: z.literal(4),
+  policy: z.union([z.literal(1), z.literal(2)]), maxAttempts: z.number().int().min(1).max(REGENERATION_RETRIES.max + 1),
   phase: z.enum(["initial", "repairing", "verifying", "complete", "stopped"]),
   pending: z.array(z.enum(CONTINUATION_STATES)).max(11), issues: assemblyIssuesSchema,
-  attempts: z.array(animationAttemptSchema).max(44),
+  attempts: z.array(animationAttemptSchema).max(CONTINUATION_STATES.length * (REGENERATION_RETRIES.max + 1)),
 }).strict().refine(repair => {
+  if (repair.policy === 1 && repair.maxAttempts !== 4) return false;
   if (new Set(repair.pending).size !== repair.pending.length || new Set(repair.attempts.map(a => a.token)).size !== repair.attempts.length) return false;
   if (repair.phase === "complete" && repair.pending.length) return false;
   return CONTINUATION_STATES.every(state => {
     const attempts = repair.attempts.filter(a => a.state === state);
-    return (repair.phase !== "complete" || !attempts.length || attempts.at(-1)?.status === "saved") && attempts.every((a, index) => a.ordinal === index + 1 && (index === attempts.length - 1 || ["saved", "failed"].includes(a.status)));
+    return attempts.length <= repair.maxAttempts && (repair.phase !== "complete" || !attempts.length || attempts.at(-1)?.status === "saved") && attempts.every((a, index) => a.ordinal === index + 1 && (index === attempts.length - 1 || ["saved", "failed"].includes(a.status)));
   });
 }, "Invalid attempt sequence");
 export type AnimationRepairState = z.infer<typeof animationRepairSchema>;

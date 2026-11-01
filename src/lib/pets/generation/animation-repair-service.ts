@@ -54,7 +54,7 @@ export function createAnimationRepairService(store: GenerationStore, options: Op
           if (last.reason !== reason || (sourceSha256 !== undefined && last.sourceSha256 !== sourceSha256)) throw new GenerationError("invalid_stage");
           return {job: current, attempt: last};
         }
-        if (reason === "initial" || !last || last.ordinal >= 4) throw new GenerationError("invalid_stage");
+        if (reason === "initial" || !last || last.ordinal >= repair.maxAttempts) throw new GenerationError("invalid_stage");
         if ((reason === "transport" || reason === "moderation") && (last.status !== "failed" || !last.failure || animationFailureRetryReason(last.failure) !== reason)) throw new GenerationError("invalid_stage");
         if (reason === "quality" && (repair.phase !== "repairing" || !repair.pending.includes(name) || last.status !== "saved" || !last.usage || !last.resultSha256)) throw new GenerationError("invalid_stage");
         const priorHash = reason === "quality" ? last.resultSha256 : last.sourceSha256;

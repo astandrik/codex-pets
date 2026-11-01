@@ -5,10 +5,10 @@ const requestId='req_'+'a'.repeat(32),cfRay='1234567890abcdef-AMS';
 const data={status:520,expectedBodyBytes:160,receivedBodyBytes:0,receivedBodyBytesExact:true,bodyComplete:false,chunked:false,phase:'body',requestId,cfRay};
 const context={generationId:'1'.repeat(64),stage:'waving' as const,attempt:1};
 describe('private HTTP diagnostics',()=>{
- it('supports the persisted third and fourth attempt but rejects a fifth',()=>{
+ it('supports configured attempts through 51 and rejects out-of-range attempts',()=>{
   const write=vi.fn(),line='PET_HTTP_DIAGNOSTIC '+JSON.stringify(data);
-  for(const attempt of [3,4,5])logSpriteHttpDiagnostic(line,{...context,attempt},write);
-  expect(write.mock.calls.map(([value])=>JSON.parse(value).attempt)).toEqual([3,4]);
+  for(const attempt of [3,4,5,51,52,0,1.5])logSpriteHttpDiagnostic(line,{...context,attempt},write);
+  expect(write.mock.calls.map(([value])=>JSON.parse(value).attempt)).toEqual([3,4,5,51]);
  });
  it('keeps only allowed metadata and valid provider trace identifiers',()=>{
   expect(readHttpDiagnostic({...data,body:'private body',headers:{Authorization:'Bearer secret'}})).toEqual(data);

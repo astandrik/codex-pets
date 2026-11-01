@@ -8,7 +8,7 @@ import {failedAnimationRevisionFixture} from '@/lib/pets/generation/continuation
 (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
 window.matchMedia??=(()=>({matches:false,addEventListener(){},removeEventListener(){}})) as typeof window.matchMedia;
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();});
-const props:RecoveryViewProps={generationId:'a'.repeat(64),options:{sourceRevision:'f'.repeat(64),canRebuild:true,canRegenerate:true,requiredStates:[],strips:[],rebuildsRemaining:2,issues:[],character:{baseUrl:'/base',expiresAt:'2030-01-01T00:00:00Z'}},mode:'regenerate',states:['idle'],busy:false,error:'',requestId:null,submitted:false,receiptExpired:false,sourceUnavailable:false,acceptedUrl:'',manualConfirmed:false,checkAttempted:false,onMode(){},onStates(){},onManualConfirmed(){},onSubmit(){},onCheck(){},onRefresh(){},onClose(){}};
+const props:RecoveryViewProps={generationId:'a'.repeat(64),options:{sourceRevision:'f'.repeat(64),canRebuild:true,canRegenerate:true,requiredStates:[],strips:[],rebuildsRemaining:2,issues:[],character:{baseUrl:'/base',expiresAt:'2030-01-01T00:00:00Z'}},mode:'regenerate',states:['idle'],busy:false,error:'',requestId:null,submitted:false,receiptExpired:false,sourceUnavailable:false,acceptedUrl:'',manualConfirmed:false,checkAttempted:false,maxRetries:"5",legacyRetries:false,onMaxRetries(){},onLegacyRetries(){},onMode(){},onStates(){},onManualConfirmed(){},onSubmit(){},onCheck(){},onRefresh(){},onClose(){}};
 
 it.each(['light','dark'] as const)('does not present historical issues as current repairs for a verified atlas in %s',async theme=>{
  vi.stubEnv('PET_GENERATION_CONTINUATION_ENABLED','true');
@@ -59,7 +59,7 @@ it('makes absent diagnostics explicit without inventing a broken animation',asyn
 });
 it('keeps accepted private link available when copying fails',async()=>{
  const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const copy=vi.fn().mockRejectedValue(Error('denied'));Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:copy}});
- await act(async()=>root.render(<ThemeProvider theme="dark"><GenerationRecoveryView generationId={'a'.repeat(64)} mode="regenerate" states={[]} busy={false} error="История недоступна" requestId="" submitted={false} receiptExpired={false} sourceUnavailable={false} acceptedUrl="/generated/accepted" manualConfirmed={false} checkAttempted={false} onMode={()=>{}} onStates={()=>{}} onManualConfirmed={()=>{}} onSubmit={()=>{}} onCheck={()=>{}} onRefresh={()=>{}} onClose={()=>{}} /></ThemeProvider>));
+ await act(async()=>root.render(<ThemeProvider theme="dark"><GenerationRecoveryView {...props} generationId={'a'.repeat(64)} mode="regenerate" states={[]} busy={false} error="История недоступна" requestId="" submitted={false} receiptExpired={false} sourceUnavailable={false} acceptedUrl="/generated/accepted" manualConfirmed={false} checkAttempted={false} onMode={()=>{}} onStates={()=>{}} onManualConfirmed={()=>{}} onSubmit={()=>{}} onCheck={()=>{}} onRefresh={()=>{}} onClose={()=>{}} /></ThemeProvider>));
  expect(host.querySelector('a[href="/generated/accepted"]')).not.toBeNull();await act(async()=>host.querySelector<HTMLButtonElement>('[data-copy-result]')!.click());expect(host.textContent).toContain('вручную');expect(host.querySelector('input')?.value).toContain('/generated/accepted');
  await act(async()=>root.unmount());host.remove();
 });
@@ -86,6 +86,22 @@ it('does not gate a frozen request replay or receipt check when source options a
   await act(async()=>root.render(<ThemeProvider theme="light"><GenerationRecoveryView {...props} options={null} requestId="ea191c89-d657-4eec-a7d2-4a2e1e4a7ec7" submitted/></ThemeProvider>));
   expect(host.querySelector<HTMLButtonElement>('[data-continuation-submit]')!.disabled).toBe(false);
   expect(host.querySelector('[data-continuation-check]')!.closest('[inert]')).toBeNull();
+ }finally{await act(async()=>root.unmount());host.remove();}
+});
+
+it('does not count the hidden tall action panel as an obstruction while viewing modes',async()=>{
+ const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
+ vi.stubGlobal('innerWidth',320);vi.stubGlobal('innerHeight',568);
+ vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(function(this:HTMLElement){
+  if(this.classList.contains('generation-recovery__submit'))return new DOMRect(0,351,320,217);
+  if(this.classList.contains('generation-recovery__jump'))return new DOMRect(0,512,320,44);
+  if(this.hasAttribute('data-recovery-mode'))return new DOMRect(0,245,140,99);
+  return new DOMRect(0,0,320,0);
+ });
+ try{
+  await act(async()=>root.render(<ThemeProvider theme="dark"><GenerationRecoveryView {...props}/></ThemeProvider>));
+  const submit=host.querySelector<HTMLButtonElement>('[data-continuation-submit]')!;
+  expect(submit.disabled).toBe(false);expect(submit.closest('[inert]')).toBeNull();
  }finally{await act(async()=>root.unmount());host.remove();}
 });
 

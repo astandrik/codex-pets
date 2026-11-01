@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { withBasePath } from "@/lib/base-path";
 import { rememberGeneration, notifyGenerationHistory } from "@/lib/pets/generation/history";
 import { publicGenerationError } from "@/lib/pets/generation/public-error";
-import { CONTINUATION_STATES, type ContinuationInput, type ContinuationOptions, type ContinuationState } from "@/lib/pets/generation/continuation-model";
-import { readContinuationId, rememberContinuation, clearContinuation, continuationReplySchema, continuationOptionsSchema } from "./continuation-request";
+import { CONTINUATION_STATES, REGENERATION_RETRIES, type ContinuationInput, type ContinuationOptions, type ContinuationState } from "@/lib/pets/generation/continuation-model";
+import { readContinuationId, readContinuationInput, rememberContinuation, rememberContinuationInput, parseMaxRetriesInput, clearContinuation, continuationReplySchema, continuationOptionsSchema } from "./continuation-request";
 import {GenerationRecoveryView} from "./GenerationRecoveryView";
 import "./GenerationContinuation.scss";
 const DEFINITE = new Set(["invalid_argument", "invalid_origin", "body_too_large", "base_not_ready", "continuation_disabled", "continuation_busy", "continuation_source_conflict", "continuation_selection_conflict", "continuation_limit", "continuation_cooldown", "generation_paused", "generation_disabled", "queue_full", "rate_limited", "budget_exhausted", "client_ip_unavailable", "saved_stage_unavailable", "generation_expired", "not_found"]);
@@ -23,18 +23,20 @@ export function GenerationContinuation(props: Props) {
 }
 function ContinuationForm({ generationId, enabled, onContinued, onVisibilityChange }: Props) {
     const router = useRouter(), pendingRef = useRef(false), controller = useRef<AbortController | null>(null);
-    const [requestId, setRequestId] = useState<string | null>(() => {
+    const [initial] = useState(() => {
         try {
-            return readContinuationId(localStorage, generationId);
-        }
-        catch {
-            return null;
-        }
+            const requestId = readContinuationId(localStorage, generationId);
+            return {requestId, input: requestId ? readContinuationInput(localStorage, generationId, requestId) : null};
+        } catch { return {requestId: null, input: null}; }
     });
-    const [submitted, setSubmitted] = useState<ContinuationInput | null>(null);
+    const [requestId, setRequestId] = useState<string | null>(initial.requestId);
+    const [submitted, setSubmitted] = useState<ContinuationInput | null>(initial.input);
+    const [maxRetries, setMaxRetries] = useState(initial.requestId ? String(initial.input?.maxRetries ?? "") : String(REGENERATION_RETRIES.default));
+    const [legacyRetries, setLegacyRetries] = useState(Boolean(initial.input && initial.input.maxRetries === undefined));
+    const retriesEdited = useRef(false);
     const [opened, setOpened] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(""), [receiptExpired, setReceiptExpired] = useState(false);
     const [sourceUnavailable, setSourceUnavailable] = useState(false);
-    const [options, setOptions] = useState<ContinuationOptions | null>(null), [mode, setMode] = useState<"rebuild" | "regenerate">("regenerate"), [states, setStates] = useState<ContinuationState[]>([]);
+    const [options, setOptions] = useState<ContinuationOptions | null>(null), [mode, setMode] = useState<"rebuild" | "regenerate">(initial.input?.mode ?? "regenerate"), [states, setStates] = useState<ContinuationState[]>(initial.input?.states ?? []);
     const [acceptedUrl, setAcceptedUrl] = useState("");
     const [manualConfirmed,setManualConfirmed]=useState(false),[checkAttempted,setCheckAttempted]=useState(false);
     const visible=Boolean((enabled||requestId||submitted)&&(opened||requestId));
@@ -48,7 +50,7 @@ function ContinuationForm({ generationId, enabled, onContinued, onVisibilityChan
     function forget(id: string) { try {
         clearContinuation(localStorage, generationId, id);
     }
-    catch { /* Receipt remains authoritative. */ } setRequestId(null); setSubmitted(null); }
+    catch { /* Receipt remains authoritative. */ } setRequestId(null); setSubmitted(null); setLegacyRetries(false); if (!maxRetries) setMaxRetries(String(REGENERATION_RETRIES.default)); }
     async function loadOptions() {
         const c = begin();
         if (!c)
@@ -73,6 +75,7 @@ function ContinuationForm({ generationId, enabled, onContinued, onVisibilityChan
             const o=parsed.data;
             setSourceUnavailable(false);
             setOptions(o);
+            if (!requestId && !submitted && !options && !retriesEdited.current && o.regenerationRetries) setMaxRetries(String(o.regenerationRetries.default));
             if(!submitted)setStates(current=>options?CONTINUATION_STATES.filter(state=>o.requiredStates.includes(state)||(current.includes(state)&&o.strips.some(s=>s.state===state))):o.requiredStates);
         }
         catch (e) {
@@ -95,12 +98,20 @@ function ContinuationForm({ generationId, enabled, onContinued, onVisibilityChan
             return;
         }
         if (result.operation.state === "preparing") {
-            rememberContinuation(localStorage, generationId, id);
             setRequestId(id);
             if (result.input) {
                 setSubmitted(result.input);
                 setMode(result.input.mode);
                 setStates(result.input.states ?? []);
+                setMaxRetries(result.input.maxRetries === undefined ? "" : String(result.input.maxRetries));
+                setLegacyRetries(result.input.maxRetries === undefined);
+            }
+            try {
+                if (result.input) rememberContinuationInput(localStorage, generationId, result.input);
+                else rememberContinuation(localStorage, generationId, id);
+            } catch {
+                setError("Запрос найден, но параметры не удалось сохранить в браузере. Не закрывайте страницу; проверка этого запроса остаётся доступна.");
+                return;
             }
             setError("Снимки подготавливаются. Проверьте результат или повторите тот же запрос позже.");
             return;
@@ -161,6 +172,9 @@ function ContinuationForm({ generationId, enabled, onContinued, onVisibilityChan
     async function submit() {
         if (receiptExpired || sourceUnavailable || acceptedUrl || (!submitted && !options) || (requestId&&!submitted&&!manualConfirmed))
             return;
+        const includeRetries = mode === "regenerate" && (requestId ? !legacyRetries : Boolean(options?.regenerationRetries));
+        const count = parseMaxRetriesInput(maxRetries, requestId ? REGENERATION_RETRIES.max : options?.regenerationRetries?.max);
+        if (!submitted && includeRetries && count === null) { setError("Введите целое число автоповторов от 0 до 50."); return; }
         const c = begin();
         if (!c)
             return;
@@ -168,9 +182,9 @@ function ContinuationForm({ generationId, enabled, onContinued, onVisibilityChan
         let id = requestId;
         try {
             id ??= crypto.randomUUID();
-            const input = submitted ?? { requestId: id, mode, sourceRevision: options!.sourceRevision, ...(mode === "regenerate" ? { states: CONTINUATION_STATES.filter(s => states.includes(s)) } : {}) };
+            const input = submitted ?? { requestId: id, mode, sourceRevision: options!.sourceRevision, ...(mode === "regenerate" ? { states: CONTINUATION_STATES.filter(s => states.includes(s)), ...(includeRetries && count !== null ? {maxRetries: count} : {}) } : {}) };
             try {
-                rememberContinuation(localStorage, generationId, id);
+                rememberContinuationInput(localStorage, generationId, input);
             }
             catch {
                 setError("Не удалось сохранить UUID. Запрос не отправлен.");
@@ -209,6 +223,7 @@ function ContinuationForm({ generationId, enabled, onContinued, onVisibilityChan
         return null;
     if (!opened && !requestId)
         return <section className="generation-continuation"><Button onClick={() => void loadOptions()}>Продолжить генерацию</Button></section>;
-    return <GenerationRecoveryView generationId={generationId} options={options} mode={mode} states={states} busy={busy} error={error} requestId={requestId} submitted={Boolean(submitted)} receiptExpired={receiptExpired} sourceUnavailable={sourceUnavailable} acceptedUrl={acceptedUrl} manualConfirmed={manualConfirmed} checkAttempted={checkAttempted}
+    return <GenerationRecoveryView generationId={generationId} options={options} mode={mode} states={states} busy={busy} error={error} requestId={requestId} submitted={Boolean(submitted)} receiptExpired={receiptExpired} sourceUnavailable={sourceUnavailable} acceptedUrl={acceptedUrl} manualConfirmed={manualConfirmed} checkAttempted={checkAttempted} maxRetries={maxRetries} legacyRetries={legacyRetries}
+      onMaxRetries={value=>{retriesEdited.current=true;setMaxRetries(value);setManualConfirmed(false);}} onLegacyRetries={value=>{setLegacyRetries(value);setManualConfirmed(false);}}
       onMode={value=>{setMode(value);setManualConfirmed(false);}} onStates={value=>{setStates(value);setManualConfirmed(false);}} onManualConfirmed={setManualConfirmed} onSubmit={()=>void submit()} onCheck={id=>void check(id)} onRefresh={()=>void loadOptions()} onClose={()=>setOpened(false)} />;
 }

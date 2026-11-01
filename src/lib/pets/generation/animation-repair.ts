@@ -17,7 +17,7 @@ export function reserveInitialAnimationAttempts(job: GenerationJob, names: reado
   return {...job, animationRepair: {...job.animationRepair, attempts: [...job.animationRepair.attempts, ...attempts]}};
 }
 
-export const initialAnimationRepair = (): AnimationRepairState => ({policy: 1, maxAttempts: 4, phase: "initial", pending: [], issues: [], attempts: []});
+export const initialAnimationRepair = (maxAttempts?: number): AnimationRepairState => ({policy: maxAttempts === undefined ? 1 : 2, maxAttempts: maxAttempts ?? 4, phase: "initial", pending: [], issues: [], attempts: []});
 export function isAnimationState(name: string): name is ContinuationState {
   return CONTINUATION_STATES.some(state => state === name);
 }
@@ -44,7 +44,7 @@ export function selectRepairStates(job: GenerationJob, issues: readonly Assembly
   for (const state of states) {
     const last = latestAnimationAttempt(job, state);
     const stage = job.stages.find(s => s.name === state);
-    if (!last || last.status !== "saved" || !last.usage || last.ordinal >= 4 || !stage || stage.status !== "completed" || stage.sha256 !== last.resultSha256) return null;
+    if (!last || last.status !== "saved" || !last.usage || last.ordinal >= job.animationRepair.maxAttempts || !stage || stage.status !== "completed" || stage.sha256 !== last.resultSha256) return null;
   }
   return states;
 }
@@ -52,7 +52,7 @@ export function getAnimationRepairSummary(job: GenerationJob, now: number): Anim
   const repair = job.animationRepair;
   if (!repair || job.continuation?.mode === "rebuild") return undefined;
   const waiting = repair.attempts.filter(a => a.ordinal > 1 && a.status === "reserved" && a.notBefore > now);
-  return {maxAttempts: 4, phase: job.status === "failed" && repair.phase !== "complete" ? "stopped" : repair.phase,
+  return {maxAttempts: repair.maxAttempts, phase: job.status === "failed" && repair.phase !== "complete" ? "stopped" : repair.phase,
     rows: getRepairScope(job).map(state => {
       const last = latestAnimationAttempt(job, state);
       return {state, attempts: last?.ordinal ?? 0, retrying: Boolean(job.status === "generating" && repair.phase !== "stopped" && last && last.ordinal > 1 && ["reserved", "started"].includes(last.status))};

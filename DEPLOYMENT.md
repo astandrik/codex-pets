@@ -762,6 +762,8 @@ Keep compatible maintenance commands (including diagnose-generation) after activ
 
 Output-moderation support adds the optional safe `providerFailure` diagnostic to attempt failures and the `moderation` attempt reason. Deploy readers/writers together before allowing this reason: older strict schemas cannot parse it. Only explicit HTTP400 `moderation_blocked` output refusals qualify; input/unknown refusals and old failures without provenance do not. Requests and provider safety settings are unchanged, and all retry reasons share the four-call limit and current budget. Do not resume terminal jobs automatically. After moderation attempts exist, a rollback must keep compatible readers; a refused output with no usage is retained as unknown spending rather than assumed free.
 
+Configurable selected-regeneration retries introduce animation-repair policy 2 (1–51 attempts per row). Deploy compatible web and generation-worker readers before accepting these jobs. Keep compatible readers for rollback: earlier strict schemas reject policy 2. Policy-1 jobs retain four attempts. This change does not increase the recorded-spend budget or enable new retry failure classes.
+
 ### Manual base retry
 
 `PET_GENERATION_BASE_RETRY_ENABLED` defaults to false. Update compatible web and generation-worker readers before enabling it alongside the website review flow. It adds optional `retryInput`/`baseRetrySourceId` job fields, a private `generation-input.json` artifact with the job's original TTL, and seven-day base-retry receipt/source-pointer keys in the existing ledger table. No schema migration is required. Older writers may strip the optional fields, so retain compatible images after activation.
