@@ -4,7 +4,7 @@ import {createGenerationService} from "./service";
 import {createSpriteGenerationWorker} from "./sprite-worker";
 import {createGenerationWorker} from "./worker";
 import {buildCardMetadataRequest} from "./card-provider";
-import {GenerationError, LEASE_MS, type GenerationJob} from "./model";
+import {GenerationError, LEASE_MS, STAGE_NAMES, type GenerationJob} from "./model";
 import {MemoryStore} from "./test-store";
 import {generateRepairAnimation} from "./animation-repair-worker";
 import type {CliCause} from "./cli-cause";
@@ -20,8 +20,8 @@ function fixture(repair=false,card=false) {
   return {store,clock,service,state,budget};
 }
 type Fixture = ReturnType<typeof fixture>;
-function worker(f:Fixture,generate:(name:string,job:GenerationJob)=>Promise<{bytes:Buffer;generationMs:number;usage?:typeof usage}>, card?:Parameters<typeof createSpriteGenerationWorker>[0]["cardProvider"]) {
-  return createSpriteGenerationWorker({service:f.service,store:f.store,now:()=>f.clock.now,cardProvider:card,wait:async ms=>{f.clock.now+=ms;},
+function worker(f:Fixture,generate:(name:string,job:GenerationJob)=>Promise<{bytes:Buffer;generationMs:number;usage?:typeof usage}>, card?:Parameters<typeof createSpriteGenerationWorker>[0]["cardProvider"], wait?: (ms:number)=>Promise<void>) {
+  return createSpriteGenerationWorker({service:f.service,store:f.store,now:()=>f.clock.now,cardProvider:card,wait:wait??(async ms=>{f.clock.now+=ms;}),
     renderer:{open:async job=>({prepare:async()=>{},cleanup:async()=>{},compose:async()=>Buffer.from("atlas"),generate:name=>generate(name,job)})},
     build:async()=>({"pet.zip":Buffer.from("zip")})});
 }
@@ -99,6 +99,141 @@ it.each([false,true])("isolates the fourth recorded repair failure after expiry,
   expect(f.budget().reservations[old.generationId].unknown).toBe(true);
   expect(await run("next-owner")).toBe("completed");
   expect((await f.service.get(next.generationId)).status).toBe("completed");
+});
+
+it.each(["reserve","refresh","wait","start","after-start"])("preserves the original unknown repair result when expiry interrupts %s",async phase=>{
+  const f=fixture(true), request=input(), old=await f.service.generate(request,"203.0.113.1");
+  f.clock.now=Date.parse(old.expiresAt)-(phase==="start"||phase==="after-start"?5010:10);
+  const next=await f.service.generate(input(),"203.0.113.2");
+  expect((await f.service.generate(request,"203.0.113.1")).generationId).toBe(old.generationId);
+  if(phase==="reserve"||phase==="refresh"){
+    const reserve=f.service.reserveAnimationAttempt;
+    vi.spyOn(f.service,"reserveAnimationAttempt").mockImplementation(async(...args)=>{
+      if(args[1]==="waving"&&phase==="reserve")f.clock.now+=20;
+      const result=await reserve(...args);
+      if(args[1]==="waving"&&phase==="refresh")f.clock.now+=20;
+      return result;
+    });
+  }
+  if(phase==="start"||phase==="after-start"){
+    const start=f.service.startAnimationAttempt;let started=0;
+    vi.spyOn(f.service,"startAnimationAttempt").mockImplementation(async(...args)=>{
+      const retry=args[1]==="waving"&&++started===2;
+      if(retry&&phase==="start")f.clock.now+=20;
+      const result=await start(...args);
+      if(retry&&phase==="after-start")f.clock.now+=20;
+      return result;
+    });
+  }
+  let calls=0;
+  const run=worker(f,async name=>{
+    if(name==="waving"){calls++;throw capturedFailure({kind:"remote_disconnected"});}
+    return{bytes:Buffer.from(name),generationMs:1,usage};
+  });
+  expect(await run("owner")).toBe("failed");expect(calls).toBe(1);
+  expect(f.state()).toMatchObject({active:null,pauseReason:"outcome_unknown"});
+  expect(f.budget().reservations[old.generationId]).toEqual({remainingMicroUsd:0,unknown:true});
+  expect(await run("next-owner")).toBe("idle");
+  expect((await f.service.get(next.generationId)).status).toBe("queued");
+  await expect(f.service.generate(request,"203.0.113.1")).rejects.toMatchObject({code:"generation_expired"});
+  expect(f.store.jobs.size).toBe(2);expect(f.store.jobs.get(old.generationId)?.expiresAt).toBe(Date.parse(old.expiresAt));
+});
+
+it("keeps the pause when a terminal sibling interrupts an already waiting repair retry",async()=>{
+  const f=fixture(true), old=await f.service.generate(input(),"203.0.113.1");
+  f.clock.now=Date.parse(old.expiresAt)-15010;
+  let firstWait!:()=>void,waiting!:()=>void,release!:()=>void,waving=0,failed=0,waits=0;
+  const first=new Promise<void>(resolve=>{firstWait=resolve;});
+  const pending=new Promise<void>(resolve=>{waiting=resolve;});
+  const terminal=new Promise<void>(resolve=>{release=resolve;});
+  const run=worker(f,async name=>{
+    if(name==="waving"){
+      if(++waving===2)await pending;
+      if(waving===4){f.clock.now+=20;release();}
+      throw capturedFailure({kind:"http_error",httpStatus:520});
+    }
+    if(name==="failed"){failed++;await first;throw capturedFailure({kind:"remote_disconnected"});}
+    return{bytes:Buffer.from(name),generationMs:1,usage};
+  },undefined,async ms=>{
+    if(++waits===2){waiting();await terminal;return;}
+    f.clock.now+=ms;if(waits===1)firstWait();
+  });
+  expect(await run("owner")).toBe("failed");expect(waving).toBe(4);expect(failed).toBe(1);
+  expect(f.state()).toMatchObject({active:null,pauseReason:"outcome_unknown"});
+  expect(f.budget().reservations[old.generationId].unknown).toBe(true);
+});
+
+it.each([false,true])("restores an unknown reserved retry before a resumed worker observes expiry, removed=%s",async removed=>{
+  const f=fixture(true), request=input(), old=await f.service.generate(request,"203.0.113.1");
+  f.clock.now=Date.parse(old.expiresAt)-LEASE_MS-10;
+  let job=(await f.service.claim("first"))!;
+  job=await f.service.beginStage(job,"base");
+  job=await f.service.saveStage(job,"base",Buffer.from("base"),{generationMs:1,usage});
+  job=await f.service.beginStages(job,STAGE_NAMES.filter(name=>name!=="base"));
+  const attempt=job.animationRepair!.attempts.find(a=>a.state==="idle")!;
+  await f.service.startAnimationAttempt(job,"idle",attempt.token);
+  await f.service.failAnimationAttempt(job,"idle",attempt.token,capturedFailure({kind:"http_error",httpStatus:520}));
+  const retry=await f.service.reserveAnimationAttempt(job,"idle","transport");
+  f.clock.now+=LEASE_MS+1;
+  const read=f.store.readJob.bind(f.store);let crossed=false;
+  vi.spyOn(f.store,"readJob").mockImplementation(async id=>{
+    const value=await read(id);
+    if(!crossed){crossed=true;f.clock.now+=20;if(removed)await f.store.cleanup(f.clock.now);}
+    return value;
+  });
+  let calls=0;
+  const run=worker(f,async name=>{calls++;return{bytes:Buffer.from(name),generationMs:1,usage};});
+  expect(await run("replacement")).toBe("failed");expect(calls).toBe(0);
+  expect(f.state()).toMatchObject({active:null,pauseReason:"outcome_unknown"});
+  expect(f.budget().reservations[old.generationId].unknown).toBe(true);
+  if(!removed)expect(f.store.jobs.get(old.generationId)?.animationRepair?.attempts.at(-1)?.token).toBe(retry.attempt.token);
+  await expect(f.service.generate(request,"203.0.113.1")).rejects.toMatchObject({code:"generation_expired"});
+  expect(f.store.jobs.size).toBe(removed?0:1);
+});
+
+it("preserves an unknown quality-repair retry when expiry precedes the resumed repair round",async()=>{
+  const f=fixture(true), old=await f.service.generate(input(),"203.0.113.1");
+  f.clock.now=Date.parse(old.expiresAt)-LEASE_MS-5010;
+  let job=(await f.service.claim("first"))!;
+  job=await f.service.beginStage(job,"base");
+  job=await f.service.saveStage(job,"base",Buffer.from("base"),{generationMs:1,usage});
+  job=await f.service.beginStages(job,STAGE_NAMES.filter(name=>name!=="base"));
+  for(const name of STAGE_NAMES.filter(name=>name!=="base")){
+    const attempt=job.animationRepair!.attempts.find(a=>a.state===name)!;
+    await f.service.startAnimationAttempt(job,name,attempt.token);
+    job=await f.service.saveAnimationAttempt(job,name,attempt.token,Buffer.from(name),{generationMs:1,usage});
+  }
+  const plan=await f.service.planAnimationRepair(job,[{state:"idle",kind:"invalid"}]);
+  const quality=await f.service.reserveAnimationAttempt(plan.job,"idle","quality");
+  f.clock.now+=5000;
+  await f.service.startAnimationAttempt(job,"idle",quality.attempt.token);
+  await f.service.failAnimationAttempt(job,"idle",quality.attempt.token,capturedFailure({kind:"http_error",httpStatus:520}));
+  const retry=await f.service.reserveAnimationAttempt(job,"idle","transport");
+  f.clock.now+=LEASE_MS+1;
+  const read=f.store.readJob.bind(f.store);let crossed=false;
+  vi.spyOn(f.store,"readJob").mockImplementation(async id=>{const value=await read(id);if(!crossed){crossed=true;f.clock.now+=20;}return value;});
+  let calls=0;
+  const run=worker(f,async name=>{calls++;return{bytes:Buffer.from(name),generationMs:1,usage};});
+  expect(await run("replacement")).toBe("failed");expect(calls).toBe(0);
+  expect(f.state()).toMatchObject({active:null,pauseReason:"outcome_unknown"});
+  expect(f.budget().reservations[old.generationId].unknown).toBe(true);
+  expect(f.store.jobs.get(old.generationId)?.animationRepair?.attempts.at(-1)?.token).toBe(retry.attempt.token);
+});
+
+it("does not turn a confirmed late retry success into an unknown operational outcome",async()=>{
+  const f=fixture(true), old=await f.service.generate(input(),"203.0.113.1");
+  f.clock.now=Date.parse(old.expiresAt)-5010;
+  let calls=0;
+  const run=worker(f,async name=>{
+    if(name==="waving"){
+      if(++calls===1)throw capturedFailure({kind:"remote_disconnected"});
+      f.clock.now+=20;
+    }
+    return{bytes:Buffer.from(name),generationMs:1,usage};
+  });
+  expect(await run("owner")).toBe("failed");expect(calls).toBe(2);
+  expect(f.state().active).toBeNull();expect(f.state().pauseReason).toBeUndefined();
+  expect(f.budget().reservations[old.generationId].unknown).toBe(true);
 });
 
 it("keeps a late terminal repair paused when its failure receipt cannot be confirmed",async()=>{
