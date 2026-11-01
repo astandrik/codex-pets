@@ -1,5 +1,6 @@
 import {z} from "zod";
 import type {GenerationJob} from "@/lib/pets/generation/model";
+import {isOutputModerationFailure} from "@/lib/pets/generation/provider-failure";
 
 export const digestSchema = z.string().regex(/^[a-f0-9]{64}$/);
 export const retryInputMetadataSchema = z.object({policy:z.literal(1),sha256:digestSchema}).strict();
@@ -38,6 +39,6 @@ export function baseRetryEligibility(job: GenerationJob): boolean {
   const failure=job.providerFailure;
   if(last?.cliCause && (last.cliCause.kind!=="http_error" || last.cliCause.httpStatus!==failure?.httpStatus))return false;
   if(job.cliFailureCauses?.some(entry=>entry.stage!=="base" || entry.cause.kind!=="http_error" || entry.cause.httpStatus!==failure?.httpStatus))return false;
-  return (job.error==="provider_rejected" && failure?.httpStatus===400 && failure.code==="moderation_blocked" && failure.moderationStage==="output") ||
+  return (job.error==="provider_rejected" && isOutputModerationFailure(failure)) ||
     (job.error==="provider_rate_limited" && failure?.httpStatus===429);
 }
