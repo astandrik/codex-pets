@@ -236,3 +236,12 @@ it("documents bounded nine-state revision admission, recovery and explicit accep
   expect(route.get.description).toContain("does not prove rejection");
   expect(paths["/api/pet-generations/{id}/animation-revision/accept"].post.responses).toHaveProperty("200");
 });
+it("documents private base retry admission and read-only recovery",async()=>{
+ const {buildOpenApiSpec}=await import("@/lib/openapi");const paths=buildOpenApiSpec().paths;
+ expect(paths).toHaveProperty("/api/pet-generations/{id}/base-retries");
+ expect(paths).toHaveProperty("/api/pet-generations/{id}/base-retries/reference");
+ const route=paths["/api/pet-generations/{id}/base-retries"];
+ expect(route.post.responses).toHaveProperty("429");expect(route.post.responses).toHaveProperty("413");
+ expect(route.get.operationId).toBe("getPetBaseRetry");
+ expect(route.post.requestBody.content["application/json"].schema.oneOf).toHaveLength(3);
+});

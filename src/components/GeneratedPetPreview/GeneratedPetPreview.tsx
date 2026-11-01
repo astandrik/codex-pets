@@ -1,5 +1,6 @@
 "use client";
 import {GenerationContinuation} from "./GenerationContinuation";
+import {BaseGenerationRetry} from "./BaseGenerationRetry";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Container, TextInput } from "@gravity-ui/uikit";
@@ -265,6 +266,7 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
         {metadataConflict&&<a data-metadata-reload href={withBasePath(`/generated/${generationId}`)}>Reload saved details</a>}
       </form>;
   const generationDetails = <>
+      {generation?.baseRetrySourceId && <p><a href={withBasePath(`/generated/${generation.baseRetrySourceId}`)}>Предыдущая попытка создания персонажа</a></p>}
     {generation?.baseConfirmed && (generation.animationPrompt || differentAnimationPrompt) && <section className="generated-pet-animation-hints" aria-label="Принятые пожелания"><h2>Пожелания к движениям</h2><p>{generation.animationPrompt || "Без дополнительных пожеланий."}</p></section>}
     {generation?.animationRevision && <AnimationRevisionCorrections corrections={generation.animationRevision.corrections} />}
     {generation?.continuation?.mode === "regenerate" && <p><a href={withBasePath(`/generated/${generation.continuation.sourceGenerationId}`)}>Исходное задание</a></p>}
@@ -288,6 +290,8 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
     <GenerationContinuation onVisibilityChange={setRecoveryVisible} generationId={generationId} enabled={continuationEnabled && Boolean(generation?.canContinue)} onContinued={()=>{setRefreshVersion(v=>v+1);}}/>
     {!ready && generation?.continuation?.mode==="regenerate"&&<p><a href={withBasePath(`/generated/${generation.continuation.sourceGenerationId}`)}>Исходное задание</a></p>}
     {failed && !recoveryVisible && <div role="alert"><p>{failure.message}</p><p>{continuationEnabled && generation?.canContinue ? "Можно проверить сохранённые изображения и продолжить это задание." : failure.hint}</p></div>}
+      <BaseGenerationRetry key={generationId} generationId={generationId} canRetry={Boolean(!unavailable && generation?.canRetryBase)}/>
+      {!ready && generation?.baseRetrySourceId && <p><a href={withBasePath(`/generated/${generation.baseRetrySourceId}`)}>Предыдущая попытка создания персонажа</a></p>}
     {!ready && previousGenerationId && <p><a href={withBasePath(`/generated/${generationId}`)}>Open this version</a>{" · "}<a href={withBasePath(`/generated/${previousGenerationId}`)}>Open previous version</a></p>}
     <div className={previousGenerationId ? "generated-pet-versions" : undefined}>
       {previousGenerationId && <section className="generated-pet-base">
@@ -306,7 +310,7 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
     <GeneratedPetResult ready={ready}
       petJsonUrl={files + "pet.json"} spritesheetUrl={files + "spritesheet.webp"}
       metadataEditor={ready ? metadataEditor : undefined} animationEditor={animationEditor} publicationForm={ready ? publicationForm : null}
-      generationDetails={(generation?.animationPrompt || differentAnimationPrompt || generation?.animationRevision || generation?.continuation?.mode === "regenerate" || previousGenerationId) ? generationDetails : undefined}
+        generationDetails={(generation?.animationPrompt || differentAnimationPrompt || generation?.animationRevision || generation?.continuation?.mode === "regenerate" || generation?.baseRetrySourceId || previousGenerationId) ? generationDetails : undefined}
       metadataBlocked={metadataBlocked} metadataConflict={metadataConflict} submitted={Boolean(submission)}
       downloads={generation && <>
         {!metadataBlocked ? <Button href={files + "pet.zip"} view="action" size="xl" width="max">Download ZIP</Button> : <p role="status">Save the name, description and tags to download your pet pack.</p>}

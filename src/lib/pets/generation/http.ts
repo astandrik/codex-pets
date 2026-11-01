@@ -39,6 +39,9 @@ function generationHttpStatus(code: string, admission: boolean): number {
     case "animation_revision_not_accepted": return 409;
     case "animation_corrections_limit": return 400;
     case "base_not_ready": return 409;
+    case "base_retry_unavailable":
+    case "base_retry_input_missing":
+    case "base_retry_source_conflict": return 409;
     case "invalid_reference_image": return 400;
     case "reference_image_too_large": return 413;
     case "invalid_generated_package": return 422;

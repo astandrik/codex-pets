@@ -39,6 +39,14 @@ export function publicGenerationError(code: string, providerFailure?: ProviderFa
   if (VALIDATION_ERRORS.has(code)) return result("The generated images could not be assembled into a valid pet package.", NEW_TASK);
   if (CONFIGURATION_ERRORS.has(code)) return result("The generation service is not configured correctly.", CONTACT_SUPPORT);
   switch (code) {
+      case "base_retry_disabled":
+        return result("Повтор создания персонажа временно недоступен.", "Уже принятый запрос можно проверить по сохранённой ссылке.");
+      case "base_retry_unavailable":
+        return result("Нельзя безопасно повторить создание этого персонажа.", "Проверьте текущий результат. При неопределённом исходе обратитесь к администратору.");
+      case "base_retry_input_missing":
+        return result("Сохранённые исходные данные недоступны или повреждены.", "Новая задача не создана. Не заменяйте утраченное описание пустым вводом.");
+      case "base_retry_source_conflict":
+        return result("Состояние исходной задачи изменилось.", "Обновите сохранённые данные перед повторной отправкой.");
     case "continuation_disabled":
       return result("Продолжение генерации пока недоступно.", "Уже принятые операции сохраняются. Попробуйте позже.");
     case "continuation_busy":

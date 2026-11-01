@@ -38,6 +38,12 @@ function edit(value: string) { act(() => { Object.getOwnPropertyDescriptor(HTMLI
 function puts() { return fetchMock.mock.calls.filter(([, init]) => init?.method === "PUT"); }
 
 describe("generated pet public URL and moderation", () => {
+  it.each(["provider_rejected", "queue_timeout"])("offers an explicit base retry after %s without sending an operation on page load",async code=>{
+    fetchMock.mockResolvedValue(response({generation:{...generation(undefined,"failed").generation,reviewBase:true,baseConfirmed:false,canRetryBase:true,error:publicGenerationError(code)}}));
+    await render();
+    expect([...document.querySelectorAll("button")].some(b=>b.textContent==="Повторить создание персонажа")).toBe(true);
+    expect(fetchMock.mock.calls.every(([,init])=>!init?.method||init.method==="GET")).toBe(true);
+  });
   it("shows automatic repair progress without publishing or restarting the task", async () => {
     fetchMock.mockResolvedValue(response({generation: {...generation(undefined, "generating").generation,
       animationRepair: {maxAttempts: 4, phase: "repairing", rows: [{state: "failed", attempts: 3, retrying: true}]}}}));

@@ -5,7 +5,7 @@ import {GenerationError, type GenerationReference} from "@/lib/pets/generation/m
 export const MAX_REFERENCE_BYTES = 5 * 1024 * 1024;
 const FORMATS: Record<string, string> = {png: "image/png", jpeg: "image/jpeg", webp: "image/webp"};
 
-function animatedPng(bytes: Buffer): boolean {
+export function animatedPng(bytes: Buffer): boolean {
   // libvips does not expose APNG frame counts on every supported build.
   for (let offset = 8; offset + 12 <= bytes.length;) {
     const length = bytes.readUInt32BE(offset);

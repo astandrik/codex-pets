@@ -1,9 +1,10 @@
-import {initialAnimationRepair, reserveInitialAnimationAttempts, canResumeAnimationRepair, hasUnsettledAnimationAttempt, latestAnimationAttempt, isAnimationState, getRepairScope, animationFailureRetryReason} from "@/lib/pets/generation/animation-repair";
+import {reserveInitialAnimationAttempts, canResumeAnimationRepair, hasUnsettledAnimationAttempt, latestAnimationAttempt, isAnimationState, getRepairScope, animationFailureRetryReason} from "@/lib/pets/generation/animation-repair";
+import {admitGeneration} from "@/lib/pets/generation/admission";
+import {createBaseRetryService} from "@/lib/pets/generation/base-retries";
 import {createAnimationRepairService} from "@/lib/pets/generation/animation-repair-service";
 import {createContinuationService} from "@/lib/pets/generation/continuations";
 import {createAnimationRevisionService, requireAcceptedAnimationRevision} from "@/lib/pets/generation/animation-revisions";
 import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
-import { readDailyQuota, consumeDailyQuota } from "@/lib/pets/generation/quota-grants";
 import { parsePublicPetSlug } from "@/lib/pets/public-slug";
 import { findAvailablePublicPetSlug, PublicPetSlugUnavailableError } from "@/lib/pets/public-slug-allocation";
 import { createHash, randomUUID } from "node:crypto";
@@ -13,15 +14,15 @@ import { validateUploadedPackage } from "@/lib/pets/package";
 import { replaceGeneratedDetails, validateGeneratedSheet } from "@/lib/pets/generation/package";
 import { slugify } from "@/lib/pets/validation";
 import {
-  generationAnimationAutoRepairEnabled, generationStageNames, requiredStageNames, usesStageCheckpoints, generationAnimationRevisionsEnabled, isUnacceptedAnimationRevision, DAY, LEASE_MS, WAIT_MS, GENERATION_ID, PROMPT_REVISION, MAX_PARALLEL_IMAGE_ROWS, GenerationError,
+  generationAnimationAutoRepairEnabled, generationBaseRetryEnabled, generationReviewFlowEnabled, generationStageNames, requiredStageNames, usesStageCheckpoints, isUnacceptedAnimationRevision, DAY, LEASE_MS, WAIT_MS, GENERATION_ID, MAX_PARALLEL_IMAGE_ROWS, GenerationError,
   generationInputSchema, generationDigest, generationEnabled, readGenerationSecret,
-  nextMoscowDay, newGenerationId, dedupSchema,
+  newGenerationId, dedupSchema,
   rowAttemptLogSchema, ROW_RETRY_DELAY_MS, type RowAttemptLog, stageFailureDiagnosticSchema, type StageFailureDiagnostic, stageCliCauseSchema, type StageCliCause,
   type StageName, type GenerationJob, type ImageUsage, type GenerationReference, browserGenerationInputSchema, normalizeGenerationText, type GenerationInput,
 } from "@/lib/pets/generation/model";
 import { generationStore, type GenerationStore, type GenerationTransaction } from "@/lib/pets/generation/store";
 
-import { startBudgetTracking, checkStageBudget, recordStageCost, settleBudget } from "@/lib/pets/generation/budget";
+import { checkStageBudget, recordStageCost, settleBudget } from "@/lib/pets/generation/budget";
 import { readProviderFailure } from "@/lib/pets/generation/provider-failure";
 import { readFailureDiagnostic } from "@/lib/pets/generation/failure-diagnostic";
 import {CARD_METADATA_FALLBACK, normalizeCardMetadata, cardMetadataEditSchema, type CardMetadataFields, type CardMetadataRecord, type PublicCardMetadata} from "@/lib/pets/generation/card-metadata";
@@ -39,6 +40,8 @@ export function createGenerationService(store: GenerationStore, options: {
   budgetUsd?: () => number;
   automaticCardMetadata?: () => boolean;
   automaticAnimationRepair?: () => boolean;
+  baseRetries?: () => boolean;
+  reviewFlow?: () => boolean;
 }) {
   const clock = options.now ?? Date.now;
   const createId = options.createId ?? newGenerationId;
@@ -70,6 +73,7 @@ export function createGenerationService(store: GenerationStore, options: {
     });
   }
   return {
+    ...createBaseRetryService(store,{now:clock,enabled:options.enabled,secret:options.secret,createId,budgetUsd,baseRetries:options.baseRetries??(()=>false),reviewFlow:options.reviewFlow??generationReviewFlowEnabled,automaticAnimationRepair:options.automaticAnimationRepair,automaticCardMetadata:options.automaticCardMetadata}),
     ...createAnimationRepairService(store, {now: clock, enabled: options.enabled, automaticAnimationRepair: options.automaticAnimationRepair ?? (() => false), budgetUsd}),
     ...createContinuationService(store, {now: clock, enabled: options.enabled, secret: options.secret, createId, budgetUsd, automaticAnimationRepair: options.automaticAnimationRepair}),
     ...createAnimationRevisionService(store, {now: clock, enabled: options.enabled, secret: options.secret, createId, budgetUsd, automaticAnimationRepair: options.automaticAnimationRepair}),
@@ -121,21 +125,9 @@ export function createGenerationService(store: GenerationStore, options: {
           if (source.expiresAt <= now) throw new GenerationError("generation_expired");
           if (displayName === undefined && source.nameSource === "user") displayName = source.displayName;
         }
-        const state = await scheduler(tx, now);
-        await expireQueue(tx, state, now);
-        if (state.pauseReason) throw new GenerationError("generation_paused");
-        const quota = await readDailyQuota(tx, secret, clientIp, now);
-        if (quota.globalRemaining === 0) throw new GenerationError("rate_limited", nextMoscowDay(now), undefined, "global");
-        if (quota.ipRemaining === 0) throw new GenerationError("rate_limited", nextMoscowDay(now), undefined, "ip");
-        if (state.queue.length >= 5) throw new GenerationError("queue_full");
-        await startBudgetTracking(tx, id, now, budgetUsd());
-        const job: GenerationJob = { ...(options.automaticAnimationRepair?.() ? {animationRepair: initialAnimationRepair()} : {}), id, prompt: body.prompt, displayName: displayName ?? "Generated pet", status: "queued", createdAt: now, expiresAt: now + DAY, worker: "", promptRevision: admission.reviewBase ? "pet-v2-review-20261017-1" : PROMPT_REVISION, ...(admission.reviewBase ? {reviewBase: true, queuedAt: now} : {}), ...(reference ? {reference: reference.metadata} : {}), pipelineVersion: 2, stages: [], ...(generationAnimationRevisionsEnabled() ? {animationAnatomyPolicy: 1 as const} : {}), nameSource:displayName===undefined?"automatic":"user", ...(options.automaticCardMetadata?.()?{cardMetadata:{policy:1 as const,state:"pending" as const,revision:0,edited:false}}:{}) };
-        if (reference) await tx.putArtifact(id, "reference.png", reference.bytes, job.expiresAt);
-        await tx.putJob(job);
+        const job = await admitGeneration(tx,{id,input:{...body,displayName},reviewBase:admission.reviewBase,reference,acceptedAt:now,sourceDeadline:sourceExpiresAt},clientIp,
+          {now:clock,enabled:options.enabled,secret:()=>secret,budgetUsd,automaticAnimationRepair:options.automaticAnimationRepair,automaticCardMetadata:options.automaticCardMetadata,baseRetries:options.baseRetries??(()=>false)});
         await tx.putLedger(requestKey, JSON.stringify({ hash, id, expiresAt: now + 7 * DAY, nameProvided:body.displayName!==undefined }), now + 7 * DAY);
-        await consumeDailyQuota(tx, secret, clientIp, now, quota);
-        state.queue.push(id);
-        await saveScheduler(tx, state);
         // Roll back admission if the source expired while the database work was in flight.
         if (sourceExpiresAt !== undefined && sourceExpiresAt <= clock()) throw new GenerationError("generation_expired");
         return publicJob(job, now);
@@ -542,6 +534,7 @@ export const petGeneration = createGenerationService(generationStore, {
   enabled: generationEnabled, secret: readGenerationSecret,
   automaticCardMetadata:()=>true,
   automaticAnimationRepair: generationAnimationAutoRepairEnabled,
+  baseRetries:generationBaseRetryEnabled,
   budgetUsd: () => {
     const limit = Number(process.env.PET_GENERATION_BUDGET_USD || "50");
     if (!Number.isFinite(limit) || limit <= 0 || limit > 50) throw new GenerationError("generation_not_configured");

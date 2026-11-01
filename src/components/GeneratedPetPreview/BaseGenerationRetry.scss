@@ -1,0 +1,18 @@
+.base-generation-retry {
+  margin-block: 16px;
+  &__dialog {
+    width: min(640px, calc(100vw - 32px));
+    max-width: 100%;
+    border-radius: 12px;
+    h2 { margin: 0; font-size: 22px; line-height: 1.3; }
+    .g-dialog-body { overflow-wrap: anywhere; }
+    .g-dialog-footer { flex-wrap: wrap; gap: 8px; }
+    button { min-height: 44px; }
+    .g-dialog-btn-close__btn { min-width: 44px; }
+    fieldset { border: 1px solid var(--g-color-line-generic); border-radius: 8px; margin-block: 16px; }
+    label { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+    .g-text-area { width: 100%; }
+  }
+  &__reference { display: block; max-width: 100%; max-height: 160px; object-fit: contain; border-radius: 8px; }
+  &__description { white-space: pre-wrap; overflow-wrap: anywhere; }
+}
