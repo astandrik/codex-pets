@@ -3,21 +3,37 @@ import {createHash,randomUUID} from "node:crypto";
 import {z} from "zod";
 import {baseRepairSchema,ANIMATION_ATTEMPT_FAILURE_CODES,GenerationError,moscowDay,type BaseAttempt,type GenerationJob,type Scheduler,type ImageUsage} from "@/lib/pets/generation/model";
 import {baseFailureRetryReason,latestBaseAttempt} from "@/lib/pets/generation/base-repair";
-import {checkStageBudget,recordStageCost,type GenerationBudgetLimit} from "@/lib/pets/generation/budget";
+import {checkStageBudget,type GenerationBudgetLimit} from "@/lib/pets/generation/budget";
+import {persistResult,recordExpiredResult,recordResultCost,type ResultReceipt} from "@/lib/pets/generation/expired-generation";
 import {requireJobWithActiveWorkerLease,scheduler,saveScheduler} from "@/lib/pets/generation/scheduler";
 import type {GenerationStore,GenerationTransaction} from "@/lib/pets/generation/store";
 
 const hash=(bytes:Buffer)=>createHash("sha256").update(bytes).digest("hex");
 type Options={now:()=>number;enabled:()=>boolean;budgetUsd:()=>GenerationBudgetLimit};
 export function createBaseRepairService(store:GenerationStore,options:Options){
+  function requireBaseJob(current:GenerationJob){
+    if(current.status!=="generating"||current.pipelineVersion!==2||!current.baseRetrySourceId||!current.reviewBase||current.baseConfirmedAt!==undefined||current.continuation||current.animationRevision||!current.baseRepair)throw new GenerationError("invalid_stage");
+    baseRepairSchema.parse(current.baseRepair);
+  }
   async function withJob<T>(job:GenerationJob,run:(tx:GenerationTransaction,current:GenerationJob,state:Scheduler,now:number)=>Promise<T>){
     return store.transaction(async tx=>{
       const state=await scheduler(tx,options.now()),now=options.now();
       const current=await requireJobWithActiveWorkerLease(tx,state,job,now);
-      if(current.status!=="generating"||current.pipelineVersion!==2||!current.baseRetrySourceId||!current.reviewBase||current.baseConfirmedAt!==undefined||current.continuation||current.animationRevision||!current.baseRepair)throw new GenerationError("invalid_stage");
-      baseRepairSchema.parse(current.baseRepair);
+      requireBaseJob(current);
       return run(tx,current,state,now);
     });
+  }
+  function withResult(job:GenerationJob,receipt:ResultReceipt,usage:Pick<ImageUsage,"costUsd">|undefined,
+    run:(tx:GenerationTransaction,current:GenerationJob,state:Scheduler,now:number)=>Promise<GenerationJob>,expiredError?:GenerationError){
+    return persistResult(job,options.now,()=>store.transaction(async tx=>{
+      const state=await scheduler(tx,options.now());let now=options.now();
+      if(await recordExpiredResult(tx,state,job,now,receipt,usage,"base"))return null;
+      const current=await requireJobWithActiveWorkerLease(tx,state,job,now);
+      now=options.now();
+      if(await recordExpiredResult(tx,state,job,now,receipt,usage,"base"))return null;
+      requireBaseJob(current);
+      return run(tx,current,state,now);
+    }),expiredError);
   }
   function requireAttempt(current:GenerationJob,token:string){
     const last=latestBaseAttempt(current);
@@ -69,9 +85,10 @@ export function createBaseRepairService(store:GenerationStore,options:Options){
       });
     },
     async saveBaseAttempt(job:GenerationJob,token:string,bytes:Buffer,metadata:{usage?:ImageUsage;generationMs:number}){
-      if(!bytes.length||bytes.length>8*1024*1024)throw new GenerationError("invalid_provider_result");
       const sha256=hash(bytes);
-      return withJob(job,async(tx,current,state,now)=>{
+      const receipt={key:`base-attempt:${token}`,fingerprint:sha256};
+      return withResult(job,receipt,metadata.usage,async(tx,current,state,now)=>{
+        if(!bytes.length||bytes.length>8*1024*1024)throw new GenerationError("invalid_provider_result");
         const attempt=requireAttempt(current,token);
         if(attempt.status==="saved"){
           if(attempt.resultSha256!==sha256)throw new GenerationError("stage_conflict");
@@ -79,23 +96,25 @@ export function createBaseRepairService(store:GenerationStore,options:Options){
         }
         if(attempt.status!=="started"||current.stages.length!==1||current.stages[0].name!=="base"||current.stages[0].status!=="inflight")throw new GenerationError("invalid_stage");
         await tx.putArtifact(current.id,"stage-base.png",bytes,current.expiresAt);
-        await recordStageCost(tx,current.id,now,metadata.usage,"base");
+        await recordResultCost(tx,job,now,receipt,metadata.usage,"base");
         const result={usage:metadata.usage,generationMs:metadata.generationMs};
         return save(tx,{...current,stages:[{...current.stages[0],...result,status:"completed",sha256}]},state,{...attempt,...result,status:"saved",finishedAt:now,resultSha256:sha256});
       });
     },
     async failBaseAttempt(job:GenerationJob,token:string,error:GenerationError){
-      return withJob(job,async(tx,current,state,now)=>{
+      const code=ANIMATION_ATTEMPT_FAILURE_CODES.find(code=>code===error.code)??"outcome_unknown";
+      const reason=baseFailureRetryReason(error),unknown=code==="outcome_unknown"&&!reason;
+      const usage=code==="outcome_unknown"||isOutputModerationFailure(error.providerFailure)?undefined:{costUsd:0};
+      const receipt={key:`base-failure:${token}`,fingerprint:hash(Buffer.from(code))};
+      return withResult(job,receipt,usage,async(tx,current,state,now)=>{
         const attempt=requireAttempt(current,token);
         if(["failed","unknown"].includes(attempt.status))return current;
         if(attempt.status!=="started")throw new GenerationError("invalid_stage");
-        const code=ANIMATION_ATTEMPT_FAILURE_CODES.find(code=>code===error.code)??"outcome_unknown";
-        const reason=baseFailureRetryReason(error),unknown=code==="outcome_unknown"&&!reason;
-        await recordStageCost(tx,current.id,now,code==="outcome_unknown"||isOutputModerationFailure(error.providerFailure)?undefined:{costUsd:0},"base");
+        await recordResultCost(tx,job,now,receipt,usage,"base");
         const failure={code,...(z.iso.datetime().safeParse(error.retryAt).success?{retryAt:error.retryAt}:{}),...(error.diagnostic?{diagnostic:error.diagnostic}:{}),...(error.cliCause?{cliCause:error.cliCause}:{}),...(error.providerFailure?{providerFailure:error.providerFailure}:{})};
         return save(tx,current,state,{...attempt,status:unknown?"unknown":"failed",finishedAt:now,generationMs:Math.max(0,now-attempt.startedAt!),failure,
           ...(reason==="rate_limit"?{usage:{textInputTokens:0,imageInputTokens:0,outputTokens:0,costUsd:0}}:{})});
-      });
+      },code==="outcome_unknown"?error:undefined);
     },
   };
 }

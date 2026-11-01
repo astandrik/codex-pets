@@ -68,8 +68,8 @@ it("does not turn a corrupt new snapshot into legacy input",async()=>{
 it.each(["retry","review","enabled","budget","queue","quota","unsafe"])("blocks %s without a partial new task",async gate=>{
  const f=await baseRetryFixture(),input=await f.input();
  if(gate==="retry")f.config.retry=false;if(gate==="review")f.config.review=false;if(gate==="enabled")f.config.enabled=false;if(gate==="budget")f.config.budget=0;
- if(gate==="queue")for(let i=0;i<5;i++)await f.service.generate({requestId:randomUUID(),prompt:"Other task"},"203.0.113.9");
- if(gate==="quota")for(const [key,value] of f.store.ledger)if(key.startsWith("ip:"))value.value="10";
+ if(gate==="queue")for(let i=0;i<30;i++)await f.service.generate({requestId:randomUUID(),prompt:"Other task"},"203.0.113.9");
+ if(gate==="quota")for(const [key,value] of f.store.ledger)if(key.startsWith("ip:"))value.value="100";
  if(gate==="unsafe")f.store.jobs.get(f.id)!.error="outcome_unknown";
  const count=f.store.jobs.size;
  await expect(f.service.retryBaseGeneration(f.id,input,"203.0.113.8")).rejects.toBeDefined();

@@ -249,7 +249,7 @@ export function createSpriteGenerationWorker(options: {
       // crash preserves the checkpoint for lease-based recovery without repayment.
       if (!(error instanceof GenerationError)) throw error;
       if (initial.expiresAt <= now()) {
-        const isolatedExpiredFailure = error.diagnostic?.boundary === "provider_cli" && stageFailures.length > 0
+        const isolatedExpiredFailure = (error.diagnostic?.boundary === "provider_cli" || (initial.baseRepair && !error.diagnostic)) && stageFailures.length > 0
           && stageFailures.some(({name}) => recordedTerminalFailures.has(name))
           && stageFailures.every(({name,error}) => !uncertain(error) || recordedTerminalFailures.has(name));
         await options.service.finishExpiredGeneration(initial, Boolean(leaseError) || (uncertain(error) && !isolatedExpiredFailure));

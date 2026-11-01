@@ -1,5 +1,6 @@
 import {z} from "zod";
-import {DAY, GenerationError, type GenerationJob, type ImageUsage, type Scheduler, type StageName} from "@/lib/pets/generation/model";
+import {DAY, GenerationError, STAGE_NAMES, type GenerationJob, type ImageUsage, type Scheduler, type StageName} from "@/lib/pets/generation/model";
+import {REGENERATION_RETRIES} from "@/lib/pets/generation/continuation-model";
 import {recordStageCost, settleBudget} from "@/lib/pets/generation/budget";
 import {requireActiveWorkerLease, saveScheduler, scheduler} from "@/lib/pets/generation/scheduler";
 import type {GenerationStore, GenerationTransaction} from "@/lib/pets/generation/store";
@@ -10,6 +11,7 @@ const receiptSchema = z.object({
   finalizedBy: z.string().optional(),
 }).strict();
 type Receipt = z.infer<typeof receiptSchema>;
+const MAX_RESULT_RECEIPTS = STAGE_NAMES.length * (REGENERATION_RETRIES.max + 1) + 2;
 const key = (job: GenerationJob) => `generation-results:${job.id}`;
 async function read(tx: GenerationTransaction, job: GenerationJob, now: number): Promise<Receipt> {
   const raw = await tx.getLedger(key(job), now);
@@ -30,7 +32,7 @@ export async function recordResultCost(tx: GenerationTransaction, job: Generatio
   const receipt = await read(tx, job, now);
   if (matches(receipt, result)) return;
   if (receipt.finalizedBy !== undefined) throw new GenerationError("stale_worker");
-  if (Object.keys(receipt.results).length >= 64) throw new GenerationError("invalid_stage");
+  if (Object.keys(receipt.results).length >= MAX_RESULT_RECEIPTS) throw new GenerationError("invalid_stage");
   if (!await recordStageCost(tx, job.id, now, usage, name)) throw new GenerationError("outcome_unknown");
   receipt.results[result.key] = result.fingerprint;
   await write(tx, job, receipt);
