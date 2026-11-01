@@ -5,6 +5,7 @@ import {Button,Label,Text} from "@gravity-ui/uikit";
 import {withBasePath} from "@/lib/base-path";
 import {HISTORY_PREFIX,parseHistoryGeneration,readGenerationHistory,pruneGenerationHistory,type GenerationHistoryEntry,type HistoryGeneration} from "@/lib/pets/generation/history";
 import {GenerationThumbnail} from "./GenerationThumbnail";
+import {animationRepairProgressText} from "@/lib/pets/generation/animation-repair-progress";
 import "./MyGenerations.scss";
 
 type Result={generation?:HistoryGeneration; unavailable?:boolean; failedReads:number};
@@ -15,6 +16,7 @@ const live=(result?:Result)=>!result?.generation||["queued","generating","proces
 
 function statusLabel(row:Row,expired:boolean){
   if(expired)return "Expired";
+  if(row.generation?.status === "generating" && animationRepairProgressText(row.generation.animationRepair))return "Repairing animations";
   if(row.generation?.status==="completed" && row.generation.animationRevision) return row.generation.animationRevision.acceptedAt === undefined ? "На проверке" : "Готово";
   if(row.generation)return LABELS[row.generation.status];
   return row.failedReads?"Status unavailable":"Checking status";
@@ -100,7 +102,7 @@ function BrowserGenerations({onRefresh}:{onRefresh:()=>void}){
           {row.generation?.continuation&&<p>{row.generation.continuation.mode === "rebuild" ? "Повторная сборка" : "Продолжение предыдущей генерации"}</p>}
           {!expired&&row.generation?.canContinue&&<p><a href={withBasePath(`/generated/${row.generationId}`)}>Продолжить генерацию</a></p>}
           <Text variant="body-1" color="secondary">Saved {new Date(row.savedAt).toLocaleString()}</Text>
-          {!expired&&row.generation&&live(row)&&<p role="status">{row.generation.progress.completedSteps} / {row.generation.progress.totalSteps} steps completed</p>}
+          {!expired&&row.generation&&live(row)&&<p role="status">{animationRepairProgressText(row.generation.animationRepair) ?? `${row.generation.progress.completedSteps} / ${row.generation.progress.totalSteps} steps completed`}</p>}
           {row.failedReads>0&&!expired&&<p role="status">Could not refresh the status. Your task is unchanged; refresh statuses or open its page.</p>}
           <p>{expired?"The temporary result is no longer available.":`Available until ${new Date(row.expiresAt).toLocaleString()}`}</p>
           {!expired&&<Button view={row.generation?.status==="completed"?"action":"outlined"} href={withBasePath(`/generated/${row.generationId}`)}>{row.generation?.status==="completed"?"Open pet":"Open generation"}</Button>}

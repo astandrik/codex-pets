@@ -38,6 +38,15 @@ function edit(value: string) { act(() => { Object.getOwnPropertyDescriptor(HTMLI
 function puts() { return fetchMock.mock.calls.filter(([, init]) => init?.method === "PUT"); }
 
 describe("generated pet public URL and moderation", () => {
+  it("shows automatic repair progress without publishing or restarting the task", async () => {
+    fetchMock.mockResolvedValue(response({generation: {...generation(undefined, "generating").generation,
+      animationRepair: {maxAttempts: 4, phase: "repairing", rows: [{state: "failed", attempts: 3, retrying: true}]}}}));
+    await render();
+    expect(element.textContent).toContain("retry 2 of 3");
+    expect(element.textContent).toContain("Failed");
+    expect(button()).toBeUndefined();
+    expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
+  });
   it("explains output moderation, stops polling and offers no automatic retry or submission", async () => {
     const data = generation(undefined, "failed");
     const error = publicGenerationError("provider_rejected", { httpStatus: 400, code: "moderation_blocked", moderationStage: "output" });

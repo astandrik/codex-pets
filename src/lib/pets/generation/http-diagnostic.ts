@@ -42,7 +42,7 @@ export function logSpriteHttpDiagnostic(
   write: (line: string) => void = console.log,
 ): void {
   try {
-    if (context.attempt !== 1 && context.attempt !== 2) return;
+    if (!Number.isInteger(context.attempt) || context.attempt < 1 || context.attempt > 4) return;
     for (const line of stderr.split("\n")) {
       if (!line.startsWith(DIAGNOSTIC_PREFIX) || line.length > MAX_DIAGNOSTIC_LINE_LENGTH) continue;
       let input: unknown;

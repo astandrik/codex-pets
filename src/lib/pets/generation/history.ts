@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {animationRepairProgressSchema} from "@/lib/pets/generation/animation-repair-progress";
 
 export const HISTORY_PREFIX = "pets-generation-history-v1:";
 const ID = /^[a-f0-9]{64}$/;
@@ -124,6 +125,7 @@ const historyGenerationSchema = z.object({
   }).refine((value) => value.completedSteps <= value.totalSteps),
   canContinue: z.boolean().optional(),
   baseUrl: z.string().optional(),
+  animationRepair: animationRepairProgressSchema.optional(),
   continuation: z.object({sourceGenerationId:z.string().regex(ID),mode:z.enum(["rebuild","regenerate"])}).optional(),
   pet: z.object({ displayName: z.string().min(1).max(80) }).optional(),
   animationRevision: z.object({acceptedAt: z.number().optional()}).optional(),

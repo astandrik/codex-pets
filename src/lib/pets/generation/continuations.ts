@@ -1,3 +1,4 @@
+import {initialAnimationRepair} from "@/lib/pets/generation/animation-repair";
 import {buildContinuationPreviews,readContinuationPreview} from "@/lib/pets/generation/continuation-preview";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -20,6 +21,7 @@ export function createContinuationService(store: GenerationStore, options: {
     secret: () => string;
     createId: () => string;
     budgetUsd: () => number;
+    automaticAnimationRepair?: () => boolean;
 }) {
     const key = (requestId: string) => "continuation:" + generationDigest(options.secret(), "request", requestId);
     const lockKey = continuationLockKey;
@@ -229,7 +231,7 @@ export function createContinuationService(store: GenerationStore, options: {
                                     throw new GenerationError("saved_stage_unavailable");
                             await startBudgetTracking(tx, r.targetId, now, options.budgetUsd());
                             const stages = execution.compositionStages.filter(n => !selected.includes(n)).map(name => ({ name, status: "completed" as const, sha256: sha(copies.get(`stage-${name}.png`)!), startedAt: now }));
-                            const job: GenerationJob = { id: r.targetId, prompt: "", displayName: current.displayName, nameSource: current.nameSource, status: "queued", createdAt: now, queuedAt: now, expiresAt: now + DAY, worker: "", reviewBase: true, baseConfirmedAt: now, pipelineVersion: 4, promptRevision: current.promptRevision, stages, continuation: execution, animationAnatomyPolicy: current.animationAnatomyPolicy, ...(current.animationPrompt ? { animationPrompt: current.animationPrompt } : {}), ...(current.cardMetadata ? { cardMetadata: { ...structuredClone(current.cardMetadata), usage: undefined, ...(current.cardMetadata.state === "inflight" ? { state: "failed" as const, error: "outcome_unknown" as const } : {}) } } : {}) };
+                            const job: GenerationJob = { ...(options.automaticAnimationRepair?.() ? {animationRepair: initialAnimationRepair()} : {}), id: r.targetId, prompt: "", displayName: current.displayName, nameSource: current.nameSource, status: "queued", createdAt: now, queuedAt: now, expiresAt: now + DAY, worker: "", reviewBase: true, baseConfirmedAt: now, pipelineVersion: 4, promptRevision: current.promptRevision, stages, continuation: execution, animationAnatomyPolicy: current.animationAnatomyPolicy, ...(current.animationPrompt ? { animationPrompt: current.animationPrompt } : {}), ...(current.cardMetadata ? { cardMetadata: { ...structuredClone(current.cardMetadata), usage: undefined, ...(current.cardMetadata.state === "inflight" ? { state: "failed" as const, error: "outcome_unknown" as const } : {}) } } : {}) };
                             await tx.setArtifactExpiry(job.id, [...copies.keys()], job.expiresAt);
                             await tx.putJob(job);
                             await consumeDailyQuota(tx, options.secret(), clientIp, now, quota);

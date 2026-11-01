@@ -1,4 +1,4 @@
-import {continuationPlanSchema, assemblyIssuesSchema, rebuildHistorySchema, type AssemblyIssue} from "@/lib/pets/generation/continuation-model";
+import {continuationPlanSchema, assemblyIssuesSchema, rebuildHistorySchema, CONTINUATION_STATES, type AssemblyIssue} from "@/lib/pets/generation/continuation-model";
 import {animationStatesSchema, animationCorrectionsSchema} from "@/lib/pets/generation/animation-revision-input";
 export {animationRevisionInputSchema} from "@/lib/pets/generation/animation-revision-input";
 import { createHmac, randomBytes } from "node:crypto";
@@ -50,6 +50,40 @@ export const usageSchema = z.object({
   costUsd: z.number().nonnegative(),
 });
 export type ImageUsage = z.infer<typeof usageSchema>;
+export const ANIMATION_ATTEMPT_FAILURE_CODES = ["outcome_unknown", "provider_rejected", "provider_rate_limited", "invalid_sprite_extraction", "invalid_stage", "missing_animation_frame"] as const;
+export const animationAttemptSchema = z.object({
+  state: z.enum(CONTINUATION_STATES), ordinal: z.number().int().min(1).max(4), token: z.uuid(),
+  reason: z.enum(["initial", "transport", "quality"]),
+  status: z.enum(["reserved", "started", "saved", "failed", "unknown"]),
+  reservedAt: z.number().finite(), notBefore: z.number().finite(),
+  startedAt: z.number().finite().optional(), finishedAt: z.number().finite().optional(),
+  sourceSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  resultSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  usage: usageSchema.optional(), generationMs: z.number().finite().nonnegative().optional(),
+  failure: z.object({code: z.enum(ANIMATION_ATTEMPT_FAILURE_CODES), diagnostic: failureDiagnosticSchema.optional(), cliCause: cliCauseSchema.optional()}).strict().optional(),
+}).strict().refine(a => a.notBefore >= a.reservedAt &&
+  (a.ordinal === 1 ? a.reason === "initial" : a.reason !== "initial") &&
+  (a.reason !== "quality" || a.sourceSha256 !== undefined) &&
+  (a.status === "reserved" ? a.startedAt === undefined && a.finishedAt === undefined : a.startedAt !== undefined) &&
+  (a.startedAt === undefined || a.startedAt >= a.notBefore) &&
+  (a.status !== "saved" || (a.finishedAt !== undefined && a.resultSha256 !== undefined && a.generationMs !== undefined)) &&
+  (!["failed", "unknown"].includes(a.status) || (a.finishedAt !== undefined && a.failure !== undefined)) &&
+  (a.finishedAt === undefined || (a.startedAt !== undefined && a.finishedAt >= a.startedAt)), "Invalid attempt transition");
+export type AnimationAttempt = z.infer<typeof animationAttemptSchema>;
+export const animationRepairSchema = z.object({
+  policy: z.literal(1), maxAttempts: z.literal(4),
+  phase: z.enum(["initial", "repairing", "verifying", "complete", "stopped"]),
+  pending: z.array(z.enum(CONTINUATION_STATES)).max(11), issues: assemblyIssuesSchema,
+  attempts: z.array(animationAttemptSchema).max(44),
+}).strict().refine(repair => {
+  if (new Set(repair.pending).size !== repair.pending.length || new Set(repair.attempts.map(a => a.token)).size !== repair.attempts.length) return false;
+  if (repair.phase === "complete" && repair.pending.length) return false;
+  return CONTINUATION_STATES.every(state => {
+    const attempts = repair.attempts.filter(a => a.state === state);
+    return (repair.phase !== "complete" || !attempts.length || attempts.at(-1)?.status === "saved") && attempts.every((a, index) => a.ordinal === index + 1 && (index === attempts.length - 1 || ["saved", "failed"].includes(a.status)));
+  });
+}, "Invalid attempt sequence");
+export type AnimationRepairState = z.infer<typeof animationRepairSchema>;
 export const stageSchema = z.object({
   name: z.enum(STAGE_NAMES), status: z.enum(["inflight", "completed"]),
   sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(), usage: usageSchema.optional(),
@@ -91,6 +125,7 @@ export const jobSchema = z.object({
   stageFailureDiagnostics: z.array(stageFailureDiagnosticSchema).max(12).optional(),
   rowAttemptLogs:z.array(rowAttemptLogSchema).max(24).optional(),
   rowRetries:z.array(rowRetrySchema).max(12).optional(),
+  animationRepair: animationRepairSchema.optional(),
   cliFailureCauses:z.array(stageCliCauseSchema).max(12).optional(),
   usage: usageSchema.optional(),
   providerRequestId: z.string().optional(),
@@ -110,7 +145,10 @@ export const jobSchema = z.object({
   ? Boolean(job.continuation && job.reviewBase && job.baseConfirmedAt !== undefined && !job.reference && !job.animationRevision)
   : job.pipelineVersion === 3
   ? Boolean(job.animationRevision && job.animationAnatomyPolicy === 1 && job.reviewBase && job.baseConfirmedAt !== undefined && !job.reference)
-  : job.animationRevision === undefined, "Invalid animation revision policy");
+  : job.animationRevision === undefined, "Invalid animation revision policy")
+  .refine(job => !job.animationRepair || (job.pipelineVersion >= 2 && job.pipelineVersion <= 4 &&
+    [...job.animationRepair.pending, ...job.animationRepair.attempts.map(a => a.state)].every(state =>
+      (job.continuation?.mode === "rebuild" ? CONTINUATION_STATES : job.continuation?.generationStages ?? job.animationRevision?.selectedStates ?? CONTINUATION_STATES).includes(state))), "Invalid animation repair scope");
 export type GenerationJob = z.infer<typeof jobSchema>;
 export function requiredStageNames(job: GenerationJob): readonly StageName[] {
   if (job.continuation) return continuationPlanSchema.parse(job.continuation).compositionStages;
@@ -131,6 +169,9 @@ export function isUnacceptedAnimationRevision(job: GenerationJob) {
 }
 export function generationAnimationRevisionsEnabled() {
   return process.env.PET_GENERATION_ANIMATION_REVISIONS_ENABLED === "true";
+}
+export function generationAnimationAutoRepairEnabled() {
+  return process.env.PET_GENERATION_ANIMATION_AUTO_REPAIR_ENABLED === "true";
 }
 export const schedulerSchema = z.object({
   revision: z.number().int(),

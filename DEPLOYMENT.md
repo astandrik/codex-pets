@@ -753,3 +753,9 @@ Rollback the feature by disabling this flag while retaining compatible web/worke
 `PET_GENERATION_CONTINUATION_ENABLED` defaults to false. Before enabling new continuations, update both web and generation-worker to versions supporting pipeline 4, persisted continuation plans, staged snapshot receipts and extraction diagnostics. Drain or stop all older workers before activation. Accepted operations continue with their saved plans when the flag is disabled.
 
 Rollback is to disable new continuation admission while retaining compatible web and worker versions. Do not restore versions that ignore continuation plans or discard new job fields after any operation is accepted. Preserve budget and unknown-cost records. No schema migration is needed.
+
+## Automatic animation repair rollout
+
+`PET_GENERATION_ANIMATION_AUTO_REPAIR_ENABLED` defaults to false. Deploy compatible web and generation-worker readers/writers with the flag off before enabling it for new admissions. It permits at most four provider calls per animation row (including transport retries), under the existing shared recorded-spend limit; quota and expiry do not reset. Old failed jobs are not activated retroactively, and free rebuilds do not request images.
+
+Keep compatible maintenance commands (including diagnose-generation) after activation: older job parsers can discard the new journal when rewriting payloads. To disable, turn this flag off and retain the compatible images. Already started calls must settle; do not roll back to old readers/writers while policy-bearing jobs remain. Paid acceptance requires separate approval.
