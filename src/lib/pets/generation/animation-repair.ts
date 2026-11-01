@@ -1,6 +1,14 @@
 import {CONTINUATION_STATES, type AssemblyIssue, type ContinuationState} from "@/lib/pets/generation/continuation-model";
 import {generationStageNames, type AnimationRepairState, type AnimationAttempt, type GenerationJob} from "@/lib/pets/generation/model";
 import type {AnimationRepairProgress} from "@/lib/pets/generation/animation-repair-progress";
+import {isRetryableImageCause, type CliCause} from "@/lib/pets/generation/cli-cause";
+import {isOutputModerationFailure, type ProviderFailure} from "@/lib/pets/generation/provider-failure";
+
+export function animationFailureRetryReason(failure: {code: string; cliCause?: CliCause; providerFailure?: ProviderFailure}): "transport" | "moderation" | undefined {
+  if (failure.code === "outcome_unknown" && isRetryableImageCause(failure.cliCause)) return "transport";
+  if (failure.code === "provider_rejected" && isOutputModerationFailure(failure.providerFailure)) return "moderation";
+  return undefined;
+}
 
 export function reserveInitialAnimationAttempts(job: GenerationJob, names: readonly string[], now: number, token: () => string): GenerationJob {
   if (!job.animationRepair) return job;

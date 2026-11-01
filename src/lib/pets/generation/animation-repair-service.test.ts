@@ -79,4 +79,51 @@ describe("durable animation attempts", () => {
     await expect(f.service.saveAnimationAttempt(f.job, "idle", randomUUID(), Buffer.from("bad"), {usage, generationMs: 1})).rejects.toMatchObject({code: "invalid_stage"});
     expect(await f.store.readArtifact(f.job.id, "stage-idle.png", f.config.now)).toBeNull();
   });
+
+  it("persists output provenance, keeps unknown cost and reserves a moderation retry once", async () => {
+    const f = await fixture(), first = f.job.animationRepair!.attempts[0];
+    const providerFailure = {httpStatus: 400, code: "moderation_blocked", moderationStage: "output"};
+    await f.service.startAnimationAttempt(f.job, "idle", first.token);
+    await f.service.failAnimationAttempt(f.job, "idle", first.token, new GenerationError("provider_rejected", undefined, providerFailure));
+    expect((await f.current()).animationRepair!.attempts[0].failure?.providerFailure).toEqual(providerFailure);
+    expect(JSON.parse(f.store.ledger.get("budget")!.value).reservations[f.job.id].unknown).toBe(true);
+    const one = await f.service.reserveAnimationAttempt(f.job, "idle", "moderation");
+    const replay = await f.service.reserveAnimationAttempt(f.job, "idle", "moderation");
+    expect(replay.attempt.token).toBe(one.attempt.token);
+    expect(one.attempt).toMatchObject({ordinal: 2, reason: "moderation", status: "reserved", notBefore: f.config.now + 5000});
+    expect((await f.current()).expiresAt).toBe(f.job.expiresAt);
+  });
+
+  it.each(["input", "unknown", undefined])("never reserves moderation retry without explicit output provenance: %s", async stage => {
+    const f = await fixture(), first = f.job.animationRepair!.attempts[0];
+    await f.service.startAnimationAttempt(f.job, "idle", first.token);
+    await f.service.failAnimationAttempt(f.job, "idle", first.token, new GenerationError("provider_rejected", undefined,
+      {httpStatus: 400, code: "moderation_blocked", ...(stage ? {moderationStage: stage} : {})}));
+    await expect(f.service.reserveAnimationAttempt(f.job, "idle", "moderation")).rejects.toMatchObject({code: "invalid_stage"});
+    expect((await f.current()).animationRepair!.attempts).toHaveLength(1);
+  });
+
+  it("shares the cap and budget between transport and moderation reservations", async () => {
+    const f = await fixture();let attempt = f.job.animationRepair!.attempts[0];
+    for (let ordinal = 1; ordinal <= 4; ordinal++) {
+      await f.service.startAnimationAttempt(f.job, "idle", attempt.token);
+      const moderation = ordinal % 2 === 1;
+      await f.service.failAnimationAttempt(f.job, "idle", attempt.token, moderation
+        ? new GenerationError("provider_rejected", undefined, {httpStatus: 400, code: "moderation_blocked", moderationStage: "output"})
+        : new GenerationError("outcome_unknown", undefined, undefined, undefined, undefined, {kind: "remote_disconnected"}));
+      if (ordinal < 4) {
+        ({attempt} = await f.service.reserveAnimationAttempt(f.job, "idle", moderation ? "moderation" : "transport"));
+        f.config.now += 5000;
+      }
+    }
+    await expect(f.service.reserveAnimationAttempt(f.job, "idle", "transport")).rejects.toMatchObject({code: "invalid_stage"});
+    expect((await f.current()).animationRepair!.attempts).toHaveLength(4);
+    const g = await fixture(), first = g.job.animationRepair!.attempts[0];
+    await g.service.startAnimationAttempt(g.job, "idle", first.token);
+    await g.service.failAnimationAttempt(g.job, "idle", first.token,
+      new GenerationError("provider_rejected", undefined, {httpStatus: 400, code: "moderation_blocked", moderationStage: "output"}));
+    g.config.budget = .04;
+    await expect(g.service.reserveAnimationAttempt(g.job, "idle", "moderation")).rejects.toMatchObject({code: "budget_exhausted"});
+    expect((await g.current()).animationRepair!.attempts).toHaveLength(1);
+  });
 });

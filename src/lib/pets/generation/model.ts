@@ -53,14 +53,14 @@ export type ImageUsage = z.infer<typeof usageSchema>;
 export const ANIMATION_ATTEMPT_FAILURE_CODES = ["outcome_unknown", "provider_rejected", "provider_rate_limited", "invalid_sprite_extraction", "invalid_stage", "missing_animation_frame"] as const;
 export const animationAttemptSchema = z.object({
   state: z.enum(CONTINUATION_STATES), ordinal: z.number().int().min(1).max(4), token: z.uuid(),
-  reason: z.enum(["initial", "transport", "quality"]),
+  reason: z.enum(["initial", "transport", "quality", "moderation"]),
   status: z.enum(["reserved", "started", "saved", "failed", "unknown"]),
   reservedAt: z.number().finite(), notBefore: z.number().finite(),
   startedAt: z.number().finite().optional(), finishedAt: z.number().finite().optional(),
   sourceSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   resultSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   usage: usageSchema.optional(), generationMs: z.number().finite().nonnegative().optional(),
-  failure: z.object({code: z.enum(ANIMATION_ATTEMPT_FAILURE_CODES), diagnostic: failureDiagnosticSchema.optional(), cliCause: cliCauseSchema.optional()}).strict().optional(),
+  failure: z.object({code: z.enum(ANIMATION_ATTEMPT_FAILURE_CODES), diagnostic: failureDiagnosticSchema.optional(), cliCause: cliCauseSchema.optional(), providerFailure: providerFailureSchema.optional()}).strict().optional(),
 }).strict().refine(a => a.notBefore >= a.reservedAt &&
   (a.ordinal === 1 ? a.reason === "initial" : a.reason !== "initial") &&
   (a.reason !== "quality" || a.sourceSha256 !== undefined) &&

@@ -25,6 +25,30 @@ def base_prompt(brief):
     return captured[0]
 
 class RendererTests(unittest.TestCase):
+    def test_repeated_output_refusal_keeps_exact_prompt_references_and_options(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); (root/'run').mkdir()
+            (root/'run/sprite-request.json').write_text('{}')
+            renderer.Image.new('RGB', (64,64), 'green').save(root/'base.png')
+            guides = root/'run/references/layout-guides'; guides.mkdir(parents=True)
+            renderer.Image.new('RGB', (1536,208), 'white').save(guides/'idle.png')
+            job = {'prompt': 'Same synthetic character', 'rows': [{'name': 'idle', 'frames': 6, 'action': 'resting'}]}
+            requests = []
+            def reject(_root, args):
+                prompt = Path(args[args.index('--prompt-file')+1]).read_bytes()
+                refs = [Path(args[i+1]).read_bytes() for i, value in enumerate(args) if value == '--ref']
+                requests.append((list(args), prompt, refs))
+                raise renderer.RenderError('provider_rejected', provider_failure={'httpStatus': 400, 'code': 'moderation_blocked', 'moderationStage': 'output'})
+            with patch.object(renderer, 'run_tool', side_effect=reject):
+                for _ in range(2):
+                    with self.assertRaises(renderer.RenderError): renderer.generate(root, job, 'idle')
+            self.assertEqual(len(requests), 2)
+            self.assertEqual(requests[0], requests[1])
+            args = requests[0][0]
+            self.assertEqual(args[args.index('--model')+1], renderer.MODEL)
+            self.assertEqual(args[args.index('--quality')+1], 'high')
+            self.assertNotIn('--moderation', args)
+
     def test_reference_is_sent_to_base_and_changes_do_not_repeat_in_rows(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

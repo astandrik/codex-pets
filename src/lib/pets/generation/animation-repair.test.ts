@@ -1,10 +1,30 @@
 import {randomUUID} from "node:crypto";
 import {describe, expect, it} from "vitest";
 import {createGenerationService} from "./service";
-import {jobSchema} from "./model";
+import {GenerationError, jobSchema} from "./model";
+import * as repairPolicy from "./animation-repair";
 import {MemoryStore} from "./test-store";
 
 const now = Date.parse("2026-10-31T12:00:00Z");
+
+describe("animation failure retry eligibility", () => {
+  it.each([
+    {code: "provider_rejected", httpStatus: 400, providerCode: "moderation_blocked", stage: "output" as const, expected: "moderation"},
+    {code: "provider_rejected", httpStatus: 400, providerCode: "moderation_blocked", stage: "input" as const, expected: undefined},
+    {code: "provider_rejected", httpStatus: 400, providerCode: "moderation_blocked", stage: "unknown" as const, expected: undefined},
+    {code: "provider_rejected", httpStatus: 400, providerCode: "moderation_blocked", stage: undefined, expected: undefined},
+    {code: "provider_rejected", httpStatus: 400, providerCode: "content_policy_violation", stage: "output" as const, expected: undefined},
+    {code: "provider_rejected", httpStatus: 403, providerCode: "moderation_blocked", stage: "output" as const, expected: undefined},
+    {code: "invalid_stage", httpStatus: 400, providerCode: "moderation_blocked", stage: "output" as const, expected: undefined},
+  ])("classifies $code $providerCode/$stage/$httpStatus as $expected", ({code, httpStatus, providerCode, stage, expected}) => {
+    const failure = new GenerationError(code, undefined, {httpStatus, code: providerCode, ...(stage ? {moderationStage: stage} : {})});
+    expect(repairPolicy.animationFailureRetryReason(failure)).toBe(expected);
+  });
+  it("retains transport eligibility without accepting arbitrary provider failures", () => {
+    expect(repairPolicy.animationFailureRetryReason(new GenerationError("outcome_unknown", undefined, undefined, undefined, undefined, {kind: "http_error", httpStatus: 500}))).toBe("transport");
+    expect(repairPolicy.animationFailureRetryReason(new GenerationError("provider_rejected", undefined, undefined, undefined, undefined, {kind: "remote_disconnected"}))).toBeUndefined();
+  });
+});
 async function fixture(enabled = true) {
   const store = new MemoryStore();
   const config = {enabled};
