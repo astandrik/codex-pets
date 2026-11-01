@@ -14,6 +14,7 @@ type Context = {
   wait: (ms: number) => Promise<void>;
   checkLease: () => void;
   mutate: <T>(run: () => Promise<T>) => Promise<T>;
+  onTerminalFailure?: (name: ContinuationState) => void;
 };
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const uncertain = (boundary: "intent" | "checkpoint") => new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary, reason: "unconfirmed_write"});
@@ -57,16 +58,23 @@ export async function generateRepairAnimation(context: Context, job: GenerationJ
     try { image = await session.generate(name, {attempt: attempt.ordinal}); }
     catch (error) {
       const failure = error instanceof GenerationError ? error : new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary: "renderer_process", reason: "unclassified"});
+      const reason = animationFailureRetryReason(failure);
+      const terminal = attempt.ordinal >= maxAttempts && reason === "transport" && failure.diagnostic?.boundary === "provider_cli";
       try { await context.mutate(() => context.service.failAnimationAttempt(job, name, attempt.token, failure)); }
       catch (error) {
-        if (error instanceof GenerationError && job.expiresAt <= context.now()) throw error;
+        if (error instanceof GenerationError && job.expiresAt <= context.now()) {
+          // persistResult rethrows this exact failure only after committing its
+          // expired-result receipt. Other errors do not prove that checkpoint.
+          if (error === failure && terminal) context.onTerminalFailure?.(name);
+          throw error;
+        }
         const recorded = await currentJob(context, job).then(current => latestAnimationAttempt(current, name)).catch(() => undefined);
         if (recorded?.token !== attempt.token || recorded.ordinal !== attempt.ordinal || recorded.status !== "failed" ||
           recorded.failure?.code !== failure.code || !isDeepStrictEqual(recorded.failure.diagnostic, failure.diagnostic) ||
           !isDeepStrictEqual(recorded.failure.cliCause, failure.cliCause) ||
           !isDeepStrictEqual(recorded.failure.providerFailure, failure.providerFailure)) throw uncertain("checkpoint");
       }
-      const reason = animationFailureRetryReason(failure);
+      if (terminal) context.onTerminalFailure?.(name);
       if (!reason || attempt.ordinal >= maxAttempts) throw failure;
       await reserveKnownAttempt(context, job, name, reason);
       continue;

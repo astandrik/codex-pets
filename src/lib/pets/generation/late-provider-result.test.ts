@@ -7,6 +7,7 @@ import {buildCardMetadataRequest} from "./card-provider";
 import {GenerationError, LEASE_MS, type GenerationJob} from "./model";
 import {MemoryStore} from "./test-store";
 import {generateRepairAnimation} from "./animation-repair-worker";
+import type {CliCause} from "./cli-cause";
 
 const initial = Date.parse("2026-11-01T10:00:00Z");
 const usage = {textInputTokens:1,imageInputTokens:0,outputTokens:1,costUsd:.01};
@@ -20,11 +21,160 @@ function fixture(repair=false,card=false) {
 }
 type Fixture = ReturnType<typeof fixture>;
 function worker(f:Fixture,generate:(name:string,job:GenerationJob)=>Promise<{bytes:Buffer;generationMs:number;usage?:typeof usage}>, card?:Parameters<typeof createSpriteGenerationWorker>[0]["cardProvider"]) {
-  return createSpriteGenerationWorker({service:f.service,store:f.store,now:()=>f.clock.now,cardProvider:card,
+  return createSpriteGenerationWorker({service:f.service,store:f.store,now:()=>f.clock.now,cardProvider:card,wait:async ms=>{f.clock.now+=ms;},
     renderer:{open:async job=>({prepare:async()=>{},cleanup:async()=>{},compose:async()=>Buffer.from("atlas"),generate:name=>generate(name,job)})},
     build:async()=>({"pet.zip":Buffer.from("zip")})});
 }
 afterEach(()=>vi.restoreAllMocks());
+
+const capturedFailure = (cause:CliCause) => new GenerationError("outcome_unknown",undefined,undefined,undefined,
+  {boundary:"provider_cli",reason:"process_exit",exitCode:1},cause);
+
+it("preserves an unknown result when expiry prevents the first row retry",async()=>{
+  const f=fixture(), request=input(), old=await f.service.generate(request,"203.0.113.1");
+  f.clock.now=Date.parse(old.expiresAt)-10;
+  const next=await f.service.generate(input(),"203.0.113.2");
+  let calls=0;
+  const run=worker(f,async()=>{calls++;f.clock.now+=20;throw capturedFailure({kind:"remote_disconnected"});});
+  expect(await run("owner")).toBe("failed");
+  expect(f.state()).toMatchObject({active:null,pauseReason:"outcome_unknown"});
+  expect(f.budget().reservations[old.generationId]).toEqual({remainingMicroUsd:0,unknown:true});
+  expect(await run("next-owner")).toBe("idle");expect(calls).toBe(1);
+  expect((await f.service.get(next.generationId)).status).toBe("queued");
+  await expect(f.service.generate(request,"203.0.113.1")).rejects.toMatchObject({code:"generation_expired"});
+  expect(f.store.jobs.size).toBe(2);
+});
+
+it.each([false,true].flatMap(removed=>([{kind:"remote_disconnected"},{kind:"incomplete_response"},
+  {kind:"http_error",httpStatus:500},{kind:"http_error",httpStatus:520}] satisfies CliCause[]).map(cause=>({cause,removed}))))(
+  "isolates the last captured $cause.kind $cause.httpStatus failure after expiry, removed=$removed",async({cause,removed})=>{
+    const f=fixture(), old=await f.service.generate(input(),"203.0.113.1");
+    f.clock.now=Date.parse(old.expiresAt)-5010;
+    const next=await f.service.generate(input(),"203.0.113.2");
+    let calls=0;
+    const run=worker(f,async(name,job)=>{
+      if(job.id===old.generationId){if(++calls===2){f.clock.now+=20;if(removed)await f.store.cleanup(f.clock.now);}throw capturedFailure(cause);}
+      return{bytes:Buffer.from(name),generationMs:1,usage};
+    });
+    expect(await run("owner")).toBe("failed");expect(calls).toBe(2);
+    expect(f.state().active).toBeNull();expect(f.state().pauseReason).toBeUndefined();
+    expect(f.budget().reservations[old.generationId]).toEqual({remainingMicroUsd:0,unknown:true});
+    expect(await f.store.readArtifact(old.generationId,"stage-base.png",f.clock.now)).toBeNull();
+    if(removed)expect(f.store.jobs.has(old.generationId)).toBe(false);
+    expect(await run("next-owner")).toBe("completed");
+    expect((await f.service.get(next.generationId)).status).toBe("completed");
+  });
+
+it.each(["waiting","authorized"])("preserves unknown outcome when expiry crosses retry %s",async phase=>{
+  const f=fixture(), old=await f.service.generate(input(),"203.0.113.1");
+  f.clock.now=Date.parse(old.expiresAt)-5010;
+  if(phase==="waiting"){
+    const begin=f.service.beginRowRetry;
+    vi.spyOn(f.service,"beginRowRetry").mockImplementationOnce(async(...args)=>{const retry=await begin(...args);f.clock.now+=5020;return retry;});
+  }else{
+    const authorize=f.service.authorizeRowRetry;
+    vi.spyOn(f.service,"authorizeRowRetry").mockImplementationOnce(async(...args)=>{await authorize(...args);f.clock.now+=20;});
+  }
+  let calls=0;
+  const run=worker(f,async()=>{calls++;throw capturedFailure({kind:"http_error",httpStatus:520});});
+  expect(await run("owner")).toBe("failed");expect(calls).toBe(1);
+  expect(f.state()).toMatchObject({active:null,pauseReason:"outcome_unknown"});
+  expect(f.budget().reservations[old.generationId].unknown).toBe(true);
+});
+
+it.each([false,true])("isolates the fourth recorded repair failure after expiry, removed=%s",async removed=>{
+  const f=fixture(true), old=await f.service.generate(input(),"203.0.113.1");
+  f.clock.now=Date.parse(old.expiresAt)-15010;
+  const next=await f.service.generate(input(),"203.0.113.2");
+  let calls=0;
+  const run=worker(f,async(name,job)=>{
+    if(job.id===old.generationId&&name==="waving"){
+      if(++calls===4){f.clock.now+=20;if(removed)await f.store.cleanup(f.clock.now);}
+      throw capturedFailure({kind:"http_error",httpStatus:520});
+    }
+    return{bytes:Buffer.from(name),generationMs:1,usage};
+  });
+  expect(await run("owner")).toBe("failed");expect(calls).toBe(4);
+  expect(f.state().active).toBeNull();expect(f.state().pauseReason).toBeUndefined();
+  expect(f.budget().reservations[old.generationId].unknown).toBe(true);
+  expect(await run("next-owner")).toBe("completed");
+  expect((await f.service.get(next.generationId)).status).toBe("completed");
+});
+
+it("keeps a late terminal repair paused when its failure receipt cannot be confirmed",async()=>{
+  const f=fixture(true), old=await f.service.generate(input(),"203.0.113.1");
+  f.clock.now=Date.parse(old.expiresAt)-15010;
+  const transaction=f.store.transaction.bind(f.store);let writes=2,calls=0;
+  vi.spyOn(f.store,"transaction").mockImplementation(op=>transaction(tx=>op({...tx,getLedger:async(key,now)=>{
+    if(writes&&f.clock.now>=Date.parse(old.expiresAt)&&key.startsWith("generation-results:")){
+      writes--;throw Error("failure receipt unavailable");
+    }
+    return tx.getLedger(key,now);
+  }})));
+  const run=worker(f,async name=>{
+    if(name==="waving"){
+      if(++calls===4)f.clock.now+=20;
+      throw capturedFailure({kind:"http_error",httpStatus:520});
+    }
+    return{bytes:Buffer.from(name),generationMs:1,usage};
+  });
+  expect(await run("owner")).toBe("failed");expect(calls).toBe(4);expect(writes).toBe(0);
+  expect(f.state()).toMatchObject({active:null,pauseReason:"outcome_unknown"});
+  expect(f.budget().reservations[old.generationId].unknown).toBe(true);
+});
+
+it("does not let a terminal repair hide an expired first attempt in another animation",async()=>{
+  const f=fixture(true), old=await f.service.generate(input(),"203.0.113.1");
+  f.clock.now=Date.parse(old.expiresAt)-15010;
+  let release!:()=>void,waving=0,failed=0;
+  const terminal=new Promise<void>(resolve=>{release=resolve;});
+  const run=worker(f,async name=>{
+    if(name==="waving"){
+      if(++waving===4){f.clock.now+=20;release();}
+      throw capturedFailure({kind:"http_error",httpStatus:520});
+    }
+    if(name==="failed"){failed++;await terminal;throw capturedFailure({kind:"remote_disconnected"});}
+    return{bytes:Buffer.from(name),generationMs:1,usage};
+  });
+  expect(await run("owner")).toBe("failed");expect(waving).toBe(4);expect(failed).toBe(1);
+  expect(f.state()).toMatchObject({active:null,pauseReason:"outcome_unknown"});
+  expect(f.budget().reservations[old.generationId].unknown).toBe(true);
+});
+
+it("does not let an exhausted sibling hide an unfinished retry with the same provider error",async()=>{
+  const f=fixture(), old=await f.service.generate(input(),"203.0.113.1");
+  f.clock.now=Date.parse(old.expiresAt)-5010;
+  const failure=capturedFailure({kind:"http_error",httpStatus:520});
+  let release!:()=>void,waving=0,failed=0;
+  const terminal=new Promise<void>(resolve=>{release=resolve;});
+  const run=worker(f,async name=>{
+    if(name==="waving"){
+      if(++waving===2){f.clock.now+=20;release();}
+      throw failure;
+    }
+    if(name==="failed"){failed++;await terminal;throw failure;}
+    return{bytes:Buffer.from(name),generationMs:1,usage};
+  });
+  expect(await run("owner")).toBe("failed");expect(waving).toBe(2);expect(failed).toBe(1);
+  expect(f.state()).toMatchObject({active:null,pauseReason:"outcome_unknown"});
+  expect(f.budget().reservations[old.generationId].unknown).toBe(true);
+});
+
+it.each([false,true])("retains missing usage for a late single-image response, physically removed=%s",async removed=>{
+  const f=fixture(), old=await f.service.generate(input(),"203.0.113.1");
+  f.store.jobs.get(old.generationId)!.pipelineVersion=1;f.clock.now=Date.parse(old.expiresAt)-10;
+  let calls=0,original:GenerationJob|undefined;
+  const run=createGenerationWorker({service:f.service,store:f.store,now:()=>f.clock.now,
+    generate:async job=>{original=job;calls++;f.clock.now+=20;if(removed)await f.store.cleanup(f.clock.now);return{bytes:Buffer.from("legacy"),generationMs:20};}});
+  expect(await run("owner")).toBe("failed");expect(calls).toBe(1);
+  expect(f.budget().reservations[old.generationId]).toEqual({remainingMicroUsd:0,unknown:true});
+  expect(f.budget().spent).toEqual({});
+  expect(f.state().active).toBeNull();expect(f.state().pauseReason).toBeUndefined();
+  expect(await f.store.readArtifact(old.generationId,"source.png",f.clock.now)).toBeNull();
+  const ledger=structuredClone([...f.store.ledger]);
+  await expect(f.service.saveSource(original!,Buffer.from("legacy"),{generationMs:20})).rejects.toMatchObject({code:"generation_expired"});
+  expect([...f.store.ledger]).toEqual(ledger);
+});
 
 it.each([false,true])("accounts a known late base response and immediately releases fresh work, physically removed=%s",async removed=>{
   const f=fixture(), request=input(), old=await f.service.generate(request,"203.0.113.1");

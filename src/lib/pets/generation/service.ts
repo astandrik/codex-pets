@@ -480,7 +480,7 @@ export function createGenerationService(store: GenerationStore, options: {
         const expired = async () => {
           now=clock();
           if(job.expiresAt>now)return false;
-          if(metadata.usage && !usesStageCheckpoints(job))await recordExpiredResult(tx,state,job,now,{key:"source",fingerprint:createHash("sha256").update(bytes).digest("hex")},metadata.usage);
+          if(!usesStageCheckpoints(job))await recordExpiredResult(tx,state,job,now,{key:"source",fingerprint:createHash("sha256").update(bytes).digest("hex")},metadata.usage);
           else requireActiveWorkerLease(state,job,now);
           return true;
         };
