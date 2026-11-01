@@ -1,8 +1,8 @@
 import { isIP } from "node:net";
 import { z } from "zod";
-import { DAY, GenerationError, generationDigest, moscowDay, nextMoscowDay } from "@/lib/pets/generation/model";
+import { DAY, GenerationError, generationDigest, generationDailyQuotaLimits, moscowDay, nextMoscowDay } from "@/lib/pets/generation/model";
 import type { GenerationStore, GenerationTransaction } from "@/lib/pets/generation/store";
-import { IP_DAILY_LIMIT, GLOBAL_DAILY_LIMIT, MAX_EXTRA_ATTEMPTS } from "@/lib/pets/generation/quota-limits";
+import { MAX_EXTRA_ATTEMPTS } from "@/lib/pets/generation/quota-limits";
 
 export { IP_DAILY_LIMIT, GLOBAL_DAILY_LIMIT } from "@/lib/pets/generation/quota-limits";
 const AUDIT_RETENTION = 30 * DAY;
@@ -33,6 +33,7 @@ async function readBonus(tx: GenerationTransaction, key: string, now: number) {
   return value ? bonusSchema.parse(JSON.parse(value)) : { extra: 0, events: [] };
 }
 export async function readDailyQuota(tx: GenerationTransaction, secret: string, ip: string, now: number) {
+  const limits = generationDailyQuotaLimits();
   const key = keys(secret, ip, now);
   const used = count(await tx.getLedger(key.counter, now));
   // Preserve already-consumed pre-normalization counters when a trusted origin supplied a
@@ -41,9 +42,10 @@ export async function readDailyQuota(tx: GenerationTransaction, secret: string, 
   const ipUsed = Math.max(used, legacy);
   const globalUsed = count(await tx.getLedger(key.global, now));
   const { extra } = await readBonus(tx, key.bonus, now);
+  const ipLimit = extra > Number.MAX_SAFE_INTEGER - limits.ip ? Number.MAX_SAFE_INTEGER : limits.ip + extra;
   return { ip: key.ip, day: key.day, expiresAt: nextMoscowDay(now), ipUsed, extra,
-    ipLimit: IP_DAILY_LIMIT + extra, ipRemaining: Math.max(0, IP_DAILY_LIMIT + extra - ipUsed),
-    globalUsed, globalLimit: GLOBAL_DAILY_LIMIT, globalRemaining: Math.max(0, GLOBAL_DAILY_LIMIT - globalUsed) };
+    ipLimit, ipRemaining: Math.max(0, ipLimit - ipUsed),
+    globalUsed, globalLimit: limits.global, globalRemaining: Math.max(0, limits.global - globalUsed) };
 }
 export type DailyQuota = Awaited<ReturnType<typeof readDailyQuota>>;
 export async function consumeDailyQuota(tx: GenerationTransaction, secret: string, ip: string, now: number, quota: DailyQuota) {
@@ -74,7 +76,8 @@ export function createQuotaAdminService(store: GenerationStore, options: { secre
         }
         if (body.day !== moscowDay(now)) throw new GenerationError("quota_day_changed");
         const key = keys(secret, ip, now); const bonus = await readBonus(tx, key.bonus, now);
-        if (bonus.extra + body.amount > MAX_EXTRA_ATTEMPTS) throw new GenerationError("quota_grant_limit");
+        const maxExtra = Math.min(MAX_EXTRA_ATTEMPTS, Number.MAX_SAFE_INTEGER - generationDailyQuotaLimits().ip);
+        if (body.amount > maxExtra - bonus.extra) throw new GenerationError("quota_grant_limit");
         const receipt: QuotaGrantReceipt = { requestId: body.requestId, day: body.day, amount: body.amount,
           totalExtra: bonus.extra + body.amount, grantedAt: new Date(now).toISOString(), expiresAt: nextMoscowDay(now) };
         const event = { actorId, receipt };

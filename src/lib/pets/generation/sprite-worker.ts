@@ -40,6 +40,9 @@ export function createSpriteGenerationWorker(options: {
     let leaseError: unknown;
     const stageDiagnostics:StageFailureDiagnostic[]=[];
     const cliCauses:StageCliCause[]=[];
+    const recordedTerminalFailures = new Set<StageName>();
+    const stageFailures: {name:StageName;error:GenerationError}[] = [];
+    const uncertain = (error: GenerationError) => ["outcome_unknown", "stage_conflict", "invalid_provider_result"].includes(error.code);
     let heartbeat = Promise.resolve();
     let checkpointQueue: Promise<void> = Promise.resolve();
     const mutate = <T,>(operation: () => Promise<T>) => {
@@ -48,8 +51,12 @@ export function createSpriteGenerationWorker(options: {
       return result;
     };
     const repairContext = {service: options.service, store: options.store, now,
+      onTerminalFailure: (name:StageName) => {recordedTerminalFailures.add(name);},
       wait: options.wait ?? (ms => new Promise<void>(resolve => setTimeout(resolve, ms))), mutate,
-      checkLease: () => {if (leaseError) throw new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary: "lease", reason: "heartbeat_failed"});}};
+      checkLease: () => {
+        if (leaseError) throw new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary: "lease", reason: "heartbeat_failed"});
+        if (initial.expiresAt <= now()) throw new GenerationError("generation_expired");
+      }};
     const timer = setInterval(() => {
       heartbeat = heartbeat.then(async () => { await options.service.heartbeat(initial); }).catch(error => { leaseError = error; });
     }, HEARTBEAT_MS);
@@ -135,33 +142,40 @@ export function createSpriteGenerationWorker(options: {
             await options.service.authorizeStage(batchJob, name);
             let image: StageImage;
             const call=async(attempt:1|2)=>{
+              if (batchJob.expiresAt <= now()) throw new GenerationError("generation_expired");
               try{return await activeSession.generate(name);}
               catch(error){
                 const failure=error instanceof GenerationError?error:new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"renderer_process",reason:"unclassified"});
                 try{await mutate(()=>options.service.recordRowAttemptFailure(batchJob,name,attempt,failure));}
                 catch{throw new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"checkpoint",reason:"unconfirmed_write"});}
+                // Only an exhausted, durably recorded provider failure is local
+                // to this task. Missing checkpoints and abandoned retries are not.
+                if(attempt===2&&failure.diagnostic?.boundary==="provider_cli"&&isRetryableImageCause(failure.cliCause))recordedTerminalFailures.add(name);
                 throw failure;
               }
             };
             try{image=await call(1);}
             catch(error){
               if(!(error instanceof GenerationError)||error.code!=="outcome_unknown"||!isRetryableImageCause(error.cliCause))throw error;
+              if(batchJob.expiresAt<=now())throw error;
               try{
                 const retry=await mutate(()=>options.service.beginRowRetry(batchJob,name));
                 await (options.wait??(ms=>new Promise(resolve=>setTimeout(resolve,ms))))(Math.max(0,retry.notBefore-now()));
                 if(leaseError)throw new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"lease",reason:"heartbeat_failed"});
                 await mutate(()=>options.service.authorizeRowRetry(batchJob,name,retry.token));
+                image=await call(2);
               }catch(retryError){
+                if(batchJob.expiresAt<=now()&&retryError instanceof GenerationError&&["stale_worker","generation_expired"].includes(retryError.code))throw error;
                 if(retryError instanceof GenerationError)throw retryError;
                 throw new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"intent",reason:"unconfirmed_write"});
               }
-              image=await call(2);
             }
             // Each checkpoint updates the same job/budget/scheduler. Serial
             // saves avoid exhausting transaction retries when all rows finish together.
             const checkpoint = mutate(async () => {
               try { await options.service.saveStage(batchJob, name, image.bytes, image); }
-              catch {
+              catch (error) {
+                if (error instanceof GenerationError && error.code === "generation_expired") throw error;
                 const readback = await options.store.readJob(batchJob.id);
                 const stage = readback?.stages.find(item => item.name === name);
                 if (readback && readback.worker !== owner) throw new GenerationError("stale_worker");
@@ -172,15 +186,23 @@ export function createSpriteGenerationWorker(options: {
             // A failed checkpoint must not prevent saving successful siblings.
             await checkpoint;
           }).map((promise,index)=>promise.catch(error=>{
+            stageFailures.push({name:names[index],error:error instanceof GenerationError?error:new GenerationError("outcome_unknown")});
             if(error instanceof GenerationError&&error.diagnostic)stageDiagnostics.push({stage:names[index],diagnostic:error.diagnostic});
             if(error instanceof GenerationError&&error.cliCause)cliCauses.push({stage:names[index],cause:error.cliCause});
             throw error;
           })));
           // Do not finalize, release the reserve or delete shared files while a
           // sibling is still running. Unknown spending dominates a known refusal.
-          const failures = results.filter(result => result.status === "rejected").map(result =>
-            result.reason instanceof GenerationError ? result.reason : new GenerationError("outcome_unknown"));
-          if (failures.length) throw failures.find(error => error.code === "outcome_unknown") ?? failures[0];
+          const failures = results.flatMap((result,index) => result.status === "rejected"
+            ? [{name:names[index],error:result.reason instanceof GenerationError ? result.reason : new GenerationError("outcome_unknown")}]
+            : []);
+          if (failures.length) {
+            if (initial.expiresAt <= now()) {
+              const unresolved = failures.find(({name,error}) => uncertain(error) && !recordedTerminalFailures.has(name));
+              if (unresolved) throw unresolved.error;
+            }
+            throw (failures.find(({error}) => error.code === "outcome_unknown") ?? failures[0]).error;
+          }
           const refreshed = await options.store.readJob(job.id);
           if (!refreshed) throw new Error("Saved generation checkpoint unavailable");
           if (refreshed.worker !== owner) throw new GenerationError("stale_worker");
@@ -195,6 +217,7 @@ export function createSpriteGenerationWorker(options: {
             session = await options.renderer.open(current, saved, reference, revisionAtlas);
             return session;
           }, (name, error) => {
+            stageFailures.push({name,error:error instanceof GenerationError?error:new GenerationError("outcome_unknown")});
             if (error instanceof GenerationError && error.diagnostic) stageDiagnostics.push({stage: name, diagnostic: error.diagnostic});
             if (error instanceof GenerationError && error.cliCause) cliCauses.push({stage: name, cause: error.cliCause});
           });
@@ -203,6 +226,7 @@ export function createSpriteGenerationWorker(options: {
         try {
           job = await options.service.saveSource(job, atlas, (job.animationRepair || job.baseRepair) ? repairGenerationTotals(job) : { generationMs: job.stages.reduce((sum, stage) => sum + (stage.generationMs ?? 0), 0) });
         } catch (error) {
+          if (error instanceof GenerationError && error.code === "generation_expired") throw error;
           const readback = await options.store.readJob(job.id);
           const persisted = await options.store.readArtifact(job.id, "source.png", now());
           if (readback && readback.worker !== owner) throw new GenerationError("stale_worker");
@@ -212,7 +236,7 @@ export function createSpriteGenerationWorker(options: {
       }
       const source = await options.store.readArtifact(job.id, "source.png", now());
       if (!source) throw new GenerationError("source_unavailable");
-      job=await prepareGeneratedCard(job,source,options.service,options.store,options.cardProvider,()=>{if(leaseError)throw new GenerationError("outcome_unknown");});
+      job=await prepareGeneratedCard(job,source,options.service,options.store,options.cardProvider,repairContext.checkLease,now);
       const files = await (options.build ?? buildGeneratedPackage)(job, source);
       try { await options.service.finish(job, files); }
       catch (error) {
@@ -224,6 +248,13 @@ export function createSpriteGenerationWorker(options: {
       // Paid/provider ambiguity is classified at its boundary. A local processing
       // crash preserves the checkpoint for lease-based recovery without repayment.
       if (!(error instanceof GenerationError)) throw error;
+      if (initial.expiresAt <= now()) {
+        const isolatedExpiredFailure = (error.diagnostic?.boundary === "provider_cli" || (initial.baseRepair && !error.diagnostic)) && stageFailures.length > 0
+          && stageFailures.some(({name}) => recordedTerminalFailures.has(name))
+          && stageFailures.every(({name,error}) => !uncertain(error) || recordedTerminalFailures.has(name));
+        await options.service.finishExpiredGeneration(initial, Boolean(leaseError) || (uncertain(error) && !isolatedExpiredFailure));
+        return "failed";
+      }
       stageDiagnostics.sort((a,b)=>STAGE_NAMES.indexOf(a.stage)-STAGE_NAMES.indexOf(b.stage));
       const failure=leaseError?new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"lease",reason:"heartbeat_failed"}):error;
       await options.service.fail(initial, failure.code, failure.providerFailure,failure.diagnostic,stageDiagnostics,cliCauses.sort((a,b)=>STAGE_NAMES.indexOf(a.stage)-STAGE_NAMES.indexOf(b.stage)),failure.assemblyIssues);

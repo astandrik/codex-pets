@@ -12,9 +12,40 @@ import {cliCauseSchema,readCliCause,type CliCause,errorDetailsSchema,readErrorDe
 import { failureDiagnosticSchema, readFailureDiagnostic, type FailureDiagnostic } from "@/lib/pets/generation/failure-diagnostic";
 import {retryInputMetadataSchema} from "@/lib/pets/generation/base-retry-model";
 
+import {DEFAULT_GENERATION_QUEUE_LIMIT, MAX_GENERATION_QUEUE_LIMIT} from "@/lib/pets/generation/queue-policy";
+import {IP_DAILY_LIMIT, GLOBAL_DAILY_LIMIT, type GenerationDailyQuotaLimits} from "@/lib/pets/generation/quota-limits";
+
 export const DAY = 86_400_000;
-export const WAIT_MS = 30 * 60_000;
 export const LEASE_MS = 10 * 60_000;
+export function generationQueueLimit() {
+  const raw = process.env.PET_GENERATION_QUEUE_LIMIT?.trim();
+  if (!raw) return DEFAULT_GENERATION_QUEUE_LIMIT;
+  const value = Number(raw);
+  if (!/^[0-9]+$/.test(raw) || !Number.isSafeInteger(value) || value < 1 || value > MAX_GENERATION_QUEUE_LIMIT) {
+    throw new GenerationError("generation_not_configured");
+  }
+  return value;
+}
+function dailyLimit(raw: string | undefined, fallback: number) {
+  const text = raw?.trim();
+  if (!text) return fallback;
+  const value = Number(text);
+  if (!/^[0-9]+$/.test(text) || !Number.isSafeInteger(value) || value < 1) throw new GenerationError("generation_not_configured");
+  return value;
+}
+export function generationDailyQuotaLimits(): GenerationDailyQuotaLimits {
+  return {
+    ip: dailyLimit(process.env.PET_GENERATION_DAILY_IP_LIMIT, IP_DAILY_LIMIT),
+    global: dailyLimit(process.env.PET_GENERATION_DAILY_GLOBAL_LIMIT, GLOBAL_DAILY_LIMIT),
+  };
+}
+export function generationBudgetLimit(): number | null {
+  const raw = process.env.PET_GENERATION_BUDGET_USD?.trim();
+  if (!raw) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) throw new GenerationError("generation_not_configured");
+  return value === 0 ? null : value;
+}
 export const GENERATION_MODEL = "gpt-image-2.5-sunburst";
 export const PROMPT_REVISION = "pet-v2-rows-20261010-1";
 export const STAGE_NAMES = ["base", "idle", "running", "running-left", "running-right", "waving", "jumping", "waiting", "failed", "review", "look-0-157", "look-180-337"] as const;
@@ -186,12 +217,6 @@ export const jobSchema = z.object({
     [...job.animationRepair.pending, ...job.animationRepair.attempts.map(a => a.state)].every(state =>
       (job.continuation?.mode === "rebuild" ? CONTINUATION_STATES : job.continuation?.generationStages ?? job.animationRevision?.selectedStates ?? CONTINUATION_STATES).includes(state))), "Invalid animation repair scope");
 export type GenerationJob = z.infer<typeof jobSchema>;
-// Read-only timeout projection; expireQueue persists the transition in a transaction.
-export function withQueueTimeout(job: GenerationJob, now: number): GenerationJob {
-  return job.status === "queued" && (job.queuedAt ?? job.createdAt) + WAIT_MS <= now
-    ? {...job, status: "failed", error: "queue_timeout", prompt: ""}
-    : job;
-}
 export function requiredStageNames(job: GenerationJob): readonly StageName[] {
   if (job.continuation) return continuationPlanSchema.parse(job.continuation).compositionStages;
   if (job.pipelineVersion === 3) {

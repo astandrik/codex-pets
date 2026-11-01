@@ -12,6 +12,7 @@ export async function prepareGeneratedCard(
   store: GenerationStore,
   provider: GenerationCardProvider | undefined,
   checkLease: () => void,
+  now: () => number,
 ): Promise<GenerationJob> {
   if (!job.cardMetadata || ["completed", "failed"].includes(job.cardMetadata.state)) return job;
   const owner = job.worker;
@@ -45,10 +46,16 @@ export async function prepareGeneratedCard(
   try {
     checkLease();
     await service.authorizeCardMetadata(job);
+    checkLease();
     const response = await provider.generate(request);
     try {
       return await service.saveCardMetadata(job, response);
-    } catch {
+    } catch (error) {
+      if (error instanceof GenerationError && error.code === "generation_expired") throw error;
+      if (job.expiresAt <= now()) {
+        if (error instanceof GenerationError && error.code === "stale_worker") throw error;
+        throw new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary:"checkpoint",reason:"unconfirmed_write"});
+      }
       const saved = requireOwnedJob(await store.readJob(job.id), owner);
       if (saved.cardMetadata?.state === "completed" && saved.cardMetadata.responseHash === response.responseHash) {
         return saved;
@@ -56,7 +63,7 @@ export async function prepareGeneratedCard(
       return service.failCardMetadata(job, "outcome_unknown");
     }
   } catch (error) {
-    if (error instanceof GenerationError && error.code === "stale_worker") throw error;
+    if (error instanceof GenerationError && ["stale_worker", "generation_expired"].includes(error.code)) throw error;
     const knownFailure = error instanceof GenerationError &&
       ["provider_rejected", "metadata_unavailable", "budget_exhausted", "generation_disabled"].includes(error.code);
     return service.failCardMetadata(job, knownFailure ? error.code : "outcome_unknown");

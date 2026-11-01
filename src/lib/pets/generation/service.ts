@@ -16,21 +16,22 @@ import { validateUploadedPackage } from "@/lib/pets/package";
 import { replaceGeneratedDetails, validateGeneratedSheet } from "@/lib/pets/generation/package";
 import { slugify } from "@/lib/pets/validation";
 import {
-  generationAnimationAutoRepairEnabled, generationBaseRetryEnabled, generationReviewFlowEnabled, generationStageNames, requiredStageNames, usesStageCheckpoints, isUnacceptedAnimationRevision, DAY, LEASE_MS, WAIT_MS, GENERATION_ID, MAX_PARALLEL_IMAGE_ROWS, GenerationError,
-  generationInputSchema, generationDigest, generationEnabled, readGenerationSecret,
+  generationAnimationAutoRepairEnabled, generationBaseRetryEnabled, generationReviewFlowEnabled, generationStageNames, requiredStageNames, usesStageCheckpoints, isUnacceptedAnimationRevision, DAY, LEASE_MS, GENERATION_ID, MAX_PARALLEL_IMAGE_ROWS, GenerationError,
+  generationInputSchema, generationDigest, generationEnabled, generationBudgetLimit, readGenerationSecret,
   newGenerationId, dedupSchema,
   rowAttemptLogSchema, ROW_RETRY_DELAY_MS, type RowAttemptLog, stageFailureDiagnosticSchema, type StageFailureDiagnostic, stageCliCauseSchema, type StageCliCause,
   type StageName, type GenerationJob, type ImageUsage, type GenerationReference, browserGenerationInputSchema, normalizeGenerationText, type GenerationInput,
 } from "@/lib/pets/generation/model";
 import { generationStore, type GenerationStore, type GenerationTransaction } from "@/lib/pets/generation/store";
 
-import { checkStageBudget, recordStageCost, settleBudget } from "@/lib/pets/generation/budget";
+import { checkStageBudget, recordStageCost, settleBudget, type GenerationBudgetLimit } from "@/lib/pets/generation/budget";
 import { readProviderFailure } from "@/lib/pets/generation/provider-failure";
 import { readFailureDiagnostic } from "@/lib/pets/generation/failure-diagnostic";
 import {CARD_METADATA_FALLBACK, normalizeCardMetadata, cardMetadataEditSchema, type CardMetadataFields, type CardMetadataRecord, type PublicCardMetadata} from "@/lib/pets/generation/card-metadata";
 import type {CardMetadataResult} from "@/lib/pets/generation/card-provider";
 import {publicJob} from "@/lib/pets/generation/public-job";
-import {scheduler, saveScheduler, expireQueue, requireJobWithActiveWorkerLease} from "@/lib/pets/generation/scheduler";
+import {scheduler, saveScheduler, expireQueue, requireJobWithActiveWorkerLease, requireActiveWorkerLease} from "@/lib/pets/generation/scheduler";
+import {finishExpiredGeneration, persistResult, recordExpiredResult, recordResultCost} from "@/lib/pets/generation/expired-generation";
 import {createBaseReviewService, readSavedGenerationBase} from "@/lib/pets/generation/base-review";
 import {normalizeSavedGenerationBase} from "@/lib/pets/generation/reference-image";
 
@@ -39,7 +40,7 @@ export function createGenerationService(store: GenerationStore, options: {
   secret: () => string;
   now?: () => number;
   createId?: () => string;
-  budgetUsd?: () => number;
+  budgetUsd?: () => GenerationBudgetLimit;
   automaticCardMetadata?: () => boolean;
   automaticAnimationRepair?: () => boolean;
   baseRetries?: () => boolean;
@@ -47,7 +48,7 @@ export function createGenerationService(store: GenerationStore, options: {
 }) {
   const clock = options.now ?? Date.now;
   const createId = options.createId ?? newGenerationId;
-  const budgetUsd = options.budgetUsd ?? (() => 50);
+  const budgetUsd = options.budgetUsd ?? (() => null);
   async function beginStages(job: GenerationJob, names: StageName[]) {
     const now = clock();
     return store.transaction(async tx => {
@@ -78,6 +79,7 @@ export function createGenerationService(store: GenerationStore, options: {
   return {
     ...createBaseRepairService(store,{now:clock,enabled:options.enabled,budgetUsd}),
     ...createBaseRetryService(store,{now:clock,enabled:options.enabled,secret:options.secret,createId,budgetUsd,baseRetries:options.baseRetries??(()=>false),reviewFlow:options.reviewFlow??generationReviewFlowEnabled,automaticAnimationRepair:options.automaticAnimationRepair,automaticCardMetadata:options.automaticCardMetadata}),
+    finishExpiredGeneration: (job: GenerationJob, uncertain: boolean) => finishExpiredGeneration(store, job, clock, uncertain),
     ...createAnimationRepairService(store, {now: clock, enabled: options.enabled, automaticAnimationRepair: options.automaticAnimationRepair ?? (() => false), budgetUsd}),
     ...createContinuationService(store, {now: clock, enabled: options.enabled, secret: options.secret, createId, budgetUsd, automaticAnimationRepair: options.automaticAnimationRepair}),
     ...createAnimationRevisionService(store, {now: clock, enabled: options.enabled, secret: options.secret, createId, budgetUsd, automaticAnimationRepair: options.automaticAnimationRepair}),
@@ -300,18 +302,13 @@ export function createGenerationService(store: GenerationStore, options: {
         while (state.queue.length) {
           const id = state.queue.shift()!;
           const job = await tx.getJob(id);
-          // Reads and transaction retries can cross either deadline after expireQueue.
+          // Reads and transaction retries can cross the retention deadline after expireQueue.
           const decisionTime = clock();
           if (!job || job.expiresAt <= decisionTime) {
             await settleBudget(tx, id, decisionTime);
             continue;
           }
           if (job.status !== "queued") continue;
-          if ((job.queuedAt ?? job.createdAt) + WAIT_MS <= decisionTime) {
-            await tx.putJob({...job, status: "failed", error: "queue_timeout", prompt: ""});
-            await settleBudget(tx, id, decisionTime);
-            continue;
-          }
           const claimed: GenerationJob = {...job, status: "generating", worker: owner, leaseUntil: decisionTime + LEASE_MS};
           state.active = {id, owner, until: decisionTime + LEASE_MS, inflight: !usesStageCheckpoints(job)};
           await tx.putJob(claimed);
@@ -323,10 +320,17 @@ export function createGenerationService(store: GenerationStore, options: {
       });
     },
     async heartbeat(job: GenerationJob) {
-      const now = clock();
       return store.transaction(async tx => {
-        const state = await scheduler(tx, now);
-        const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
+        const state = await scheduler(tx, clock());
+        const current = await tx.getJob(job.id);
+        const now = clock();
+        requireActiveWorkerLease(state, job, now);
+        if (job.expiresAt <= now) {
+          state.active = {...state.active!, until: now + LEASE_MS};
+          await saveScheduler(tx, state);
+          return {...job, leaseUntil: now + LEASE_MS};
+        }
+        if (!current || current.expiresAt <= now || current.worker !== job.worker) throw new GenerationError("stale_worker");
         const updated = { ...current, leaseUntil: now + LEASE_MS };
         await tx.putJob(updated);
         state.active = { ...state.active, id: job.id, owner: job.worker, until: now + LEASE_MS };
@@ -352,7 +356,10 @@ export function createGenerationService(store: GenerationStore, options: {
     },
     async recordRowAttemptFailure(job:GenerationJob,name:StageName,attempt:1|2,error:GenerationError){
       const now=clock();return store.transaction(async tx=>{
-        const state=await scheduler(tx,now),current=await requireJobWithActiveWorkerLease(tx,state,job,now);
+        const state=await scheduler(tx,now);
+        const fingerprint=createHash("sha256").update(error.code).digest("hex");
+        if(await recordExpiredResult(tx,state,job,now,{key:`failure:${name}:${attempt}`,fingerprint},error.code==="outcome_unknown"?undefined:{costUsd:0},name))return;
+        const current=await requireJobWithActiveWorkerLease(tx,state,job,now);
         if(!requiredStageNames(current).includes(name)||current.status!=="generating"||current.stages.find(stage=>stage.name===name)?.status!=="inflight")throw new GenerationError("invalid_stage");
         const entry:RowAttemptLog=rowAttemptLogSchema.parse({stage:name,attempt,at:now,code:error.code,diagnostic:error.diagnostic,cliCause:error.cliCause,details:error.details});
         const logs=current.rowAttemptLogs??[];
@@ -385,12 +392,16 @@ export function createGenerationService(store: GenerationStore, options: {
       });
     },
     async saveStage(job: GenerationJob, name: StageName, bytes: Buffer, metadata: { usage?: ImageUsage; generationMs: number }) {
-      const now = clock();
-      if (bytes.length === 0 || bytes.length > 8 * 1024 * 1024) throw new GenerationError("invalid_provider_result");
       const hash = createHash("sha256").update(bytes).digest("hex");
-      return store.transaction(async tx => {
-        const state = await scheduler(tx, now);
+      const receipt = {key: `stage:${name}`, fingerprint: hash};
+      return persistResult(job, clock, () => store.transaction(async tx => {
+        const state = await scheduler(tx, clock());
+        let now = clock();
+        if (await recordExpiredResult(tx, state, job, now, receipt, metadata.usage, name)) return null;
+        if (bytes.length === 0 || bytes.length > 8 * 1024 * 1024) throw new GenerationError("invalid_provider_result");
         const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
+        now = clock();
+        if (await recordExpiredResult(tx, state, job, now, receipt, metadata.usage, name)) return null;
         const index = current.stages.findIndex(stage => stage.name === name);
         if (!generationStageNames(current).includes(name) || index < 0) throw new GenerationError("invalid_stage");
         if (current.stages[index].status === "completed") {
@@ -400,13 +411,13 @@ export function createGenerationService(store: GenerationStore, options: {
         const stages = [...current.stages];
         stages[index] = { ...stages[index], ...metadata, status: "completed", sha256: hash };
         await tx.putArtifact(job.id, "stage-" + name + ".png", bytes, current.expiresAt);
-        await recordStageCost(tx, job.id, now, metadata.usage, name);
+        await recordResultCost(tx, job, now, receipt, metadata.usage, name);
         const updated = { ...current, stages, ...(current.rowRetries?{rowRetries:current.rowRetries.map(item=>item.stage===name?{...item,state:"completed" as const}:item)}:{}) };
         await tx.putJob(updated);
         if (state.active) state.active.inflight = stages.some(stage => stage.status === "inflight") || hasUnsettledAnimationAttempt(updated);
         await saveScheduler(tx, state);
         return updated;
-      });
+      }));
     },
     async beginCardMetadata(job:GenerationJob,requestHash:string){
       const now=clock();return store.transaction(async tx=>{
@@ -429,35 +440,53 @@ export function createGenerationService(store: GenerationStore, options: {
       });
     },
     async saveCardMetadata(job:GenerationJob,result:CardMetadataResult){
-      const fields=normalizeCardMetadata(result.fields),now=clock();
       if(!/^[a-f0-9]{64}$/.test(result.responseHash)||![result.costUsd,result.inputTokens,result.outputTokens].every(n=>Number.isFinite(n)&&n>=0))throw new GenerationError("metadata_unavailable");
-      return store.transaction(async tx=>{
-        const state=await scheduler(tx,now),current=await requireJobWithActiveWorkerLease(tx,state,job,now),card=current.cardMetadata;
+      const receipt={key:`card:${job.cardMetadata?.requestHash}`,fingerprint:result.responseHash};
+      return persistResult(job,clock,()=>store.transaction(async tx=>{
+        const state=await scheduler(tx,clock());let now=clock();
+        if(await recordExpiredResult(tx,state,job,now,receipt,{costUsd:result.costUsd},"card"))return null;
+        const fields=normalizeCardMetadata(result.fields);
+        const current=await requireJobWithActiveWorkerLease(tx,state,job,now),card=current.cardMetadata;
+        now=clock();
+        if(await recordExpiredResult(tx,state,job,now,receipt,{costUsd:result.costUsd},"card"))return null;
         if(card?.state==="completed"&&card.responseHash===result.responseHash)return current;
         if(current.status!=="processing"||card?.state!=="inflight"||card.requestHash!==job.cardMetadata?.requestHash)throw new GenerationError("metadata_already_started");
-        await recordStageCost(tx,job.id,now,{costUsd:result.costUsd},"card");
+        await recordResultCost(tx,job,now,receipt,{costUsd:result.costUsd},"card");
         const displayName=current.nameSource==="automatic"?(fields.displayName??current.displayName):current.displayName;
         const updated={...current,displayName,cardMetadata:{...card,state:"completed" as const,fields:{...fields,displayName},responseHash:result.responseHash,usage:{inputTokens:result.inputTokens,outputTokens:result.outputTokens,costUsd:result.costUsd}}};
         await tx.putJob(updated);if(state.active)state.active.inflight=false;await saveScheduler(tx,state);return updated;
-      });
+      }));
     },
     async failCardMetadata(job:GenerationJob,code:string){
       const error:NonNullable<CardMetadataRecord["error"]>=code==="provider_rejected"||code==="outcome_unknown"||code==="budget_exhausted"||code==="generation_disabled"?code:"metadata_unavailable";
-      const now=clock();return store.transaction(async tx=>{
-        const state=await scheduler(tx,now),current=await requireJobWithActiveWorkerLease(tx,state,job,now),card=current.cardMetadata;
+      const receipt={key:`card-failure:${job.cardMetadata?.requestHash}`,fingerprint:createHash("sha256").update(error).digest("hex")};
+      return persistResult(job,clock,()=>store.transaction(async tx=>{
+        const state=await scheduler(tx,clock());let now=clock();
+        if(await recordExpiredResult(tx,state,job,now,receipt,error==="outcome_unknown"?undefined:{costUsd:0},"card"))return null;
+        const current=await requireJobWithActiveWorkerLease(tx,state,job,now),card=current.cardMetadata;
+        now=clock();
+        if(await recordExpiredResult(tx,state,job,now,receipt,error==="outcome_unknown"?undefined:{costUsd:0},"card"))return null;
         if(!card||current.status!=="processing")throw new GenerationError("metadata_already_started");
         if(card.state==="completed"||card.state==="failed")return current;
         await recordStageCost(tx,job.id,now,error==="outcome_unknown"?undefined:{costUsd:0},"card");
         if(error==="outcome_unknown")state.pauseReason="outcome_unknown";
         const updated={...current,cardMetadata:{...card,state:"failed" as const,error,fields:{description:CARD_METADATA_FALLBACK,tags:[]}}};
         await tx.putJob(updated);if(state.active)state.active.inflight=false;await saveScheduler(tx,state);return updated;
-      });
+      }),new GenerationError(error==="outcome_unknown"?"outcome_unknown":"generation_expired"));
     },
     async saveSource(job: GenerationJob, bytes: Buffer, metadata: { usage?: ImageUsage; providerRequestId?: string; generationMs: number }) {
-      const now = clock();
-      return store.transaction(async (tx) => {
-        const state = await scheduler(tx, now);
+      return persistResult(job,clock,()=>store.transaction(async (tx) => {
+        const state = await scheduler(tx, clock());let now=clock();
+        const expired = async () => {
+          now=clock();
+          if(job.expiresAt>now)return false;
+          if(!usesStageCheckpoints(job))await recordExpiredResult(tx,state,job,now,{key:"source",fingerprint:createHash("sha256").update(bytes).digest("hex")},metadata.usage);
+          else requireActiveWorkerLease(state,job,now);
+          return true;
+        };
+        if(await expired())return null;
         const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
+        if(await expired())return null;
         if (current.status === "processing") return current;
         if (current.status !== "generating") throw new GenerationError("stale_worker");
         if (current.continuation) {
@@ -469,7 +498,7 @@ export function createGenerationService(store: GenerationStore, options: {
         state.active = { id: job.id, owner: job.worker, until: now + LEASE_MS, inflight: false };
         await saveScheduler(tx, state);
         return processing;
-      });
+      }));
     },
     async finish(job: GenerationJob, files: Record<string, Buffer>) {
       const now = clock();
@@ -542,11 +571,7 @@ export const petGeneration = createGenerationService(generationStore, {
   automaticCardMetadata:()=>true,
   automaticAnimationRepair: generationAnimationAutoRepairEnabled,
   baseRetries:generationBaseRetryEnabled,
-  budgetUsd: () => {
-    const limit = Number(process.env.PET_GENERATION_BUDGET_USD || "50");
-    if (!Number.isFinite(limit) || limit <= 0 || limit > 50) throw new GenerationError("generation_not_configured");
-    return limit;
-  },
+  budgetUsd: generationBudgetLimit,
 });
 export type PublicGeneration = Awaited<ReturnType<typeof petGeneration.get>>;
 

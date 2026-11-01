@@ -1,5 +1,6 @@
 import { toPublicUrl } from "@/lib/base-path";
 import { buildGuideArticleJsonLd } from "@/lib/guides/shared";
+import {IP_DAILY_LIMIT, GLOBAL_DAILY_LIMIT} from "@/lib/pets/generation/quota-limits";
 
 export const AI_PET_GENERATOR_PATH = "/guides/ai-pet-generator";
 export const AI_PET_GENERATOR_TITLE = "AI pet generator for Codex";
@@ -20,8 +21,8 @@ export const AI_PET_GENERATOR_SECTIONS = [
   {
     title: "Daily limits and availability",
     paragraphs: [
-      "Generation is funded by this service. The default limit is 10 accepted tasks per IP and 200 for the whole service per Moscow day. Administrators can grant extra IP attempts, but those do not bypass the global limit or the service spending threshold. Allowances reset at midnight Moscow time.",
-      "One pet is generated at a time, with up to five tasks waiting. A task can wait in the queue for up to 30 minutes; this is not a promise of completion within 30 minutes. Accepted tasks count toward the daily allowance even if generation later fails. An AI safety refusal or network failure can stop a task; a failed image stage may receive one delayed retry. Successful image stages are kept, and metadata generation is not retried.",
+      `Generation is funded by this service. The default limit is ${IP_DAILY_LIMIT} accepted tasks per IP and ${GLOBAL_DAILY_LIMIT} for the whole service per Moscow day; the operator can configure both. Administrators can grant extra IP attempts, but those do not bypass the global limit. There is no monetary threshold by default; an operator can enable one. Allowances reset at midnight Moscow time.`,
+      "One pet is generated at a time, with up to 30 tasks waiting by default (the service administrator can configure capacity). A task stays queued until it starts or its original 24-hour lifetime expires; waiting alone does not cancel it earlier. Accepted tasks count toward the daily allowance even if generation later fails. An AI safety refusal or network failure can stop a task; a failed image stage may receive one delayed retry. Successful image stages are kept, and metadata generation is not retried.",
       "People behind the same network or MCP gateway share the IP limit. If a limit is reached, the form explains whether it is your IP allowance, the global allowance or the spending budget.",
     ],
   },

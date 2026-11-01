@@ -1,15 +1,20 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryStore } from "./test-store";
 import { createGenerationService } from "./service";
 import { createQuotaAdminService, normalizeQuotaIp } from "./quota-grants";
 import { generationDigest } from "./model";
 const secret = "synthetic-secret-at-least-32-characters";
+beforeEach(() => {
+  vi.stubEnv("PET_GENERATION_DAILY_IP_LIMIT", "10");
+  vi.stubEnv("PET_GENERATION_DAILY_GLOBAL_LIMIT", "200");
+});
+afterEach(() => vi.unstubAllEnvs());
 function fixture() {
   const store = new MemoryStore(); const clock = { now: Date.parse("2026-10-11T10:00:00Z") };
   const options = { secret: () => secret, now: () => clock.now };
   const admin = createQuotaAdminService(store, options);
-  const generation = createGenerationService(store, { ...options, enabled: () => true });
+  const generation = createGenerationService(store, { ...options, enabled: () => true, budgetUsd: () => 50 });
   const input = () => ({ requestId: randomUUID(), prompt: "Synthetic character" });
   const grant = (ip = "203.0.113.5", amount = 2) => ({ ip, amount, day: "2026-10-11", requestId: randomUUID() });
   async function acceptAndFail(ip = "203.0.113.5") {

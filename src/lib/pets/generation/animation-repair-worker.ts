@@ -14,6 +14,7 @@ type Context = {
   wait: (ms: number) => Promise<void>;
   checkLease: () => void;
   mutate: <T>(run: () => Promise<T>) => Promise<T>;
+  onTerminalFailure?: (name: ContinuationState) => void;
 };
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const uncertain = (boundary: "intent" | "checkpoint") => new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary, reason: "unconfirmed_write"});
@@ -33,9 +34,31 @@ async function reserveKnownAttempt(context: Context, job: GenerationJob, name: C
   }
 }
 
+function pendingRetryFailure(job: GenerationJob, name: ContinuationState): GenerationError | undefined {
+  let failed = latestAnimationAttempt(job, name);
+  if (failed?.status === "reserved" && failed.reason === "transport") {
+    const ordinal = failed.ordinal - 1;
+    failed = job.animationRepair?.attempts.find(attempt => attempt.state === name && attempt.ordinal === ordinal);
+  }
+  if (failed?.status !== "failed" || failed.failure?.code !== "outcome_unknown") return;
+  const failure = failed.failure;
+  return new GenerationError(failure.code, undefined, failure.providerFailure, undefined, failure.diagnostic, failure.cliCause);
+}
+
+async function beforeProviderCall<T>(context: Context, job: GenerationJob, retryFailure: GenerationError | undefined, run: () => Promise<T>): Promise<T> {
+  try { return await run(); }
+  catch (error) {
+    if (retryFailure && job.expiresAt <= context.now() && error instanceof GenerationError &&
+      (error.code === "generation_expired" || error.code === "stale_worker")) throw retryFailure;
+    throw error;
+  }
+}
+
 export async function generateRepairAnimation(context: Context, job: GenerationJob, name: ContinuationState, session: SpriteSession): Promise<StageImage> {
+  let retryFailure = pendingRetryFailure(job, name);
   while (true) {
-    const current = await currentJob(context, job);
+    const current = await beforeProviderCall(context, job, retryFailure, () => currentJob(context, job));
+    retryFailure = pendingRetryFailure(current, name);
     const attempt = latestAnimationAttempt(current, name);
     const maxAttempts = current.animationRepair?.maxAttempts;
     if (maxAttempts === undefined) throw uncertain("intent");
@@ -43,35 +66,53 @@ export async function generateRepairAnimation(context: Context, job: GenerationJ
       const failure = new GenerationError(attempt.failure.code, undefined, attempt.failure.providerFailure, undefined, attempt.failure.diagnostic, attempt.failure.cliCause);
       const reason = animationFailureRetryReason(failure);
       if (!reason || attempt.ordinal >= maxAttempts) throw failure;
-      await reserveKnownAttempt(context, job, name, reason);
+      await beforeProviderCall(context, job, retryFailure, () => reserveKnownAttempt(context, job, name, reason));
       continue;
     }
     if (!attempt || attempt.status !== "reserved") throw uncertain("intent");
-    const delay = Math.max(0, attempt.notBefore - context.now());
-    if (delay) await context.wait(delay);
-    context.checkLease();
-    try { await context.mutate(() => context.service.startAnimationAttempt(job, name, attempt.token)); }
-    catch (error) { if (error instanceof GenerationError) throw error; throw uncertain("intent"); }
-    context.checkLease();
+    await beforeProviderCall(context, job, retryFailure, async () => {
+      const delay = Math.max(0, attempt.notBefore - context.now());
+      if (delay) await context.wait(delay);
+      context.checkLease();
+      try { await context.mutate(() => context.service.startAnimationAttempt(job, name, attempt.token)); }
+      catch (error) { if (error instanceof GenerationError) throw error; throw uncertain("intent"); }
+      context.checkLease();
+    });
+    // Once another call starts, its own result determines operational uncertainty.
+    retryFailure = undefined;
     let image: StageImage;
     try { image = await session.generate(name, {attempt: attempt.ordinal}); }
     catch (error) {
       const failure = error instanceof GenerationError ? error : new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary: "renderer_process", reason: "unclassified"});
+      const reason = animationFailureRetryReason(failure);
+      const terminal = attempt.ordinal >= maxAttempts && reason === "transport" && failure.diagnostic?.boundary === "provider_cli";
       try { await context.mutate(() => context.service.failAnimationAttempt(job, name, attempt.token, failure)); }
-      catch {
+      catch (error) {
+        if (error instanceof GenerationError && job.expiresAt <= context.now()) {
+          // persistResult rethrows this exact failure only after committing its
+          // expired-result receipt. Other errors do not prove that checkpoint.
+          if (error === failure && terminal) context.onTerminalFailure?.(name);
+          throw error;
+        }
         const recorded = await currentJob(context, job).then(current => latestAnimationAttempt(current, name)).catch(() => undefined);
         if (recorded?.token !== attempt.token || recorded.ordinal !== attempt.ordinal || recorded.status !== "failed" ||
           recorded.failure?.code !== failure.code || !isDeepStrictEqual(recorded.failure.diagnostic, failure.diagnostic) ||
           !isDeepStrictEqual(recorded.failure.cliCause, failure.cliCause) ||
           !isDeepStrictEqual(recorded.failure.providerFailure, failure.providerFailure)) throw uncertain("checkpoint");
       }
-      const reason = animationFailureRetryReason(failure);
+      if (terminal) context.onTerminalFailure?.(name);
       if (!reason || attempt.ordinal >= maxAttempts) throw failure;
-      await reserveKnownAttempt(context, job, name, reason);
+      retryFailure = failure.code === "outcome_unknown" ? failure : undefined;
+      await beforeProviderCall(context, job, retryFailure, () => reserveKnownAttempt(context, job, name, reason));
       continue;
     }
     try { await context.mutate(() => context.service.saveAnimationAttempt(job, name, attempt.token, image.bytes, image)); }
-    catch {
+    catch (error) {
+      if (error instanceof GenerationError && error.code === "generation_expired") throw error;
+      if (job.expiresAt <= context.now()) {
+        if (error instanceof GenerationError && error.code === "stale_worker") throw error;
+        throw uncertain("checkpoint");
+      }
       const readback = await currentJob(context, job);
       const saved = latestAnimationAttempt(readback, name);
       const bytes = await context.store.readArtifact(job.id, `stage-${name}.png`, context.now());
@@ -88,8 +129,10 @@ export async function composeWithAnimationRepairs(context: Context, job: Generat
   const repairRound = async (states: readonly ContinuationState[]) => {
     const results = await Promise.allSettled(states.map(async name => {
       try {
-        const last = latestAnimationAttempt(await currentJob(context, job), name);
-        if (last?.status !== "reserved" && last?.status !== "failed") await reserveKnownAttempt(context, job, name, "quality");
+        await beforeProviderCall(context, job, pendingRetryFailure(job, name), async () => {
+          const last = latestAnimationAttempt(await currentJob(context, job), name);
+          if (last?.status !== "reserved" && last?.status !== "failed") await reserveKnownAttempt(context, job, name, "quality");
+        });
         const image = await generateRepairAnimation(context, job, name, session);
         saved.set(name, image.bytes);
       } catch (failure) { onFailure(name, failure); throw failure; }

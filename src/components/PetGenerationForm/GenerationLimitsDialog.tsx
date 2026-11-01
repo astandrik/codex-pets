@@ -2,15 +2,19 @@
 
 import { useRef, useState } from "react";
 import { Button, Dialog } from "@gravity-ui/uikit";
+import {DEFAULT_GENERATION_QUEUE_LIMIT} from "@/lib/pets/generation/queue-policy";
+import {DEFAULT_DAILY_QUOTA_LIMITS, type GenerationDailyQuotaLimits} from "@/lib/pets/generation/quota-limits";
 import { ANIMATION_AUTO_REPAIR_NOTICE, generationExperimentNotice } from "@/lib/pets/generation/disclosure";
 import { withBasePath } from "@/lib/base-path";
 import "./GenerationLimitsDialog.scss";
 
-export function GenerationLimitsDialog({ open, onClose, reviewBase, automaticAnimationRepair = false }: {
+export function GenerationLimitsDialog({ open, onClose, reviewBase, automaticAnimationRepair = false, queueLimit = DEFAULT_GENERATION_QUEUE_LIMIT, dailyQuotaLimits = DEFAULT_DAILY_QUOTA_LIMITS }: {
   open: boolean;
   onClose: () => void;
   reviewBase: boolean;
   automaticAnimationRepair?: boolean;
+  queueLimit?: number | null;
+  dailyQuotaLimits?: GenerationDailyQuotaLimits | null;
 }) {
   const [full, setFull] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -26,10 +30,14 @@ export function GenerationLimitsDialog({ open, onClose, reviewBase, automaticAni
       <p>Generation is funded by this service. No account is needed.</p>
       {automaticAnimationRepair && <p>{ANIMATION_AUTO_REPAIR_NOTICE}</p>}
       <ul>
-        <li>Up to 200 accepted tasks per day and 10 per IP, resetting at midnight Moscow time.</li>
-        <li>One pet at a time. Up to five tasks may wait for up to 30 minutes.</li>
+        <li>{dailyQuotaLimits === null
+          ? "Daily allowance is temporarily unavailable. Saved requests can still be checked."
+          : <>Up to {dailyQuotaLimits.global} accepted tasks per day and {dailyQuotaLimits.ip} per IP, resetting at midnight Moscow time.</>}</li>
+        <li>{queueLimit === null
+          ? <>Queue capacity is temporarily unavailable. Accepted tasks may wait until their 24-hour lifetime expires.</>
+          : <>One pet at a time. Up to {queueLimit} {queueLimit === 1 ? "task" : "tasks"} may wait. Tasks remain queued until they start or their 24-hour lifetime expires.</>}</li>
         <li>Accepted tasks count toward the limit even if generation fails or the result is unsuitable.</li>
-        <li>Your result is private for 24 hours from task acceptance, including time in the queue.</li>
+        <li>Your task and private files expire 24 hours from task acceptance, including time in the queue.</li>
       </ul>
       {reviewBase && <p>First, review your character. Animations start only after you confirm it. Creating another character uses a new attempt; confirmation does not.</p>}
       {full && <>

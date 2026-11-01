@@ -1,13 +1,13 @@
 import {initialAnimationRepair} from "@/lib/pets/generation/animation-repair";
-import {startBudgetTracking} from "@/lib/pets/generation/budget";
+import {startBudgetTracking,type GenerationBudgetLimit} from "@/lib/pets/generation/budget";
 import {encodeGenerationInput,GENERATION_INPUT_ARTIFACT} from "@/lib/pets/generation/generation-input";
 import {DAY,GenerationError,generationAnimationRevisionsEnabled,nextMoscowDay,PROMPT_REVISION,type GenerationInput,type GenerationJob,type GenerationReference} from "@/lib/pets/generation/model";
 import {consumeDailyQuota,readDailyQuota} from "@/lib/pets/generation/quota-grants";
-import {expireQueue,saveScheduler,scheduler} from "@/lib/pets/generation/scheduler";
+import {expireQueue,requireQueueCapacity,saveScheduler,scheduler} from "@/lib/pets/generation/scheduler";
 import type {GenerationTransaction} from "@/lib/pets/generation/store";
 
 export type AdmissionOptions = {
-  now:()=>number; enabled:()=>boolean; secret:()=>string; budgetUsd:()=>number;
+  now:()=>number; enabled:()=>boolean; secret:()=>string; budgetUsd:()=>GenerationBudgetLimit;
   automaticAnimationRepair?:()=>boolean; automaticCardMetadata?:()=>boolean; baseRetries:()=>boolean;
 };
 export type PreparedAdmission = {
@@ -25,7 +25,7 @@ export async function admitGeneration(tx:GenerationTransaction,prepared:Prepared
   const quota=await readDailyQuota(tx,secret,clientIp,now);
   if(!quota.globalRemaining)throw new GenerationError("rate_limited",nextMoscowDay(now),undefined,"global");
   if(!quota.ipRemaining)throw new GenerationError("rate_limited",nextMoscowDay(now),undefined,"ip");
-  if(state.queue.length>=5)throw new GenerationError("queue_full");
+  requireQueueCapacity(state);
   await startBudgetTracking(tx,id,now,options.budgetUsd());
   const job:GenerationJob={...(options.automaticAnimationRepair?.()?{animationRepair:initialAnimationRepair()}:{}),
     id,prompt:input.prompt,displayName:input.displayName??"Generated pet",status:"queued",createdAt:now,expiresAt:now+DAY,worker:"",

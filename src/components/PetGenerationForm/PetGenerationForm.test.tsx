@@ -286,3 +286,35 @@ it('uses large accessible reference actions without submitting when they are use
     expect(fetchMock).not.toHaveBeenCalled();
   } finally {create.mockRestore(); revoke.mockRestore();}
 });
+
+it.each(["dark", "light"] as const)("shows queue capacity and the original storage deadline in %s without submitting", async theme => {
+  act(() => root.render(<ThemeProvider theme={theme}><PetGenerationForm enabled reviewBase queueLimit={7}/></ThemeProvider>));
+  prompt("Keep this draft");
+  const show = [...element.querySelectorAll("button")].find(button => button.textContent === "Limits & privacy")!;
+  act(() => show.click());
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.textContent).toContain("Up to 7 tasks may wait");
+  expect(dialog.textContent).toContain("until they start or their 24-hour lifetime expires");
+  expect(dialog.textContent).not.toContain("60 minutes");
+  expect(dialog.textContent).toContain("24 hours from task acceptance");
+  act(() => [...dialog.querySelectorAll("button")].find(button => button.textContent === "Got it")!.click());
+  expect(element.querySelector("textarea")?.value).toBe("Keep this draft");
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it.each(["dark", "light"] as const)("keeps unavailable queue information and the draft in %s without passive requests", async theme => {
+  act(() => root.render(<ThemeProvider theme={theme}><PetGenerationForm enabled queueLimit={null}/></ThemeProvider>));
+  prompt("Keep recovery details");
+  expect(element.textContent).toContain("New requests are temporarily unavailable");
+  expect([...element.querySelectorAll("button")].some(button => button.textContent === "Check existing request")).toBe(true);
+  act(() => [...element.querySelectorAll("button")].find(button => button.textContent === "Limits & privacy")!.click());
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.textContent).toContain("Queue capacity is temporarily unavailable");
+  expect(dialog.textContent).not.toContain("30 tasks");
+  expect(dialog.textContent).not.toContain("null");
+  expect(dialog.textContent).toContain("24-hour lifetime expires");
+  expect(dialog.textContent).not.toContain("60 minutes");
+  act(() => [...dialog.querySelectorAll("button")].find(button => button.textContent === "Got it")!.click());
+  expect(element.querySelector("textarea")?.value).toBe("Keep recovery details");
+  expect(fetchMock).not.toHaveBeenCalled();
+});

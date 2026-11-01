@@ -13,7 +13,7 @@ beforeEach(() => {vi.stubEnv("PET_GENERATION_ANIMATION_HINTS_ENABLED", "true"); 
 afterEach(() => {vi.restoreAllMocks(); vi.unstubAllEnvs();});
 async function fixture() {
   const store = new MemoryStore(), clock = {now: Date.parse("2026-10-20T10:00:00Z")};
-  const service = createGenerationService(store, {now: () => clock.now, enabled: () => true, secret: () => "synthetic-animation-secret-at-least-32-characters"});
+  const service = createGenerationService(store, {now: () => clock.now, enabled: () => true, budgetUsd: () => 50, secret: () => "synthetic-animation-secret-at-least-32-characters"});
   const view = await service.generate({requestId: randomUUID(), prompt: "Blue fox"}, "203.0.113.7", {reviewBase: true});
   const job = (await service.claim("base-worker"))!;
   await service.beginStage(job, "base"); await service.saveStage(job, "base", Buffer.from("synthetic-base"), {generationMs: 1}); await service.awaitConfirmation(job);
@@ -69,6 +69,7 @@ it("keeps the first accepted text under concurrent confirmations with different 
 it.each(["queue", "budget", "expiry", "write"])("does not save hints on %s failure", async failure => {
   const f = await fixture();
   if (failure === "queue") {
+    vi.stubEnv("PET_GENERATION_QUEUE_LIMIT", "5");
     const state = JSON.parse(f.store.ledger.get("scheduler")!.value); state.queue = Array.from({length: 5}, (_, i) => String(i));
     // Keep queued entries live so expireQueue cannot remove them.
     const base = (await f.store.readJob(f.id))!;

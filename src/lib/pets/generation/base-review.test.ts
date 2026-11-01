@@ -1,14 +1,16 @@
 import {randomUUID} from "node:crypto";
-import {describe, expect, it, vi} from "vitest";
+import {afterEach, describe, expect, it, vi} from "vitest";
 import {createGenerationService} from "./service";
 import {createSpriteGenerationWorker} from "./sprite-worker";
 import {MemoryStore} from "./test-store";
 import {STAGE_NAMES, type StageName} from "./model";
 
+afterEach(() => vi.unstubAllEnvs());
+
 function fixture() {
   const store = new MemoryStore();
   const config = {now: Date.parse("2026-10-17T10:00:00Z"), enabled: true};
-  const service = createGenerationService(store, {now: () => config.now, enabled: () => config.enabled, secret: () => "synthetic-review-secret-at-least-32-characters"});
+  const service = createGenerationService(store, {now: () => config.now, enabled: () => config.enabled, secret: () => "synthetic-review-secret-at-least-32-characters", budgetUsd: () => 50});
   const generate = vi.fn(async (name: StageName) => ({bytes: Buffer.from(name), usage: {textInputTokens: 1, imageInputTokens: 1, outputTokens: 1, costUsd: .1}, generationMs: 1}));
   const cleanup = vi.fn(async () => undefined);
   const worker = createSpriteGenerationWorker({service, store, now: () => config.now, renderer: {open: async () => ({prepare: async () => undefined, generate, compose: async () => Buffer.from("atlas"), cleanup})}, build: async () => ({"pet.zip": Buffer.from("zip")})});
@@ -81,17 +83,18 @@ it("recovers lost pause and confirmation acknowledgements without replaying work
   expect(f.generate).toHaveBeenCalledTimes(12);
 });
 
-it("sets a new queue clock, preserves the deadline and never revives a timed-out continuation", async () => {
+it("keeps a confirmed base queued beyond the old timeout without extending storage", async () => {
   const f = fixture(); const accepted = await f.service.generate(f.input(), "203.0.113.5", {reviewBase: true});
   await f.worker("one"); f.config.now += 60 * 60_000;
   const queued = await f.service.confirm(accepted.generationId);
   expect(queued.generation.status).toBe("queued"); expect(queued.generation.expiresAt).toBe(accepted.expiresAt);
-  f.config.now += 31 * 60_000;
-  expect((await f.service.get(accepted.generationId)).error?.code).toBe("queue_timeout");
-  expect(await f.worker("two")).toBe("idle");
+  f.config.now += 2 * 60 * 60_000;
+  expect((await f.service.get(accepted.generationId)).status).toBe("queued");
   const again = await f.service.confirm(accepted.generationId);
-  expect(again.newlyQueued).toBe(false); expect(again.generation.status).toBe("failed");
-  expect(f.generate).toHaveBeenCalledTimes(1);
+  expect(again.newlyQueued).toBe(false); expect(again.generation.status).toBe("queued");
+  expect(again.generation.expiresAt).toBe(accepted.expiresAt);
+  expect(await f.worker("two")).toBe("completed");
+  expect(f.generate).toHaveBeenCalledTimes(12);
 });
 
 it("keeps the character waiting when the queue, budget or service cannot accept animations", async () => {
@@ -108,6 +111,7 @@ it("keeps the character waiting when the queue, budget or service cannot accept 
   f.store.ledger.get("budget")!.value = JSON.stringify({...budget, spent: {"2026-10-17": 50_000_000}});
   await expect(f.service.confirm(accepted.generationId)).rejects.toMatchObject({code: "budget_exhausted"});
   f.store.ledger.get("budget")!.value = JSON.stringify(budget);
+  vi.stubEnv("PET_GENERATION_QUEUE_LIMIT", "5");
   for (let i = 0; i < 5; i++) await f.service.generate(f.input(), "203.0.113.6");
   await expect(f.service.confirm(accepted.generationId)).rejects.toMatchObject({code: "queue_full"});
   expect((await f.service.get(accepted.generationId)).status).toBe("awaiting_confirmation");
