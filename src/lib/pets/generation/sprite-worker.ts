@@ -3,7 +3,7 @@ import {readRevisionAtlas} from "@/lib/pets/generation/animation-revisions";
 import { createHash } from "node:crypto";
 import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
 import {isAnimationState, getRepairScope} from "@/lib/pets/generation/animation-repair";
-import {generateRepairAnimation, composeWithAnimationRepairs, repairGenerationTotals, reserveKnownAttempt} from "@/lib/pets/generation/animation-repair-worker";
+import {generateRepairAnimation, composeWithAnimationRepairs, repairGenerationTotals} from "@/lib/pets/generation/animation-repair-worker";
 import {prepareGeneratedCard} from "@/lib/pets/generation/card-worker";
 import type {GenerationCardProvider} from "@/lib/pets/generation/card-provider";
 import { buildGeneratedPackage } from "@/lib/pets/generation/package";
@@ -120,8 +120,6 @@ export function createSpriteGenerationWorker(options: {
           const results = await Promise.allSettled(names.map(async name => {
             if (leaseError) throw new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"lease",reason:"heartbeat_failed"});
             if (batchJob.animationRepair && isAnimationState(name)) {
-              const attempt = batchJob.animationRepair.attempts.filter(a => a.state === name).at(-1);
-              if (attempt?.status === "failed") await reserveKnownAttempt(repairContext, batchJob, name, "transport");
               const image = await generateRepairAnimation(repairContext, batchJob, name, activeSession);
               saved.set(name, image.bytes);
               return;

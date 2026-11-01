@@ -1,8 +1,7 @@
 import {createHash, randomUUID} from "node:crypto";
 import {animationRepairSchema, ANIMATION_ATTEMPT_FAILURE_CODES, GenerationError, moscowDay, type AnimationAttempt, type GenerationJob, type Scheduler, type ImageUsage} from "@/lib/pets/generation/model";
 import {assemblyIssuesSchema, type AssemblyIssue, type ContinuationState} from "@/lib/pets/generation/continuation-model";
-import {getRepairScope, hasUnsettledAnimationAttempt, latestAnimationAttempt, selectRepairStates} from "@/lib/pets/generation/animation-repair";
-import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
+import {getRepairScope, hasUnsettledAnimationAttempt, latestAnimationAttempt, selectRepairStates, animationFailureRetryReason} from "@/lib/pets/generation/animation-repair";
 import {checkStageBudget, recordStageCost} from "@/lib/pets/generation/budget";
 import {requireJobWithActiveWorkerLease, scheduler, saveScheduler} from "@/lib/pets/generation/scheduler";
 import type {GenerationStore, GenerationTransaction} from "@/lib/pets/generation/store";
@@ -44,7 +43,7 @@ export function createAnimationRepairService(store: GenerationStore, options: Op
     await checkStageBudget(tx, current.id, now, options.budgetUsd());
   }
   return {
-    async reserveAnimationAttempt(job: GenerationJob, name: ContinuationState, reason: "initial" | "transport" | "quality", sourceSha256?: string) {
+    async reserveAnimationAttempt(job: GenerationJob, name: ContinuationState, reason: "initial" | "transport" | "quality" | "moderation", sourceSha256?: string) {
       const token = randomUUID();
       return withJob(job, async (tx, current, state, now) => {
         if (state.pauseReason) throw new GenerationError("generation_paused");
@@ -56,7 +55,7 @@ export function createAnimationRepairService(store: GenerationStore, options: Op
           return {job: current, attempt: last};
         }
         if (reason === "initial" || !last || last.ordinal >= 4) throw new GenerationError("invalid_stage");
-        if (reason === "transport" && (last.status !== "failed" || last.failure?.code !== "outcome_unknown" || !isRetryableImageCause(last.failure.cliCause))) throw new GenerationError("invalid_stage");
+        if ((reason === "transport" || reason === "moderation") && (last.status !== "failed" || !last.failure || animationFailureRetryReason(last.failure) !== reason)) throw new GenerationError("invalid_stage");
         if (reason === "quality" && (repair.phase !== "repairing" || !repair.pending.includes(name) || last.status !== "saved" || !last.usage || !last.resultSha256)) throw new GenerationError("invalid_stage");
         const priorHash = reason === "quality" ? last.resultSha256 : last.sourceSha256;
         if (sourceSha256 !== undefined && sourceSha256 !== priorHash) throw new GenerationError("stage_conflict");
@@ -115,9 +114,11 @@ export function createAnimationRepairService(store: GenerationStore, options: Op
         if (["failed", "unknown"].includes(attempt.status)) return current;
         if (attempt.status !== "started") throw new GenerationError("invalid_stage");
         const code = ANIMATION_ATTEMPT_FAILURE_CODES.find(code => code === error.code) ?? "outcome_unknown";
-        const unknown = code === "outcome_unknown" && !isRetryableImageCause(error.cliCause);
-        await recordStageCost(tx, current.id, now, code === "outcome_unknown" ? undefined : {costUsd: 0}, name);
-        const failure = {code, ...(error.diagnostic ? {diagnostic: error.diagnostic} : {}), ...(error.cliCause ? {cliCause: error.cliCause} : {})};
+        const retryReason = animationFailureRetryReason(error);
+        const unknown = code === "outcome_unknown" && retryReason !== "transport";
+        // A filtered output may have consumed provider work without returning usage.
+        await recordStageCost(tx, current.id, now, code === "outcome_unknown" || retryReason === "moderation" ? undefined : {costUsd: 0}, name);
+        const failure = {code, ...(error.diagnostic ? {diagnostic: error.diagnostic} : {}), ...(error.cliCause ? {cliCause: error.cliCause} : {}), ...(error.providerFailure ? {providerFailure: error.providerFailure} : {})};
         return save(tx, replace(current, {...attempt, status: unknown ? "unknown" : "failed", finishedAt: now, failure}), state);
       });
     },

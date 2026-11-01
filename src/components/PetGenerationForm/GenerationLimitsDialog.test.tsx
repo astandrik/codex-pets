@@ -13,6 +13,9 @@ it('describes the saved four-attempt policy without making requests', async () =
     await act(async()=>root.render(<ThemeProvider theme="dark"><GenerationLimitsDialog open onClose={()=>{}} reviewBase automaticAnimationRepair/></ThemeProvider>));
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('up to 3 additional times');
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('same task');
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('retried with the same request');
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('input blocks are not retried');
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Safety checks stay enabled');
     expect(request).not.toHaveBeenCalled();
   } finally {await act(async()=>root.unmount());host.remove();vi.unstubAllGlobals();}
 });

@@ -1,4 +1,4 @@
-import {initialAnimationRepair, reserveInitialAnimationAttempts, canResumeAnimationRepair, hasUnsettledAnimationAttempt, latestAnimationAttempt, isAnimationState, getRepairScope} from "@/lib/pets/generation/animation-repair";
+import {initialAnimationRepair, reserveInitialAnimationAttempts, canResumeAnimationRepair, hasUnsettledAnimationAttempt, latestAnimationAttempt, isAnimationState, getRepairScope, animationFailureRetryReason} from "@/lib/pets/generation/animation-repair";
 import {createAnimationRepairService} from "@/lib/pets/generation/animation-repair-service";
 import {createContinuationService} from "@/lib/pets/generation/continuations";
 import {createAnimationRevisionService, requireAcceptedAnimationRevision} from "@/lib/pets/generation/animation-revisions";
@@ -524,9 +524,10 @@ export function createGenerationService(store: GenerationStore, options: {
             const last=repairScope.has(stage.name)
               ? (repairLast?.status==="failed"?repairLast.failure:undefined)
               : (attempts.find(log=>log.attempt===2)??attempts.find(log=>log.attempt===1));
-            const cause=matches[0]?.cause;
-            return matches.length===1&&isRetryableImageCause(cause)
-              &&last?.code==="outcome_unknown"&&last.diagnostic?.boundary==="provider_cli"
+            if(matches.length!==1||!last||last.diagnostic?.boundary!=="provider_cli")return false;
+            const cause=matches[0].cause;
+            const reason=animationFailureRetryReason(last);
+            return (reason==="transport"||(reason==="moderation"&&cause.kind==="http_error"&&cause.httpStatus===400))
               &&last.cliCause?.kind===cause.kind&&last.cliCause?.httpStatus===cause.httpStatus;
           });
         if (code === "outcome_unknown"&&!terminalProviderFailure) state.pauseReason = code;

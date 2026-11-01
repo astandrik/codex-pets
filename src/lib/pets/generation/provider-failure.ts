@@ -9,6 +9,10 @@ export const providerFailureSchema = z.object({
 }).strict();
 export type ProviderFailure = z.infer<typeof providerFailureSchema>;
 
+export function isOutputModerationFailure(failure: ProviderFailure | undefined): boolean {
+  return failure?.httpStatus === 400 && failure.code === "moderation_blocked" && failure.moderationStage === "output";
+}
+
 // Provider messages and arbitrary identifier-shaped strings can contain private input.
 export function readProviderFailure(value: unknown): ProviderFailure | undefined {
   if (!value || typeof value !== "object" || !("httpStatus" in value)) return undefined;

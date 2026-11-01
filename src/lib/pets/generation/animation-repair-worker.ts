@@ -2,8 +2,7 @@ import {createHash} from "node:crypto";
 import {isDeepStrictEqual} from "node:util";
 import {GenerationError, type GenerationJob, type ImageUsage, type StageName} from "@/lib/pets/generation/model";
 import type {ContinuationState} from "@/lib/pets/generation/continuation-model";
-import {latestAnimationAttempt} from "@/lib/pets/generation/animation-repair";
-import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
+import {latestAnimationAttempt, animationFailureRetryReason} from "@/lib/pets/generation/animation-repair";
 import type {createGenerationService} from "@/lib/pets/generation/service";
 import type {GenerationStore} from "@/lib/pets/generation/store";
 import type {SpriteSession, StageImage} from "@/lib/pets/generation/sprite-worker";
@@ -24,7 +23,7 @@ async function currentJob(context: Context, original: GenerationJob) {
   if (current.expiresAt <= context.now()) throw new GenerationError("generation_expired");
   return current;
 }
-export async function reserveKnownAttempt(context: Context, job: GenerationJob, name: ContinuationState, reason: "quality" | "transport") {
+async function reserveKnownAttempt(context: Context, job: GenerationJob, name: ContinuationState, reason: "quality" | "transport" | "moderation") {
   const previous = latestAnimationAttempt(await currentJob(context, job), name);
   try { await context.mutate(() => context.service.reserveAnimationAttempt(job, name, reason)); }
   catch (error) {
@@ -38,6 +37,13 @@ export async function generateRepairAnimation(context: Context, job: GenerationJ
   while (true) {
     const current = await currentJob(context, job);
     const attempt = latestAnimationAttempt(current, name);
+    if (attempt?.status === "failed" && attempt.failure) {
+      const failure = new GenerationError(attempt.failure.code, undefined, attempt.failure.providerFailure, undefined, attempt.failure.diagnostic, attempt.failure.cliCause);
+      const reason = animationFailureRetryReason(failure);
+      if (!reason || attempt.ordinal >= 4) throw failure;
+      await reserveKnownAttempt(context, job, name, reason);
+      continue;
+    }
     if (!attempt || attempt.status !== "reserved") throw uncertain("intent");
     const delay = Math.max(0, attempt.notBefore - context.now());
     if (delay) await context.wait(delay);
@@ -54,10 +60,12 @@ export async function generateRepairAnimation(context: Context, job: GenerationJ
         const recorded = await currentJob(context, job).then(current => latestAnimationAttempt(current, name)).catch(() => undefined);
         if (recorded?.token !== attempt.token || recorded.ordinal !== attempt.ordinal || recorded.status !== "failed" ||
           recorded.failure?.code !== failure.code || !isDeepStrictEqual(recorded.failure.diagnostic, failure.diagnostic) ||
-          !isDeepStrictEqual(recorded.failure.cliCause, failure.cliCause)) throw uncertain("checkpoint");
+          !isDeepStrictEqual(recorded.failure.cliCause, failure.cliCause) ||
+          !isDeepStrictEqual(recorded.failure.providerFailure, failure.providerFailure)) throw uncertain("checkpoint");
       }
-      if (failure.code !== "outcome_unknown" || !isRetryableImageCause(failure.cliCause) || attempt.ordinal >= 4) throw failure;
-      await reserveKnownAttempt(context, job, name, "transport");
+      const reason = animationFailureRetryReason(failure);
+      if (!reason || attempt.ordinal >= 4) throw failure;
+      await reserveKnownAttempt(context, job, name, reason);
       continue;
     }
     try { await context.mutate(() => context.service.saveAnimationAttempt(job, name, attempt.token, image.bytes, image)); }
@@ -79,7 +87,7 @@ export async function composeWithAnimationRepairs(context: Context, job: Generat
     const results = await Promise.allSettled(states.map(async name => {
       try {
         const last = latestAnimationAttempt(await currentJob(context, job), name);
-        if (last?.status !== "reserved") await reserveKnownAttempt(context, job, name, last?.status === "failed" ? "transport" : "quality");
+        if (last?.status !== "reserved" && last?.status !== "failed") await reserveKnownAttempt(context, job, name, "quality");
         const image = await generateRepairAnimation(context, job, name, session);
         saved.set(name, image.bytes);
       } catch (failure) { onFailure(name, failure); throw failure; }
