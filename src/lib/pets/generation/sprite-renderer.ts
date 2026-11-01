@@ -78,9 +78,9 @@ export const spriteRenderer: SpriteRenderer = {
       for (const [name, bytes] of saved) await writeFile(path.join(directory, name + ".png"), bytes, { mode: 0o600 });
     } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
     const attempts = new Map<StageName, number>();
-    async function command(action: "generate" | "prepare" | "compose", name?: StageName) {
+    async function command(action: "generate" | "prepare" | "compose", name?: StageName, persistedAttempt?: number) {
       const started=Date.now();
-      const attempt = name ? (attempts.get(name) ?? 0) + 1 : 0;
+      const attempt = persistedAttempt ?? (name ? (attempts.get(name) ?? 0) + 1 : 0);
       if (action === "generate" && name) attempts.set(name, attempt);
       const logHttp = (stderr: unknown) => {
         if (action === "generate" && name && typeof stderr === "string") {
@@ -113,10 +113,10 @@ export const spriteRenderer: SpriteRenderer = {
     }
     return {
       async prepare() { await command("prepare"); },
-      async generate(name) {
+      async generate(name, context) {
         if (diagnosticOnly) throw new GenerationError("invalid_stage");
         if (job.continuation && (name === "base" || !job.continuation.generationStages.includes(name))) throw new GenerationError("invalid_stage");
-        const result = await command("generate", name);
+        const result = await command("generate", name, context?.attempt);
         let bytes:Buffer;
         try{bytes=await readFile(path.join(directory, name + ".png"));}
         catch(error){throw new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"artifact",reason:error&&typeof error==='object'&&'code'in error&&error.code==='ENOENT'?"missing_file":"io_error"});}

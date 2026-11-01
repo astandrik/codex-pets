@@ -2,11 +2,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ThemeProvider } from "@gravity-ui/uikit";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const flags = vi.hoisted(() => ({enabled: vi.fn(), review: vi.fn()}));
-vi.mock("@/lib/pets/generation/model", () => ({generationEnabled: flags.enabled, generationReviewFlowEnabled: flags.review}));
+const flags = vi.hoisted(() => ({enabled: vi.fn(), review: vi.fn(), repair: vi.fn()}));
+vi.mock("@/lib/pets/generation/model", () => ({generationEnabled: flags.enabled, generationReviewFlowEnabled: flags.review, generationAnimationAutoRepairEnabled: flags.repair}));
 import GeneratePage, {dynamic, metadata} from "./page";
 
 beforeEach(() => vi.clearAllMocks());
+it("discloses automatic repairs before submitting when enabled by the server", () => {
+  flags.enabled.mockReturnValue(true); flags.review.mockReturnValue(true); flags.repair.mockReturnValue(true);
+  const html = renderToStaticMarkup(<ThemeProvider theme="dark"><GeneratePage /></ThemeProvider>);
+  expect(html).toContain("up to 3 additional times");
+  flags.repair.mockReturnValue(false);
+});
 it.each([[true, true], [true, false], [false, true], [false, false]])("renders the real form with flags %s, %s", (enabled, reviewBase) => {
   flags.enabled.mockReturnValue(enabled); flags.review.mockReturnValue(reviewBase);
   const html = renderToStaticMarkup(<ThemeProvider theme="dark"><GeneratePage /></ThemeProvider>);

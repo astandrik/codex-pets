@@ -7,6 +7,7 @@ import { rememberGeneration } from "@/lib/pets/generation/history";
 import { prepareGenerationRequest } from "./request";
 import { GenerationLimitsDialog } from "./GenerationLimitsDialog";
 import "./PetGenerationForm.scss";
+import {ANIMATION_AUTO_REPAIR_NOTICE} from "@/lib/pets/generation/disclosure";
 
 const RECOVERY_MESSAGE = "The connection or browser storage was interrupted. Submit the same description and image again to check the existing request.";
 
@@ -40,7 +41,7 @@ function hasFileTransfer(data: DataTransfer) {
   return data.types.includes("Files") || Array.from(data.items).some(item => item.kind === "file");
 }
 
-export function PetGenerationForm({ enabled, reviewBase = false }: { enabled: boolean; reviewBase?: boolean }) {
+export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimationRepair = false }: { enabled: boolean; reviewBase?: boolean; automaticAnimationRepair?: boolean }) {
   const [prompt, setPrompt] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [nameOpen, setNameOpen] = useState(false);
@@ -208,6 +209,7 @@ export function PetGenerationForm({ enabled, reviewBase = false }: { enabled: bo
             <p className="pet-generation-form__hint">Up to 80 characters. Leave blank to suggest a name automatically.</p>
           </div>
           <div className="pet-generation-form__submit">
+            {automaticAnimationRepair && <p className="pet-generation-form__hint">{ANIMATION_AUTO_REPAIR_NOTICE}</p>}
             {!recovering && submitButton}
             <p className="pet-generation-form__hint">{reviewBase ? "You will review your character before animation starts." : "Your pet will appear on its private generation page."}</p>
             {!enabled && <p role="status">Generation is currently disabled.</p>}
@@ -224,6 +226,6 @@ export function PetGenerationForm({ enabled, reviewBase = false }: { enabled: bo
         <nav aria-label="Generation resources"><a href={withBasePath("/my-generations")}>My generations →</a><a href={withBasePath("/guides/ai-pet-generator")}>Read the generation guide ↗</a><a href={withBasePath("/request")}>Prefer a manual request? ↗</a></nav>
       </aside>
     </div>
-    <GenerationLimitsDialog open={limitsOpen} onClose={() => setLimitsOpen(false)} reviewBase={reviewBase} />
+    <GenerationLimitsDialog open={limitsOpen} onClose={() => setLimitsOpen(false)} reviewBase={reviewBase} automaticAnimationRepair={automaticAnimationRepair} />
   </div>;
 }

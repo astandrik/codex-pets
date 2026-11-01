@@ -1,3 +1,4 @@
+import {initialAnimationRepair} from "@/lib/pets/generation/animation-repair";
 import {createHash} from "node:crypto";
 import {z} from "zod";
 import {animationRevisionInputSchema, animationCorrectionsSchema} from "@/lib/pets/generation/animation-revision-input";
@@ -24,7 +25,7 @@ export async function readRevisionAtlas(job: GenerationJob, read: GenerationTran
 }
 
 export function createAnimationRevisionService(store: GenerationStore, options: {
-  now: () => number; enabled: () => boolean; secret: () => string; createId: () => string; budgetUsd: () => number;
+  now: () => number; enabled: () => boolean; secret: () => string; createId: () => string; budgetUsd: () => number; automaticAnimationRepair?: () => boolean;
 }) {
   const live = (job: GenerationJob | null) => {
     if (!job) throw new GenerationError("not_found");
@@ -103,6 +104,7 @@ export function createAnimationRevisionService(store: GenerationStore, options: 
             if (!quota.ipRemaining) throw new GenerationError("rate_limited", nextMoscowDay(admittedAt), undefined, "ip");
             await startBudgetTracking(tx, id, admittedAt, options.budgetUsd());
             const job: GenerationJob = {
+              ...(options.automaticAnimationRepair?.() ? {animationRepair: initialAnimationRepair()} : {}),
               id, prompt: "", displayName: source.displayName, nameSource: source.nameSource,
               status: "queued", createdAt: admittedAt, queuedAt: admittedAt, expiresAt: admittedAt + DAY, worker: "",
               reviewBase: true, baseConfirmedAt: admittedAt, pipelineVersion: 3, stages: [],

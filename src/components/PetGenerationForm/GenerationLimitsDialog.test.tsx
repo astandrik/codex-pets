@@ -5,6 +5,17 @@ import {ThemeProvider} from '@gravity-ui/uikit';
 import {expect,it,vi} from 'vitest';
 import {GenerationLimitsDialog} from './GenerationLimitsDialog';
 (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
+it('describes the saved four-attempt policy without making requests', async () => {
+  const host=document.createElement('div'); document.body.append(host); const root=createRoot(host);
+  const request=vi.fn(); vi.stubGlobal('fetch',request);
+  window.matchMedia ??= (()=>({matches:false,addEventListener(){},removeEventListener(){}})) as unknown as typeof window.matchMedia;
+  try {
+    await act(async()=>root.render(<ThemeProvider theme="dark"><GenerationLimitsDialog open onClose={()=>{}} reviewBase automaticAnimationRepair/></ThemeProvider>));
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('up to 3 additional times');
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('same task');
+    expect(request).not.toHaveBeenCalled();
+  } finally {await act(async()=>root.unmount());host.remove();vi.unstubAllGlobals();}
+});
 it('shows short and full conditions without network calls and returns focus on Escape', async () => {
   const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
   window.matchMedia ??= (()=>({matches:false,addEventListener(){},removeEventListener(){}})) as unknown as typeof window.matchMedia;

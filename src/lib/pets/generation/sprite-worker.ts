@@ -2,6 +2,8 @@ import {readSavedGenerationBase} from "@/lib/pets/generation/base-review";
 import {readRevisionAtlas} from "@/lib/pets/generation/animation-revisions";
 import { createHash } from "node:crypto";
 import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
+import {isAnimationState, getRepairScope} from "@/lib/pets/generation/animation-repair";
+import {generateRepairAnimation, composeWithAnimationRepairs, repairGenerationTotals} from "@/lib/pets/generation/animation-repair-worker";
 import {prepareGeneratedCard} from "@/lib/pets/generation/card-worker";
 import type {GenerationCardProvider} from "@/lib/pets/generation/card-provider";
 import { buildGeneratedPackage } from "@/lib/pets/generation/package";
@@ -12,7 +14,7 @@ import type { GenerationStore } from "@/lib/pets/generation/store";
 export type StageImage = { bytes: Buffer; usage?: ImageUsage; generationMs: number };
 export type SpriteSession = {
   prepare(): Promise<void>;
-  generate(name: StageName): Promise<StageImage>;
+  generate(name: StageName, context?: {attempt: number}): Promise<StageImage>;
   compose(): Promise<Buffer>;
   cleanup(): Promise<void>;
 };
@@ -38,6 +40,15 @@ export function createSpriteGenerationWorker(options: {
     const stageDiagnostics:StageFailureDiagnostic[]=[];
     const cliCauses:StageCliCause[]=[];
     let heartbeat = Promise.resolve();
+    let checkpointQueue: Promise<void> = Promise.resolve();
+    const mutate = <T,>(operation: () => Promise<T>) => {
+      const result = checkpointQueue.then(operation);
+      checkpointQueue = result.then(() => undefined, () => undefined);
+      return result;
+    };
+    const repairContext = {service: options.service, store: options.store, now,
+      wait: options.wait ?? (ms => new Promise<void>(resolve => setTimeout(resolve, ms))), mutate,
+      checkLease: () => {if (leaseError) throw new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary: "lease", reason: "heartbeat_failed"});}};
     const timer = setInterval(() => {
       heartbeat = heartbeat.then(async () => { await options.service.heartbeat(initial); }).catch(error => { leaseError = error; });
     }, HEARTBEAT_MS);
@@ -59,6 +70,7 @@ export function createSpriteGenerationWorker(options: {
         const saved = new Map<StageName, Buffer>();
         for (const stage of job.stages.filter(s => !initial.continuation || requiredStageNames(initial).includes(s.name))) {
           const bytes = await options.store.readArtifact(job.id, "stage-" + stage.name + ".png", now());
+          if (job.animationRepair && stage.status === "inflight" && isAnimationState(stage.name)) continue;
           if (stage.status !== "completed" || !bytes || createHash("sha256").update(bytes).digest("hex") !== stage.sha256) throw new GenerationError("saved_stage_unavailable");
           saved.set(stage.name, bytes);
         }
@@ -94,7 +106,7 @@ export function createSpriteGenerationWorker(options: {
           if (leaseError) throw new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"lease",reason:"heartbeat_failed"});
           try {
             if (names[0] === "base") job = await options.service.beginStage(job, "base");
-            else {
+            else if (!batchAlreadyReserved(job, names)) {
               job = await options.service.beginStages(job, names);
             }
           } catch (error) {
@@ -105,14 +117,15 @@ export function createSpriteGenerationWorker(options: {
             job = readback;
           }
           const batchJob = job;
-          let checkpointQueue: Promise<void> = Promise.resolve();
-          const mutate=<T,>(operation:()=>Promise<T>)=>{
-            const result=checkpointQueue.then(operation);
-            checkpointQueue=result.then(()=>undefined,()=>undefined);
-            return result;
-          };
           const results = await Promise.allSettled(names.map(async name => {
             if (leaseError) throw new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"lease",reason:"heartbeat_failed"});
+            if (batchJob.animationRepair && isAnimationState(name)) {
+              const attempt = batchJob.animationRepair.attempts.filter(a => a.state === name).at(-1);
+              if (attempt?.status === "failed") await mutate(() => options.service.reserveAnimationAttempt(batchJob, name, "transport"));
+              const image = await generateRepairAnimation(repairContext, batchJob, name, activeSession);
+              saved.set(name, image.bytes);
+              return;
+            }
             await options.service.authorizeStage(batchJob, name);
             let image: StageImage;
             const call=async(attempt:1|2)=>{
@@ -169,9 +182,20 @@ export function createSpriteGenerationWorker(options: {
           if (job.reviewBase && job.baseConfirmedAt === undefined && saved.has("base")) return await awaitReview(job);
         }
         await prepareRows();
-        const atlas = await session.compose();
+        let atlas: Buffer;
+        if (job.animationRepair && getRepairScope(job).length) {
+          const result = await composeWithAnimationRepairs(repairContext, job, session, saved, async current => {
+            await session?.cleanup();
+            session = await options.renderer.open(current, saved, reference, revisionAtlas);
+            return session;
+          }, (name, error) => {
+            if (error instanceof GenerationError && error.diagnostic) stageDiagnostics.push({stage: name, diagnostic: error.diagnostic});
+            if (error instanceof GenerationError && error.cliCause) cliCauses.push({stage: name, cause: error.cliCause});
+          });
+          atlas = result.atlas; job = result.job;
+        } else atlas = await session.compose();
         try {
-          job = await options.service.saveSource(job, atlas, { generationMs: job.stages.reduce((sum, stage) => sum + (stage.generationMs ?? 0), 0) });
+          job = await options.service.saveSource(job, atlas, job.animationRepair ? repairGenerationTotals(job) : { generationMs: job.stages.reduce((sum, stage) => sum + (stage.generationMs ?? 0), 0) });
         } catch (error) {
           const readback = await options.store.readJob(job.id);
           const persisted = await options.store.readArtifact(job.id, "source.png", now());
@@ -204,4 +228,8 @@ export function createSpriteGenerationWorker(options: {
       await session?.cleanup();
     }
   };
+}
+
+function batchAlreadyReserved(job: GenerationJob, names: StageName[]) {
+  return Boolean(job.animationRepair && names.every(name => job.stages.some(stage => stage.name === name && stage.status === "inflight")));
 }
