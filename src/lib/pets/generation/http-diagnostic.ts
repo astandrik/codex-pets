@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { StageName } from "./model";
+import {REGENERATION_RETRIES} from "@/lib/pets/generation/continuation-model";
 
 const REQUEST_ID_PATTERN = /^(?:req_[a-f0-9]{32}|[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/;
 const CF_RAY_PATTERN = /^[a-f0-9]{12,32}-[A-Z]{3}$/;
@@ -42,7 +43,7 @@ export function logSpriteHttpDiagnostic(
   write: (line: string) => void = console.log,
 ): void {
   try {
-    if (!Number.isInteger(context.attempt) || context.attempt < 1 || context.attempt > 4) return;
+    if (!Number.isInteger(context.attempt) || context.attempt < 1 || context.attempt > REGENERATION_RETRIES.max + 1) return;
     for (const line of stderr.split("\n")) {
       if (!line.startsWith(DIAGNOSTIC_PREFIX) || line.length > MAX_DIAGNOSTIC_LINE_LENGTH) continue;
       let input: unknown;

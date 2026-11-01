@@ -32,6 +32,15 @@ describe("buildOpenApiSpec", () => {
     expect(buildOpenApiSpec().paths["/api/pet-generations/{id}/confirm"].post.responses).toHaveProperty("413");
   });
 
+  it("documents configurable retries only on selected regeneration", async () => {
+    const {buildOpenApiSpec} = await import("@/lib/openapi");
+    const operation = buildOpenApiSpec().paths["/api/pet-generations/{id}/continuations"].post;
+    const schema = operation.requestBody.content["application/json"].schema;
+    expect(schema.properties.maxRetries).toEqual({type: "integer", minimum: 0, maximum: 50});
+    expect(schema.required).not.toContain("maxRetries");
+    expect(schema.oneOf[0].not).toEqual({anyOf: [{required: ["states"]}, {required: ["maxRetries"]}]});
+  });
+
   it("builds the public Codex Pets OpenAPI contract without admin routes", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example/codex-pets");
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/codex-pets");

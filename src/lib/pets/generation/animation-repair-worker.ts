@@ -37,10 +37,12 @@ export async function generateRepairAnimation(context: Context, job: GenerationJ
   while (true) {
     const current = await currentJob(context, job);
     const attempt = latestAnimationAttempt(current, name);
+    const maxAttempts = current.animationRepair?.maxAttempts;
+    if (maxAttempts === undefined) throw uncertain("intent");
     if (attempt?.status === "failed" && attempt.failure) {
       const failure = new GenerationError(attempt.failure.code, undefined, attempt.failure.providerFailure, undefined, attempt.failure.diagnostic, attempt.failure.cliCause);
       const reason = animationFailureRetryReason(failure);
-      if (!reason || attempt.ordinal >= 4) throw failure;
+      if (!reason || attempt.ordinal >= maxAttempts) throw failure;
       await reserveKnownAttempt(context, job, name, reason);
       continue;
     }
@@ -64,7 +66,7 @@ export async function generateRepairAnimation(context: Context, job: GenerationJ
           !isDeepStrictEqual(recorded.failure.providerFailure, failure.providerFailure)) throw uncertain("checkpoint");
       }
       const reason = animationFailureRetryReason(failure);
-      if (!reason || attempt.ordinal >= 4) throw failure;
+      if (!reason || attempt.ordinal >= maxAttempts) throw failure;
       await reserveKnownAttempt(context, job, name, reason);
       continue;
     }

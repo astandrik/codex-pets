@@ -157,6 +157,7 @@ it('restores an unknown selection with the original UUID and keeps replay frozen
  await act(async()=>confirm().click());
  await act(async()=>element.querySelector<HTMLInputElement>('input[aria-label="Пересоздать: Покой"]')!.click());
  expect(confirm().checked).toBe(false);expect(button('Повторить тот же запрос').disabled).toBe(true);
+ await act(async()=>element.querySelector<HTMLInputElement>('[aria-label="В запросе не было настройки автоповторов"]')!.click());
  await act(async()=>confirm().click());await act(async()=>button('Повторить тот же запрос').click());
  const firstBody=fetchMock.mock.calls.find(([,init])=>init?.method==='POST')![1].body;
  expect(JSON.parse(firstBody)).toEqual({requestId:uuid,mode:'regenerate',sourceRevision:'f'.repeat(64),states:['idle','running-right']});

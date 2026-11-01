@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { YdbError, StatusCode, TypedValues } from "@/lib/ydb/client";
+import {randomUUID} from "node:crypto";
+import {CONTINUATION_STATES} from "./continuation-model";
+import type {AnimationAttempt} from "./model";
 
 const session = vi.hoisted(() => ({ beginTransaction: vi.fn(), executeQuery: vi.fn(), rollbackTransaction: vi.fn(), commitTransaction: vi.fn() }));
 vi.mock("@/lib/ydb/client", async (original) => ({
@@ -94,6 +97,22 @@ describe("production generation store read contracts", () => {
     expect(params.$expires).toEqual(TypedValues.timestamp(new Date(currentJob.expiresAt)));
     session.executeQuery.mockResolvedValueOnce(textResult(serialized));
     await expect(generationStore.readJob(id)).resolves.toEqual(currentJob);
+  });
+
+  it("round-trips all 561 bounded policy-2 attempts through the store codec", async () => {
+    const {generationStore} = await import("./store");
+    const attempts = CONTINUATION_STATES.flatMap(state => Array.from({length: 51}, (_, index): AnimationAttempt => ({
+      state, ordinal: index + 1, token: randomUUID(), reason: index ? "moderation" : "initial",
+      status: "failed", reservedAt: now, notBefore: now, startedAt: now, finishedAt: now,
+      failure: {code: "provider_rejected", providerFailure: {httpStatus: 400, code: "moderation_blocked", moderationStage: "output"}},
+    })));
+    const job = {...currentJob, animationRepair: {policy: 2 as const, maxAttempts: 51, phase: "stopped" as const,
+      pending: [], issues: [], attempts}};
+    await generationStore.transaction(tx => tx.putJob(job));
+    const serialized = session.executeQuery.mock.calls[0][1].$payload.value.textValue;
+    session.executeQuery.mockResolvedValueOnce(textResult(serialized));
+    const read = await generationStore.readJob(id);
+    expect(read).toEqual(job);expect(read!.animationRepair!.attempts).toHaveLength(561);
   });
 
   it("normalizes legacy rows without pipeline, worker or stage fields", async () => {
