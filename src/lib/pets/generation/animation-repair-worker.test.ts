@@ -14,7 +14,8 @@ async function fixture(successAt = 3, budgetUsd = 50) {
   const store = new MemoryStore(), clock = {now: Date.parse("2026-10-31T12:00:00Z"), enabled: true};
   const service = createGenerationService(store, {now: () => clock.now, enabled: () => true,
     automaticAnimationRepair: () => clock.enabled, budgetUsd: () => budgetUsd, secret: () => "automatic-repair-worker-test-secret"});
-  const accepted = await service.generate({prompt: "Synthetic character", requestId: randomUUID()}, "203.0.113.23");
+  const input = {prompt: "Synthetic character", requestId: randomUUID()};
+  const accepted = await service.generate(input, "203.0.113.23");
   const calls: string[] = [], waits: number[] = [];
   const generate = vi.fn(async (name: string) => {calls.push(name); return {bytes: Buffer.from(name + calls.filter(n => n === name).length), usage, generationMs: 1};});
   const compose = vi.fn(async () => {if (calls.filter(n => n === "failed").length < successAt) throw bad(); return Buffer.from("atlas");});
@@ -23,7 +24,26 @@ async function fixture(successAt = 3, budgetUsd = 50) {
     prepare: async () => undefined, cleanup: async () => {cleanups.push(id);}};});
   const worker = createSpriteGenerationWorker({service, store, now: () => clock.now,
     wait: async ms => {waits.push(ms); clock.now += ms;}, renderer: {open}, build: async () => ({"pet.zip": Buffer.from("zip")})});
-  return {store, clock, service, accepted, generate, compose, calls, waits, sessions, cleanups, worker};
+  return {store, clock, service, input, accepted, generate, compose, calls, waits, sessions, cleanups, worker};
+}
+
+async function crashedInitialFixture() {
+  const f = await fixture();
+  let job = (await f.service.claim("before-crash"))!;
+  job = await f.service.beginStage(job, "base");
+  job = await f.service.saveStage(job, "base", Buffer.from("base"), {usage, generationMs: 1});
+  job = await f.service.beginStages(job, STAGE_NAMES.filter(name => name !== "base"));
+  for (const name of STAGE_NAMES.filter(name => name !== "base")) {
+    const token = job.animationRepair!.attempts.find(a => a.state === name)!.token;
+    await f.service.startAnimationAttempt(job, name, token);
+    if (name === "failed") await f.service.failAnimationAttempt(job, name, token,
+      new GenerationError("outcome_unknown", undefined, undefined, undefined,
+        {boundary: "provider_cli", reason: "process_exit"}, {kind: "remote_disconnected"}));
+    else await f.service.saveAnimationAttempt(job, name, token, Buffer.from(name), {usage, generationMs: 1});
+  }
+  f.clock.now += LEASE_MS + 1;
+  f.compose.mockResolvedValue(Buffer.from("atlas"));
+  return f;
 }
 
 describe("automatic quality repair", () => {
@@ -206,6 +226,109 @@ describe("automatic quality repair", () => {
     expect(await f.worker("owner")).toBe("completed");
     expect(f.calls.filter(n => n === "failed")).toHaveLength(2);
     expect((await f.store.readJob(f.accepted.generationId))!.animationRepair!.attempts.filter(a => a.state === "failed")).toHaveLength(2);
+  });
+
+  it.each([{phase: "initial", ordinal: 1, spent: 440000}, {phase: "quality", ordinal: 2, spent: 480000},
+    {phase: "quality", ordinal: 4, spent: 480000}])(
+    "reconciles a lost failure ACK at $phase attempt $ordinal without a fifth call or queue pause", async ({phase, ordinal, spent}) => {
+      const f = await fixture();
+      const next = await f.service.generate({prompt: "Next character", requestId: randomUUID()}, "203.0.113.24");
+      const normal = f.generate.getMockImplementation()!, fail = f.service.failAnimationAttempt;
+      f.generate.mockImplementation(async name => {
+        if (name === "failed" && (phase === "initial" || f.calls.includes(name))) {
+          f.calls.push(name);
+          throw new GenerationError("outcome_unknown", undefined, undefined, undefined,
+            {boundary: "provider_cli", reason: "process_exit"}, {kind: "remote_disconnected"});
+        }
+        return normal(name);
+      });
+      vi.spyOn(f.service, "failAnimationAttempt").mockImplementation(async (...args) => {
+        const saved = await fail(...args);
+        if (saved.animationRepair!.attempts.find(a => a.token === args[2])?.ordinal === ordinal) throw Error("lost failure ACK");
+        return saved;
+      });
+      expect(await f.worker("owner")).toBe("failed");
+      expect(f.calls.filter(name => name === "failed")).toHaveLength(4);
+      const failed = structuredClone((await f.store.readJob(f.accepted.generationId))!);
+      expect(failed.animationRepair!.attempts.filter(a => a.state === "failed").at(-1))
+        .toMatchObject({ordinal: 4, status: "failed", failure: {code: "outcome_unknown", cliCause: {kind: "remote_disconnected"}}});
+      expect(JSON.parse(f.store.ledger.get("budget")!.value).spent["2026-10-31"]).toBe(spent);
+      expect(JSON.parse(f.store.ledger.get("budget")!.value).reservations[failed.id]).toEqual({remainingMicroUsd: 0, unknown: true});
+      expect(JSON.parse(f.store.ledger.get("scheduler")!.value).pauseReason).toBeUndefined();
+      for (const name of STAGE_NAMES.filter(name => name !== "failed")) {
+        expect(await f.store.readArtifact(failed.id, `stage-${name}.png`, f.clock.now)).toEqual(Buffer.from(name + "1"));
+      }
+      f.generate.mockImplementation(normal);
+      f.compose.mockResolvedValue(Buffer.from("atlas"));
+      expect(await f.worker("next-owner")).toBe("completed");
+      expect((await f.store.readJob(next.generationId))?.status).toBe("completed");
+      expect(await f.store.readJob(failed.id)).toEqual(failed);
+    },
+  );
+
+  it.each(["uncommitted", "unavailable readback", "wrong token", "wrong diagnostic", "wrong cause", "unknown status"])(
+    "keeps the protective pause for a failure ACK with %s evidence", async evidence => {
+      const f = await fixture(), fail = f.service.failAnimationAttempt;
+      f.generate.mockImplementation(async name => {
+        f.calls.push(name);
+        if (name === "failed") throw new GenerationError("outcome_unknown", undefined, undefined, undefined,
+          {boundary: "provider_cli", reason: "process_exit"}, {kind: "remote_disconnected"});
+        return {bytes: Buffer.from(name), usage, generationMs: 1};
+      });
+      vi.spyOn(f.service, "failAnimationAttempt").mockImplementation(async (...args) => {
+        if (evidence === "uncommitted") throw Error("write unavailable");
+        await fail(...args);
+        if (evidence === "unavailable readback") vi.spyOn(f.store, "readJob").mockRejectedValueOnce(Error("read unavailable"));
+        else await f.store.transaction(async tx => {
+          const current = (await tx.getJob(f.accepted.generationId))!;
+          const attempt = current.animationRepair!.attempts.find(a => a.token === args[2])!;
+          if (evidence === "wrong token") attempt.token = randomUUID();
+          if (evidence === "wrong diagnostic") attempt.failure!.diagnostic = {boundary: "provider_cli", reason: "process_timeout"};
+          if (evidence === "wrong cause") attempt.failure!.cliCause = {kind: "http_error", httpStatus: 500};
+          if (evidence === "unknown status") attempt.status = "unknown";
+          await tx.putJob(current);
+        });
+        throw Error("lost failure ACK");
+      });
+      expect(await f.worker("owner")).toBe("failed");
+      expect(f.calls.filter(name => name === "failed")).toHaveLength(1);
+      expect(JSON.parse(f.store.ledger.get("scheduler")!.value).pauseReason).toBe("outcome_unknown");
+      expect(await f.worker("replacement")).toBe("idle");
+    },
+  );
+
+  it("reconciles a lost reservation ACK after restart with the same token and request", async () => {
+    const f = await crashedInitialFixture(), reserve = f.service.reserveAnimationAttempt;
+    let reservedToken = "";
+    vi.spyOn(f.service, "reserveAnimationAttempt").mockImplementationOnce(async (...args) => {
+      const saved = await reserve(...args); reservedToken = saved.attempt.token;
+      throw Error("lost reserve ACK");
+    });
+    expect(await f.worker("after-crash")).toBe("completed");
+    expect(f.calls).toEqual(["failed"]);
+    const job = (await f.store.readJob(f.accepted.generationId))!;
+    expect(job.animationRepair!.attempts.filter(a => a.state === "failed")).toHaveLength(2);
+    expect(job.animationRepair!.attempts.filter(a => a.state === "failed").at(-1)).toMatchObject({ordinal: 2, token: reservedToken, status: "saved"});
+    expect((await f.service.generate(f.input, "203.0.113.23")).generationId).toBe(job.id);
+    expect(f.store.jobs.size).toBe(1);
+    expect(job.expiresAt).toBe(Date.parse("2026-11-01T12:00:00Z"));
+    expect(JSON.parse(f.store.ledger.get("budget")!.value).spent["2026-10-31"]).toBe(480000);
+    for (const name of STAGE_NAMES.filter(name => name !== "failed")) {
+      expect(await f.store.readArtifact(job.id, `stage-${name}.png`, f.clock.now)).toEqual(Buffer.from(name));
+    }
+  });
+
+  it.each(["uncommitted", "unavailable readback"])("does not generate after restart when a reservation has %s evidence", async evidence => {
+    const f = await crashedInitialFixture(), reserve = f.service.reserveAnimationAttempt;
+    vi.spyOn(f.service, "reserveAnimationAttempt").mockImplementationOnce(async (...args) => {
+      if (evidence === "uncommitted") throw Error("write unavailable");
+      await reserve(...args);
+      vi.spyOn(f.store, "readJob").mockRejectedValueOnce(Error("read unavailable"));
+      throw Error("lost reserve ACK");
+    });
+    expect(await f.worker("after-crash")).toBe("failed");
+    expect(f.calls).toEqual([]);
+    expect(JSON.parse(f.store.ledger.get("scheduler")!.value).pauseReason).toBe("outcome_unknown");
   });
 
   it("bounds eleven simultaneously failing rows and preserves the base", async () => {

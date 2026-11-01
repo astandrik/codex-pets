@@ -1,4 +1,5 @@
 import {createHash} from "node:crypto";
+import {isDeepStrictEqual} from "node:util";
 import {GenerationError, type GenerationJob, type ImageUsage, type StageName} from "@/lib/pets/generation/model";
 import type {ContinuationState} from "@/lib/pets/generation/continuation-model";
 import {latestAnimationAttempt} from "@/lib/pets/generation/animation-repair";
@@ -23,7 +24,7 @@ async function currentJob(context: Context, original: GenerationJob) {
   if (current.expiresAt <= context.now()) throw new GenerationError("generation_expired");
   return current;
 }
-async function reserveKnownAttempt(context: Context, job: GenerationJob, name: ContinuationState, reason: "quality" | "transport") {
+export async function reserveKnownAttempt(context: Context, job: GenerationJob, name: ContinuationState, reason: "quality" | "transport") {
   const previous = latestAnimationAttempt(await currentJob(context, job), name);
   try { await context.mutate(() => context.service.reserveAnimationAttempt(job, name, reason)); }
   catch (error) {
@@ -49,7 +50,12 @@ export async function generateRepairAnimation(context: Context, job: GenerationJ
     catch (error) {
       const failure = error instanceof GenerationError ? error : new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary: "renderer_process", reason: "unclassified"});
       try { await context.mutate(() => context.service.failAnimationAttempt(job, name, attempt.token, failure)); }
-      catch { throw uncertain("checkpoint"); }
+      catch {
+        const recorded = await currentJob(context, job).then(current => latestAnimationAttempt(current, name)).catch(() => undefined);
+        if (recorded?.token !== attempt.token || recorded.ordinal !== attempt.ordinal || recorded.status !== "failed" ||
+          recorded.failure?.code !== failure.code || !isDeepStrictEqual(recorded.failure.diagnostic, failure.diagnostic) ||
+          !isDeepStrictEqual(recorded.failure.cliCause, failure.cliCause)) throw uncertain("checkpoint");
+      }
       if (failure.code !== "outcome_unknown" || !isRetryableImageCause(failure.cliCause) || attempt.ordinal >= 4) throw failure;
       await reserveKnownAttempt(context, job, name, "transport");
       continue;

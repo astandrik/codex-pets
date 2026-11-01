@@ -11,7 +11,7 @@ export type AnimationRepairProgress = z.infer<typeof animationRepairProgressSche
 
 export function animationRepairProgressText(progress?: AnimationRepairProgress): string | null {
   if (!progress || progress.phase === "complete") return null;
-  if (progress.phase === "stopped") return "Automatic repair stopped. Saved animations are available for manual recovery.";
+  if (progress.phase === "stopped") return "Automatic repair stopped.";
   if (progress.phase === "verifying") return "Checking repaired animations. Saved animations are kept.";
   const rows = progress.rows.filter(row => row.retrying);
   if (!rows.length) return progress.phase === "repairing" ? "Preparing automatic repair. Saved animations are kept." : null;

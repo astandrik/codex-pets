@@ -23,3 +23,14 @@ it("projects only safe repair progress without changing status or logical step b
   const stopped = publicJob({...job, status: "failed", error: "invalid_sprite_extraction"}, 3000);
   expect(stopped.animationRepair?.rows.every(row => !row.retrying)).toBe(true);
 });
+
+it.each(["queue_timeout", "provider_rejected"])("does not promise saved animations for %s before the first saved row", error => {
+  const job = jobSchema.parse({id: "a".repeat(64), prompt: "", displayName: "Synthetic", status: "failed", error,
+    createdAt: 1000, expiresAt: 100000, worker: "owner", promptRevision: "test", pipelineVersion: 2, stages: [],
+    animationRepair: {policy: 1, maxAttempts: 4, phase: "initial", pending: [], issues: [], attempts: []}});
+  const value = publicJob(job, 3000);
+  expect(value.animationRepair?.phase).toBe("stopped");
+  const text = animationRepairProgressText(value.animationRepair);
+  expect(text).toContain("stopped");
+  expect(text).not.toMatch(/saved animations|manual recovery/i);
+});
