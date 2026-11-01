@@ -10,6 +10,20 @@ beforeEach(() => { vi.clearAllMocks(); });
 afterEach(() => { vi.unstubAllEnvs(); });
 
 describe("generation HTTP and MCP boundaries", () => {
+  it("advertises relaxed defaults and optional spending limits without starting a task", async () => {
+    const {POST} = await import("@/app/mcp/route");
+    const response = await POST(new Request("https://pets.example/mcp", {
+      method: "POST", headers: {"content-type": "application/json", Accept: "application/json, text/event-stream"},
+      body: JSON.stringify({jsonrpc: "2.0", id: 1, method: "tools/list"}),
+    }));
+    expect(response.status).toBe(200);
+    const {result} = await response.json();
+    const description = result.tools.find((tool: {name: string}) => tool.name === "generate_pet").description;
+    expect(description).toContain("2000 accepted tasks/day globally, 100/IP by default");
+    expect(description).toContain("No monetary threshold applies by default");
+    expect(description).toContain("All costs are still recorded");
+    expect(mocks.generate).not.toHaveBeenCalled();
+  });
   it("returns the same actionable failed-job description over HTTP and MCP without starting generation", async () => {
     const { GET } = await import("@/app/api/pet-generations/[id]/route");
     const { POST } = await import("@/app/mcp/route");

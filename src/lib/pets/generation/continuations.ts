@@ -8,7 +8,7 @@ import { DAY, GENERATION_ID, GenerationError, generationDigest, moscowDay, nextM
 import { publicJob } from "@/lib/pets/generation/public-job";
 import type { GenerationStore, GenerationTransaction } from "@/lib/pets/generation/store";
 import { scheduler, expireQueue, requireQueueCapacity, saveScheduler } from "@/lib/pets/generation/scheduler";
-import { restoreBudgetTracking, startBudgetTracking } from "@/lib/pets/generation/budget";
+import { restoreBudgetTracking, startBudgetTracking, type GenerationBudgetLimit } from "@/lib/pets/generation/budget";
 import { consumeDailyQuota, readDailyQuota } from "@/lib/pets/generation/quota-grants";
 const LEASE = 5 * 60000;
 const receiptSchema = z.object({ id: z.uuid(), sourceId: z.string(), targetId: z.string(), hash: z.string(), mode: z.enum(["rebuild", "regenerate"]), state: z.enum(["preparing", "accepted", "rejected"]), owner: z.string(), until: z.number(), createdAt: z.number(), input: continuationInputSchema, copied: z.array(z.string()).default([]) });
@@ -20,7 +20,7 @@ export function createContinuationService(store: GenerationStore, options: {
     enabled: () => boolean;
     secret: () => string;
     createId: () => string;
-    budgetUsd: () => number;
+    budgetUsd: () => GenerationBudgetLimit;
     automaticAnimationRepair?: () => boolean;
 }) {
     const key = (requestId: string) => "continuation:" + generationDigest(options.secret(), "request", requestId);

@@ -79,11 +79,12 @@ it("retains old policy, validates revision payloads and bounds accumulated corre
   await expect(f.service.reviseAnimations(job.id,{...f.input(),states:["waving"],prompt:"one more",sourceMetadataRevision:0},"203.0.113.9")).rejects.toMatchObject({code:"animation_corrections_limit"});
   expect([...f.store.ledger]).toEqual(before);
 });
-it("rejects queue expiry and cannot revive a failed candidate by acceptance",async()=>{
+it("keeps an animation revision queued beyond the old timeout and rejects premature acceptance",async()=>{
   vi.stubEnv("PET_GENERATION_ANIMATION_REVISIONS_ENABLED","true");
   const f=await revisionFixture();const child=await f.service.reviseAnimations(f.source.id,f.input(),"203.0.113.9");
-  f.config.now+=model.WAIT_MS;expect(await f.service.claim("late")).toBeNull();
-  expect((await f.service.get(child.generationId)).error?.code).toBe("queue_timeout");
+  f.config.now+=2*60*60_000;
+  expect((await f.service.get(child.generationId)).status).toBe("queued");
+  expect((await f.service.claim("late"))?.id).toBe(child.generationId);
   await expect(f.service.acceptAnimationRevision(child.generationId)).rejects.toMatchObject({code:"generation_not_completed"});
 });
 it("accepts once after a lost commit ACK without changing expiry or ledger",async()=>{

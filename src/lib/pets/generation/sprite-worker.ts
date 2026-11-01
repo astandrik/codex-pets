@@ -49,7 +49,10 @@ export function createSpriteGenerationWorker(options: {
     };
     const repairContext = {service: options.service, store: options.store, now,
       wait: options.wait ?? (ms => new Promise<void>(resolve => setTimeout(resolve, ms))), mutate,
-      checkLease: () => {if (leaseError) throw new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary: "lease", reason: "heartbeat_failed"});}};
+      checkLease: () => {
+        if (leaseError) throw new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary: "lease", reason: "heartbeat_failed"});
+        if (initial.expiresAt <= now()) throw new GenerationError("generation_expired");
+      }};
     const timer = setInterval(() => {
       heartbeat = heartbeat.then(async () => { await options.service.heartbeat(initial); }).catch(error => { leaseError = error; });
     }, HEARTBEAT_MS);
@@ -135,6 +138,7 @@ export function createSpriteGenerationWorker(options: {
             await options.service.authorizeStage(batchJob, name);
             let image: StageImage;
             const call=async(attempt:1|2)=>{
+              if (batchJob.expiresAt <= now()) throw new GenerationError("generation_expired");
               try{return await activeSession.generate(name);}
               catch(error){
                 const failure=error instanceof GenerationError?error:new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"renderer_process",reason:"unclassified"});
@@ -161,7 +165,8 @@ export function createSpriteGenerationWorker(options: {
             // saves avoid exhausting transaction retries when all rows finish together.
             const checkpoint = mutate(async () => {
               try { await options.service.saveStage(batchJob, name, image.bytes, image); }
-              catch {
+              catch (error) {
+                if (error instanceof GenerationError && error.code === "generation_expired") throw error;
                 const readback = await options.store.readJob(batchJob.id);
                 const stage = readback?.stages.find(item => item.name === name);
                 if (readback && readback.worker !== owner) throw new GenerationError("stale_worker");
@@ -203,6 +208,7 @@ export function createSpriteGenerationWorker(options: {
         try {
           job = await options.service.saveSource(job, atlas, (job.animationRepair || job.baseRepair) ? repairGenerationTotals(job) : { generationMs: job.stages.reduce((sum, stage) => sum + (stage.generationMs ?? 0), 0) });
         } catch (error) {
+          if (error instanceof GenerationError && error.code === "generation_expired") throw error;
           const readback = await options.store.readJob(job.id);
           const persisted = await options.store.readArtifact(job.id, "source.png", now());
           if (readback && readback.worker !== owner) throw new GenerationError("stale_worker");
@@ -212,7 +218,7 @@ export function createSpriteGenerationWorker(options: {
       }
       const source = await options.store.readArtifact(job.id, "source.png", now());
       if (!source) throw new GenerationError("source_unavailable");
-      job=await prepareGeneratedCard(job,source,options.service,options.store,options.cardProvider,()=>{if(leaseError)throw new GenerationError("outcome_unknown");});
+      job=await prepareGeneratedCard(job,source,options.service,options.store,options.cardProvider,repairContext.checkLease,now);
       const files = await (options.build ?? buildGeneratedPackage)(job, source);
       try { await options.service.finish(job, files); }
       catch (error) {
@@ -224,6 +230,10 @@ export function createSpriteGenerationWorker(options: {
       // Paid/provider ambiguity is classified at its boundary. A local processing
       // crash preserves the checkpoint for lease-based recovery without repayment.
       if (!(error instanceof GenerationError)) throw error;
+      if (initial.expiresAt <= now()) {
+        await options.service.finishExpiredGeneration(initial, Boolean(leaseError) || ["outcome_unknown", "stage_conflict", "invalid_provider_result"].includes(error.code));
+        return "failed";
+      }
       stageDiagnostics.sort((a,b)=>STAGE_NAMES.indexOf(a.stage)-STAGE_NAMES.indexOf(b.stage));
       const failure=leaseError?new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"lease",reason:"heartbeat_failed"}):error;
       await options.service.fail(initial, failure.code, failure.providerFailure,failure.diagnostic,stageDiagnostics,cliCauses.sort((a,b)=>STAGE_NAMES.indexOf(a.stage)-STAGE_NAMES.indexOf(b.stage)),failure.assemblyIssues);

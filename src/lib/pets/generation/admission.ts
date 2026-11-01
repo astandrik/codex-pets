@@ -1,5 +1,5 @@
 import {initialAnimationRepair} from "@/lib/pets/generation/animation-repair";
-import {startBudgetTracking} from "@/lib/pets/generation/budget";
+import {startBudgetTracking,type GenerationBudgetLimit} from "@/lib/pets/generation/budget";
 import {encodeGenerationInput,GENERATION_INPUT_ARTIFACT} from "@/lib/pets/generation/generation-input";
 import {DAY,GenerationError,generationAnimationRevisionsEnabled,nextMoscowDay,PROMPT_REVISION,type GenerationInput,type GenerationJob,type GenerationReference} from "@/lib/pets/generation/model";
 import {consumeDailyQuota,readDailyQuota} from "@/lib/pets/generation/quota-grants";
@@ -7,7 +7,7 @@ import {expireQueue,requireQueueCapacity,saveScheduler,scheduler} from "@/lib/pe
 import type {GenerationTransaction} from "@/lib/pets/generation/store";
 
 export type AdmissionOptions = {
-  now:()=>number; enabled:()=>boolean; secret:()=>string; budgetUsd:()=>number;
+  now:()=>number; enabled:()=>boolean; secret:()=>string; budgetUsd:()=>GenerationBudgetLimit;
   automaticAnimationRepair?:()=>boolean; automaticCardMetadata?:()=>boolean; baseRetries:()=>boolean;
 };
 export type PreparedAdmission = {

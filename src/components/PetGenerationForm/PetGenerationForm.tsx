@@ -6,6 +6,7 @@ import { withBasePath } from "@/lib/base-path";
 import { rememberGeneration } from "@/lib/pets/generation/history";
 import { prepareGenerationRequest } from "./request";
 import {DEFAULT_GENERATION_QUEUE_LIMIT} from "@/lib/pets/generation/queue-policy";
+import {DEFAULT_DAILY_QUOTA_LIMITS, type GenerationDailyQuotaLimits} from "@/lib/pets/generation/quota-limits";
 import { GenerationLimitsDialog } from "./GenerationLimitsDialog";
 import "./PetGenerationForm.scss";
 import {ANIMATION_AUTO_REPAIR_NOTICE} from "@/lib/pets/generation/disclosure";
@@ -42,7 +43,7 @@ function hasFileTransfer(data: DataTransfer) {
   return data.types.includes("Files") || Array.from(data.items).some(item => item.kind === "file");
 }
 
-export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimationRepair = false, queueLimit = DEFAULT_GENERATION_QUEUE_LIMIT }: { enabled: boolean; reviewBase?: boolean; automaticAnimationRepair?: boolean; queueLimit?: number | null }) {
+export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimationRepair = false, queueLimit = DEFAULT_GENERATION_QUEUE_LIMIT, dailyQuotaLimits = DEFAULT_DAILY_QUOTA_LIMITS }: { enabled: boolean; reviewBase?: boolean; automaticAnimationRepair?: boolean; queueLimit?: number | null; dailyQuotaLimits?: GenerationDailyQuotaLimits | null }) {
   const [prompt, setPrompt] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [nameOpen, setNameOpen] = useState(false);
@@ -62,6 +63,7 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
   const imageError = error?.kind === "image";
   const recovering = recoveryRevision !== undefined;
   const unchanged = recovering && recoveryRevision === draftRevision;
+  const admissionUnavailable = queueLimit === null || dailyQuotaLimits === null;
   useEffect(() => () => { if (reference) URL.revokeObjectURL(reference.url); }, [reference]);
 
   function editDraft() { setDraftRevision(value => value + 1); }
@@ -124,7 +126,7 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
     if (submitting.current || !enabled || accepted || imageError || (!prompt.trim() && !(reviewBase && reference))) return;
     submitting.current = true; setBusy(true); setError(undefined);
     try {
-      const input = await prepareGenerationRequest(sessionStorage, {prompt, displayName, referenceImage: reference?.file, replayOnly: queueLimit === null});
+      const input = await prepareGenerationRequest(sessionStorage, {prompt, displayName, referenceImage: reference?.file, replayOnly: admissionUnavailable});
       let body: string | FormData = JSON.stringify(input);
       if (reviewBase) {
         body = new FormData(); body.set("prompt", input.prompt); body.set("requestId", input.requestId);
@@ -152,7 +154,7 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
       if (fileInput.current) fileInput.current.value = "";
       setHistoryWarning(!rememberGeneration(generation.generationId, expiresAt));
     } catch (cause) {
-      if (queueLimit === null && cause instanceof Error && cause.message === "refinement_replay_mismatch") {
+      if (admissionUnavailable && cause instanceof Error && cause.message === "refinement_replay_mismatch") {
         setError({kind: "server", message: "Use the same description, name and reference image as your earlier request. New requests are temporarily unavailable."});
         return;
       }
@@ -163,9 +165,9 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
 
   let submitLabel = reviewBase ? "Create character" : "Generate pet";
   if (recovering) submitLabel = unchanged ? "Retry unchanged request" : "Submit changed request";
-  if (queueLimit === null && !unchanged) submitLabel = "Check existing request";
+  if (admissionUnavailable && !unchanged) submitLabel = "Check existing request";
   let recoveryHint = unchanged ? "Your request may already exist. Retry with the same description, image and name to avoid a second task." : "Your draft has changed. Submitting it may create a new task.";
-  if (queueLimit === null) recoveryHint = "Only a matching previously submitted request can be checked.";
+  if (admissionUnavailable) recoveryHint = "Only a matching previously submitted request can be checked.";
   const submitButton = <Button type="submit" view="action" size="xl" width="max" loading={busy} disabled={!enabled || imageError || (!prompt.trim() && !(reviewBase && reference)) || Boolean(accepted)}>{submitLabel}</Button>;
   return <div className="pet-generation-screen">
     <header className="pet-generation-screen__intro">
@@ -184,7 +186,7 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
           <a href={withBasePath("/my-generations")}>My generations</a>
           <p>{accepted.expiresAt ? <>Available until <time dateTime={accepted.expiresAt}>{new Date(accepted.expiresAt).toLocaleString()}</time>.</> : "Available for 24 hours from task acceptance, including time in the queue."}</p>
         </div> : <>
-          {queueLimit === null && <p role="status" className="pet-generation-form__notice">New requests are temporarily unavailable.{enabled && " Use the same details to check a previously submitted request."}</p>}
+          {admissionUnavailable && <p role="status" className="pet-generation-form__notice">New requests are temporarily unavailable.{enabled && " Use the same details to check a previously submitted request."}</p>}
           {(error || recovering) && !imageError && <div role="alert" className="pet-generation-form__notice">
             <strong>{recovering ? "We could not confirm the request" : "Generation could not be started"}</strong>
             <p>{error?.message ?? RECOVERY_MESSAGE}</p>
@@ -237,6 +239,6 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
         <nav aria-label="Generation resources"><a href={withBasePath("/my-generations")}>My generations →</a><a href={withBasePath("/guides/ai-pet-generator")}>Read the generation guide ↗</a><a href={withBasePath("/request")}>Prefer a manual request? ↗</a></nav>
       </aside>
     </div>
-    <GenerationLimitsDialog open={limitsOpen} onClose={() => setLimitsOpen(false)} reviewBase={reviewBase} automaticAnimationRepair={automaticAnimationRepair} queueLimit={queueLimit} />
+    <GenerationLimitsDialog open={limitsOpen} onClose={() => setLimitsOpen(false)} reviewBase={reviewBase} automaticAnimationRepair={automaticAnimationRepair} queueLimit={queueLimit} dailyQuotaLimits={dailyQuotaLimits} />
   </div>;
 }

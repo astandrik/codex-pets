@@ -10,6 +10,8 @@ beforeEach(() => {
   vi.stubEnv("PET_GENERATION_REVIEW_FLOW_ENABLED", "false");
   vi.stubEnv("PET_GENERATION_ANIMATION_AUTO_REPAIR_ENABLED", "false");
   vi.stubEnv("PET_GENERATION_QUEUE_LIMIT", "30");
+  vi.stubEnv("PET_GENERATION_DAILY_IP_LIMIT", "");
+  vi.stubEnv("PET_GENERATION_DAILY_GLOBAL_LIMIT", "");
 });
 afterEach(() => vi.unstubAllEnvs());
 it.each([true, false])("discloses automatic repairs according to the server flag %s alongside queue capacity", automaticAnimationRepair => {
@@ -49,6 +51,21 @@ it("keeps the route dynamic and private to search engines and referrers", () => 
 it("passes the resolved queue capacity from the server to the real form", () => {
   vi.stubEnv("PET_GENERATION_QUEUE_LIMIT", "7");
   expect(GeneratePage().props.children.props.queueLimit).toBe(7);
+});
+
+it("passes configured daily allowances from the server to the real form", () => {
+  vi.stubEnv("PET_GENERATION_DAILY_IP_LIMIT", "12");
+  vi.stubEnv("PET_GENERATION_DAILY_GLOBAL_LIMIT", "345");
+  expect(GeneratePage().props.children.props.dailyQuotaLimits).toEqual({ip: 12, global: 345});
+});
+
+it("keeps the page and existing request recovery available when daily allowances are misconfigured", () => {
+  vi.stubEnv("PET_GENERATION_DAILY_IP_LIMIT", "invalid-private-setting");
+  const page = GeneratePage();
+  expect(page.props.children.props.dailyQuotaLimits).toBeNull();
+  const html = renderToStaticMarkup(<ThemeProvider theme="dark">{page}</ThemeProvider>);
+  expect(html).toContain("Check existing request");
+  expect(html).not.toContain("invalid-private-setting");
 });
 
 it.each([true, false])("keeps /generate available with invalid capacity and enabled=%s", enabled => {

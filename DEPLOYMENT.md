@@ -598,10 +598,16 @@ an explicit manual enable step.
    The workspace sweep removes dead-process leftovers and all expired scratch files,
    including while intake is disabled.
    `node scripts/pet-generation-worker.mjs --once` processes at most one task.
-5. Set `PET_GENERATION_BUDGET_USD=6` only for the bounded three-task candidate;
-   production defaults to50USD/day. Keep the recorded-spend threshold unchanged
-   when changing queue capacity. Set `PET_GENERATION_QUEUE_LIMIT` identically in
-   web and worker (default 30, integer 1–200); queued tasks time out after 60 minutes.
+5. Set `PET_GENERATION_BUDGET_USD=6` only for the bounded three-task candidate.
+   Production has no monetary threshold by default (unset, empty or `0`). A
+   positive finite value opts into a daily recorded-spend threshold. Existing
+   deployments with an explicit value retain it until the operator changes it;
+   setting `PET_GENERATION_BUDGET_USD=0` explicitly disables that threshold while
+   retaining cost accounting. Daily quotas default to 100/IP and 2000 globally;
+   configure positive decimal safe integers via `PET_GENERATION_DAILY_IP_LIMIT`
+   and `PET_GENERATION_DAILY_GLOBAL_LIMIT`, consistently in web and worker.
+   Set `PET_GENERATION_QUEUE_LIMIT` identically in
+   web and worker (default 30, integer 1–200); waiting alone does not cancel tasks; their original 24-hour retention deadline still applies.
    Invalid nonempty queue settings block new admission; `/generate` remains
    available to replay a matching saved request. Accepted tasks retain
    their 24-hour expiry from acceptance. Replay by request UUID remains available

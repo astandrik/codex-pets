@@ -1,4 +1,4 @@
-import {WAIT_MS, GenerationError, generationQueueLimit, schedulerSchema, type GenerationJob, type Scheduler} from "@/lib/pets/generation/model";
+import {GenerationError, generationQueueLimit, schedulerSchema, type GenerationJob, type Scheduler} from "@/lib/pets/generation/model";
 import type {GenerationTransaction} from "@/lib/pets/generation/store";
 import {settleBudget} from "@/lib/pets/generation/budget";
 
@@ -24,12 +24,7 @@ export async function expireQueue(tx: GenerationTransaction, state: Scheduler, n
     const job = jobs.get(id);
     if (!job || job.expiresAt <= now) { await settleBudget(tx, id, now); continue; }
     if (job.status !== "queued") continue;
-    if ((job.queuedAt ?? job.createdAt) + WAIT_MS <= now) {
-      const failed: GenerationJob = { ...job, status: "failed", error: "queue_timeout", prompt: "" };
-      await tx.putJob(failed);
-      jobs.set(id, failed);
-      await settleBudget(tx, id, now);
-    } else ready.push(id);
+    ready.push(id);
   }
   state.queue = ready;
 }
@@ -38,4 +33,8 @@ export async function requireJobWithActiveWorkerLease(tx: GenerationTransaction,
   const current = await tx.getJob(job.id);
   if (!current || current.expiresAt <= now || current.worker !== job.worker || state.active?.id !== job.id || state.active.owner !== job.worker || state.active.until <= now) throw new GenerationError("stale_worker");
   return current;
+}
+
+export function requireActiveWorkerLease(state: Scheduler, job: GenerationJob, now: number) {
+  if (state.active?.id !== job.id || state.active.owner !== job.worker || state.active.until <= now) throw new GenerationError("stale_worker");
 }

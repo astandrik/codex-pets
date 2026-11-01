@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { createGenerationService } from "./service";
-import { DAY, LEASE_MS, WAIT_MS } from "./model";
+import { DAY, LEASE_MS } from "./model";
 import { MemoryStore } from "./test-store";
 
 function fixture(budgetUsd = 50) {
@@ -83,11 +83,12 @@ describe("durable spending accounting", () => {
     const billing = JSON.parse(f.store.ledger.get("budget")!.value);
     expect(billing.reservations[second.id]).toMatchObject({ remainingMicroUsd:0, unknown: true });
   });
-  it("expires queued work without a call, clears its prompt and releases its reserve", async () => {
+  it("releases queued accounting at the storage deadline without starting a provider call", async () => {
     const f = fixture(2); const accepted = await f.service.generate(f.input(), "203.0.113.1");
-    f.config.now += WAIT_MS;
+    f.config.now += DAY;
     expect(await f.service.claim("worker")).toBeNull();
-    expect((await f.store.readJob(accepted.generationId))?.prompt).toBe("");
+    await expect(f.service.get(accepted.generationId)).rejects.toMatchObject({code: "generation_expired"});
+    expect(JSON.parse(f.store.ledger.get("budget")!.value).reservations[accepted.generationId]).toBeUndefined();
     await expect(f.service.generate(f.input(), "203.0.113.2")).resolves.toMatchObject({ status: "queued" });
   });
 });

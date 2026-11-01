@@ -62,7 +62,7 @@ describe("shared generation queue capacity", () => {
     expect((await f.service.claim("existing-work"))?.id).toBe(accepted.generationId);
   });
 
-  it.each([["1", "queue_full"], [" 7 ", "queue_full"], ["200", "rate_limited"]])("accepts the valid capacity boundary %s", async (value, refusal) => {
+  it.each([["1", "queue_full"], [" 7 ", "queue_full"], ["200", "queue_full"]])("accepts the valid capacity boundary %s", async (value, refusal) => {
     vi.stubEnv("PET_GENERATION_QUEUE_LIMIT", value);
     const f = fixture(), limit = Number(value);
     for (let i = 0; i < limit; i++) await f.service.generate(input(), `203.0.113.${i + 1}`);
@@ -125,36 +125,34 @@ describe.each<Admission>(["new", "confirmation", "revision", "rebuild", "regener
   });
 });
 
-describe("queue deadline and spending protection", () => {
-  it("keeps jobs queued for 59:59 and expires them at 60:00 without extending TTL or clearing unknown costs", async () => {
+describe("queue retention and spending protection", () => {
+  it("keeps jobs queued until storage expires without extending TTL or clearing unknown costs", async () => {
     const f = fixture();
     const accepted = await f.service.generate(input(), "203.0.113.1");
     const budget = JSON.parse(f.store.ledger.get("budget")!.value);
     budget.reservations[accepted.generationId].unknown = true;
     f.store.ledger.get("budget")!.value = JSON.stringify(budget);
     const counts = accounting(f.store).filter(([key]) => key !== "budget");
-    f.config.now += 30 * 60_000;
+    f.config.now += 2 * 60 * 60_000;
     expect((await f.service.get(accepted.generationId)).status).toBe("queued");
-    f.config.now += 30 * 60_000 - 1;
+    f.config.now = Date.parse(accepted.expiresAt) - 1;
     expect((await f.service.get(accepted.generationId)).status).toBe("queued");
     f.config.now++;
-    const expired = await f.service.get(accepted.generationId);
-    expect(expired).toMatchObject({status: "failed", error: {code: "queue_timeout", message: expect.stringContaining("60-minute")}});
-    expect(expired.expiresAt).toBe(accepted.expiresAt);
+    await expect(f.service.get(accepted.generationId)).rejects.toMatchObject({code: "generation_expired"});
     expect(await f.service.claim("late")).toBeNull();
-    expect(f.store.jobs.get(accepted.generationId)?.status).toBe("failed");
+    expect(f.store.jobs.get(accepted.generationId)?.expiresAt).toBe(Date.parse(accepted.expiresAt));
     expect(JSON.parse(f.store.ledger.get("budget")!.value).reservations[accepted.generationId].unknown).toBe(true);
     expect(accounting(f.store).filter(([key]) => key !== "budget")).toEqual(counts);
   });
 
-  it("still claims a job just before the full hour", async () => {
+  it("still claims a job just before its storage expires", async () => {
     const f = fixture();
     const accepted = await f.service.generate(input(), "203.0.113.1");
-    f.config.now += 60 * 60_000 - 1;
+    f.config.now = Date.parse(accepted.expiresAt) - 1;
     expect((await f.service.claim("on-time"))?.id).toBe(accepted.generationId);
   });
 
-  it("blocks paid stages and new admissions at the unchanged budget threshold with a larger queue", async () => {
+  it("blocks paid stages and new admissions at an optional budget threshold with a larger queue", async () => {
     vi.stubEnv("PET_GENERATION_QUEUE_LIMIT", "30");
     const f = fixture(0.04);
     for (let i = 0; i < 8; i++) await f.service.generate(input(), `203.0.113.${i + 1}`);

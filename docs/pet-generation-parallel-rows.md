@@ -3,7 +3,7 @@
 The worker generates the base reference first, then requests the eleven animation
 rows in one batch. One pet is active for the whole service, with up to 30 waiting
 tasks by default (`PET_GENERATION_QUEUE_LIMIT`, integer 1–200, configured identically
-in web and worker). Queued work times out after 60 minutes; the 24-hour lifetime
+in web and worker). Waiting alone does not cancel queued work; the 24-hour lifetime
 still starts at acceptance. Invalid nonempty queue settings fail closed. Model, prompts, image dimensions, twelve-image-stage maximum, English card
 metadata and proxy routing are unchanged.
 
@@ -23,10 +23,18 @@ raw prompts, images, provider bodies and stderr are not diagnostic fields.
 ## No monetary reservations
 
 The service does not reserve money at admission, before image calls, or before
-card metadata. It stops accepting tasks or authorizing calls when recorded spend
-for the Moscow day reaches the configured threshold (normally $50). Already-sent
-calls can finish above that amount, and unavailable provider usage is not assumed
-to be zero cost. This is a recorded-spend threshold, not a hard spending cap.
+card metadata. No monetary threshold applies by default: unset, empty or zero
+`PET_GENERATION_BUDGET_USD` keeps accounting without blocking work by cost. An
+operator can set a positive finite USD amount to stop new tasks and provider calls
+when recorded spend for the Moscow day reaches that amount. Already-sent calls
+can finish above an enabled threshold, and unavailable provider usage is not
+assumed to be zero cost. An enabled threshold is not a hard spending cap.
+
+Default daily allowances are 100 tasks per IP and 2000 globally. Configure positive
+decimal safe integers with `PET_GENERATION_DAILY_IP_LIMIT` and
+`PET_GENERATION_DAILY_GLOBAL_LIMIT`, consistently in web and worker. These limits
+count accepted tasks and reset at midnight Moscow time. Queue capacity is independent of these allowances. The original 24-hour lifetime
+also applies while a task waits in the queue.
 
 The existing `budget.reservations` JSON field remains for compatible storage:
 new entries contain `remainingMicroUsd: 0` and an `unknown` accounting flag.
@@ -42,6 +50,21 @@ unknown balance. Unclassified outcomes and uncertain storage/lease transitions s
 The card request remains sequential and keeps its existing input-size and
 estimated request-cost bounds; those checks allocate no money from the daily
 budget. There is no smaller-batch fallback to fit monetary reservations.
+
+### Provider responses after task expiry
+
+The 24-hour task and artifact deadline is not extended for an in-flight request.
+A live owning worker may renew only its scheduler lease while draining responses.
+No new provider call is started after task expiry, and expired tasks or artifacts
+are not recreated. Known returned costs are still recorded before the worker
+releases its active slot; unknown outcomes retain their pause and accounting rules.
+
+The existing ledger stores a `generation-results:<id>` receipt containing result
+fingerprints and the finalizing worker identity, without prompts or image bytes.
+The receipt expires seven days after task acceptance, matching request recovery.
+Cost recording and the receipt share one transaction, so a lost acknowledgement
+can be retried without counting the result again or clearing a newer worker's slot.
+All parallel provider responses settle before expired-task finalization.
 
 ## Release and rollback
 
@@ -150,8 +173,8 @@ idempotency; normalized-image hash protects the saved artifact. The reference is
 private, expires with the job, and is never copied into gallery assets or the ZIP.
 
 A review job releases its worker lease and scheduler slot while awaiting approval.
-Confirmation queues the same job once, reuses its base and starts a fresh 60-minute
-queue clock. It consumes no new daily attempt and preserves recorded expenses and
+Confirmation queues the same job once and reuses its base without adding a
+separate waiting deadline. It consumes no new daily attempt and preserves recorded expenses and
 unknown accounting markers. The original 24-hour expiry never moves. An explicit
 new attempt creates a new job and consumes another daily attempt; refreshing or
 retrying an interrupted request does not. Confirmation is not an automatic retry

@@ -46,7 +46,10 @@ async function submit() {
   });
 }
 
-it.each(["rerender", "reload"])("recovers a lost accepted UUID after %s with invalid queue configuration", async mode => {
+it.each([
+  ["rerender", "PET_GENERATION_QUEUE_LIMIT"], ["reload", "PET_GENERATION_QUEUE_LIMIT"],
+  ["rerender", "PET_GENERATION_DAILY_IP_LIMIT"], ["reload", "PET_GENERATION_DAILY_IP_LIMIT"],
+])("recovers a lost accepted UUID after %s with invalid %s", async (mode, setting) => {
   const store = new MemoryStore();
   const service = createGenerationService(store, {enabled: () => true, secret: () => "synthetic-queue-recovery-secret"});
   vi.spyOn(petGeneration, "generate").mockImplementation(service.generate);
@@ -68,7 +71,7 @@ it.each(["rerender", "reload"])("recovers a lost accepted UUID after %s with inv
   const uuidCalls = uuid.mock.calls.length;
   const generationId = [...store.jobs.keys()][0];
 
-  vi.stubEnv("PET_GENERATION_QUEUE_LIMIT", "invalid");
+  vi.stubEnv(setting, "invalid");
   if (mode === "reload") {await act(async () => root.unmount()); root = createRoot(host);}
   render();
   expect(fetchMock).toHaveBeenCalledOnce();

@@ -1,4 +1,3 @@
-import {GENERATION_QUEUE_WAIT_MINUTES} from "@/lib/pets/generation/queue-policy";
 import type { ProviderFailure } from "@/lib/pets/generation/provider-failure";
 
 export type PublicGenerationError = {
@@ -80,7 +79,7 @@ export function publicGenerationError(code: string, providerFailure?: ProviderFa
     case "generation_paused":
       return result("Generation is paused while an earlier request is checked.", "Wait for the service administrator to resolve the request. Do not start another task automatically.");
     case "queue_timeout":
-      return result(`This task was not started within the ${GENERATION_QUEUE_WAIT_MINUTES}-minute queue limit.`, NEW_TASK);
+      return result("This task was stopped under an earlier queue waiting limit.", NEW_TASK);
     case "generation_disabled":
       return result("Pet generation is currently disabled.", "Check back after generation is enabled. Do not start another task automatically.");
     case "rate_limited":

@@ -11,7 +11,7 @@ import {validatePetJson} from "@/lib/pets/validation";
 import {publicJob} from "@/lib/pets/generation/public-job";
 import {scheduler, expireQueue, requireQueueCapacity, saveScheduler} from "@/lib/pets/generation/scheduler";
 import {readDailyQuota, consumeDailyQuota} from "@/lib/pets/generation/quota-grants";
-import {startBudgetTracking} from "@/lib/pets/generation/budget";
+import {startBudgetTracking, type GenerationBudgetLimit} from "@/lib/pets/generation/budget";
 
 class AdmissionDayChanged extends Error {}
 const sha = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
@@ -25,7 +25,7 @@ export async function readRevisionAtlas(job: GenerationJob, read: GenerationTran
 }
 
 export function createAnimationRevisionService(store: GenerationStore, options: {
-  now: () => number; enabled: () => boolean; secret: () => string; createId: () => string; budgetUsd: () => number; automaticAnimationRepair?: () => boolean;
+  now: () => number; enabled: () => boolean; secret: () => string; createId: () => string; budgetUsd: () => GenerationBudgetLimit; automaticAnimationRepair?: () => boolean;
 }) {
   const live = (job: GenerationJob | null) => {
     if (!job) throw new GenerationError("not_found");

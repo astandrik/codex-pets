@@ -58,7 +58,8 @@ export async function generateRepairAnimation(context: Context, job: GenerationJ
     catch (error) {
       const failure = error instanceof GenerationError ? error : new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary: "renderer_process", reason: "unclassified"});
       try { await context.mutate(() => context.service.failAnimationAttempt(job, name, attempt.token, failure)); }
-      catch {
+      catch (error) {
+        if (error instanceof GenerationError && job.expiresAt <= context.now()) throw error;
         const recorded = await currentJob(context, job).then(current => latestAnimationAttempt(current, name)).catch(() => undefined);
         if (recorded?.token !== attempt.token || recorded.ordinal !== attempt.ordinal || recorded.status !== "failed" ||
           recorded.failure?.code !== failure.code || !isDeepStrictEqual(recorded.failure.diagnostic, failure.diagnostic) ||
@@ -71,7 +72,12 @@ export async function generateRepairAnimation(context: Context, job: GenerationJ
       continue;
     }
     try { await context.mutate(() => context.service.saveAnimationAttempt(job, name, attempt.token, image.bytes, image)); }
-    catch {
+    catch (error) {
+      if (error instanceof GenerationError && error.code === "generation_expired") throw error;
+      if (job.expiresAt <= context.now()) {
+        if (error instanceof GenerationError && error.code === "stale_worker") throw error;
+        throw uncertain("checkpoint");
+      }
       const readback = await currentJob(context, job);
       const saved = latestAnimationAttempt(readback, name);
       const bytes = await context.store.readArtifact(job.id, `stage-${name}.png`, context.now());

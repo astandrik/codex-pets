@@ -3,12 +3,12 @@ import {createHash,randomUUID} from "node:crypto";
 import {z} from "zod";
 import {baseRepairSchema,ANIMATION_ATTEMPT_FAILURE_CODES,GenerationError,moscowDay,type BaseAttempt,type GenerationJob,type Scheduler,type ImageUsage} from "@/lib/pets/generation/model";
 import {baseFailureRetryReason,latestBaseAttempt} from "@/lib/pets/generation/base-repair";
-import {checkStageBudget,recordStageCost} from "@/lib/pets/generation/budget";
+import {checkStageBudget,recordStageCost,type GenerationBudgetLimit} from "@/lib/pets/generation/budget";
 import {requireJobWithActiveWorkerLease,scheduler,saveScheduler} from "@/lib/pets/generation/scheduler";
 import type {GenerationStore,GenerationTransaction} from "@/lib/pets/generation/store";
 
 const hash=(bytes:Buffer)=>createHash("sha256").update(bytes).digest("hex");
-type Options={now:()=>number;enabled:()=>boolean;budgetUsd:()=>number};
+type Options={now:()=>number;enabled:()=>boolean;budgetUsd:()=>GenerationBudgetLimit};
 export function createBaseRepairService(store:GenerationStore,options:Options){
   async function withJob<T>(job:GenerationJob,run:(tx:GenerationTransaction,current:GenerationJob,state:Scheduler,now:number)=>Promise<T>){
     return store.transaction(async tx=>{

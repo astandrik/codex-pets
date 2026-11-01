@@ -8,7 +8,7 @@ import {STAGE_NAMES} from './model';
 function fixture(spent=0){
  const store=new MemoryStore(),now=Date.parse('2026-10-13T10:00:00Z');
  store.ledger.set('budget',{value:JSON.stringify({spent:{'2026-10-13':spent},reservations:{}}),expiresAt:Date.UTC(2099,0)});
- const service=createGenerationService(store,{now:()=>now,enabled:()=>true,secret:()=> 'no-reserve-test-secret-at-least-32-characters'});
+ const service=createGenerationService(store,{now:()=>now,enabled:()=>true,budgetUsd:()=>50,secret:()=> 'no-reserve-test-secret-at-least-32-characters'});
  const input=()=>({requestId:randomUUID(),prompt:'Synthetic pet'});
  return{store,service,input,now};
 }

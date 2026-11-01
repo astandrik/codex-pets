@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createGenerationService } from "@/lib/pets/generation/service";
 import { createGenerationWorker } from "@/lib/pets/generation/worker";
-import { DAY, LEASE_MS, WAIT_MS, readGenerationClientIp, moscowDay, type GenerationJob } from "@/lib/pets/generation/model";
+import { DAY, LEASE_MS, readGenerationClientIp, moscowDay, type GenerationJob } from "@/lib/pets/generation/model";
 import type { GenerationStore, GenerationTransaction } from "@/lib/pets/generation/store";
+beforeEach(() => {
+  vi.stubEnv("PET_GENERATION_DAILY_IP_LIMIT", "10");
+  vi.stubEnv("PET_GENERATION_DAILY_GLOBAL_LIMIT", "200");
+});
 
 class MemoryStore implements GenerationStore {
   jobs = new Map<string, GenerationJob>();
@@ -102,15 +106,17 @@ describe("pet generation admission and privacy", () => {
     await expect(f.service.generate(f.input(), "198.51.100.1")).resolves.toMatchObject({ status: "queued" });
     expect(moscowDay(f.config.now)).toBe("2026-10-10");
   });
-  it("caps the waiting queue and expires queued work without a provider call", async () => {
+  it("keeps queue capacity occupied while waiting and expires work only at its storage deadline", async () => {
     vi.stubEnv("PET_GENERATION_QUEUE_LIMIT", "5");
     const f = fixture(); let id = "";
     for (let i = 0; i < 5; i += 1) id = (await f.service.generate(f.input(), "203.0.113." + (i + 1))).generationId;
     await expect(f.service.generate(f.input(), "198.51.100.1")).rejects.toMatchObject({ code: "queue_full" });
-    f.config.now += WAIT_MS;
-    expect(await f.service.get(id)).toMatchObject({ status: "failed", error: { code: "queue_timeout" } });
+    f.config.now += 2 * 60 * 60_000;
+    expect((await f.service.get(id)).status).toBe("queued");
+    await expect(f.service.generate(f.input(), "198.51.100.1")).rejects.toMatchObject({ code: "queue_full" });
+    f.config.now += DAY - 2 * 60 * 60_000;
     expect(await f.service.claim("worker")).toBeNull();
-    expect(await f.service.get(id)).toMatchObject({ status: "failed", error: { code: "queue_timeout" } });
+    await expect(f.service.get(id)).rejects.toMatchObject({code: "generation_expired"});
   });
   it("requires a trusted proxy IP and rejects arbitrary forwarded chains", async () => {
     const f = fixture();
