@@ -5,7 +5,7 @@ import {ThemeProvider} from "@gravity-ui/uikit";
 import {afterEach, beforeEach, expect, it, vi} from "vitest";
 import {GenerationContinuation} from "./GenerationContinuation";
 import {CONTINUATION_STATES} from "@/lib/pets/generation/continuation-model";
-import {CONTINUATION_PENDING, CONTINUATION_PAYLOAD, rememberContinuation, rememberContinuationInput} from "./continuation-request";
+import {CONTINUATION_PENDING, readContinuationInput, rememberContinuation, rememberContinuationInput} from "./continuation-request";
 
 const {push} = vi.hoisted(() => ({push: vi.fn()}));
 vi.mock("next/navigation", () => ({useRouter: () => ({push})}));
@@ -69,7 +69,7 @@ it("restores the frozen full request after reload and retries the identical body
   await open();await enter("8");await act(async () => submit().click());
   const first = fetchMock.mock.calls.find(([, init]) => init?.method === "POST")![1].body;
   expect(JSON.parse(first).maxRetries).toBe(8);
-  expect(JSON.parse(localStorage.getItem(CONTINUATION_PAYLOAD + id)!).input).toEqual(JSON.parse(first));
+  expect(readContinuationInput(localStorage, id, JSON.parse(first).requestId)).toEqual(JSON.parse(first));
   await act(async () => root.unmount());root = createRoot(host);
   const uuid = vi.spyOn(crypto, "randomUUID");await render();
   expect(field().value).toBe("8");expect(field().disabled).toBe(true);
@@ -120,7 +120,7 @@ it.each([false, true])("restores server preparation input even if storage is blo
   expect(field().value).toBe("9");expect(field().disabled).toBe(true);
   expect(localStorage.getItem(CONTINUATION_PENDING + id)).toBe(JSON.stringify({requestId}));
   if (blocked) expect(host.textContent).toContain("Не закрывайте страницу");
-  else expect(JSON.parse(localStorage.getItem(CONTINUATION_PAYLOAD + id)!).input).toEqual(input);
+  else expect(readContinuationInput(localStorage, id, requestId)).toEqual(input);
   expect(fetchMock.mock.calls.every(([, init]) => init?.method !== "POST")).toBe(true);
 });
 
@@ -133,7 +133,66 @@ it("keeps a different tab's pending operation when this one is accepted", async 
   await act(async () => finish(response({operation: {id: sent.requestId, mode: "regenerate", state: "accepted", generationId: "b".repeat(64)},
     generation: {generationId: "b".repeat(64), expiresAt: new Date(Date.now() + 100000).toISOString(), status: "queued"}})));
   expect(JSON.parse(localStorage.getItem(CONTINUATION_PENDING + id)!)).toEqual({requestId: other.requestId});
-  expect(JSON.parse(localStorage.getItem(CONTINUATION_PAYLOAD + id)!).input).toEqual(other);
+  expect(readContinuationInput(localStorage, id, other.requestId)).toEqual(other);
+});
+
+it("restores the first tab's exact request after the second tab cannot save its pointer", async () => {
+  fetchMock.mockImplementation(async (url, init) => init?.method === "POST" ? Promise.reject(Error("lost response"))
+    : String(url).includes("requestId=") ? response({code: "not_found"}, 404) : response({options: options()}));
+  await open();await enter("12");
+  const firstHost = document.createElement("div");document.body.append(firstHost);
+  const firstRoot = createRoot(firstHost);
+  try {
+    await act(async () => firstRoot.render(<GenerationContinuation generationId={id} enabled onContinued={() => {}}/>));
+    await act(async () => [...firstHost.querySelectorAll<HTMLButtonElement>("button")].find(b => b.textContent === "Продолжить генерацию")!.click());
+    await act(async () => {
+      const input = firstHost.querySelector<HTMLInputElement>('[aria-label="Автоповторы при ошибке"]')!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "8");
+      input.dispatchEvent(new Event("input", {bubbles: true}));
+    });
+    await act(async () => firstHost.querySelector<HTMLButtonElement>("[data-continuation-submit]")!.click());
+    const first = fetchMock.mock.calls.find(([, init]) => init?.method === "POST")![1].body;
+    const set = Storage.prototype.setItem;
+    const pointerFailure = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+      if (key === CONTINUATION_PENDING + id) throw Error("pointer unavailable");
+      set.call(this, key, value);
+    });
+    await act(async () => submit().click());
+    pointerFailure.mockRestore();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+    await act(async () => root.unmount());root = createRoot(host);
+    await render("dark");
+    expect(field().value).toBe("8");expect(field().disabled).toBe(true);
+    await act(async () => button("Проверить запрос").click());
+    await act(async () => button("Повторить тот же запрос").click());
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")[1][1].body).toBe(first);
+  } finally {await act(async () => firstRoot.unmount());firstHost.remove();}
+});
+
+it.each([
+  {count: undefined, text: "Используется прежняя политика сервиса."},
+  {count: 0, text: "Одна попытка, без автоповторов."},
+  {count: 5, text: "До 6 попыток"},
+  {count: 50, text: "До 51 попытки"},
+])("shows the frozen retry policy after lost response and reload: $count", async ({count, text}) => {
+  const {regenerationRetries, ...legacyOptions} = options();
+  fetchMock.mockImplementation(async (_url, init) => init?.method === "POST" ? Promise.reject(Error("lost response"))
+    : response({options: count === undefined ? legacyOptions : {...legacyOptions, regenerationRetries}}));
+  await open();
+  if (count === undefined) expect(field()).toBeNull();
+  else await enter(String(count));
+  await act(async () => submit().click());
+  const sent = JSON.parse(fetchMock.mock.calls.find(([, init]) => init?.method === "POST")![1].body);
+  if (count === undefined) expect(sent).not.toHaveProperty("maxRetries");
+  else expect(sent.maxRetries).toBe(count);
+  expect(host.textContent).toContain(text);
+  expect(field().value).toBe(count === undefined ? "" : String(count));expect(field().disabled).toBe(true);
+  await render("dark");await act(async () => window.dispatchEvent(new Event("resize")));
+  expect(host.textContent).toContain(text);
+  await act(async () => root.unmount());root = createRoot(host);await render();
+  expect(host.textContent).toContain(text);
+  expect(field().value).toBe(count === undefined ? "" : String(count));
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
 });
 
 it("recovers an accepted operation after source expiry without a POST", async () => {

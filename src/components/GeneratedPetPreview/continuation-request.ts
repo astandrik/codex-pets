@@ -10,19 +10,25 @@ export function parseMaxRetriesInput(value: string, max: number = REGENERATION_R
 }
 const savedInputSchema = z.object({requestId: z.uuid(), input: continuationInputSchema}).strict()
     .refine(value => value.requestId === value.input.requestId);
-export function readContinuationInput(storage: Pick<Storage, "getItem">, sourceId: string, requestId: string): ContinuationInput | null {
+const payloadKey = (sourceId: string, requestId: string) => CONTINUATION_PAYLOAD + sourceId + ":" + requestId;
+function parseSavedInput(raw: string | null, requestId: string): ContinuationInput | null {
     try {
-        const raw = storage.getItem(CONTINUATION_PAYLOAD + sourceId);
         if (!raw || new TextEncoder().encode(raw).length > 4096) return null;
         const parsed = savedInputSchema.safeParse(JSON.parse(raw));
         return parsed.success && parsed.data.requestId === requestId ? parsed.data.input : null;
+    } catch { return null; }
+}
+export function readContinuationInput(storage: Pick<Storage, "getItem">, sourceId: string, requestId: string): ContinuationInput | null {
+    try {
+        const raw = storage.getItem(payloadKey(sourceId, requestId)) ?? storage.getItem(CONTINUATION_PAYLOAD + sourceId);
+        return parseSavedInput(raw, requestId);
     } catch { return null; }
 }
 export function rememberContinuationInput(storage: Pick<Storage, "setItem">, sourceId: string, input: ContinuationInput) {
     const saved = savedInputSchema.parse({requestId: input.requestId, input});
     const raw = JSON.stringify(saved);
     if (new TextEncoder().encode(raw).length > 4096) throw Error("Continuation input is too large");
-    storage.setItem(CONTINUATION_PAYLOAD + sourceId, raw);
+    storage.setItem(payloadKey(sourceId, input.requestId), raw);
     rememberContinuation(storage, sourceId, input.requestId);
 }
 export function readContinuationId(storage: Pick<Storage, "getItem">, sourceId: string): string | null {
@@ -39,7 +45,8 @@ export function readContinuationId(storage: Pick<Storage, "getItem">, sourceId: 
 }
 export function rememberContinuation(storage: Pick<Storage, "setItem">, sourceId: string, requestId: string) { storage.setItem(CONTINUATION_PENDING + sourceId, JSON.stringify({ requestId })); }
 export function clearContinuation(storage: Pick<Storage, "getItem" | "removeItem">, sourceId: string, requestId: string) {
-    if (readContinuationInput(storage, sourceId, requestId)) storage.removeItem(CONTINUATION_PAYLOAD + sourceId);
+    storage.removeItem(payloadKey(sourceId, requestId));
+    if (parseSavedInput(storage.getItem(CONTINUATION_PAYLOAD + sourceId), requestId)) storage.removeItem(CONTINUATION_PAYLOAD + sourceId);
     if (readContinuationId(storage, sourceId) === requestId) storage.removeItem(CONTINUATION_PENDING + sourceId);
 }
 export const continuationReplySchema = z.object({ operation: z.object({ id: z.uuid(), mode: z.enum(["rebuild", "regenerate"]), state: z.enum(["preparing", "accepted", "rejected"]), generationId: id.optional(), retryAt: z.number().optional() }), input: continuationInputSchema.optional(), generation: z.object({ generationId: id, expiresAt: z.iso.datetime(), status: z.enum(["queued", "generating", "processing", "completed", "failed", "awaiting_confirmation"]) }).optional() });

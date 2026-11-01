@@ -223,7 +223,9 @@ function ContinuationForm({ generationId, enabled, onContinued, onVisibilityChan
         return null;
     if (!opened && !requestId)
         return <section className="generation-continuation"><Button onClick={() => void loadOptions()}>Продолжить генерацию</Button></section>;
-    return <GenerationRecoveryView generationId={generationId} options={options} mode={mode} states={states} busy={busy} error={error} requestId={requestId} submitted={Boolean(submitted)} receiptExpired={receiptExpired} sourceUnavailable={sourceUnavailable} acceptedUrl={acceptedUrl} manualConfirmed={manualConfirmed} checkAttempted={checkAttempted} maxRetries={maxRetries} legacyRetries={legacyRetries}
+    const displayedMaxRetries = submitted ? String(submitted.maxRetries ?? "") : maxRetries;
+    const displayedLegacyRetries = submitted ? submitted.maxRetries === undefined : legacyRetries;
+    return <GenerationRecoveryView generationId={generationId} options={options} mode={mode} states={states} busy={busy} error={error} requestId={requestId} submitted={Boolean(submitted)} receiptExpired={receiptExpired} sourceUnavailable={sourceUnavailable} acceptedUrl={acceptedUrl} manualConfirmed={manualConfirmed} checkAttempted={checkAttempted} maxRetries={displayedMaxRetries} legacyRetries={displayedLegacyRetries}
       onMaxRetries={value=>{retriesEdited.current=true;setMaxRetries(value);setManualConfirmed(false);}} onLegacyRetries={value=>{setLegacyRetries(value);setManualConfirmed(false);}}
       onMode={value=>{setMode(value);setManualConfirmed(false);}} onStates={value=>{setStates(value);setManualConfirmed(false);}} onManualConfirmed={setManualConfirmed} onSubmit={()=>void submit()} onCheck={id=>void check(id)} onRefresh={()=>void loadOptions()} onClose={()=>setOpened(false)} />;
 }

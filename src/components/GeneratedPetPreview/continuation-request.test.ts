@@ -14,7 +14,7 @@ const input = () => ({requestId: randomUUID(), mode: "regenerate" as const, sour
 it("stores the exact input before the backwards-compatible UUID pointer", () => {
   const s = storage(), body = input();
   requests.rememberContinuationInput(s, source, body);
-  expect(s.writes).toEqual([requests.CONTINUATION_PAYLOAD + source, requests.CONTINUATION_PENDING + source]);
+  expect(s.writes).toEqual([requests.CONTINUATION_PAYLOAD + source + ":" + body.requestId, requests.CONTINUATION_PENDING + source]);
   expect(JSON.parse(s.getItem(requests.CONTINUATION_PENDING + source)!)).toEqual({requestId: body.requestId});
   expect(requests.readContinuationId(s, source)).toBe(body.requestId);
   expect(requests.readContinuationInput(s, source, body.requestId)).toEqual(body);
@@ -37,7 +37,7 @@ it.each(["invalid-json", "wrong-id", "oversized", "invalid-count", "unexpected-f
     : JSON.stringify(problem === "wrong-id" ? {...payload, requestId: randomUUID()}
       : problem === "invalid-count" ? {...payload, input: {...body, maxRetries: 51}}
       : {...payload, input: {...body, prompt: "not allowed"}});
-  s.values.set(requests.CONTINUATION_PAYLOAD + source, raw);
+  s.values.set(requests.CONTINUATION_PAYLOAD + source + ":" + body.requestId, raw);
   expect(requests.readContinuationId(s, source)).toBe(body.requestId);
   expect(requests.readContinuationInput(s, source, body.requestId)).toBeNull();
 });
@@ -58,4 +58,42 @@ it("does not delete the pointer or snapshot of another operation", () => {
   expect(requests.readContinuationInput(s, source, next.requestId)).toEqual(next);
   requests.clearContinuation(s, source, next.requestId);
   expect(s.values.size).toBe(0);
+});
+
+it.each([false, true])("preserves the pending payload after another pointer write fails (legacy: %s)", legacy => {
+  const s = storage(), first = input(), next = {...input(), maxRetries: 12};
+  if (legacy) {
+    requests.rememberContinuation(s, source, first.requestId);
+    s.values.set(requests.CONTINUATION_PAYLOAD + source, JSON.stringify({requestId: first.requestId, input: first}));
+  } else requests.rememberContinuationInput(s, source, first);
+  const set = s.setItem;
+  s.setItem = (key, value) => {
+    if (key === requests.CONTINUATION_PENDING + source) throw Error("pointer write failed");
+    set(key, value);
+  };
+  expect(() => requests.rememberContinuationInput(s, source, next)).toThrow("pointer write failed");
+  expect(requests.readContinuationId(s, source)).toBe(first.requestId);
+  expect(requests.readContinuationInput(s, source, first.requestId)).toEqual(first);
+});
+
+it("clears only its own payload when an older tab has saved another operation", () => {
+  const s = storage(), first = input(), next = input();
+  requests.rememberContinuationInput(s, source, first);
+  requests.rememberContinuation(s, source, next.requestId);
+  s.values.set(requests.CONTINUATION_PAYLOAD + source, JSON.stringify({requestId: next.requestId, input: next}));
+  requests.clearContinuation(s, source, first.requestId);
+  expect(requests.readContinuationId(s, source)).toBe(next.requestId);
+  expect(requests.readContinuationInput(s, source, next.requestId)).toEqual(next);
+  requests.clearContinuation(s, source, next.requestId);
+  expect(s.values.size).toBe(0);
+});
+
+it("clears a completed request even if the old shared payload is corrupt", () => {
+  const s = storage(), body = input();
+  requests.rememberContinuationInput(s, source, body);
+  s.values.set(requests.CONTINUATION_PAYLOAD + source, "{");
+  expect(requests.readContinuationInput(s, source, body.requestId)).toEqual(body);
+  requests.clearContinuation(s, source, body.requestId);
+  expect(requests.readContinuationId(s, source)).toBeNull();
+  expect(requests.readContinuationInput(s, source, body.requestId)).toBeNull();
 });
