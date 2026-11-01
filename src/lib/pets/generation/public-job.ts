@@ -1,15 +1,13 @@
 import {continuationEnabled} from "@/lib/pets/generation/continuation-model";
-import {WAIT_MS, requiredStageNames, usesStageCheckpoints, isUnacceptedAnimationRevision, type GenerationJob} from "@/lib/pets/generation/model";
+import {withQueueTimeout, requiredStageNames, usesStageCheckpoints, isUnacceptedAnimationRevision, generationBaseRetryEnabled, generationReviewFlowEnabled, type GenerationJob} from "@/lib/pets/generation/model";
+import {baseRetryEligibility} from "@/lib/pets/generation/base-retry-model";
 import type {PublicCardMetadata} from "@/lib/pets/generation/card-metadata";
 import {publicGenerationError} from "@/lib/pets/generation/public-error";
 import {toPublicUrl} from "@/lib/base-path";
 import {getAnimationRepairSummary, canResumeAnimationRepair, hasUnsettledAnimationAttempt} from "@/lib/pets/generation/animation-repair";
 
 export function publicJob(record: GenerationJob, now: number, metadata?:PublicCardMetadata) {
-  let job = record;
-  if (record.status === "queued" && (record.queuedAt ?? record.createdAt) + WAIT_MS <= now) {
-    job = { ...record, status: "failed", error: "queue_timeout", prompt: "" };
-  }
+  let job = withQueueTimeout(record, now);
   if (record.status === "generating" && record.leaseUntil && record.leaseUntil <= now && !canResumeAnimationRepair(record) && (!usesStageCheckpoints(record) || record.stages.some(stage => stage.status === "inflight") || hasUnsettledAnimationAttempt(record))) {
     job = { ...record, status: "failed", error: "outcome_unknown" };
   }
@@ -23,6 +21,8 @@ export function publicJob(record: GenerationJob, now: number, metadata?:PublicCa
   }
   return {
     generationId: job.id,
+      ...(generationBaseRetryEnabled()&&generationReviewFlowEnabled()&&baseRetryEligibility(job)?{canRetryBase:true}:{}),
+      ...(job.baseRetrySourceId?{baseRetrySourceId:job.baseRetrySourceId}:{}),
     status: job.status,
     progress: {completedSteps,totalSteps},
     ...(job.animationRepair ? {animationRepair: getAnimationRepairSummary(job, now)} : {}),

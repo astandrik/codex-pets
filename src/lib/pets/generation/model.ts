@@ -9,6 +9,7 @@ import {cardMetadataRecordSchema} from "@/lib/pets/generation/card-metadata";
 import { providerFailureSchema, readProviderFailure, type ProviderFailure } from "@/lib/pets/generation/provider-failure";
 import {cliCauseSchema,readCliCause,type CliCause,errorDetailsSchema,readErrorDetails,type ErrorDetails} from "@/lib/pets/generation/cli-cause";
 import { failureDiagnosticSchema, readFailureDiagnostic, type FailureDiagnostic } from "@/lib/pets/generation/failure-diagnostic";
+import {retryInputMetadataSchema} from "@/lib/pets/generation/base-retry-model";
 
 export const DAY = 86_400_000;
 export const WAIT_MS = 30 * 60_000;
@@ -115,6 +116,8 @@ export const jobSchema = z.object({
   baseConfirmedAt: z.number().optional(),
   queuedAt: z.number().optional(),
   reference: referenceImageSchema.optional(),
+  retryInput: retryInputMetadataSchema.optional(),
+  baseRetrySourceId: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   createdAt: z.number(),
   expiresAt: z.number(),
   worker: z.string().default(""),
@@ -150,6 +153,12 @@ export const jobSchema = z.object({
     [...job.animationRepair.pending, ...job.animationRepair.attempts.map(a => a.state)].every(state =>
       (job.continuation?.mode === "rebuild" ? CONTINUATION_STATES : job.continuation?.generationStages ?? job.animationRevision?.selectedStates ?? CONTINUATION_STATES).includes(state))), "Invalid animation repair scope");
 export type GenerationJob = z.infer<typeof jobSchema>;
+// Read-only timeout projection; expireQueue persists the transition in a transaction.
+export function withQueueTimeout(job: GenerationJob, now: number): GenerationJob {
+  return job.status === "queued" && (job.queuedAt ?? job.createdAt) + WAIT_MS <= now
+    ? {...job, status: "failed", error: "queue_timeout", prompt: ""}
+    : job;
+}
 export function requiredStageNames(job: GenerationJob): readonly StageName[] {
   if (job.continuation) return continuationPlanSchema.parse(job.continuation).compositionStages;
   if (job.pipelineVersion === 3) {
@@ -172,6 +181,9 @@ export function generationAnimationRevisionsEnabled() {
 }
 export function generationAnimationAutoRepairEnabled() {
   return process.env.PET_GENERATION_ANIMATION_AUTO_REPAIR_ENABLED === "true";
+}
+export function generationBaseRetryEnabled() {
+  return process.env.PET_GENERATION_BASE_RETRY_ENABLED === "true";
 }
 export const schedulerSchema = z.object({
   revision: z.number().int(),

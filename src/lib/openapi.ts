@@ -426,6 +426,26 @@ export function buildOpenApiSpec() {
           parameters: [{name: "id", in: "path", required: true, schema: {type: "string", pattern: "^[a-f0-9]{64}$"}}],
           responses: {"200": {description: "Saved source atlas.", content: {"image/webp": {schema: {type: "string", format: "binary"}}}}, "404": notFoundResponse, "410": errorResponse, "503": errorResponse}},
       },
+      "/api/pet-generations/{id}/base-retries": {
+        get: {operationId:"getPetBaseRetry",tags:["Submissions"],summary:"Read private base-retry input or recover an accepted retry",security:publicReadSecurity,
+          description:"Read-only. Without requestId, returns saved input or an existing child. With requestId, recovers the accepted child even after source expiry or admission flag-off. No UUID, quota charge or provider call is created by GET.",
+          parameters:[{name:"id",in:"path",required:true,schema:{type:"string",pattern:"^[a-f0-9]{64}$"}},{name:"requestId",in:"query",required:false,schema:{type:"string",format:"uuid"}}],
+          responses:{"200":{description:"Private options or accepted retry; no-store.",content:{"application/json":{schema:jsonObject}}},"400":errorResponse,"404":notFoundResponse,"409":errorResponse,"410":errorResponse,"503":errorResponse}},
+        post: {operationId:"retryPetGenerationBase",tags:["Submissions"],summary:"Explicitly create one new character attempt from a failed base",security:publicReadSecurity,
+          description:"Same-origin action. Requires enabled base-retry and review flow, a live eligible failed source and its current sourceRevision. Creates at most one child per source, using one ordinary daily attempt and the existing queue/budget policy. Repeated UUIDs or concurrent different UUIDs return the same child. Input snapshots and normalized reference bytes remain private; no provider runs in this request. Legacy sources require an explicit image-only choice or re-entered text. Sources with uncertain paid outcomes are blocked.",
+          parameters:[{name:"id",in:"path",required:true,schema:{type:"string",pattern:"^[a-f0-9]{64}$"}}],
+          requestBody:{required:true,content:{"application/json":{schema:{oneOf:[
+            {type:"object",additionalProperties:false,required:["requestId","sourceRevision","mode"],properties:{requestId:{type:"string",format:"uuid"},sourceRevision:{type:"string",pattern:"^[a-f0-9]{64}$"},mode:{type:"string",enum:["saved"]}}},
+            {type:"object",additionalProperties:false,required:["requestId","sourceRevision","mode"],properties:{requestId:{type:"string",format:"uuid"},sourceRevision:{type:"string",pattern:"^[a-f0-9]{64}$"},mode:{type:"string",enum:["legacy-image-only"]}}},
+            {type:"object",additionalProperties:false,required:["requestId","sourceRevision","mode","prompt"],properties:{requestId:{type:"string",format:"uuid"},sourceRevision:{type:"string",pattern:"^[a-f0-9]{64}$"},mode:{type:"string",enum:["legacy-text"]},prompt:{type:"string",minLength:1,maxLength:2000}}},
+          ]}}}},
+          responses:{"202":{description:"New or existing child; source unchanged, child has its own 24 hours.",content:{"application/json":{schema:jsonObject}}},"400":errorResponse,"403":errorResponse,"404":notFoundResponse,"409":errorResponse,"410":errorResponse,"413":errorResponse,"429":errorResponse,"503":errorResponse}},
+      },
+      "/api/pet-generations/{id}/base-retries/reference": {
+        get:{operationId:"getPetBaseRetryReference",tags:["Submissions"],summary:"Read the verified private reference for base retry",security:publicReadSecurity,
+          parameters:[{name:"id",in:"path",required:true,schema:{type:"string",pattern:"^[a-f0-9]{64}$"}},{name:"v",in:"query",required:true,schema:{type:"string",pattern:"^[a-f0-9]{64}$"}}],
+          responses:{"200":{description:"Unchanged normalized PNG; private,no-store,no-referrer.",content:{"image/png":{schema:{type:"string",format:"binary"}}}},"400":errorResponse,"404":notFoundResponse,"409":errorResponse,"410":errorResponse,"503":errorResponse}},
+      },
       "/api/pet-generations/{id}/refine": {
         post: {operationId: "refinePetGenerationBase", tags: ["Submissions"], summary: "Create a new review attempt by editing a saved base character",
           description: "Same-origin website action. Requires a live, unconfirmed review base and nonempty text describing only the requested appearance changes. The server verifies and normalizes the saved base as the new private reference; no client URL or original uploaded image is used. A new request consumes one ordinary daily attempt and the existing budget/queue limits. The new job expires 24 hours after acceptance and waits for confirmation after its own base. The source job, image, costs and expiry remain unchanged. Reuse requestId and text after a lost response; replay of an accepted request also works after source expiry or review admission is disabled. A different source or text with the same requestId conflicts. New admissions require PET_GENERATION_REVIEW_FLOW_ENABLED. JSON/MCP generation without this endpoint keeps its existing contract.", security: publicReadSecurity,

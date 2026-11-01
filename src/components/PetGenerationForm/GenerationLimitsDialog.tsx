@@ -37,7 +37,7 @@ export function GenerationLimitsDialog({ open, onClose, reviewBase, automaticAni
         <p>{generationExperimentNotice(automaticAnimationRepair)}</p>
         <p>After the images are ready, one additional AI request chooses a name if left blank and prepares a description and tags. You can edit and save them before moderation.</p>
         <h3>Your reference and private result</h3>
-        <p>Your description and optional PNG, JPEG or WebP reference are sent to the AI service when you submit. The reference is stored privately for up to 24 hours; the original is not published.</p>
+        <p>Your description and optional PNG, JPEG or WebP reference are sent to the AI service when you submit. The accepted description and normalized reference may be stored privately for up to 24 hours so you can retry a failed character. They are not published.</p>
         <p>Preview and download the package before it expires. Keep the result link private: anyone with the link can access it. The 24-hour period starts when the task is accepted, not when generation finishes.</p>
         <p>Publishing is optional. Choose a gallery address on the result page, then explicitly submit your pet for moderation.</p>
         <p><a href={withBasePath("/guides/ai-pet-generator")}>Read the generation guide</a></p>
