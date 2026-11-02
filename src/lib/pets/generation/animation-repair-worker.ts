@@ -40,8 +40,10 @@ function pendingRetryFailure(job: GenerationJob, name: ContinuationState): Gener
     const ordinal = failed.ordinal - 1;
     failed = job.animationRepair?.attempts.find(attempt => attempt.state === name && attempt.ordinal === ordinal);
   }
-  if (failed?.status !== "failed" || failed.failure?.code !== "outcome_unknown") return;
+  const maxAttempts = job.animationRepair?.maxAttempts;
+  if (failed?.status !== "failed" || failed.failure?.code !== "outcome_unknown" || maxAttempts === undefined) return;
   const failure = failed.failure;
+  if (failed.ordinal >= maxAttempts && animationFailureRetryReason(failure) === "transport" && failure.diagnostic?.boundary === "provider_cli") return;
   return new GenerationError(failure.code, undefined, failure.providerFailure, undefined, failure.diagnostic, failure.cliCause);
 }
 
@@ -65,7 +67,10 @@ export async function generateRepairAnimation(context: Context, job: GenerationJ
     if (attempt?.status === "failed" && attempt.failure) {
       const failure = new GenerationError(attempt.failure.code, undefined, attempt.failure.providerFailure, undefined, attempt.failure.diagnostic, attempt.failure.cliCause);
       const reason = animationFailureRetryReason(failure);
-      if (!reason || attempt.ordinal >= maxAttempts) throw failure;
+      if (!reason || attempt.ordinal >= maxAttempts) {
+        if (reason === "transport" && failure.diagnostic?.boundary === "provider_cli") context.onTerminalFailure?.(name);
+        throw failure;
+      }
       await beforeProviderCall(context, job, retryFailure, () => reserveKnownAttempt(context, job, name, reason));
       continue;
     }

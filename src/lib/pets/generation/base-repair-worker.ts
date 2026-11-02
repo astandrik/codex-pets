@@ -21,8 +21,10 @@ function pendingRetryFailure(job:GenerationJob){
     const ordinal=failed.ordinal-1;
     failed=job.baseRepair?.attempts.find(attempt=>attempt.ordinal===ordinal);
   }
-  if(failed?.status!=="failed"||failed.failure?.code!=="outcome_unknown")return;
+  const maxAttempts=job.baseRepair?.maxAttempts;
+  if(failed?.status!=="failed"||failed.failure?.code!=="outcome_unknown"||maxAttempts===undefined)return;
   const failure=failed.failure;
+  if(failed.ordinal>=maxAttempts&&baseFailureRetryReason(failure)==="transport")return;
   return new GenerationError(failure.code,failure.retryAt,failure.providerFailure,undefined,failure.diagnostic,failure.cliCause);
 }
 export async function generateRepairBase(context:Context,job:GenerationJob,session:SpriteSession):Promise<StageImage>{
@@ -41,7 +43,10 @@ export async function generateRepairBase(context:Context,job:GenerationJob,sessi
     if((attempt.status==="failed"||attempt.status==="unknown")&&attempt.failure){
       const failure=new GenerationError(attempt.failure.code,attempt.failure.retryAt,attempt.failure.providerFailure,undefined,attempt.failure.diagnostic,attempt.failure.cliCause);
       const reason=baseFailureRetryReason(failure);
-      if(attempt.status==="unknown"||!reason||attempt.ordinal>=current.baseRepair.maxAttempts)throw failure;
+      if(attempt.status==="unknown"||!reason||attempt.ordinal>=current.baseRepair.maxAttempts){
+        if(attempt.status==="failed"&&reason==="transport")context.onTerminalFailure?.("base");
+        throw failure;
+      }
       try{await beforeProviderCall(()=>context.mutate(()=>context.service.reserveBaseAttempt(job,reason)));}
       catch(error){
         if(error instanceof GenerationError)throw error;
