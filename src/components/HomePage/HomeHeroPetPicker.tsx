@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ArrowRight, Shuffle } from "@gravity-ui/icons";
 
 import { Button, Flex, Text } from "@/components/GravityUI/GravityUI";
+import { InstallCommandButton } from "@/components/InstallCommand/InstallCommandButton";
 import { withBasePath } from "@/lib/base-path";
 import { trackGoal } from "@/lib/metrics/yandex";
 import { getPetIdleStripUrl } from "@/lib/pets/asset-urls";
@@ -196,6 +197,7 @@ export function HomeHeroPetPicker({
           <Shuffle width={16} height={16} />
           I&apos;m feeling lucky
         </Button>
+        <InstallCommandButton key={pet.slug} slug={pet.slug} surface="card" />
         <Button
           view="outlined"
           size="m"
