@@ -113,3 +113,29 @@ it('retains an image reservation after an ambiguous authorization acknowledgemen
  await expect(service.authorizeStage(job,'base')).rejects.toThrow('lost database acknowledgement');expect(await disk.journal.list()).toHaveLength(1);
  expect(JSON.parse(f.store.ledger.get('scheduler')!.value).providerSlots[0].dispatched).toBe(true);
 });
+it.each([
+ {dispatched:false,published:false},
+ {dispatched:true,published:false},
+ {dispatched:true,published:true},
+])('preserves ownership and accounting on queue pause; dispatched=$dispatched published=$published',async({dispatched,published})=>{
+ const f=await taskFixture(20,false,1),disk=await journal(),id=f.jobs[0].id;
+ f.store.ledger.get('scheduler')!.value=JSON.stringify({...JSON.parse(f.store.ledger.get('scheduler')!.value),queue:[id]});
+ const service=attachResultJournal(f.service,f.store,{journal:disk.journal,now:()=>f.clock.now}),job=(await service.claim('owner'))!;
+ await service.beginStage(job,'base');
+ let savedKey:string|undefined;
+ if(dispatched){
+  await service.authorizeStage(job,'base');[savedKey]=await disk.journal.list();
+  if(published)await disk.journal.publish(savedKey,{kind:'image',bytes:Buffer.from('received before pause'),generationMs:1});
+ }
+ const state=JSON.parse(f.store.ledger.get('scheduler')!.value);
+ const unknown={...state.providerSlots[0],jobId:f.jobs[1].id,key:'stage:base',owner:'other-owner',leaseId:randomUUID(),dispatched:true,unknown:true};
+ state.providerSlots.push(unknown);state.pauseReason='outcome_unknown';f.store.ledger.get('scheduler')!.value=JSON.stringify(state);
+ const budget=f.store.ledger.get('budget')!.value,jobs=structuredClone(f.store.jobs),schedulerBefore=f.store.ledger.get('scheduler')!.value;
+ await expect(service.authorizeStage(job,'base')).rejects.toMatchObject({code:'generation_paused'});
+ expect(f.store.ledger.get('scheduler')!.value).toBe(schedulerBefore);expect(f.store.ledger.get('budget')!.value).toBe(budget);expect(f.store.jobs).toEqual(jobs);
+ if(dispatched){
+  expect(await disk.journal.list()).toEqual([savedKey]);
+  expect(await disk.journal.reservationIdentity(savedKey!)).toMatchObject({jobId:id,leaseId:job.workerLeaseId,operationKey:'stage:base'});
+  if(published)expect((await disk.journal.read(savedKey!,f.clock.now))?.outcome).toMatchObject({kind:'image',bytes:Buffer.from('received before pause')});
+ }else expect(await disk.journal.list()).toEqual([]);
+});

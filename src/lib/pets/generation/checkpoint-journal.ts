@@ -65,7 +65,7 @@ export function attachResultJournal<T extends Service>(service:T,store:Generatio
  async function authorizeImage<R>(job:GenerationJob,operation:string,receipt:string,stage:StageName,run:()=>Promise<R>){
   const reservation=await reserve(job,operation,receipt,stage);
   try{return await run();}catch(error){
-   if(error instanceof WorkerYield||error instanceof GenerationError&&["budget_exhausted","generation_disabled"].includes(error.code)){
+   if(error instanceof WorkerYield||error instanceof GenerationError&&["budget_exhausted","generation_disabled","generation_paused"].includes(error.code)){
     try{
      const unsent=await store.transaction(async tx=>{
       const state=await scheduler(tx,now()),lease=activeLease(state,job.id,job.workerLeaseId);
