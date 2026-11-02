@@ -4,6 +4,7 @@ import {createHash} from "node:crypto";
 import {isDeepStrictEqual} from "node:util";
 import {GenerationError,type GenerationJob} from "@/lib/pets/generation/model";
 import {latestBaseAttempt,baseFailureRetryReason} from "@/lib/pets/generation/base-repair";
+import {recoverProviderIntent} from "@/lib/pets/generation/provider-intent-recovery";
 import type {createGenerationService} from "@/lib/pets/generation/service";
 import type {GenerationStore} from "@/lib/pets/generation/store";
 import type {SpriteSession,StageImage} from "@/lib/pets/generation/sprite-worker";
@@ -58,8 +59,12 @@ export async function generateRepairBase(context:Context,job:GenerationJob,sessi
     await beforeProviderCall(async()=>{
     const delay=Math.max(0,attempt.notBefore-context.now());if(delay&&job.workerLeaseId)throw new WorkerYield(attempt.notBefore);if(delay)await context.wait(delay);
     context.checkLease();
+    setWorkerPhase(currentWorkerContext(), "intent", job, attempt.ordinal);
     try{await context.mutate(()=>{context.beforeCall?.();return context.service.startBaseAttempt(job,attempt.token);});}
-    catch(error){if(error instanceof GenerationError||error instanceof WorkerYield)throw error;throw uncertain("intent");}
+    catch(error){
+      if(error instanceof GenerationError||error instanceof WorkerYield)throw error;
+      await recoverProviderIntent(context.store,job,"base",attempt.token,error,context.now);
+    }
     context.checkLease();
     await currentJob(context,job);
     try{context.beforeCall?.();}catch(error){if(error instanceof WorkerYield)await context.mutate(()=>context.service.deferUnsentBaseAttempt(job,attempt.token));throw error;}
