@@ -1,4 +1,6 @@
 import {z} from "zod";
+import {createHash} from "node:crypto";
+import {YdbError} from "@/lib/ydb/client";
 import {DAY, GenerationError, STAGE_NAMES, type GenerationJob, type ImageUsage, type Scheduler, type StageName} from "@/lib/pets/generation/model";
 import {REGENERATION_RETRIES} from "@/lib/pets/generation/continuation-model";
 import {recordStageCost, settleBudget} from "@/lib/pets/generation/budget";
@@ -55,13 +57,27 @@ export async function recordExpiredResult(tx: GenerationTransaction, state: Sche
   return true;
 }
 
+function logCheckpointFailure(job: GenerationJob, error: unknown, status: "retry" | "failed") {
+  const databaseStatus = error instanceof YdbError ? Reflect.get(error.constructor, "status") : undefined;
+  try {
+    console.warn(JSON.stringify({operation: "pet-generation-checkpoint", status,
+      targetHash: createHash("sha256").update(job.id).digest("hex"),
+      stage: job.workerTask?.stage, task: job.workerTask?.kind,
+      ...(Number.isSafeInteger(databaseStatus) ? {databaseStatus} : {})}));
+  } catch { /* Diagnostics must not interrupt receipt recovery. */ }
+}
+
 export async function persistResult(job: GenerationJob, clock: () => number, save: () => Promise<GenerationJob | null>, expiredError = new GenerationError("generation_expired")): Promise<GenerationJob> {
   let result: GenerationJob | null;
   try { result = await save(); }
   catch (error) {
-    if (error instanceof GenerationError || job.expiresAt > clock()) throw error;
-    // The accounting receipt makes a single retry safe after a lost commit reply.
-    result = await save();
+    if (error instanceof GenerationError) throw error;
+    logCheckpointFailure(job, error, "retry");
+    // Replay only the checkpoint, never the provider call. Receipts deduplicate
+    // lost commit replies; each save rechecks the current lease and task expiry.
+    if (job.expiresAt > clock()) await new Promise(resolve => setTimeout(resolve, 100));
+    try { result = await save(); }
+    catch (retryError) {logCheckpointFailure(job, retryError, "failed"); throw retryError;}
   }
   if (result === null) throw expiredError;
   return result;
