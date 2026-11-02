@@ -320,7 +320,7 @@ export function createSpriteGenerationWorker(options: {
       clearInterval(timer);
       await heartbeat;
       try { await session?.cleanup(); } catch (error) {
-        if (primaryError) {const phase=context?.phase;setWorkerPhase(context,"workspace_cleanup");context?.report(error,true);if(context&&phase)context.phase=phase;}
+        if (primaryError) {if(!context?.primaryReported)context?.report(primaryError);const phase=context?.phase;setWorkerPhase(context,"workspace_cleanup");context?.report(error,true);if(context&&phase)context.phase=phase;}
         else {setWorkerPhase(context, "workspace_cleanup"); throw error;}
       }
       if (yieldAt !== undefined) await options.service.yield(initial, yieldAt);

@@ -5,7 +5,7 @@ import {ANIMATION_ATTEMPT_FAILURE_CODES, GenerationError, type GenerationJob, ty
 import {latestAnimationAttempt,isAnimationState} from "@/lib/pets/generation/animation-repair";
 import {latestBaseAttempt} from "@/lib/pets/generation/base-repair";
 import {stageOperation} from "@/lib/pets/generation/execution-slots";
-import {readActiveWorkerJob,WorkerYield,scheduler,isTaskScheduler} from "@/lib/pets/generation/scheduler";
+import {activeLease,readActiveWorkerJob,WorkerYield,scheduler,isTaskScheduler,isParallelScheduler} from "@/lib/pets/generation/scheduler";
 import {FileResultJournal,JournalError,journalKey,type JournalIdentity,type JournalOutcome} from "@/lib/pets/generation/result-journal";
 import {retryCheckpoint,type CheckpointRetryOptions} from "@/lib/pets/generation/checkpoint-retry";
 import type {GenerationStore} from "@/lib/pets/generation/store";
@@ -48,7 +48,7 @@ export function attachResultJournal<T extends Service>(service:T,store:Generatio
  async function reserve(job:GenerationJob,operation:string,receipt:string,stage?:StageName){
   const current=await readActiveWorkerJob(store,job,now());
   const identity=journalIdentity(current,operation,receipt,stage),key=journalKey(identity);
-  try{return await durability.journal.reserve(identity);}
+  try{return {key:await durability.journal.reserve(identity),identity};}
   catch(error){
    if(error instanceof JournalError&&error.code==="journal_capacity")throw new WorkerYield(now()+5000);
    if(error instanceof JournalError&&error.code==="journal_identity_conflict"){
@@ -57,7 +57,22 @@ export function attachResultJournal<T extends Service>(service:T,store:Generatio
     const unsent=await store.transaction(async tx=>{const state=await scheduler(tx,now());return isTaskScheduler(state)&&
      !state.providerSlots.some(s=>s.leaseId===old.leaseId)&&state.providerSlots.some(s=>s.jobId===job.id&&s.leaseId===job.workerLeaseId&&s.dispatched===false);});
     if(!unsent)throw error;
-    await durability.journal.releaseUnsent(key,old);return durability.journal.reserve(identity);
+    await durability.journal.releaseUnsent(key,old);return {key:await durability.journal.reserve(identity),identity};
+   }
+   throw error;
+  }
+ }
+ async function authorizeImage<R>(job:GenerationJob,operation:string,receipt:string,stage:StageName,run:()=>Promise<R>){
+  const reservation=await reserve(job,operation,receipt,stage);
+  try{return await run();}catch(error){
+   if(error instanceof WorkerYield||error instanceof GenerationError&&["budget_exhausted","generation_disabled"].includes(error.code)){
+    try{
+     const unsent=await store.transaction(async tx=>{
+      const state=await scheduler(tx,now()),lease=activeLease(state,job.id,job.workerLeaseId);
+      return lease?.owner===job.worker&&(!isParallelScheduler(state)||!state.providerSlots.some(slot=>slot.jobId===job.id&&slot.leaseId===job.workerLeaseId&&slot.dispatched!==false));
+     });
+     if(unsent)await durability.journal.releaseUnsent(reservation.key,reservation.identity);
+    }catch(cleanup){const context=currentWorkerContext();if(!context?.primaryReported)context?.report(error);context?.report(cleanup,true);}
    }
    throw error;
   }
@@ -87,10 +102,10 @@ export function attachResultJournal<T extends Service>(service:T,store:Generatio
   ...(error.diagnostic?{diagnostic:error.diagnostic}:{}),...(error.cliCause?{cliCause:error.cliCause}:{}),...(error.details?{details:error.details}:{}),...(error.retryAt?{retryAt:error.retryAt}:{}),
   ...(error.code==="outcome_unknown"||isOutputModerationFailure(error.providerFailure)?{}:{costUsd:0})});
  return Object.assign(service,{
-  async authorizeStage(job:GenerationJob,stage:StageName){const operation=imageOperation(job,stage);await reserve(job,operation,`stage:${stage}`,stage);remember(job,stage,operation);return original.authorizeStage(job,stage);},
-  async authorizeRowRetry(job:GenerationJob,stage:StageName,token:string){await reserve(job,`retry:${token}`,`stage:${stage}`,stage);remember(job,stage,`retry:${token}`);return original.authorizeRowRetry(job,stage,token);},
-  async startAnimationAttempt(job:GenerationJob,stage:Parameters<typeof latestAnimationAttempt>[1],token:string){await reserve(job,`attempt:${token}`,`attempt:${token}`,stage);return original.startAnimationAttempt(job,stage,token);},
-  async startBaseAttempt(job:GenerationJob,token:string){await reserve(job,`base-attempt:${token}`,`base-attempt:${token}`,"base");return original.startBaseAttempt(job,token);},
+  async authorizeStage(job:GenerationJob,stage:StageName){const operation=imageOperation(job,stage);remember(job,stage,operation);return authorizeImage(job,operation,`stage:${stage}`,stage,()=>original.authorizeStage(job,stage));},
+  async authorizeRowRetry(job:GenerationJob,stage:StageName,token:string){remember(job,stage,`retry:${token}`);return authorizeImage(job,`retry:${token}`,`stage:${stage}`,stage,()=>original.authorizeRowRetry(job,stage,token));},
+  async startAnimationAttempt(job:GenerationJob,stage:Parameters<typeof latestAnimationAttempt>[1],token:string){return authorizeImage(job,`attempt:${token}`,`attempt:${token}`,stage,()=>original.startAnimationAttempt(job,stage,token));},
+  async startBaseAttempt(job:GenerationJob,token:string){return authorizeImage(job,`base-attempt:${token}`,`base-attempt:${token}`,"base",()=>original.startBaseAttempt(job,token));},
   async authorizeCardMetadata(job:GenerationJob){
    const operation=`card:${job.cardMetadata?.requestHash}`;metadataPreflightRejected.delete(job);await reserve(job,operation,operation);
    try{return await original.authorizeCardMetadata(job);}catch(error){

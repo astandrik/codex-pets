@@ -4,9 +4,10 @@ import {pathToFileURL} from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
 const [directory,phase]=process.argv.slice(2);
-if(!path.isAbsolute(directory)||!path.basename(directory).startsWith('journal-crash-test-')||!['confirm','slot','publish','partial-slot','partial-retired','race','reserve','reserve-record','orphan-race','orphan-partial-slot','active-reserve'].includes(phase))throw Error('Private crash test directory required');
+if(!path.isAbsolute(directory)||!path.basename(directory).startsWith('journal-crash-test-')||!['confirm','slot','publish','partial-slot','partial-retired','race','reserve','reserve-record','orphan-race','orphan-partial-slot','active-reserve','stale-retire'].includes(phase))throw Error('Private crash test directory required');
 const root=path.resolve('src');register(new URL('./related-pets-typescript-loader.mjs',import.meta.url),{parentURL:import.meta.url,data:{sourceRootUrl:pathToFileURL(root).href}});
 const {FileResultJournal}=await import(pathToFileURL(path.join(root,'lib/pets/generation/result-journal.ts')).href);
+const {journalRecordDirectory}=await import(pathToFileURL(path.join(root,'lib/pets/generation/result-journal.test-utils.ts')).href);
 const identity={jobId:'a'.repeat(64),inputHash:'f'.repeat(64),promptHash:'f'.repeat(64),createdAt:1000,expiresAt:1000000,operationKey:'attempt:one',receiptKey:'attempt:one',leaseId:'lease',owner:'owner',taskKey:'image:idle',kind:'image',stage:'idle',pipelineVersion:2};
 function gate(){let release;const promise=new Promise(r=>{release=r;});return {promise,release};}
 async function main(){
@@ -14,7 +15,7 @@ async function main(){
  const f=fs.promises,originalRename=f.rename,originalRm=f.rm,originalRmdir=f.rmdir,originalMkdir=f.mkdir;
  if(phase==='reserve'||phase==='reserve-record'){
   f.rename=async(...args)=>{const result=await originalRename(...args);if(phase==='reserve'&&args[1]===path.join(directory,'slots','0'))process.exit(73);return result;};
-  f.mkdir=async(...args)=>{const result=await originalMkdir(...args);if(phase==='reserve-record'&&path.dirname(String(args[0]))===path.join(directory,'records'))process.exit(73);return result;};
+  f.mkdir=async(...args)=>{const result=await originalMkdir(...args);if(phase==='reserve-record'&&(path.dirname(String(args[0]))===path.join(directory,'records')||String(args[0]).endsWith('/record')))process.exit(73);return result;};
   syncBuiltinESMExports();await journal.reserve(identity);throw Error('Reservation crash point not reached');
  }
  if(phase==='active-reserve'){
@@ -28,7 +29,18 @@ async function main(){
   }finally{resume.release();f.rename=originalRename;syncBuiltinESMExports();}
   return;
  }
- const key=await journal.reserve(identity);
+ const key=await journal.reserve(identity),record=await journalRecordDirectory(directory,key);
+ if(phase==='stale-retire'){
+  let delayed=false;
+  async function waitForPeer(){if(delayed)return;delayed=true;process.send({ready:true});await new Promise(resolve=>process.once('message',resolve));}
+  const originalLink=f.link;
+  f.rename=async(...args)=>{if(args[0]===record)await waitForPeer();return originalRename(...args);};
+  f.link=async(...args)=>{if(args[0]===path.join(record,'intent.json'))await waitForPeer();return originalLink(...args);};syncBuiltinESMExports();
+  try{await journal.releaseUnsent(key,identity);process.send({done:true});}
+  catch(error){process.send({error:error.code??error.message});}
+  finally{f.rename=originalRename;f.link=originalLink;syncBuiltinESMExports();process.disconnect();}
+  return;
+ }
  if(phase==='orphan-partial-slot'){
   await f.rm(path.join(directory,'records',key),{recursive:true,force:true});
   f.rm=async(...args)=>{if(path.dirname(String(args[0]))===path.join(directory,'slots','0')){await f.unlink(path.join(String(args[0]),'key'));process.exit(73);}return originalRm(...args);};
@@ -54,13 +66,13 @@ async function main(){
   }finally{aContinue.release();bContinue.release();cContinue.release();f.rename=originalRename;f.rm=originalRm;f.rmdir=originalRmdir;f.mkdir=originalMkdir;syncBuiltinESMExports();}
   return;
  }
- f.rename=async(...args)=>{if(phase==='publish'&&String(args[1]).endsWith('/ready'))process.exit(73);const result=await originalRename(...args);if(phase==='confirm'&&args[0]===path.join(directory,'records',key))process.exit(73);return result;};
+ f.rename=async(...args)=>{if(phase==='publish'&&String(args[1]).endsWith('/ready'))process.exit(73);const result=await originalRename(...args);if(phase==='confirm'&&args[0]===record)process.exit(73);return result;};
  f.rm=async(...args)=>{
   const target=String(args[0]);
   if(phase==='partial-slot'&&path.dirname(target)===path.join(directory,'slots','0')){await f.unlink(path.join(target,'key'));process.exit(73);}
   if(phase==='partial-retired'&&path.dirname(target)===path.join(directory,'retired')){await f.unlink(path.join(target,'intent.json'));process.exit(73);}
   const result=await originalRm(...args);
-  if(phase==='confirm'&&args[0]===path.join(directory,'records',key)||phase==='slot'&&args[0]===path.join(directory,'slots','0'))process.exit(73);
+  if(phase==='confirm'&&args[0]===record||phase==='slot'&&args[0]===path.join(directory,'slots','0'))process.exit(73);
   return result;
  };
  f.rmdir=async(...args)=>{const result=await originalRmdir(...args);if(phase==='slot'&&args[0]===path.join(directory,'slots','0'))process.exit(73);return result;};syncBuiltinESMExports();

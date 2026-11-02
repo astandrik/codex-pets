@@ -61,7 +61,8 @@ export async function recoverResult(store:GenerationStore,record:JournalRecord,o
       ...(current.rowRetries?{rowRetries:current.rowRetries.map(r=>r.stage===name?{...r,state:"completed"}:r)}:{})};
      if(name==="base"&&current.reviewBase&&current.baseConfirmedAt===undefined&&current.stages.length===1){
       updated={...updated,status:"awaiting_confirmation",worker:"",leaseUntil:undefined,error:undefined,
-       providerFailure:undefined,failureDiagnostic:undefined,stageFailureDiagnostics:undefined,cliFailureCauses:undefined};
+       providerFailure:undefined,failureDiagnostic:undefined,stageFailureDiagnostics:undefined,cliFailureCauses:undefined,
+       ...(current.animationRepair&&!current.animationRepair.attempts.length?{animationRepair:{...current.animationRepair,phase:"initial",pending:[],issues:[]}}:{})};
      }
      mode="image";
     }else if(outcome?.kind==="failure"){

@@ -87,7 +87,19 @@ export class FileResultJournal {
     const {checksum,...content}=value;
     if(checksum!==integrity(content)||(key!==undefined&&journalKey(value.identity)!==key)||value.slot>=this.slots)throw new JournalError("journal_corrupt");return value;
   }
-  private intent(key:string){return this.intentAt(this.directory(key),key);}
+  private async record(key:string){
+    const container=this.directory(key),stat=await fs.lstat(container);
+    if(!stat.isDirectory()||stat.isSymbolicLink())throw new JournalError("journal_corrupt");
+    const entries=await fs.readdir(container,{withFileTypes:true});
+    if(entries.some(entry=>entry.name==="intent.json"))return {folder:container,intent:await this.intentAt(container,key),legacy:true};
+    const versions=entries.filter(entry=>/^[a-f0-9]{32}$/.test(entry.name));
+    if(!versions.length)throw Object.assign(new Error("Journal record is absent"),{code:"ENOENT"});
+    if(versions.length!==1||!versions[0].isDirectory()||versions[0].isSymbolicLink())throw new JournalError("journal_corrupt");
+    const folder=path.join(container,versions[0].name),intent=await this.intentAt(folder,key);
+    if(intent.reservationId!==versions[0].name)throw new JournalError("journal_corrupt");
+    return {folder,intent,legacy:false};
+  }
+  private async intent(key:string){return (await this.record(key)).intent;}
   private async removeEmptyDirectory(folder:string){
     try{await fs.rmdir(folder);}catch(error){if(!missing(error)&&!exists(error))throw error;}
   }
@@ -153,6 +165,20 @@ export class FileResultJournal {
       await this.removeEmptyDirectory(folder);
     }
   }
+  private async expirePreparedRetirements(now:number){
+    const root=path.join(this.root,"retired");let entries:import("node:fs").Dirent[];
+    try{entries=await fs.readdir(root,{withFileTypes:true});}catch(error){if(missing(error))return;throw error;}
+    for(const entry of entries){
+      if(!/^prepare-[a-f0-9]{32}$/.test(entry.name))continue;
+      if(!entry.isDirectory()||entry.isSymbolicLink())throw new JournalError("journal_corrupt");
+      const folder=path.join(root,entry.name);
+      try{
+        let deadline=(await fs.lstat(folder)).mtimeMs+WEEK;
+        try{deadline=this.decodeIntent(await readPrivate(path.join(folder,"intent.json"),MAX_JSON)).identity.createdAt+WEEK;}catch(error){if(!missing(error))throw error;}
+        if(now>=deadline)await fs.rm(folder,{recursive:true,force:true});
+      }catch(error){if(!missing(error))throw error;}
+    }
+  }
   private async finishRetirements(){
     const root=path.join(this.root,"retired");let entries:string[];
     try{entries=await fs.readdir(root);}catch(error){if(missing(error))return;throw error;}
@@ -162,7 +188,24 @@ export class FileResultJournal {
       try{
         const intent=await this.intentAt(folder,key);
         if(intent.reservationId&&entry.slice(65)!==intent.reservationId)throw new JournalError("journal_corrupt");
-        await this.releaseSlot(key,intent);await fs.rm(folder,{recursive:true,force:true});
+        try{
+          await readPrivate(path.join(folder,"legacy"),1);
+          const source=this.directory(key);
+          let current:z.infer<typeof intentSchema>|undefined;
+          try{current=await this.intentAt(source,key);}catch(error){if(!missing(error))throw error;}
+          if(!current||current.reservationId===intent.reservationId){
+            await fs.rm(path.join(source,"intent.json"),{force:true});
+            let entries:string[]=[];
+            try{entries=await fs.readdir(source);}catch(error){if(!missing(error))throw error;}
+            for(const item of entries){
+              if(item==="ready"||/^publish-[a-f0-9]{16}$/.test(item))await fs.rm(path.join(source,item),{recursive:true,force:true});
+            }
+          }
+          try{await syncDirectory(source);}catch(error){if(!missing(error))throw error;}
+          await this.removeEmptyDirectory(source);
+          await syncDirectory(path.join(this.root,"records"));
+        }catch(error){if(!missing(error))throw error;}
+        await this.releaseSlot(key,intent);await this.removeEmptyDirectory(this.directory(key));await fs.rm(folder,{recursive:true,force:true});
       }catch(error){
         if(!missing(error))throw error;
         // A retired record is already closed; missing intent means its recursive deletion was interrupted.
@@ -171,11 +214,25 @@ export class FileResultJournal {
     }
     await syncDirectory(root);
   }
-  private async retire(key:string,intent:z.infer<typeof intentSchema>){
+  private async retire(key:string,record:Awaited<ReturnType<FileResultJournal["record"]>>){
+    const {intent,folder,legacy}=record;
     const retired=path.join(this.root,"retired");await privateDirectory(retired);await syncDirectory(this.root);
     const destination=path.join(retired,`${key}-${intent.reservationId??randomBytes(16).toString("hex")}`);
-    // Moving the complete record preserves the ownership proof across every cleanup crash.
-    try{await fs.rename(this.directory(key),destination);}catch(error){if(!missing(error))throw error;await this.finishRetirements();return;}
+    if(legacy){
+      const temporary=path.join(retired,"prepare-"+randomBytes(16).toString("hex"));await fs.mkdir(temporary,{mode:0o700});
+      try{
+        await fs.link(path.join(folder,"intent.json"),path.join(temporary,"intent.json"));
+        const copied=await this.intentAt(temporary,key);
+        if(integrity(copied)!==integrity(intent))throw new JournalError("journal_identity_conflict");
+        await durableWrite(path.join(temporary,"legacy"),"1");await syncDirectory(temporary);
+        try{await fs.rename(temporary,destination);}catch(error){if(!exists(error))throw error;}
+      }catch(error){if(!missing(error))throw error;}
+      finally{await fs.rm(temporary,{recursive:true,force:true});}
+    }else{
+      // The source names this exact reservation; a stale caller cannot move its replacement.
+      try{await fs.rename(folder,destination);}catch(error){if(!missing(error))throw error;await this.finishRetirements();return;}
+      await this.removeEmptyDirectory(this.directory(key));
+    }
     await syncDirectory(path.join(this.root,"records"));await syncDirectory(retired);
     await this.finishRetirements();
   }
@@ -200,14 +257,16 @@ export class FileResultJournal {
         await syncDirectory(path.dirname(intentFile));await syncDirectory(prepared);
         // Publish a nonempty reservation atomically: an old rmdir cannot erase a new claim.
         try{await fs.rename(prepared,reservation);}catch(error){if(exists(error)){await fs.rm(intentFile);continue;}throw error;}
-        const owned=path.join(reservation,reservationId);let created=false;
+        const owned=path.join(reservation,reservationId),temporary=path.join(owned,"record");let published=false;
         try{
           await syncDirectory(path.join(this.root,"slots"));await syncDirectory(preparing);
-          await fs.mkdir(folder,{mode:0o700});created=true;
-          await fs.link(path.join(owned,"intent.json"),path.join(folder,"intent.json"));
-          await syncDirectory(folder);await syncDirectory(path.dirname(folder));return key;
+          await fs.mkdir(temporary,{mode:0o700});await fs.mkdir(path.join(temporary,reservationId),{mode:0o700});
+          await fs.link(path.join(owned,"intent.json"),path.join(temporary,reservationId,"intent.json"));
+          await syncDirectory(path.join(temporary,reservationId));await syncDirectory(temporary);
+          await fs.rename(temporary,folder);published=true;
+          await syncDirectory(path.dirname(folder));return key;
         }catch(error){
-          if(created)await fs.rm(folder,{recursive:true,force:true});
+          if(published)throw error;
           await fs.rm(owned,{recursive:true,force:true});await this.removeEmptyDirectory(reservation);
           if(exists(error)){const old=await this.intent(key);if(JSON.stringify(old.identity)===JSON.stringify(identity))return key;throw new JournalError("journal_identity_conflict");}
           throw error;
@@ -217,7 +276,7 @@ export class FileResultJournal {
     }finally{await fs.rm(prepared,{recursive:true,force:true});}
   }
   async publish(key:string,outcome:JournalOutcome,receiptKey?:string){
-    const intent=await this.intent(key),folder=this.directory(key);
+    const {intent,folder}=await this.record(key);
     if(outcome.kind!=="failure"&&outcome.kind!==intent.identity.kind)throw new JournalError("journal_identity_conflict");
     let bytes:Buffer,fingerprint:string,extra:Pick<z.infer<typeof manifestSchema>,"generationMs"|"usage"|"costUsd"|"failure">={};
     if(outcome.kind==="image"){
@@ -231,52 +290,58 @@ export class FileResultJournal {
     if(!bytes.length||bytes.length>(outcome.kind==="image"?MAX_PAYLOAD:MAX_JSON))throw new JournalError("journal_invalid_result");
     const content={version:1 as const,receiptKey:receiptKey??intent.identity.receiptKey,kind:outcome.kind,size:bytes.length,payloadSha256:sha(bytes),fingerprint,...extra};
     const manifest=manifestSchema.parse({checksum:integrity(content),...content});
-    try{const old=await this.manifest(key);if(old.fingerprint!==fingerprint||old.payloadSha256!==manifest.payloadSha256||old.receiptKey!==manifest.receiptKey)throw new JournalError("journal_result_conflict");return fingerprint;}catch(error){if(!missing(error))throw error;}
+    try{const old=await this.manifest(folder);if(old.fingerprint!==fingerprint||old.payloadSha256!==manifest.payloadSha256||old.receiptKey!==manifest.receiptKey)throw new JournalError("journal_result_conflict");return fingerprint;}catch(error){if(!missing(error))throw error;}
     const temporary=path.join(folder,"publish-"+randomBytes(8).toString("hex"));await fs.mkdir(temporary,{mode:0o700});
     try{
       await durableWrite(path.join(temporary,"payload"),bytes);await durableWrite(path.join(temporary,"manifest.json"),JSON.stringify(manifest));await syncDirectory(temporary);
       try{await fs.rename(temporary,path.join(folder,"ready"));await syncDirectory(folder);}
-      catch(error){if(!exists(error))throw error;const old=await this.manifest(key);if(old.fingerprint!==fingerprint||old.payloadSha256!==manifest.payloadSha256)throw new JournalError("journal_result_conflict");}
+      catch(error){if(!exists(error))throw error;const old=await this.manifest(folder);if(old.fingerprint!==fingerprint||old.payloadSha256!==manifest.payloadSha256)throw new JournalError("journal_result_conflict");}
     }finally{await fs.rm(temporary,{recursive:true,force:true});}
     return fingerprint;
   }
-  private async manifest(key:string){
-    const folder=path.join(this.directory(key),"ready");const st=await fs.lstat(folder);if(!st.isDirectory()||st.isSymbolicLink())throw new JournalError("journal_corrupt");
+  private async manifest(recordFolder:string){
+    const folder=path.join(recordFolder,"ready");const st=await fs.lstat(folder);if(!st.isDirectory()||st.isSymbolicLink())throw new JournalError("journal_corrupt");
     const value=manifestSchema.parse(JSON.parse((await readPrivate(path.join(folder,"manifest.json"),MAX_JSON)).toString()));
     const {checksum,...content}=value;if(checksum!==integrity(content))throw new JournalError("journal_corrupt");return value;
   }
   async read(key:string,now=Date.now()):Promise<JournalRecord|null>{
-    let intent:z.infer<typeof intentSchema>,manifest:z.infer<typeof manifestSchema>;
-    try{intent=await this.intent(key);manifest=await this.manifest(key);}catch(error){if(missing(error))return null;throw error;}
+    let intent:z.infer<typeof intentSchema>,manifest:z.infer<typeof manifestSchema>,folder:string;
+    try{({intent,folder}=await this.record(key));manifest=await this.manifest(folder);}catch(error){if(missing(error))return null;throw error;}
     if(now>=intent.identity.createdAt+WEEK)return null;
     if(now>=intent.identity.expiresAt){return {key,identity:intent.identity,fingerprint:manifest.fingerprint,receiptKey:manifest.receiptKey,outcomeKind:manifest.kind,failure:manifest.failure,outcome:null,costUsd:manifest.costUsd};}
-    const bytes=await readPrivate(path.join(this.directory(key),"ready","payload"),MAX_PAYLOAD);
+    let bytes:Buffer;
+    try{bytes=await readPrivate(path.join(folder,"ready","payload"),MAX_PAYLOAD);}catch(error){
+      if(!missing(error))throw error;
+      try{await this.intentAt(folder,key);}catch(check){if(missing(check))return null;throw check;}
+      throw new JournalError("journal_corrupt");
+    }
     if(bytes.length!==manifest.size||sha(bytes)!==manifest.payloadSha256)throw new JournalError("journal_corrupt");
     const outcome:JournalOutcome=manifest.kind==="image"?{kind:"image",bytes,generationMs:manifest.generationMs!,...(manifest.usage?{usage:manifest.usage}:{})}:jsonOutcomeSchema.parse(JSON.parse(bytes.toString()));
     return {key,identity:intent.identity,fingerprint:manifest.fingerprint,receiptKey:manifest.receiptKey,outcomeKind:manifest.kind,failure:manifest.failure,outcome,costUsd:manifest.costUsd};
   }
   async confirm(key:string,fingerprint:string){
-    let intent:z.infer<typeof intentSchema>;
-    try{intent=await this.intent(key);}catch(error){if(!missing(error))throw error;await this.finishRetirements();return;}
-    const manifest=await this.manifest(key);if(manifest.fingerprint!==fingerprint)throw new JournalError("journal_result_conflict");
-    await this.retire(key,intent);
+    let record:Awaited<ReturnType<FileResultJournal["record"]>>;
+    try{record=await this.record(key);}catch(error){if(!missing(error))throw error;await this.finishRetirements();return;}
+    const manifest=await this.manifest(record.folder);if(manifest.fingerprint!==fingerprint)throw new JournalError("journal_result_conflict");
+    await this.retire(key,record);
   }
   async reservationIdentity(key:string){return (await this.intent(key)).identity;}
   async releaseUnsent(key:string,expected:JournalIdentity){
-    const intent=await this.intent(key);
+    const record=await this.record(key),{intent}=record;
     if(JSON.stringify(intent.identity)!==JSON.stringify(journalIdentitySchema.parse(expected)))throw new JournalError("journal_identity_conflict");
-    try{await this.manifest(key);throw new JournalError("journal_result_exists");}catch(error){if(!missing(error))throw error;}
-    await this.retire(key,intent);
+    try{await this.manifest(record.folder);throw new JournalError("journal_result_exists");}catch(error){if(!missing(error))throw error;}
+    await this.retire(key,record);
   }
   async list(){return (await fs.readdir(path.join(this.root,"records"))).filter(key=>digest.safeParse(key).success);}
   async expire(now=Date.now()){
     await this.finishRetirements();
     for(const key of await this.list()){
-      let intent:z.infer<typeof intentSchema>;
-      try{intent=await this.intent(key);}catch(error){if(missing(error))continue;throw error;}
-      if(now>=intent.identity.createdAt+WEEK){await this.retire(key,intent);continue;}
+      let record:Awaited<ReturnType<FileResultJournal["record"]>>;
+      try{record=await this.record(key);}catch(error){if(missing(error))continue;throw error;}
+      const {intent,folder}=record;
+      if(now>=intent.identity.createdAt+WEEK){await this.retire(key,record);continue;}
       if(now<intent.identity.expiresAt)continue;
-      const folder=this.directory(key);let entries:import("node:fs").Dirent[];
+      let entries:import("node:fs").Dirent[];
       try{entries=await fs.readdir(folder,{withFileTypes:true});}catch(error){if(missing(error))continue;throw error;}
       for(const entry of entries){
         if(entry.name!=="ready"&&!/^publish-[a-f0-9]{16}$/.test(entry.name))continue;
@@ -285,5 +350,6 @@ export class FileResultJournal {
       }
     }
     await this.expireOrphanedSlots(now);
+    await this.expirePreparedRetirements(now);
   }
 }

@@ -933,7 +933,10 @@ named `/local/codex_parallelism_test_<suffix>`; fake results never call a model.
 `PET_GENERATION_RESULT_JOURNAL_ENABLED` defaults to false. Enable it only in the
 worker after mounting a persistent private directory and validating the new
 reader/writer code. Set `PET_GENERATION_RESULT_JOURNAL_DIR` to that absolute mount
-path. The web process does not need this mount. Missing/unsafe configuration or a
+path. Journal-enabled workers require scheduler v3; startup rejects legacy/v2
+schedulers before constructing the worker or dispatching provider calls. Workers
+without the journal retain their existing legacy/v2 behavior. The web process
+does not need this mount. Missing/unsafe configuration or a
 tmpfs journal fails startup before new provider calls; `/tmp` is not durable.
 
 The worker user must own the directory, mode0700; files use0600. Keep the same
@@ -948,6 +951,11 @@ that cleanup without deleting a newer reservation that reused the slot.
 Payload expiry covers both `ready/` and interrupted `publish-*/` directories.
 Each capacity slot retains a checksummed intent before it is published; the
 record links that already-synced file instead of writing a second partial copy.
+Active record data lives inside a unique reservation subdirectory. Retirement
+moves that exact subdirectory, so a stale worker cannot move a replacement that
+uses the same operation key. Older flat records remain readable and are retired
+without moving a newer reservation's directory. Keep compatible readers/writers
+with this layout during rollout or rollback.
 If reservation stops before the record exists, maintenance reclaims its slot at
 the original seven-day receipt deadline. Earlier slots without an intent copy
 are held for a full seven days after their last directory change. Active records

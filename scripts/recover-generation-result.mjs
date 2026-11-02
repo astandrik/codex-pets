@@ -28,6 +28,13 @@ export async function runRecoveryCommand(args,deps){
  }
  return {...plan,record:options.record,expectedRevision:snapshot.revision,expectedJobHash:snapshot.jobHash??'absent'};
 }
+export async function writeRecoveryBackup(file,data){
+ const directory=path.dirname(file),parent=await lstat(directory);
+ if(!parent.isDirectory()||parent.isSymbolicLink()||(parent.mode&0o077)!==0)throw Error('backup_requires_private_directory');
+ const handle=await open(file,constants.O_CREAT|constants.O_EXCL|constants.O_WRONLY|constants.O_NOFOLLOW,0o600);
+ try{await handle.writeFile(JSON.stringify(data));await handle.sync();}finally{await handle.close();}
+ const folder=await open(directory,'r');try{await folder.sync();}finally{await folder.close();}
+}
 async function main(){
  const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../src');
  register(new URL('./lib/related-pets-typescript-loader.mjs',import.meta.url),{parentURL:import.meta.url,data:{sourceRootUrl:pathToFileURL(root).href}});
@@ -39,11 +46,7 @@ async function main(){
    openJournal:directory=>FileResultJournal.openExisting(directory),
    snapshot:id=>store.transaction(async tx=>{const now=Date.now(),raw=await tx.getLedger('scheduler',now),job=await tx.getJob(id);return {revision:JSON.parse(raw).revision,jobHash:checkpointJobHash(job),job,scheduler:raw,budget:await tx.getLedger('budget',now)};}),
    recover:(record,options)=>recoverResult(store,record,options),
-   backup:async(file,data)=>{
-    const parent=await lstat(path.dirname(file));if(!parent.isDirectory()||parent.isSymbolicLink()||(parent.mode&0o077)!==0)throw Error('backup_requires_private_directory');
-    const handle=await open(file,constants.O_CREAT|constants.O_EXCL|constants.O_WRONLY|constants.O_NOFOLLOW,0o600);
-    try{await handle.writeFile(JSON.stringify(data));await handle.sync();}finally{await handle.close();}
-   }});
+   backup:writeRecoveryBackup});
   console.log(JSON.stringify(result));
  }catch{console.error(JSON.stringify({error:'checkpoint_recovery_failed'}));process.exitCode=1;}
  finally{await destroyYdbDriver();}

@@ -1,5 +1,6 @@
-import {mkdtemp,readdir,readFile,rm,utimes,rename} from 'node:fs/promises';import path from 'node:path';import {tmpdir} from 'node:os';import {execFile} from 'node:child_process';import {promisify} from 'node:util';
+import {mkdtemp,readdir,readFile,rm,utimes,rename} from 'node:fs/promises';import path from 'node:path';import {tmpdir} from 'node:os';import {execFile,fork} from 'node:child_process';import {promisify} from 'node:util';import {once} from 'node:events';
 import {afterEach,expect,it} from 'vitest';import {FileResultJournal} from './result-journal';
+import {journalRecordDirectory} from './result-journal.test-utils';
 const folders:string[]=[];afterEach(async()=>{for(const p of folders.splice(0))await rm(p,{recursive:true,force:true});});
 const next={jobId:'b'.repeat(64),inputHash:'f'.repeat(64),promptHash:'f'.repeat(64),createdAt:1000,expiresAt:1000000,operationKey:'attempt:two',receiptKey:'attempt:two',leaseId:'lease',owner:'owner',taskKey:'image:idle',kind:'image' as const,stage:'idle' as const,pipelineVersion:2};
 async function crash(phase:string){const folder=await mkdtemp(path.join(tmpdir(),'journal-crash-test-'));folders.push(folder);await expect(promisify(execFile)(process.execPath,['scripts/lib/result-journal-crash-probe.mjs',folder,phase],{timeout:10000})).rejects.toMatchObject({code:73});return folder;}
@@ -9,7 +10,7 @@ it.each(['confirm','slot','partial-slot'])('finishes retirement after a process 
 });
 it('deletes unpublished payloads at the original expiry while preserving accounting metadata',async()=>{
  const folder=await crash('publish'),journal=await FileResultJournal.openExisting(folder);const [key]=await journal.list();
- const record=path.join(folder,'records',key);const [temporary]=(await readdir(record)).filter(n=>n.startsWith('publish-'));
+ const record=await journalRecordDirectory(folder,key);const [temporary]=(await readdir(record)).filter(n=>n.startsWith('publish-'));
  expect((await readFile(path.join(record,temporary,'payload'))).length).toBeGreaterThan(0);
  await journal.expire(next.expiresAt);await expect(readFile(path.join(record,temporary,'payload'))).rejects.toMatchObject({code:'ENOENT'});
  expect(await readFile(path.join(record,'intent.json'))).toBeDefined();expect(await journal.read(key,next.expiresAt)).toBeNull();
@@ -56,4 +57,18 @@ it('cannot delete a replacement reservation during orphan cleanup',async()=>{
  const folder=await mkdtemp(path.join(tmpdir(),'journal-crash-test-'));folders.push(folder);
  const {stdout}=await promisify(execFile)(process.execPath,['scripts/lib/result-journal-crash-probe.mjs',folder,'orphan-race'],{timeout:10000});
  expect(JSON.parse(stdout)).toEqual({reservations:1,rejected:1});
+});
+it.each([false,true])('fences stale retirement across processes; legacy=%s',async legacy=>{
+ const folder=await mkdtemp(path.join(tmpdir(),'journal-crash-test-'));folders.push(folder);
+ const journal=await FileResultJournal.open(folder,{capacityBytes:FileResultJournal.reservationBytes}),old={...next,jobId:'a'.repeat(64),operationKey:'attempt:one',receiptKey:'attempt:one'},key=await journal.reserve(old);
+ if(legacy){const record=await journalRecordDirectory(folder,key),temporary=path.join(folder,'flat');await rename(record,temporary);await rm(path.join(folder,'records',key),{recursive:true});await rename(temporary,path.join(folder,'records',key));}
+ const child=fork('scripts/lib/result-journal-crash-probe.mjs',[folder,'stale-retire'],{stdio:['ignore','ignore','pipe','ipc'],execArgv:[]}),exit=once(child,'exit');let stderr='';child.stderr?.on('data',chunk=>{stderr+=chunk;});
+ const message=()=>Promise.race([once(child,'message'),exit.then(([code])=>{throw Error(`Crash probe exited ${code}: ${stderr}`);})]);
+ try{
+  expect((await message())[0]).toEqual({ready:true});
+  await journal.releaseUnsent(key,old);const replacement={...old,owner:'replacement',leaseId:'replacement-lease'};await journal.reserve(replacement);
+  const fingerprint=await journal.publish(key,{kind:'image',bytes:Buffer.from('new result'),generationMs:1});
+  const done=message();child.send('resume');expect((await done)[0]).toEqual({done:true});await exit;
+  expect(await journal.read(key,2000)).toMatchObject({fingerprint,identity:replacement,outcome:{kind:'image',bytes:Buffer.from('new result')}});
+ }finally{if(child.exitCode===null){child.kill('SIGKILL');await exit;}}
 });

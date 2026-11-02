@@ -15,15 +15,15 @@ const { generationCardProvider } = await import(pathToFileURL(path.join(sourceRo
 const {runWorkerPool} = await import(pathToFileURL(path.join(sourceRoot, "lib/pets/generation/worker-runner.ts")).href);
 const {logWorkerFailure} = await import(pathToFileURL(path.join(sourceRoot, "lib/pets/generation/worker-diagnostics.ts")).href);
 const {configuredResultJournal} = await import(pathToFileURL(path.join(sourceRoot, "lib/pets/generation/result-journal-runtime.ts")).href);
-const journal = await configuredResultJournal();
-const petGeneration = createConfiguredGenerationService(journal ? {journal} : undefined);
 const controller = new AbortController();
-const runPetGenerationWorkerOnce = createSpriteGenerationWorker({ service: petGeneration, store: generationStore, renderer: spriteRenderer, cardProvider: generationCardProvider, stopping: () => controller.signal.aborted, resultJournal: journal });
 const { destroyYdbDriver } = await import(pathToFileURL(path.join(sourceRoot, "lib/ydb/client.ts")).href);
 const once = process.argv.includes("--once");
 process.on("SIGTERM", () => controller.abort());
 process.on("SIGINT", () => controller.abort());
 try {
+  const journal = await configuredResultJournal();
+  const petGeneration = createConfiguredGenerationService(journal ? {journal} : undefined);
+  const runPetGenerationWorkerOnce = createSpriteGenerationWorker({ service: petGeneration, store: generationStore, renderer: spriteRenderer, cardProvider: generationCardProvider, stopping: () => controller.signal.aborted, resultJournal: journal });
   const poolSize = await petGeneration.workerPoolSize();
   await runWorkerPool({runOnce: runPetGenerationWorkerOnce, maxActiveJobs: poolSize,
     signal: controller.signal, once, onError: logWorkerFailure, delay: () => petGeneration.nextWakeDelay(),

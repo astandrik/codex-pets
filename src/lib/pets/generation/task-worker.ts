@@ -177,7 +177,7 @@ export async function runGenerationTask(initial: GenerationJob, options: Options
   } finally {
     clearInterval(timer); await heartbeat;
     try {await session?.cleanup();} catch (error) {
-      if (primaryError) {const phase=diagnostic?.phase;setWorkerPhase(diagnostic,"workspace_cleanup");diagnostic?.report(error,true);if(diagnostic&&phase)diagnostic.phase=phase;}
+      if (primaryError) {if(!diagnostic?.primaryReported)diagnostic?.report(primaryError);const phase=diagnostic?.phase;setWorkerPhase(diagnostic,"workspace_cleanup");diagnostic?.report(error,true);if(diagnostic&&phase)diagnostic.phase=phase;}
       else {setWorkerPhase(diagnostic, "workspace_cleanup"); throw error;}
     }
   }
