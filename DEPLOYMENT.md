@@ -946,6 +946,12 @@ identifier inside its capacity slot. Confirmed or explicitly unused records move
 atomically to `retired/` before cleanup; startup and periodic maintenance finish
 that cleanup without deleting a newer reservation that reused the slot.
 Payload expiry covers both `ready/` and interrupted `publish-*/` directories.
+Each capacity slot retains a checksummed intent before it is published; the
+record links that already-synced file instead of writing a second partial copy.
+If reservation stops before the record exists, maintenance reclaims its slot at
+the original seven-day receipt deadline. Earlier slots without an intent copy
+are held for a full seven days after their last directory change. Active records
+and unexpired reservations are preserved; orphan cleanup never submits work.
 
 An outcome is published with fsync and atomic rename before its YDB checkpoint.
 Checkpoint retries do not call the provider; the original attempt token, operation

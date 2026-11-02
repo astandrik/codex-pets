@@ -80,15 +80,18 @@ export class FileResultJournal {
   private async intentAt(folder:string,key:string){
     const st=await fs.lstat(folder);
     if(!st.isDirectory()||st.isSymbolicLink())throw new JournalError("journal_corrupt");
-    const value=intentSchema.parse(JSON.parse((await readPrivate(path.join(folder,"intent.json"),MAX_JSON)).toString()));
+    return this.decodeIntent(await readPrivate(path.join(folder,"intent.json"),MAX_JSON),key);
+  }
+  private decodeIntent(bytes:Buffer,key?:string){
+    const value=intentSchema.parse(JSON.parse(bytes.toString()));
     const {checksum,...content}=value;
-    if(checksum!==integrity(content)||journalKey(value.identity)!==key||value.slot>=this.slots)throw new JournalError("journal_corrupt");return value;
+    if(checksum!==integrity(content)||(key!==undefined&&journalKey(value.identity)!==key)||value.slot>=this.slots)throw new JournalError("journal_corrupt");return value;
   }
   private intent(key:string){return this.intentAt(this.directory(key),key);}
-  private async removeEmptySlot(folder:string){
+  private async removeEmptyDirectory(folder:string){
     try{await fs.rmdir(folder);}catch(error){if(!missing(error)&&!exists(error))throw error;}
   }
-  private async releaseSlot(key:string,intent:z.infer<typeof intentSchema>){
+  private async releaseSlot(key:string,intent:Pick<z.infer<typeof intentSchema>,"slot"|"reservationId">){
     const slot=path.join(this.root,"slots",String(intent.slot));
     if(intent.reservationId){
       const owned=path.join(slot,intent.reservationId);
@@ -103,7 +106,52 @@ export class FileResultJournal {
       try{if((await readPrivate(path.join(slot,"key"),128)).toString()!==key)throw new JournalError("journal_corrupt");await fs.rm(path.join(slot,"key"),{force:true});}
       catch(error){if(!missing(error))throw error;}
     }
-    await this.removeEmptySlot(slot);await syncDirectory(path.join(this.root,"slots"));
+    await this.removeEmptyDirectory(slot);await syncDirectory(path.join(this.root,"slots"));
+  }
+  private async expireOrphanedReservation(slot:number,reservationId:string|undefined,now:number){
+    const reservation=path.join(this.root,"slots",String(slot)),owned=reservationId?path.join(reservation,reservationId):reservation;
+    let key:string,deadline:number;
+    try{
+      const st=await fs.lstat(owned);if(!st.isDirectory()||st.isSymbolicLink())throw new JournalError("journal_corrupt");
+      let saved:z.infer<typeof intentSchema>|undefined;
+      try{saved=this.decodeIntent(await readPrivate(path.join(owned,"intent.json"),MAX_JSON));}catch(error){if(!missing(error))throw error;}
+      if(saved){
+        if(saved.slot!==slot||saved.reservationId!==reservationId)throw new JournalError("journal_corrupt");
+        key=journalKey(saved.identity);deadline=saved.identity.createdAt+WEEK;
+        try{if((await readPrivate(path.join(owned,"key"),128)).toString()!==key)throw new JournalError("journal_corrupt");}catch(error){if(!missing(error))throw error;}
+      }else{
+        try{key=(await readPrivate(path.join(owned,"key"),128)).toString();}
+        catch(error){if(!missing(error))throw error;await this.removeEmptyDirectory(owned);await this.removeEmptyDirectory(reservation);return;}
+        if(!digest.safeParse(key).success)throw new JournalError("journal_corrupt");
+        // Old slots did not retain identity; allow a full receipt lifetime after their last change.
+        deadline=st.mtimeMs+WEEK;
+      }
+      if(now<deadline)return;
+      try{
+        const current=await this.intent(key);
+        if(current.slot===slot&&current.reservationId===reservationId)return;
+      }catch(error){if(!missing(error))throw error;}
+      await this.releaseSlot(key,{slot,reservationId});
+      // Never recursively remove a record that another writer may have populated.
+      await this.removeEmptyDirectory(this.directory(key));
+    }catch(error){if(!missing(error))throw error;}
+  }
+  private async expireOrphanedSlots(now:number){
+    const root=path.join(this.root,"slots");
+    for(const entry of await fs.readdir(root,{withFileTypes:true})){
+      if(!/^(0|[1-9]\d*)$/.test(entry.name)||Number(entry.name)>=this.slots)continue;
+      if(!entry.isDirectory()||entry.isSymbolicLink())throw new JournalError("journal_corrupt");
+      const slot=Number(entry.name),folder=path.join(root,entry.name);
+      let children:import("node:fs").Dirent[];
+      try{children=await fs.readdir(folder,{withFileTypes:true});}catch(error){if(missing(error))continue;throw error;}
+      if(children.some(child=>child.name==="key"))await this.expireOrphanedReservation(slot,undefined,now);
+      for(const child of children){
+        if(!/^[a-f0-9]{32}$/.test(child.name))continue;
+        if(!child.isDirectory()||child.isSymbolicLink())throw new JournalError("journal_corrupt");
+        await this.expireOrphanedReservation(slot,child.name,now);
+      }
+      await this.removeEmptyDirectory(folder);
+    }
   }
   private async finishRetirements(){
     const root=path.join(this.root,"retired");let entries:string[];
@@ -145,18 +193,22 @@ export class FileResultJournal {
       await syncDirectory(path.join(prepared,reservationId));await syncDirectory(prepared);
       for(let slot=0;slot<this.slots;slot++){
         const reservation=path.join(this.root,"slots",String(slot));
+        try{if((await fs.readdir(reservation)).length)continue;}catch(error){if(!missing(error))throw error;}
+        const intent={version:1 as const,identity,slot,reservationId},intentFile=path.join(prepared,reservationId,"intent.json");
+        // Retain ownership and the original deadline before the slot becomes visible to peers.
+        await durableWrite(intentFile,JSON.stringify({checksum:integrity(intent),...intent}));
+        await syncDirectory(path.dirname(intentFile));await syncDirectory(prepared);
         // Publish a nonempty reservation atomically: an old rmdir cannot erase a new claim.
-        try{await fs.rename(prepared,reservation);}catch(error){if(exists(error))continue;throw error;}
+        try{await fs.rename(prepared,reservation);}catch(error){if(exists(error)){await fs.rm(intentFile);continue;}throw error;}
         const owned=path.join(reservation,reservationId);let created=false;
         try{
           await syncDirectory(path.join(this.root,"slots"));await syncDirectory(preparing);
           await fs.mkdir(folder,{mode:0o700});created=true;
-          const intent={version:1 as const,identity,slot,reservationId};
-          await durableWrite(path.join(folder,"intent.json"),JSON.stringify({checksum:integrity(intent),...intent}));
+          await fs.link(path.join(owned,"intent.json"),path.join(folder,"intent.json"));
           await syncDirectory(folder);await syncDirectory(path.dirname(folder));return key;
         }catch(error){
           if(created)await fs.rm(folder,{recursive:true,force:true});
-          await fs.rm(owned,{recursive:true,force:true});await this.removeEmptySlot(reservation);
+          await fs.rm(owned,{recursive:true,force:true});await this.removeEmptyDirectory(reservation);
           if(exists(error)){const old=await this.intent(key);if(JSON.stringify(old.identity)===JSON.stringify(identity))return key;throw new JournalError("journal_identity_conflict");}
           throw error;
         }
@@ -232,5 +284,6 @@ export class FileResultJournal {
         await fs.rm(path.join(folder,entry.name,"payload"),{force:true});
       }
     }
+    await this.expireOrphanedSlots(now);
   }
 }
