@@ -5,7 +5,7 @@ import {baseFailureRetryReason} from "@/lib/pets/generation/base-repair";
 import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
 import type {ContinuationState} from "@/lib/pets/generation/continuation-model";
 import {GenerationError, type GenerationJob, type StageName} from "@/lib/pets/generation/model";
-import {isTaskScheduler, requireJobWithActiveWorkerLease, scheduler, WorkerYield} from "@/lib/pets/generation/scheduler";
+import {isTaskScheduler, readActiveWorkerJob, requireJobWithActiveWorkerLease, scheduler, WorkerYield} from "@/lib/pets/generation/scheduler";
 import type {GenerationStore} from "@/lib/pets/generation/store";
 import {currentWorkerContext, setWorkerPhase} from "@/lib/pets/generation/worker-diagnostics";
 
@@ -14,6 +14,25 @@ type Reservation =
   | {kind: "base"; stage: "base"; reason: "transport" | "moderation" | "rate_limit"}
   | {kind: "row"; stage: StageName};
 type Readback = {state: "unchanged"} | {state: "reserved"; notBefore: number};
+
+// Only for reads before a provider operation. The task completion transaction
+// fences a yielded task against its current lease and any dispatched slot.
+export async function readRetrySnapshot(store: GenerationStore, job: GenerationJob, stage: StageName, now: () => number) {
+  try {
+    const current = await readActiveWorkerJob(store, job, now());
+    if (current.expiresAt <= now() || current.leaseUntil === undefined || current.leaseUntil <= now()) throw new GenerationError("stale_worker");
+    return current;
+  } catch (error) {
+    if (!(error instanceof YdbError) || Reflect.get(error.constructor, "status") !== StatusCode.ABORTED ||
+      job.workerTask?.kind !== "image" || job.workerTask.stage !== stage) throw error;
+    const context = currentWorkerContext();
+    setWorkerPhase(context, "intent", job);
+    context?.report(error);
+    if (job.expiresAt <= now()) throw new GenerationError("generation_expired");
+    if (context) context.primaryReported = false;
+    throw new WorkerYield(now() + 5000);
+  }
+}
 
 function reservationState(before: GenerationJob, current: GenerationJob, request: Reservation): Readback | undefined {
   if (current.status !== "generating" || !isDeepStrictEqual(

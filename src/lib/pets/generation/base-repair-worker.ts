@@ -5,7 +5,7 @@ import {isDeepStrictEqual} from "node:util";
 import {GenerationError,type GenerationJob} from "@/lib/pets/generation/model";
 import {latestBaseAttempt,baseFailureRetryReason} from "@/lib/pets/generation/base-repair";
 import {recoverProviderIntent} from "@/lib/pets/generation/provider-intent-recovery";
-import {recoverRetryReservation} from "@/lib/pets/generation/retry-reservation-recovery";
+import {readRetrySnapshot, recoverRetryReservation} from "@/lib/pets/generation/retry-reservation-recovery";
 import type {createGenerationService} from "@/lib/pets/generation/service";
 import type {GenerationStore} from "@/lib/pets/generation/store";
 import type {SpriteSession,StageImage} from "@/lib/pets/generation/sprite-worker";
@@ -37,7 +37,7 @@ export async function generateRepairBase(context:Context,job:GenerationJob,sessi
     }
   };
   while(true){
-    const current=await beforeProviderCall(()=>currentJob(context,job)),attempt=latestBaseAttempt(current);
+    const current=await beforeProviderCall(()=>readRetrySnapshot(context.store,job,"base",context.now)),attempt=latestBaseAttempt(current);
     retryFailure=pendingRetryFailure(current);
     if(!current.baseRepair||!attempt)throw uncertain("intent");
     if((attempt.status==="failed"||attempt.status==="unknown")&&attempt.failure){

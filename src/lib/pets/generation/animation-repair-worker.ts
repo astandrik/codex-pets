@@ -6,7 +6,7 @@ import {GenerationError, type GenerationJob, type ImageUsage, type StageName} fr
 import type {ContinuationState} from "@/lib/pets/generation/continuation-model";
 import {latestAnimationAttempt, animationFailureRetryReason} from "@/lib/pets/generation/animation-repair";
 import {recoverProviderIntent} from "@/lib/pets/generation/provider-intent-recovery";
-import {recoverRetryReservation} from "@/lib/pets/generation/retry-reservation-recovery";
+import {readRetrySnapshot, recoverRetryReservation} from "@/lib/pets/generation/retry-reservation-recovery";
 import type {createGenerationService} from "@/lib/pets/generation/service";
 import type {GenerationStore} from "@/lib/pets/generation/store";
 import type {SpriteSession, StageImage} from "@/lib/pets/generation/sprite-worker";
@@ -28,7 +28,7 @@ async function currentJob(context: Context, original: GenerationJob) {
   return readActiveWorkerJob(context.store, original, context.now());
 }
 export async function reserveAnimationRetry(context: Context, job: GenerationJob, name: ContinuationState, reason: "quality" | "transport" | "moderation") {
-  const before = await currentJob(context, job);
+  const before = await readRetrySnapshot(context.store, job, name, context.now);
   try {
     const result = await context.mutate(() => context.service.reserveAnimationAttempt(job, name, reason));
     return {notBefore: result.attempt.notBefore};
@@ -63,7 +63,7 @@ async function beforeProviderCall<T>(context: Context, job: GenerationJob, retry
 export async function generateRepairAnimation(context: Context, job: GenerationJob, name: ContinuationState, session: SpriteSession): Promise<StageImage> {
   let retryFailure = pendingRetryFailure(job, name);
   while (true) {
-    const current = await beforeProviderCall(context, job, retryFailure, () => currentJob(context, job));
+    const current = await beforeProviderCall(context, job, retryFailure, () => readRetrySnapshot(context.store, job, name, context.now));
     retryFailure = pendingRetryFailure(current, name);
     const attempt = latestAnimationAttempt(current, name);
     const maxAttempts = current.animationRepair?.maxAttempts;

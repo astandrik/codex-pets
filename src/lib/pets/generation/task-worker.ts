@@ -5,7 +5,7 @@ import {WorkerYield, readActiveWorkerJob, scheduler, isTaskScheduler} from "@/li
 import {generateRepairAnimation, reserveAnimationRetry, repairGenerationTotals} from "@/lib/pets/generation/animation-repair-worker";
 import {isAnimationState, latestAnimationAttempt, getRepairScope} from "@/lib/pets/generation/animation-repair";
 import {generateRepairBase} from "@/lib/pets/generation/base-repair-worker";
-import {recoverRetryReservation} from "@/lib/pets/generation/retry-reservation-recovery";
+import {readRetrySnapshot, recoverRetryReservation} from "@/lib/pets/generation/retry-reservation-recovery";
 import {readSavedGenerationBase} from "@/lib/pets/generation/base-review";
 import {readRevisionAtlas} from "@/lib/pets/generation/animation-revisions";
 import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
@@ -61,7 +61,8 @@ export async function runGenerationTask(initial: GenerationJob, options: Options
     return session;
   }
   async function reserveRowRetry(name: StageName) {
-    const before = await refresh();
+    const before = await readRetrySnapshot(options.store, initial, name, now);
+    job = before;
     try {return await options.service.beginRowRetry(job, name);}
     catch (error) {
       if (error instanceof GenerationError || error instanceof WorkerYield) throw error;
