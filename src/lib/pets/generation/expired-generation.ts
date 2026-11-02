@@ -2,13 +2,14 @@ import {z} from "zod";
 import {DAY, GenerationError, STAGE_NAMES, type GenerationJob, type ImageUsage, type Scheduler, type StageName} from "@/lib/pets/generation/model";
 import {REGENERATION_RETRIES} from "@/lib/pets/generation/continuation-model";
 import {recordStageCost, settleBudget} from "@/lib/pets/generation/budget";
-import {requireActiveWorkerLease, saveScheduler, scheduler} from "@/lib/pets/generation/scheduler";
+import {requireActiveWorkerLease, saveScheduler, scheduler, isTaskScheduler, isParallelScheduler, releaseActiveLease} from "@/lib/pets/generation/scheduler";
 import type {GenerationStore, GenerationTransaction} from "@/lib/pets/generation/store";
 
 export type ResultReceipt = {key: string; fingerprint: string};
 const receiptSchema = z.object({
   results: z.record(z.string().max(128), z.string().regex(/^[a-f0-9]{64}$/)),
   finalizedBy: z.string().optional(),
+  finalizedTasks: z.record(z.string(), z.string()).optional(),
 }).strict();
 type Receipt = z.infer<typeof receiptSchema>;
 const MAX_RESULT_RECEIPTS = STAGE_NAMES.length * (REGENERATION_RETRIES.max + 1) + 2;
@@ -31,7 +32,7 @@ export async function recordResultCost(tx: GenerationTransaction, job: Generatio
   if (usage && (!Number.isFinite(usage.costUsd) || usage.costUsd < 0 || !Number.isSafeInteger(Math.ceil(usage.costUsd * 1_000_000)))) throw new GenerationError("invalid_provider_result");
   const receipt = await read(tx, job, now);
   if (matches(receipt, result)) return;
-  if (receipt.finalizedBy !== undefined) throw new GenerationError("stale_worker");
+  if (receipt.finalizedBy !== undefined || (job.workerLeaseId && receipt.finalizedTasks?.[job.workerLeaseId] !== undefined)) throw new GenerationError("stale_worker");
   if (Object.keys(receipt.results).length >= MAX_RESULT_RECEIPTS) throw new GenerationError("invalid_stage");
   if (!await recordStageCost(tx, job.id, now, usage, name)) throw new GenerationError("outcome_unknown");
   receipt.results[result.key] = result.fingerprint;
@@ -43,6 +44,10 @@ export async function recordExpiredResult(tx: GenerationTransaction, state: Sche
   const receipt = await read(tx, job, now);
   if (receipt.finalizedBy !== undefined) {
     if (receipt.finalizedBy !== job.worker || !matches(receipt, result)) throw new GenerationError("stale_worker");
+    return true;
+  }
+  if (job.workerTask && job.workerLeaseId && receipt.finalizedTasks?.[job.workerLeaseId] !== undefined) {
+    if (receipt.finalizedTasks[job.workerLeaseId] !== job.worker || !matches(receipt, result)) throw new GenerationError("stale_worker");
     return true;
   }
   requireActiveWorkerLease(state, job, now);
@@ -72,12 +77,39 @@ export async function finishExpiredGeneration(store: GenerationStore, job: Gener
       if (receipt.finalizedBy !== job.worker) throw new GenerationError("stale_worker");
       return;
     }
-    requireActiveWorkerLease(state, job, now);
-    await settleBudget(tx, job.id, now, uncertain);
-    receipt.finalizedBy = job.worker;
+    if (isTaskScheduler(state) && job.workerTask && job.workerLeaseId) {
+      const finalizedOwner = receipt.finalizedTasks?.[job.workerLeaseId];
+      if (finalizedOwner !== undefined) {
+        if (finalizedOwner !== job.worker) throw new GenerationError("stale_worker");
+        return;
+      }
+      requireActiveWorkerLease(state, job, now);
+      const slot = state.providerSlots.find(item => item.leaseId === job.workerLeaseId);
+      if (slot && uncertain) {slot.unknown = true; state.pauseReason = "outcome_unknown";}
+      else state.providerSlots = state.providerSlots.filter(item => item.leaseId !== job.workerLeaseId);
+      state.tasks = state.tasks.filter(task => task.lease?.leaseId !== job.workerLeaseId);
+      if (state.heavy?.leaseId === job.workerLeaseId) state.heavy = null;
+      receipt.finalizedTasks = {...receipt.finalizedTasks, [job.workerLeaseId]: job.worker};
+      const running = state.tasks.some(task => task.jobId === job.id && task.status === "running");
+      if (uncertain || !running) await settleBudget(tx, job.id, now, uncertain || state.providerSlots.some(item => item.jobId === job.id && item.unknown));
+      if (!running) {
+        state.tasks = state.tasks.filter(task => task.jobId !== job.id);
+        state.queue = state.queue.filter(id => id !== job.id);
+        delete state.resumes[job.id];
+      }
+    } else {
+      requireActiveWorkerLease(state, job, now);
+      await settleBudget(tx, job.id, now, uncertain);
+      receipt.finalizedBy = job.worker;
+      if (isParallelScheduler(state)) {
+        const slots = state.providerSlots.filter(slot => slot.jobId === job.id && slot.leaseId === job.workerLeaseId);
+        if (uncertain) for (const slot of slots) slot.unknown = true;
+        else state.providerSlots = state.providerSlots.filter(slot => !slots.includes(slot));
+      }
+      releaseActiveLease(state, job.id);
+    }
     await write(tx, job, receipt);
     if (uncertain) state.pauseReason = "outcome_unknown";
-    state.active = null;
     await saveScheduler(tx, state);
   });
   try { await finish(); }

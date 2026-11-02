@@ -2,7 +2,7 @@ import { withSerializableTransaction } from "@/lib/ydb/transaction";
 import type { Session } from "ydb-sdk";
 import { TypedValues, Types, withSession } from "@/lib/ydb/client";
 import { bytesAt, rowsFromResult, textAt } from "@/lib/ydb/result";
-import { jobSchema, type GenerationJob } from "@/lib/pets/generation/model";
+import { storedGenerationJob, jobSchema, type GenerationJob } from "@/lib/pets/generation/model";
 import { insertPendingPetInTransaction, listTakenPetSlugsInTransaction, type CreatePendingPetInput } from "@/lib/pets/repository";
 import { insertPetAssetsInTransaction, type PetAssetInput } from "@/lib/pets/assets-repository";
 
@@ -72,7 +72,7 @@ SELECT id, payload FROM ${GENERATION_TABLES.jobs} WHERE id IN $ids;`, {
     async putJob(job) {
       await execute(`DECLARE $id AS Utf8; DECLARE $payload AS Utf8; DECLARE $expires AS Timestamp;
 UPSERT INTO ${GENERATION_TABLES.jobs} (id, payload, expires_at) VALUES ($id, $payload, $expires);`, {
-        $id: TypedValues.utf8(job.id), $payload: TypedValues.utf8(JSON.stringify(job)),
+        $id: TypedValues.utf8(job.id), $payload: TypedValues.utf8(JSON.stringify(storedGenerationJob(job))),
         $expires: TypedValues.timestamp(new Date(job.expiresAt)),
       });
     },

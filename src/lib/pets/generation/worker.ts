@@ -1,3 +1,4 @@
+import {WorkerYield} from "@/lib/pets/generation/scheduler";
 import OpenAI from "openai";
 import { readFileSync } from "node:fs";
 import { generationStore, type GenerationStore } from "@/lib/pets/generation/store";
@@ -30,9 +31,11 @@ export function createGenerationWorker(options: {
         let generated: GeneratedImage;
         try {
           if (job.expiresAt <= now()) throw new GenerationError("generation_expired");
+          if (job.workerLeaseId) await options.service.authorizeLegacyImage(job);
           generated = await options.generate(job);
         } catch (error) {
           if (job.expiresAt <= now()) throw error instanceof GenerationError ? error : new GenerationError("outcome_unknown");
+          if (error instanceof WorkerYield) { await options.service.yield(job, error.eligibleAt); return "yielded"; }
           await options.service.fail(job, error instanceof GenerationError ? error.code : "outcome_unknown");
           return "failed";
         }
@@ -49,8 +52,9 @@ export function createGenerationWorker(options: {
       }
       let files: Awaited<ReturnType<typeof buildGeneratedPackage>>;
       try {
-        files = await (options.build ?? buildGeneratedPackage)(processing, source);
+        files = await (processing.workerLeaseId ? options.service.withHeavy(processing, () => (options.build ?? buildGeneratedPackage)(processing, source)) : (options.build ?? buildGeneratedPackage)(processing, source));
       } catch (error) {
+        if (error instanceof WorkerYield) { await options.service.yield(processing, error.eligibleAt); return "yielded"; }
         if (!(error instanceof GenerationError)) throw error;
         await options.service.fail(processing, error.code);
         return "failed";

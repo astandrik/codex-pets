@@ -11,6 +11,7 @@ import { providerFailureSchema, readProviderFailure, type ProviderFailure } from
 import {cliCauseSchema,readCliCause,type CliCause,errorDetailsSchema,readErrorDetails,type ErrorDetails} from "@/lib/pets/generation/cli-cause";
 import { failureDiagnosticSchema, readFailureDiagnostic, type FailureDiagnostic } from "@/lib/pets/generation/failure-diagnostic";
 import {retryInputMetadataSchema} from "@/lib/pets/generation/base-retry-model";
+import {MAX_PROVIDER_CALLS} from "@/lib/pets/generation/execution-limits";
 
 import {DEFAULT_GENERATION_QUEUE_LIMIT, MAX_GENERATION_QUEUE_LIMIT} from "@/lib/pets/generation/queue-policy";
 import {IP_DAILY_LIMIT, GLOBAL_DAILY_LIMIT, type GenerationDailyQuotaLimits} from "@/lib/pets/generation/quota-limits";
@@ -180,6 +181,9 @@ export const jobSchema = z.object({
   expiresAt: z.number(),
   worker: z.string().default(""),
   leaseUntil: z.number().optional(),
+  workerLeaseId: z.uuid().optional(),
+  executionVersion: z.literal(3).optional(),
+  workerTask: z.object({key: z.string(), kind: z.enum(["image", "compose", "metadata", "package", "review", "fail"]), stage: z.enum(STAGE_NAMES).optional()}).strict().optional(),
   error: z.string().optional(),
   providerFailure: providerFailureSchema.optional(),
   failureDiagnostic: failureDiagnosticSchema.optional(),
@@ -243,13 +247,45 @@ export function generationAnimationAutoRepairEnabled() {
 export function generationBaseRetryEnabled() {
   return process.env.PET_GENERATION_BASE_RETRY_ENABLED === "true";
 }
-export const schedulerSchema = z.object({
-  revision: z.number().int(),
-  queue: z.array(z.string()),
-  pauseReason: z.string().optional(),
-  active: z.object({ id: z.string(), owner: z.string(), until: z.number(), inflight: z.boolean().optional() }).nullable(),
-});
+const workerLeaseSchema = z.object({id: z.string(), owner: z.string(), until: z.number(), inflight: z.boolean().optional(), leaseId: z.uuid().optional()});
+const schedulerFields = {revision: z.number().int(), queue: z.array(z.string()), pauseReason: z.string().optional()};
+export const legacySchedulerSchema = z.object({...schedulerFields, active: workerLeaseSchema.nullable()}).strict();
+const parallelSchedulerObject = z.object({
+  ...schedulerFields, version: z.literal(2), activeLimit: z.union([z.literal(1), z.literal(2)]),
+  providerLimit: z.number().int().min(1).max(MAX_PROVIDER_CALLS).default(11),
+  active: z.array(workerLeaseSchema.extend({leaseId: z.uuid()})).max(2),
+  resumes: z.record(z.string(), z.number().finite()),
+  providerSlots: z.array(z.object({jobId: z.string(), owner: z.string(), leaseId: z.string(), key: z.string().max(200), startedAt: z.number(), unknown: z.boolean().optional(), dispatched: z.boolean().optional()})).max(MAX_PROVIDER_CALLS),
+  providerWaiters: z.array(z.object({jobId: z.string(), leaseId: z.string(), key: z.string().max(200)})).max(24),
+  providerTurn: z.string().nullable(),
+  heavy: z.object({jobId: z.string(), owner: z.string(), leaseId: z.string()}).nullable(),
+}).strict();
+export const parallelSchedulerSchema = parallelSchedulerObject.refine(state => new Set(state.queue).size === state.queue.length && new Set(state.active.map(a => a.id)).size === state.active.length &&
+  state.active.every(a => !state.queue.includes(a.id)) && new Set(state.providerSlots.map(s => s.jobId + ":" + s.key)).size === state.providerSlots.length,
+  "Invalid scheduler ownership");
+export const generationTaskSchema = z.object({
+  key: z.string().max(200), jobId: z.string().regex(GENERATION_ID),
+  kind: z.enum(["image", "compose", "metadata", "package", "review", "fail"]), stage: z.enum(STAGE_NAMES).optional(),
+  status: z.enum(["ready", "running", "done", "failed"]), notBefore: z.number().finite(), attempt: z.string().max(200),
+  lease: workerLeaseSchema.extend({leaseId: z.uuid()}).optional(),
+  diagnostics: z.array(stageFailureDiagnosticSchema).max(12).optional(), causes: z.array(stageCliCauseSchema).max(12).optional(),
+  error: z.object({code:z.string(),retryAt:z.string().optional(),providerFailure:providerFailureSchema.optional(),
+    diagnostic:failureDiagnosticSchema.optional(),cliCause:cliCauseSchema.optional(),details:errorDetailsSchema.optional(),assemblyIssues:assemblyIssuesSchema.optional()}).strict().optional(),
+}).strict();
+export const taskSchedulerSchema = parallelSchedulerObject.extend({
+  version: z.literal(3), tasks: z.array(generationTaskSchema).max((MAX_GENERATION_QUEUE_LIMIT + 2) * STAGE_NAMES.length), taskTurn: z.string().nullable(),
+}).strict().refine(state => state.active.length === 0 && new Set(state.queue).size === state.queue.length &&
+  new Set(state.tasks.map(t => t.key)).size === state.tasks.length &&
+  state.tasks.every(t => t.status !== "running" || (t.lease && t.lease.id === t.jobId)) &&
+  new Set(state.tasks.flatMap(t => t.lease ? [t.lease.leaseId] : [])).size === state.tasks.filter(t => t.lease).length &&
+  new Set(state.providerSlots.map(s => s.jobId + ":" + s.leaseId)).size === state.providerSlots.length,
+  "Invalid task scheduler ownership");
+export const schedulerSchema = z.union([legacySchedulerSchema, parallelSchedulerSchema, taskSchedulerSchema]);
+export type GenerationTask = z.infer<typeof generationTaskSchema>;
+export type TaskScheduler = z.infer<typeof taskSchedulerSchema>;
 export type Scheduler = z.infer<typeof schedulerSchema>;
+export type ParallelScheduler = z.infer<typeof parallelSchedulerSchema> | TaskScheduler;
+export type WorkerLease = z.infer<typeof workerLeaseSchema>;
 export const dedupSchema = z.object({ hash: z.string(), id: z.string(), expiresAt: z.number(), nameProvided: z.boolean().optional() });
 
 export class GenerationError extends Error {
@@ -311,4 +347,9 @@ export function nextMoscowDay(now: number) {
 
 export function newGenerationId() {
   return randomBytes(32).toString("hex");
+}
+
+// Task ownership is transient; legacy leases still persist their owner after a downgrade.
+export function storedGenerationJob(job: GenerationJob): GenerationJob {
+  return job.workerTask ? {...job, worker: "", workerLeaseId: undefined, leaseUntil: undefined, workerTask: undefined} : job;
 }

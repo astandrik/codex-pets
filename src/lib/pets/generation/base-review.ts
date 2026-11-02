@@ -1,7 +1,7 @@
 import {createHash} from "node:crypto";
 import {GENERATION_ID, GenerationError, generationConfirmationSchema, generationAnimationHintsEnabled, type GenerationJob} from "@/lib/pets/generation/model";
 import type {GenerationStore, GenerationTransaction} from "@/lib/pets/generation/store";
-import {scheduler, saveScheduler, expireQueue, requireQueueCapacity, requireJobWithActiveWorkerLease} from "@/lib/pets/generation/scheduler";
+import {scheduler, saveScheduler, expireQueue, requireJobWithActiveWorkerLease, releaseActiveLease, requireQueueCapacity} from "@/lib/pets/generation/scheduler";
 import {settleBudget, startBudgetTracking, type GenerationBudgetLimit} from "@/lib/pets/generation/budget";
 import {publicJob} from "@/lib/pets/generation/public-job";
 
@@ -40,7 +40,7 @@ export function createBaseReviewService(store: GenerationStore, options: {now: (
         const updated: GenerationJob = {...current, status: "awaiting_confirmation", worker: "", leaseUntil: undefined};
         await tx.putJob(updated);
         await settleBudget(tx, job.id, now);
-        state.active = null;
+        releaseActiveLease(state, job.id);
         await saveScheduler(tx, state);
         return updated;
       });

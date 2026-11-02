@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { register } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
@@ -13,24 +12,21 @@ const { spriteRenderer } = await import(pathToFileURL(path.join(sourceRoot, "lib
 const { petGeneration } = await import(pathToFileURL(path.join(sourceRoot, "lib/pets/generation/service.ts")).href);
 const { generationStore } = await import(pathToFileURL(path.join(sourceRoot, "lib/pets/generation/store.ts")).href);
 const { generationCardProvider } = await import(pathToFileURL(path.join(sourceRoot, "lib/pets/generation/card-provider.ts")).href);
-const runPetGenerationWorkerOnce = createSpriteGenerationWorker({ service: petGeneration, store: generationStore, renderer: spriteRenderer, cardProvider: generationCardProvider });
+const {runWorkerPool} = await import(pathToFileURL(path.join(sourceRoot, "lib/pets/generation/worker-runner.ts")).href);
+const controller = new AbortController();
+const runPetGenerationWorkerOnce = createSpriteGenerationWorker({ service: petGeneration, store: generationStore, renderer: spriteRenderer, cardProvider: generationCardProvider, stopping: () => controller.signal.aborted });
 const { destroyYdbDriver } = await import(pathToFileURL(path.join(sourceRoot, "lib/ydb/client.ts")).href);
 const once = process.argv.includes("--once");
-const owner = randomUUID();
-let stopping = false;
-process.on("SIGTERM", () => { stopping = true; });
-process.on("SIGINT", () => { stopping = true; });
+process.on("SIGTERM", () => controller.abort());
+process.on("SIGINT", () => controller.abort());
 try {
-  do {
-    try {
-      const status = await runPetGenerationWorkerOnce(owner);
-      console.log(JSON.stringify({ operation: "pet-generation-worker", status }));
-    } catch {
-      console.error(JSON.stringify({ operation: "pet-generation-worker", status: "iteration_failed" }));
-      if (once) process.exitCode = 1;
-    }
-    if (!once && !stopping) await new Promise((resolve) => setTimeout(resolve, 5000));
-  } while (!once && !stopping);
+  const poolSize = await petGeneration.workerPoolSize();
+  await runWorkerPool({runOnce: runPetGenerationWorkerOnce, maxActiveJobs: poolSize,
+    signal: controller.signal, once, delay: () => petGeneration.nextWakeDelay(),
+    onResult: status => {
+      console.log(JSON.stringify({operation: "pet-generation-worker", status}));
+      if (once && status === "iteration_failed") process.exitCode = 1;
+    }});
 } finally {
   await destroyYdbDriver();
 }

@@ -1,3 +1,6 @@
+import {tryStartProviderOperation, settleProviderOperation, releaseUnsentProviderOperation, requireCapacity} from "@/lib/pets/generation/execution-slots";
+import {activeLease} from "@/lib/pets/generation/scheduler";
+import {assertTaskStage} from "@/lib/pets/generation/task-scheduler";
 import {isOutputModerationFailure} from "@/lib/pets/generation/provider-failure";
 import {createHash,randomUUID} from "node:crypto";
 import {z} from "zod";
@@ -20,6 +23,7 @@ export function createBaseRepairService(store:GenerationStore,options:Options){
       const state=await scheduler(tx,options.now()),now=options.now();
       const current=await requireJobWithActiveWorkerLease(tx,state,job,now);
       requireBaseJob(current);
+      assertTaskStage(current, "base");
       return run(tx,current,state,now);
     });
   }
@@ -32,6 +36,7 @@ export function createBaseRepairService(store:GenerationStore,options:Options){
       now=options.now();
       if(await recordExpiredResult(tx,state,job,now,receipt,usage,"base"))return null;
       requireBaseJob(current);
+      assertTaskStage(current, "base");
       return run(tx,current,state,now);
     }),expiredError);
   }
@@ -44,7 +49,7 @@ export function createBaseRepairService(store:GenerationStore,options:Options){
     const updated={...current,baseRepair:{...current.baseRepair!,phase:attempt.status==="saved"?"complete" as const:current.baseRepair!.phase,attempts:current.baseRepair!.attempts.map(a=>a.token===attempt.token?attempt:a)}};
     baseRepairSchema.parse(updated.baseRepair);
     await tx.putJob(updated);
-    if(state.active)state.active.inflight=["started","unknown"].includes(attempt.status);
+    const lease=activeLease(state,current.id,current.workerLeaseId);if(lease)lease.inflight=["started","unknown"].includes(attempt.status);
     await saveScheduler(tx,state);return updated;
   }
   async function authorize(tx:GenerationTransaction,current:GenerationJob,state:Scheduler,now:number){
@@ -68,12 +73,12 @@ export function createBaseRepairService(store:GenerationStore,options:Options){
         const attempt:BaseAttempt={ordinal:last.ordinal+1,token,reason,status:"reserved",reservedAt:now,notBefore:Math.max(now+5000,retryAt)};
         const updated={...current,baseRepair:{...current.baseRepair!,attempts:[...current.baseRepair!.attempts,attempt]}};
         baseRepairSchema.parse(updated.baseRepair);await tx.putJob(updated);
-        if(state.active)state.active.inflight=false;
+        const lease=activeLease(state,current.id,current.workerLeaseId);if(lease)lease.inflight=false;
         await saveScheduler(tx,state);return {job:updated,attempt};
       });
     },
     async startBaseAttempt(job:GenerationJob,token:string){
-      return withJob(job,async(tx,current,state,now)=>{
+      const started=await withJob(job,async(tx,current,state,now)=>{
         const attempt=requireAttempt(current,token);
         if(attempt.status!=="reserved"||attempt.notBefore>now||current.stages.length!==1||current.stages[0].name!=="base"||current.stages[0].status!=="inflight")throw new GenerationError("invalid_stage");
         await authorize(tx,current,state,now);
@@ -81,7 +86,17 @@ export function createBaseRepairService(store:GenerationStore,options:Options){
         await requireJobWithActiveWorkerLease(tx,state,job,decisionTime);
         if(!options.enabled())throw new GenerationError("generation_disabled");
         if(moscowDay(decisionTime)!==moscowDay(now))await checkStageBudget(tx,current.id,decisionTime,options.budgetUsd());
+        if(!await tryStartProviderOperation(tx,state,current,`base-attempt:${token}`,decisionTime))return null;
         return save(tx,current,state,{...attempt,status:"started",startedAt:decisionTime});
+      });
+      requireCapacity(started!==null,options.now()+250);return started!;
+    },
+    async deferUnsentBaseAttempt(job:GenerationJob,token:string){
+      return withJob(job,async(tx,current,state)=>{
+        const attempt=requireAttempt(current,token);
+        if(attempt.status!=="started")throw new GenerationError("invalid_stage");
+        await releaseUnsentProviderOperation(tx,state,current,`base-attempt:${token}`);
+        return save(tx,current,state,{...attempt,status:"reserved",startedAt:undefined});
       });
     },
     async saveBaseAttempt(job:GenerationJob,token:string,bytes:Buffer,metadata:{usage?:ImageUsage;generationMs:number}){
@@ -95,6 +110,7 @@ export function createBaseRepairService(store:GenerationStore,options:Options){
           return current;
         }
         if(attempt.status!=="started"||current.stages.length!==1||current.stages[0].name!=="base"||current.stages[0].status!=="inflight")throw new GenerationError("invalid_stage");
+        await settleProviderOperation(tx,state,current,`base-attempt:${token}`);
         await tx.putArtifact(current.id,"stage-base.png",bytes,current.expiresAt);
         await recordResultCost(tx,job,now,receipt,metadata.usage,"base");
         const result={usage:metadata.usage,generationMs:metadata.generationMs};
@@ -111,6 +127,7 @@ export function createBaseRepairService(store:GenerationStore,options:Options){
         if(["failed","unknown"].includes(attempt.status))return current;
         if(attempt.status!=="started")throw new GenerationError("invalid_stage");
         await recordResultCost(tx,job,now,receipt,usage,"base");
+        await settleProviderOperation(tx,state,current,`base-attempt:${token}`,unknown);
         const failure={code,...(z.iso.datetime().safeParse(error.retryAt).success?{retryAt:error.retryAt}:{}),...(error.diagnostic?{diagnostic:error.diagnostic}:{}),...(error.cliCause?{cliCause:error.cliCause}:{}),...(error.providerFailure?{providerFailure:error.providerFailure}:{})};
         return save(tx,current,state,{...attempt,status:unknown?"unknown":"failed",finishedAt:now,generationMs:Math.max(0,now-attempt.startedAt!),failure,
           ...(reason==="rate_limit"?{usage:{textInputTokens:0,imageInputTokens:0,outputTokens:0,costUsd:0}}:{})});

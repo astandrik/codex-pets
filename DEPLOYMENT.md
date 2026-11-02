@@ -787,3 +787,143 @@ The new POST only admits a queued task; it never calls the provider. One accepte
 Configurable base retry adds optional `baseRepair` data and `maxRetries` input (0–50 additional retries, default 5 only in capable web clients). Deploy both compatible web and generation-worker readers before allowing new base-retry policies. Each accepted child still consumes one daily quota attempt; additional provider calls consume the existing spend budget and retain unknown-cost accounting. Success returns to explicit base review, without automatically starting animations.
 
 For compatible rollback, disable new admission with `PET_GENERATION_BASE_RETRY_ENABLED=false` and retain compatible web/worker readers for existing jobs and receipts. Old strict readers are unsafe once any job contains `baseRepair`; disabling admission does not remove that data. Do not roll back to old readers, strip policy data, or re-send uncertain operations under a new UUID.
+## Parallel generation scheduler v2
+
+The default remains the legacy scheduler with one active job. Deploy compatible
+web and generation-worker readers before changing the existing `scheduler` ledger.
+There is no automatic JSON migration, new table, dependency or public endpoint.
+`PET_GENERATION_ACTIVE_JOBS` accepts only `1` or `2` (default `1`); the scheduler's
+persisted `activeLimit` is authoritative. A mismatch blocks new claims. The
+shared provider-call cap defaults to11 and is configurable from1 through22 via
+`PET_GENERATION_PROVIDER_CALLS` and the persisted `providerLimit`. One local
+prepare/compose/package step is allowed across processes. One task may use all eleven calls when no peer is ready.
+
+A v2 slice runs at most one attempt per ready row, persists every settled sibling,
+and returns to the FIFO queue. Waiting for retry `notBefore` holds no job/call
+slot. The internal resume ticket does not reset UUID, counters, input hashes,
+quota, timestamps or the original 24-hour expiry. Initial admission preserves `PET_GENERATION_QUEUE_LIMIT`
+(default 30, integer 1–200). Waiting does not shorten the original 24-hour TTL.
+Resumes also count toward a total capacity of `queueLimit + activeLimit`, without
+rejecting a task's yield.
+Policy-1 jobs keep four animation attempts; policy-2 jobs keep their stored cap.
+A known output refusal may release its call slot while retaining unknown cost.
+An uncertain provider outcome never releases a slot solely because a lease
+expired, and records an unknown-cost marker in the budget ledger. An unconfirmed
+local operation retains its heavy lock without introducing a financial global
+pause; once its exact owner confirms completion, normal lease recovery resumes.
+Do not force-release an unconfirmed heavy operation based on time alone.
+Existing v2 records without providerLimit keep11. A runtime/providerLimit mismatch
+blocks new claims. Lowering the cap does not cancel already-started requests;
+new starts wait until the outstanding count drops below the new cap. The
+existing recorded-spend threshold is unchanged, not a prepaid hard cap.
+
+### Explicit activation and rollback
+
+These are operator actions, never part of a normal build or test. Preserve a
+readback/backup and verify every worker process and maintenance writer first.
+
+1. Deploy the compatible code with legacy ledger and `PET_GENERATION_ACTIVE_JOBS=1`.
+2. Set `PET_GENERATION_DRAIN=true` on web and workers. This blocks new admission
+   and claims; receipt checks/read-only routes and active completion still work.
+   Stop/drain all old binaries. Do not force-kill a paid call.
+3. Read the revision with `node scripts/generation-scheduler-state.mjs`. Inspect
+   the dry-run below; format changes require zero active/call/heavy/resume entries
+   and no unresolved global pause. Ordinary waiting IDs/timestamps are preserved.
+4. Apply only after explicit approval. The command atomically stores a seven-day
+   backup in the same private ledger and uses the expected revision as a CAS.
+   Dry-run never writes. Start with v2 active limit 1, smoke-check, then set 2
+   through the `limit` action and matching runtime configuration before undraining.
+
+```sh
+# Replace N with the just-read revision. First command does not write.
+node scripts/generation-scheduler-state.mjs --action=activate --revision=N --active-limit=1
+# Requires PET_GENERATION_DRAIN=true and separate operator approval.
+node scripts/generation-scheduler-state.mjs --action=activate --revision=N --active-limit=1 --apply
+# Read the new revision before each further action.
+node scripts/generation-scheduler-state.mjs --action=limit --revision=N --active-limit=2
+# Optional later change; also set PET_GENERATION_PROVIDER_CALLS=22 in workers.
+node scripts/generation-scheduler-state.mjs --action=limit --revision=N --provider-limit=22
+```
+
+For a quick rollback reduce the persisted limit to 1 and match the runtime env;
+let the already-running second job settle. Keep v2-compatible binaries. To restore
+an older binary, drain first and dry-run `--action=downgrade --revision=N`; apply
+only when active, call, heavy, waiter and resume entries are empty. Never restore
+a stale ledger backup over newer jobs/checkpoints or discard unknown accounting.
+
+Monitor active jobs/calls, queue/resume counts, failures, unknown outcomes, recorded
+spending, transaction conflicts and the combined Node/Python process-tree RSS.
+`--once` processes one slice, which may return `yielded`; it never runs two jobs.
+SIGTERM/SIGINT stop new slices/calls and join existing work before closing YDB.
+Performance acceptance uses identical synthetic workloads and separate wall time,
+queue latency and memory measurements; a green unit suite alone is insufficient.
+
+### Isolated transaction test
+
+Provision a fresh local YDB database named `/local/codex_parallelism_test_<suffix>`
+with the three generation tables from `ydb/schema.yql`. The test requires an empty
+scheduler and rejects non-loopback endpoints/non-test database names. Use anonymous
+local credentials only; do not reuse production credentials. It leaves synthetic
+fixtures in that disposable database so destroy the test environment afterwards.
+
+```sh
+PET_GENERATION_YDB_INTEGRATION=1 YDB_ANONYMOUS_CREDENTIALS=1 \
+  YDB_PETS_ENDPOINT=grpc://127.0.0.1:31537 \
+  YDB_PETS_DATABASE=/local/codex_parallelism_test_example \
+  npx vitest run src/lib/pets/generation/scheduler-ydb.integration.test.ts --maxWorkers=1
+```
+
+This test launches three Node processes, uses real Serializable RW transactions
+and fake provider boundaries, and checks ownership, the shared configured call cap
+and rollback. It makes no model calls. The full suite skips it unless explicitly
+enabled. No paid production acceptance run is implied by activation.
+
+## Per-stage task pool (scheduler v3)
+
+V3 leases one image stage at a time: a base image or an animation strip. Metadata
+uses the same provider pool. `PET_GENERATION_PROVIDER_CALLS` sets both the local
+pool size and the shared cross-process call limit (default20, integer1..22).
+The persisted limit is authoritative; a mismatch refuses new claims. Multiple
+worker processes do not multiply capacity. `PET_GENERATION_ACTIVE_JOBS` remains
+a v2 setting, and v3 retains its migrated value only for the previous parent
+admission bound (`queueLimit + activeLimit`), with the configured queue limit. New subtasks do not consume daily quota.
+
+Parents rotate after each claim, skipping unavailable tasks. Retry deadlines,
+attempt tokens, provider inputs and parent expiry remain durable. Base review
+holds no pool slot. Prepare, compose and package retain one global heavy slot;
+metadata and image calls may overlap them. Every image task has its own temporary
+workspace. Parent job updates reload current data inside Serializable RW
+transactions, and task lease tokens fence late writes.
+
+An unsent expired lease is recoverable. A dispatched call with an unknown outcome
+retains its permit and unknown-cost marker and pauses new provider work. Local
+failure finalization can still run. Never free such a permit on a timer or clear
+its accounting to make room. Local packaging failures can retry without a provider
+call. Successful siblings finish before a known terminal parent failure.
+
+Activation is explicit; startup, page reads and tests never migrate production:
+
+1. Deploy compatible web/worker readers, set `PET_GENERATION_DRAIN=true`, and let
+   all current operations finish. Stop old worker processes.
+2. Read the current state with `node scripts/generation-scheduler-state.mjs` and
+   keep its revision. Pending parent IDs and their original deadlines are retained.
+   Any old job without stage checkpoints must finish on its old worker first;
+   `scheduler_legacy_job_not_drained` blocks both dry-run and apply until then.
+3. Dry-run `node scripts/generation-scheduler-state.mjs --action=activate-tasks --revision=N`.
+   It must show version3, zero active operations and the intended provider limit.
+4. Only with separate operator approval, repeat with `--apply`. The transaction
+   checks revision and drain mode and writes a seven-day backup.
+5. Match `PET_GENERATION_PROVIDER_CALLS` in all processes, then remove drain mode.
+
+For a later limit change, dry-run `--action=limit --revision=N --provider-limit=M`
+with `M` in1..22. Lowering never cancels active work. Keep drain enabled while
+updating the persisted limit and processes; existing starts finish and new starts
+wait for capacity. Quick rollback is limit1 with the compatible v3 binaries.
+Downgrading the persisted format requires no remaining tasks, permits or heavy
+operation; never restore a stale backup over newer results or accounting.
+
+Observe active tasks, distinct active parents, waiting tasks, provider permits,
+transaction conflicts, retries, unknown outcomes and the Node/Python process-tree
+memory. The budget remains a recorded-spend threshold, not a prepaid hard limit.
+Local validation uses `PET_GENERATION_TASK_POOL_YDB=1` and only a loopback database
+named `/local/codex_parallelism_test_<suffix>`; fake results never call a model.
