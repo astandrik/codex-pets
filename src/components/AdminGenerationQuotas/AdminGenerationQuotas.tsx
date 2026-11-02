@@ -136,7 +136,7 @@ function QuotaForm() {
     setError('');
   }
   return <Flex direction="column" gap={4} className="admin-generation-quotas">
-    <p>Additional attempts apply only to this IP until midnight Moscow time. The service cap of 200 accepted tasks/day and the $50 spending/reservations limit still apply.</p>
+    <p>Additional attempts apply only to this IP until midnight Moscow time. The configured daily service limit and any explicitly enabled spending threshold still apply. Cost accounting is retained; no funds are reserved.</p>
     {restored&&<Alert theme="warning" title="Unconfirmed grant" message={`A grant of ${restored.amount} attempts for ${restored.day} is unconfirmed. Re-enter the original IP to read its quota and retry the same grant; no new grant ID will be created.`}/>}
     <form onSubmit={e=>{e.preventDefault();void lookup();}}>
       <label htmlFor="quota-ip">IP address</label>

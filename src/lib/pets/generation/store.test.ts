@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { YdbError, StatusCode, TypedValues } from "@/lib/ydb/client";
+import { YdbError, StatusCode, TypedValues, Types } from "@/lib/ydb/client";
 import {randomUUID} from "node:crypto";
 import {CONTINUATION_STATES} from "./continuation-model";
 import type {AnimationAttempt} from "./model";
@@ -223,4 +223,76 @@ it("publishes snapshot TTLs without reading or rewriting binary payloads",async(
   expect(calls[0][0]).toContain("SELECT kind");expect(calls[0][0]).toContain("expires_at>$now");
   for(const [query,parameters,control]of calls){expect(query).not.toMatch(/\bbytes\b/);expect(parameters).not.toHaveProperty("$bytes");expect(control).toEqual({txId:"tx-1"});}
   for(const [,parameters]of calls.slice(1))expect(parameters.$expires).toEqual(TypedValues.timestamp(new Date(expiresAt)));
+});
+
+describe("transactional batch job reads", () => {
+  const now = Date.UTC(2026, 9, 31, 12);
+  const first = "a".repeat(64), second = "b".repeat(64), absent = "c".repeat(64);
+  const job = (id: string) => ({id, prompt: "", displayName: "Synthetic", status: "queued", createdAt: now, expiresAt: now + 86400000, worker: "", promptRevision: "test", pipelineVersion: 2, stages: []});
+  const row = (id: string, payload: unknown) => ({items: [{textValue: id}, {textValue: JSON.stringify(payload)}]});
+
+  it("reads unique IDs in one parameterized query and retains legacy and expired rows", async () => {
+    const {generationStore} = await import("./store");
+    const legacy = {id: second, prompt: "", displayName: "Legacy", status: "queued", createdAt: now - 1000, expiresAt: now - 1, promptRevision: "test"};
+    session.executeQuery.mockResolvedValueOnce({resultSets: [{rows: [row(second, legacy), row(first, job(first))]}]});
+    const result = await generationStore.transaction(tx => tx.getJobs([first, second, absent, first]));
+    expect(result.size).toBe(2);
+    expect(result.get(first)).toEqual(job(first));
+    expect(result.get(second)).toEqual({...legacy, worker: "", pipelineVersion: 1, stages: []});
+    expect(result.has(absent)).toBe(false);
+    const [sql, params, control] = session.executeQuery.mock.calls[0];
+    expect(sql).toMatch(/SELECT id, payload FROM codex_pet_generation_jobs WHERE id IN \$ids/);
+    expect(sql).not.toContain("expires_at");
+    expect(params.$ids.type.listType.item).toEqual(Types.UTF8);
+    expect(params.$ids.value.items.map((item: {textValue: string}) => item.textValue)).toEqual([first, second, absent]);
+    expect(control).toEqual({txId: "tx-1"});
+    expect(session.executeQuery).toHaveBeenCalledTimes(2); // Batch plus the existing transaction commit.
+  });
+
+  it("does not issue a job query for an empty batch", async () => {
+    const {generationStore} = await import("./store");
+    expect(await generationStore.transaction(tx => tx.getJobs([]))).toEqual(new Map());
+    expect(session.executeQuery.mock.calls).toEqual([["SELECT 1;", {}, {txId: "tx-1", commitTx: true}]]);
+  });
+
+  it.each(["not-json", JSON.stringify({id: first})])("rejects malformed batch payload %s and rolls back", async payload => {
+    const {generationStore} = await import("./store");
+    session.executeQuery.mockResolvedValueOnce({resultSets: [{rows: [{items: [{textValue: first}, {textValue: payload}]}]}]});
+    await expect(generationStore.transaction(tx => tx.getJobs([first]))).rejects.toThrow();
+    expect(session.rollbackTransaction).toHaveBeenCalledWith({txId: "tx-1"});
+    expect(session.executeQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds batch responses for 200 jobs with valid large correction histories", async () => {
+    const {generationStore} = await import("./store");
+    const {ANIMATION_STATES} = await import("./animation-revision-input");
+    const ids = Array.from({length: 200}, (_, i) => (i + 1).toString(16).padStart(64, "0"));
+    const large = {...job(first), pipelineVersion: 3, reviewBase: true, baseConfirmedAt: now, animationAnatomyPolicy: 1,
+      animationRevision: {policy: 1, sourceGenerationId: "f".repeat(64), sourceMetadataRevision: 0, selectedStates: ANIMATION_STATES,
+        baseSha256: "0".repeat(64), sourceAtlasSha256: "1".repeat(64),
+        corrections: Object.fromEntries(ANIMATION_STATES.map(state => [state, Array(4).fill("Ж".repeat(1998))])),
+      },
+    };
+    const bytesPerRow = Buffer.byteLength(JSON.stringify(large));
+    const batches: string[][] = [];
+    session.executeQuery.mockImplementation(async (sql, params) => {
+      if (sql === "SELECT 1;") return {resultSets: []};
+      const selected: string[] = params.$ids.value.items.map((item: {textValue: string}) => item.textValue);
+      if (selected.length * bytesPerRow > 16 * 1024 * 1024) throw Error("synthetic transport response limit");
+      batches.push(selected);
+      return {resultSets: [{rows: selected.map(id => row(id, {...large, id}))}]};
+    });
+    expect((await generationStore.transaction(tx => tx.getJobs(ids))).size).toBe(200);
+    expect(batches.map(batch => batch.length)).toEqual([32, 32, 32, 32, 32, 32, 8]);
+    expect(batches.flat()).toEqual(ids);
+    for (const [, , control] of session.executeQuery.mock.calls.slice(0, -1)) expect(control).toEqual({txId: "tx-1"});
+  });
+
+  it("rolls back an incomplete result rather than treating omitted rows as missing jobs", async () => {
+    const {generationStore} = await import("./store");
+    session.executeQuery.mockResolvedValueOnce({resultSets: [{truncated: true, rows: [row(first, job(first))]}]});
+    await expect(generationStore.transaction(tx => tx.getJobs([first, second]))).rejects.toThrow();
+    expect(session.rollbackTransaction).toHaveBeenCalledWith({txId: "tx-1"});
+    expect(session.executeQuery).toHaveBeenCalledTimes(1);
+  });
 });

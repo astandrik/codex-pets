@@ -1,6 +1,6 @@
 import { withSerializableTransaction } from "@/lib/ydb/transaction";
 import type { Session } from "ydb-sdk";
-import { TypedValues, withSession } from "@/lib/ydb/client";
+import { TypedValues, Types, withSession } from "@/lib/ydb/client";
 import { bytesAt, rowsFromResult, textAt } from "@/lib/ydb/result";
 import { jobSchema, type GenerationJob } from "@/lib/pets/generation/model";
 import { insertPendingPetInTransaction, listTakenPetSlugsInTransaction, type CreatePendingPetInput } from "@/lib/pets/repository";
@@ -20,6 +20,7 @@ export const GENERATION_TABLES = {
 
 export interface GenerationTransaction {
   getJob(id: string): Promise<GenerationJob | null>;
+  getJobs(ids: readonly string[]): Promise<Map<string, GenerationJob>>;
   putJob(job: GenerationJob): Promise<void>;
   getLedger(key: string, now: number): Promise<string | null>;
   putLedger(key: string, value: string, expiresAt: number): Promise<void>;
@@ -39,6 +40,8 @@ export interface GenerationStore {
 }
 
 type Execute = (sql: string, params: NonNullable<Parameters<Session["executeQuery"]>[1]>) => ReturnType<Session["executeQuery"]>;
+// Bound responses when queued jobs retain large correction histories.
+const JOB_READ_BATCH_SIZE = 32;
 
 function transactionApi(execute: Execute): GenerationTransaction {
   return {
@@ -52,6 +55,19 @@ function transactionApi(execute: Execute): GenerationTransaction {
 SELECT payload FROM ${GENERATION_TABLES.jobs} WHERE id = $id;`, { $id: TypedValues.utf8(id) });
       const row = rowsFromResult(result)[0];
       return row ? jobSchema.parse(JSON.parse(textAt(row, 0))) : null;
+    },
+    async getJobs(ids) {
+      const unique = [...new Set(ids)];
+      const jobs = new Map<string, GenerationJob>();
+      for (let offset = 0; offset < unique.length; offset += JOB_READ_BATCH_SIZE) {
+        const result = await execute(`DECLARE $ids AS List<Utf8>;
+SELECT id, payload FROM ${GENERATION_TABLES.jobs} WHERE id IN $ids;`, {
+          $ids: TypedValues.list(Types.UTF8, unique.slice(offset, offset + JOB_READ_BATCH_SIZE)),
+        });
+        if (result.resultSets?.some(set => set.truncated)) throw new Error("Incomplete generation job batch");
+        for (const row of rowsFromResult(result)) jobs.set(textAt(row, 0), jobSchema.parse(JSON.parse(textAt(row, 1))));
+      }
+      return jobs;
     },
     async putJob(job) {
       await execute(`DECLARE $id AS Utf8; DECLARE $payload AS Utf8; DECLARE $expires AS Timestamp;

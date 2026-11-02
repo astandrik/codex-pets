@@ -1,6 +1,6 @@
 import {getBaseRepairSummary,canResumeBaseRepair} from "@/lib/pets/generation/base-repair";
 import {continuationEnabled} from "@/lib/pets/generation/continuation-model";
-import {withQueueTimeout, requiredStageNames, usesStageCheckpoints, isUnacceptedAnimationRevision, generationBaseRetryEnabled, generationReviewFlowEnabled, type GenerationJob} from "@/lib/pets/generation/model";
+import {requiredStageNames, usesStageCheckpoints, isUnacceptedAnimationRevision, generationBaseRetryEnabled, generationReviewFlowEnabled, type GenerationJob} from "@/lib/pets/generation/model";
 import {baseRetryEligibility} from "@/lib/pets/generation/base-retry-model";
 import type {PublicCardMetadata} from "@/lib/pets/generation/card-metadata";
 import {publicGenerationError} from "@/lib/pets/generation/public-error";
@@ -8,7 +8,7 @@ import {toPublicUrl} from "@/lib/base-path";
 import {getAnimationRepairSummary, canResumeAnimationRepair, hasUnsettledAnimationAttempt} from "@/lib/pets/generation/animation-repair";
 
 export function publicJob(record: GenerationJob, now: number, metadata?:PublicCardMetadata) {
-  let job = withQueueTimeout(record, now);
+  let job = record;
   if (record.status === "generating" && record.leaseUntil && record.leaseUntil <= now && !canResumeAnimationRepair(record) && !canResumeBaseRepair(record) && (!usesStageCheckpoints(record) || record.stages.some(stage => stage.status === "inflight") || hasUnsettledAnimationAttempt(record))) {
     job = { ...record, status: "failed", error: "outcome_unknown" };
   }

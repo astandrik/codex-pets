@@ -15,6 +15,7 @@ import {
 } from "@/components/AskAI/ask-ai-content";
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import { serializeJsonLd } from "@/lib/json-ld";
+import {IP_DAILY_LIMIT, GLOBAL_DAILY_LIMIT} from "@/lib/pets/generation/quota-limits";
 import {
   getAgentResourceAlternateTypes,
   getOpenGraphImages,
@@ -163,7 +164,7 @@ export default function AgentsPage() {
           </li>
           <li>
             <code>generate_pet</code> starts a server-paid text-to-pet task with
-            limits of 200 tasks per day globally and 10 per IP.
+            default limits of {GLOBAL_DAILY_LIMIT} tasks per day globally and {IP_DAILY_LIMIT} per IP. The operator can configure both.
           </li>
           <li>
             <code>get_pet_generation</code> returns its status, unlisted preview

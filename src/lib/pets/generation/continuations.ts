@@ -7,8 +7,8 @@ import { inspectContinuationSource, jobRevision, requireContinuationSource, sha,
 import { DAY, GENERATION_ID, GenerationError, generationDigest, moscowDay, nextMoscowDay, type GenerationJob } from "@/lib/pets/generation/model";
 import { publicJob } from "@/lib/pets/generation/public-job";
 import type { GenerationStore, GenerationTransaction } from "@/lib/pets/generation/store";
-import { scheduler, expireQueue, saveScheduler } from "@/lib/pets/generation/scheduler";
-import { restoreBudgetTracking, startBudgetTracking } from "@/lib/pets/generation/budget";
+import { scheduler, expireQueue, requireQueueCapacity, saveScheduler } from "@/lib/pets/generation/scheduler";
+import { restoreBudgetTracking, startBudgetTracking, type GenerationBudgetLimit } from "@/lib/pets/generation/budget";
 import { consumeDailyQuota, readDailyQuota } from "@/lib/pets/generation/quota-grants";
 const LEASE = 5 * 60000;
 const receiptSchema = z.object({ id: z.uuid(), sourceId: z.string(), targetId: z.string(), hash: z.string(), mode: z.enum(["rebuild", "regenerate"]), state: z.enum(["preparing", "accepted", "rejected"]), owner: z.string(), until: z.number(), createdAt: z.number(), input: continuationInputSchema, copied: z.array(z.string()).default([]) });
@@ -20,7 +20,7 @@ export function createContinuationService(store: GenerationStore, options: {
     enabled: () => boolean;
     secret: () => string;
     createId: () => string;
-    budgetUsd: () => number;
+    budgetUsd: () => GenerationBudgetLimit;
     automaticAnimationRepair?: () => boolean;
 }) {
     const key = (requestId: string) => "continuation:" + generationDigest(options.secret(), "request", requestId);
@@ -57,8 +57,7 @@ export function createContinuationService(store: GenerationStore, options: {
         return automaticRepair;
     }
     async function queue(tx: GenerationTransaction) { const state = await scheduler(tx, options.now()); await expireQueue(tx, state, options.now()); if (state.pauseReason)
-        throw new GenerationError("generation_paused"); if (state.queue.length >= 5)
-        throw new GenerationError("queue_full"); return state; }
+        throw new GenerationError("generation_paused"); requireQueueCapacity(state); return state; }
     function plan(snapshot: SourceSnapshot, mode: Receipt["mode"], selected: ContinuationState[]): ContinuationPlan {
         return { policy: 1, mode, sourceGenerationId: snapshot.job.id, baseSha256: sha(snapshot.base), generationStages: selected, compositionStages: snapshot.atlas ? CONTINUATION_STATES.filter(n => snapshot.targets.includes(n) || selected.includes(n)) : [...CONTINUATION_STATES], ...(snapshot.atlas ? { atlas: { kind: mode === "rebuild" ? snapshot.atlasKind! : "continuation-source.webp", sha256: sha(snapshot.atlas) } } : {}), ...(snapshot.job.continuation?.corrections ?? snapshot.job.animationRevision?.corrections ? { corrections: snapshot.job.continuation?.corrections ?? snapshot.job.animationRevision?.corrections } : {}) };
     }

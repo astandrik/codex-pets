@@ -39,6 +39,38 @@ it.each([1,3,6])("stops after successful call %i and awaits base confirmation",a
  const publicJob=await f.service.get(f.current().id);expect(publicJob.baseRepair).toEqual({maxAttempts:6,attempts:successAt,phase:"complete"});
  expect(JSON.stringify(publicJob)).not.toContain('"token"');
 });
+
+it.each([false,true])("accounts a late configured base reply without pausing, removed=%s",async removed=>{
+ const f=await fixture(1,1),id=f.reply.generation.generationId;
+ f.config.now=f.current().expiresAt-10;
+ f.generate.mockImplementation(async()=>{
+  f.config.now+=20;if(removed)await f.store.cleanup(f.config.now);
+  return{bytes:Buffer.from("late base"),generationMs:20,usage};
+ });
+ expect(await f.worker("owner")).toBe("failed");
+ const budget=JSON.parse(f.store.ledger.get("budget")!.value),state=JSON.parse(f.store.ledger.get("scheduler")!.value);
+ expect(budget.spent["2026-11-02"]).toBe(40000);
+ expect(state.active).toBeNull();expect(state.pauseReason).toBeUndefined();
+ expect(await f.store.readArtifact(id,"stage-base.png",f.config.now)).toBeNull();
+});
+
+it("keeps an unknown configured base reply paused when its retry crosses expiry",async()=>{
+ const f=await fixture(1),id=f.reply.generation.generationId;
+ f.config.now=f.current().expiresAt-10;f.generate.mockRejectedValue(transport());
+ expect(await f.worker("owner")).toBe("failed");expect(f.generate).toHaveBeenCalledTimes(1);
+ expect(JSON.parse(f.store.ledger.get("scheduler")!.value)).toMatchObject({active:null,pauseReason:"outcome_unknown"});
+ expect(JSON.parse(f.store.ledger.get("budget")!.value).reservations[id].unknown).toBe(true);
+});
+
+it("isolates a recorded final configured base failure after expiry",async()=>{
+ const f=await fixture(0),id=f.reply.generation.generationId;
+ f.config.now=f.current().expiresAt-10;
+ f.generate.mockImplementation(async()=>{f.config.now+=20;throw transport();});
+ expect(await f.worker("owner")).toBe("failed");
+ expect(JSON.parse(f.store.ledger.get("scheduler")!.value)).toMatchObject({active:null});
+ expect(JSON.parse(f.store.ledger.get("scheduler")!.value).pauseReason).toBeUndefined();
+ expect(JSON.parse(f.store.ledger.get("budget")!.value).reservations[id].unknown).toBe(true);
+});
 it("fingerprints explicit counts, coalesces sources and preserves replay flag-off",async()=>{
  const f=await fixture(5);
  expect(f.reply.generation.baseRepair).toEqual({maxAttempts:6,attempts:0,phase:"active"});
@@ -171,8 +203,13 @@ it.each(["expiry","takeover"])("does not call provider when %s happens after the
  });
  await expect(f.worker("owner")).rejects.toMatchObject({code:"stale_worker"});expect(f.calls).toHaveLength(0);
 });
-it("releases the queue for recorded transport rejection even without optional diagnostic metadata",async()=>{
- const f=await fixture(0);f.generate.mockRejectedValue(new GenerationError("outcome_unknown",undefined,undefined,undefined,undefined,{kind:"remote_disconnected"}));
+it.each([false,true])("releases the queue for recorded transport rejection without optional diagnostics, late=%s",async late=>{
+ const f=await fixture(0);
+ if(late)f.config.now=f.current().expiresAt-10;
+ f.generate.mockImplementation(async()=>{
+  if(late)f.config.now+=20;
+  throw new GenerationError("outcome_unknown",undefined,undefined,undefined,undefined,{kind:"remote_disconnected"});
+ });
  expect(await f.worker("owner")).toBe("failed");expect(f.generate).toHaveBeenCalledTimes(1);
  expect(JSON.parse(f.store.ledger.get("scheduler")!.value).pauseReason).toBeUndefined();
 });

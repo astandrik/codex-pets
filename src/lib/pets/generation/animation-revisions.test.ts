@@ -47,7 +47,7 @@ describe("animation revisions", () => {
     if (cause === "metadata") input.sourceMetadataRevision = 1;
     if (cause === "corrupt") f.store.artifacts.get(f.source.id + ":stage-base.png")!.bytes = Buffer.from("broken");
     if (cause === "disabled") vi.stubEnv("PET_GENERATION_ANIMATION_REVISIONS_ENABLED", "false");
-    if (cause === "queue") { for (let i=0;i<5;i++) await f.service.generate({prompt:"pet",requestId:randomUUID()},`203.0.113.${i}`); }
+    if (cause === "queue") { vi.stubEnv("PET_GENERATION_QUEUE_LIMIT", "5"); for (let i=0;i<5;i++) await f.service.generate({prompt:"pet",requestId:randomUUID()},`203.0.113.${i}`); }
     const before = {jobs: structuredClone([...f.store.jobs]), ledger: structuredClone([...f.store.ledger]), artifacts: [...f.store.artifacts]};
     if (cause === "write") { const transaction = f.store.transaction.bind(f.store); vi.spyOn(f.store,"transaction").mockImplementation(op => transaction(tx => op({...tx, putJob: async () => {throw Error("write failure");}}))); }
     await expect(f.service.reviseAnimations(f.source.id, input, "203.0.113.9")).rejects.toBeDefined();
@@ -79,11 +79,12 @@ it("retains old policy, validates revision payloads and bounds accumulated corre
   await expect(f.service.reviseAnimations(job.id,{...f.input(),states:["waving"],prompt:"one more",sourceMetadataRevision:0},"203.0.113.9")).rejects.toMatchObject({code:"animation_corrections_limit"});
   expect([...f.store.ledger]).toEqual(before);
 });
-it("rejects queue expiry and cannot revive a failed candidate by acceptance",async()=>{
+it("keeps an animation revision queued beyond the old timeout and rejects premature acceptance",async()=>{
   vi.stubEnv("PET_GENERATION_ANIMATION_REVISIONS_ENABLED","true");
   const f=await revisionFixture();const child=await f.service.reviseAnimations(f.source.id,f.input(),"203.0.113.9");
-  f.config.now+=model.WAIT_MS;expect(await f.service.claim("late")).toBeNull();
-  expect((await f.service.get(child.generationId)).error?.code).toBe("queue_timeout");
+  f.config.now+=2*60*60_000;
+  expect((await f.service.get(child.generationId)).status).toBe("queued");
+  expect((await f.service.claim("late"))?.id).toBe(child.generationId);
   await expect(f.service.acceptAnimationRevision(child.generationId)).rejects.toMatchObject({code:"generation_not_completed"});
 });
 it("accepts once after a lost commit ACK without changing expiry or ledger",async()=>{

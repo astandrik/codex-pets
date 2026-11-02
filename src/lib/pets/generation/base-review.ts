@@ -1,8 +1,8 @@
 import {createHash} from "node:crypto";
 import {GENERATION_ID, GenerationError, generationConfirmationSchema, generationAnimationHintsEnabled, type GenerationJob} from "@/lib/pets/generation/model";
 import type {GenerationStore, GenerationTransaction} from "@/lib/pets/generation/store";
-import {scheduler, saveScheduler, expireQueue, requireJobWithActiveWorkerLease} from "@/lib/pets/generation/scheduler";
-import {settleBudget, startBudgetTracking} from "@/lib/pets/generation/budget";
+import {scheduler, saveScheduler, expireQueue, requireQueueCapacity, requireJobWithActiveWorkerLease} from "@/lib/pets/generation/scheduler";
+import {settleBudget, startBudgetTracking, type GenerationBudgetLimit} from "@/lib/pets/generation/budget";
 import {publicJob} from "@/lib/pets/generation/public-job";
 
 export async function readSavedGenerationBase(job: GenerationJob, read: GenerationTransaction["getArtifact"], now: number) {
@@ -14,7 +14,7 @@ export async function readSavedGenerationBase(job: GenerationJob, read: Generati
   return bytes;
 }
 
-export function createBaseReviewService(store: GenerationStore, options: {now: () => number; enabled: () => boolean; budgetUsd: () => number}) {
+export function createBaseReviewService(store: GenerationStore, options: {now: () => number; enabled: () => boolean; budgetUsd: () => GenerationBudgetLimit}) {
   function liveJob(id: string, job: GenerationJob | null, now: number): GenerationJob {
     if (!GENERATION_ID.test(id)) throw new GenerationError("invalid_argument");
     if (!job) throw new GenerationError("not_found");
@@ -63,7 +63,7 @@ export function createBaseReviewService(store: GenerationStore, options: {now: (
           const state = await scheduler(tx, now);
           await expireQueue(tx, state, now);
           if (state.pauseReason) throw new GenerationError("generation_paused");
-          if (state.queue.length >= 5) throw new GenerationError("queue_full");
+          requireQueueCapacity(state);
           await startBudgetTracking(tx, id, now, options.budgetUsd());
           const decisionTime = options.now();
           liveJob(id, job, decisionTime);

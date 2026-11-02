@@ -24,36 +24,44 @@ export function createGenerationWorker(options: {
     }
     const job = await options.service.claim(owner);
     if (!job) return "idle";
-    let processing = job;
-    if (job.status === "generating") {
-      let generated: GeneratedImage;
-      try {
-        generated = await options.generate(job);
-      } catch (error) {
-        await options.service.fail(job, error instanceof GenerationError ? error.code : "outcome_unknown");
+    try {
+      let processing = job;
+      if (job.status === "generating") {
+        let generated: GeneratedImage;
+        try {
+          if (job.expiresAt <= now()) throw new GenerationError("generation_expired");
+          generated = await options.generate(job);
+        } catch (error) {
+          if (job.expiresAt <= now()) throw error instanceof GenerationError ? error : new GenerationError("outcome_unknown");
+          await options.service.fail(job, error instanceof GenerationError ? error.code : "outcome_unknown");
+          return "failed";
+        }
+        // A failed/ambiguous persistence acknowledgement must never trigger another paid call.
+        processing = await options.service.saveSource(job, generated.bytes, {
+          usage: generated.usage, providerRequestId: generated.providerRequestId,
+          generationMs: generated.generationMs,
+        });
+      }
+      const source = await options.store.readArtifact(job.id, "source.png", now());
+      if (!source) {
+        await options.service.fail(processing, "source_unavailable");
         return "failed";
       }
-      // A failed/ambiguous persistence acknowledgement must never trigger another paid call.
-      processing = await options.service.saveSource(job, generated.bytes, {
-        usage: generated.usage, providerRequestId: generated.providerRequestId,
-        generationMs: generated.generationMs,
-      });
-    }
-    const source = await options.store.readArtifact(job.id, "source.png", now());
-    if (!source) {
-      await options.service.fail(processing, "source_unavailable");
-      return "failed";
-    }
-    let files: Awaited<ReturnType<typeof buildGeneratedPackage>>;
-    try {
-      files = await (options.build ?? buildGeneratedPackage)(processing, source);
+      let files: Awaited<ReturnType<typeof buildGeneratedPackage>>;
+      try {
+        files = await (options.build ?? buildGeneratedPackage)(processing, source);
+      } catch (error) {
+        if (!(error instanceof GenerationError)) throw error;
+        await options.service.fail(processing, error.code);
+        return "failed";
+      }
+      await options.service.finish(processing, files);
+      return "completed";
     } catch (error) {
-      if (!(error instanceof GenerationError)) throw error;
-      await options.service.fail(processing, error.code);
+      if (!(error instanceof GenerationError) || job.expiresAt > now()) throw error;
+      await options.service.finishExpiredGeneration(job, ["outcome_unknown", "stage_conflict", "invalid_provider_result"].includes(error.code));
       return "failed";
     }
-    await options.service.finish(processing, files);
-    return "completed";
   };
 }
 

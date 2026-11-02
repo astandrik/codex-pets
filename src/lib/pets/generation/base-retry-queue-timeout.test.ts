@@ -3,12 +3,14 @@ import sharp from "sharp";
 import {afterEach, expect, it, vi} from "vitest";
 import {createGenerationService} from "./service";
 import {MemoryStore} from "./test-store";
-import {DAY, WAIT_MS} from "./model";
+import {DAY} from "./model";
 import {normalizeGenerationReference} from "./reference-image";
 
 afterEach(() => vi.unstubAllEnvs());
 
-async function queuedSource() {
+const hour = 60 * 60_000;
+
+async function queuedSource(historicalTimeout = true) {
   const store = new MemoryStore();
   const config = {now: Date.parse("2026-11-01T12:00:00Z"), budget: 50};
   const service = createGenerationService(store, {
@@ -24,6 +26,10 @@ async function queuedSource() {
   }).png().toBuffer(), "image/png");
   const accepted = await service.generate({requestId: randomUUID(), prompt: "Saved description", displayName: "Saved name"}, "203.0.113.8", {reviewBase: true, reference});
   const id = accepted.generationId;
+  if (historicalTimeout) {
+    const source = store.jobs.get(id)!;
+    source.status = "failed"; source.error = "queue_timeout"; source.prompt = "";
+  }
   const input = async () => {
     const options = await service.getBaseRetryOptions(id);
     if ("existingGeneration" in options) throw Error("unexpected existing child");
@@ -36,23 +42,24 @@ function snapshot(store: MemoryStore) {
   return structuredClone({jobs: [...store.jobs], ledger: [...store.ledger], artifacts: [...store.artifacts]});
 }
 
-it("offers a queued timeout and its saved input without writing during GETs", async () => {
+it("keeps a long-waiting source queued and rejects a duplicate base retry without writes", async () => {
   vi.stubEnv("PET_GENERATION_BASE_RETRY_ENABLED", "true");
   vi.stubEnv("PET_GENERATION_REVIEW_FLOW_ENABLED", "true");
-  const f = await queuedSource();
-  f.config.now += WAIT_MS + 1;
+  const f = await queuedSource(false);
+  f.config.now += 12 * hour;
   const before = snapshot(f.store);
   const visible = await f.service.get(f.id);
-  expect(visible).toMatchObject({status: "failed", error: {code: "queue_timeout"}, canRetryBase: true});
-  expect(visible.pollAfterSeconds).toBeUndefined();
-  expect(await f.service.getBaseRetryOptions(f.id)).toMatchObject({inputState: "saved", prompt: "Saved description", displayName: "Saved name"});
-  expect(await f.service.getBaseRetryReference(f.id, f.reference.metadata.sha256)).toEqual(f.reference.bytes);
+  expect(visible).toMatchObject({status: "queued"});
+  expect(visible).not.toHaveProperty("canRetryBase");
+  expect(visible.pollAfterSeconds).toBeDefined();
+  await expect(f.service.getBaseRetryOptions(f.id)).rejects.toMatchObject({code: "base_retry_unavailable"});
+  await expect(f.service.getBaseRetryReference(f.id, f.reference.metadata.sha256)).rejects.toMatchObject({code: "base_retry_unavailable"});
   expect(snapshot(f.store)).toEqual(before);
 });
 
-it("keeps the same revision when the worker records a timeout after options were read", async () => {
+it("keeps the same revision when queue cleanup removes a recorded legacy timeout", async () => {
   const f = await queuedSource();
-  f.config.now += WAIT_MS + 1;
+  f.config.now += hour + 1;
   const input = await f.input();
   expect(await f.service.claim("cleanup-worker")).toBeNull();
   expect(await f.input()).toMatchObject({sourceRevision: input.sourceRevision});
@@ -61,10 +68,10 @@ it("keeps the same revision when the worker records a timeout after options were
   expect(f.store.jobs.size).toBe(2);
 });
 
-it("atomically frees the expired queue slot and preserves input, source TTL and quota accounting", async () => {
+it("cleans a legacy failed queue entry and preserves input, source TTL and quota accounting", async () => {
   const f = await queuedSource();
   const original = structuredClone(f.store.jobs.get(f.id)!);
-  f.config.now += WAIT_MS - 1;
+  f.config.now += hour - 1;
   const waiting = [];
   for (let i = 0; i < 4; i++) {
     waiting.push((await f.service.generate({requestId: randomUUID(), prompt: "Other pet"}, "203.0.113.9")).generationId);
@@ -74,7 +81,7 @@ it("atomically frees the expired queue slot and preserves input, source TTL and 
   const reply = await f.service.retryBaseGeneration(f.id, input, "203.0.113.8");
   const child = f.store.jobs.get(reply.generation.generationId)!;
   expect(f.store.jobs.get(f.id)).toMatchObject({status: "failed", error: "queue_timeout", expiresAt: original.expiresAt, retryInput: original.retryInput});
-  expect(child).toMatchObject({prompt: original.prompt, displayName: original.displayName, baseRetrySourceId: f.id, expiresAt: f.config.now + DAY});
+  expect(child).toMatchObject({prompt: "Saved description", displayName: original.displayName, baseRetrySourceId: f.id, expiresAt: f.config.now + DAY});
   expect(await f.store.readArtifact(child.id, "reference.png", f.config.now)).toEqual(f.reference.bytes);
   expect(await f.store.readArtifact(child.id, "generation-input.json", f.config.now)).toEqual(await f.store.readArtifact(f.id, "generation-input.json", f.config.now));
   expect(JSON.parse(f.store.ledger.get("scheduler")!.value).queue).toEqual([...waiting, child.id]);
@@ -84,7 +91,7 @@ it("atomically frees the expired queue slot and preserves input, source TTL and 
 
 it("coalesces concurrent UUIDs and recovers a lost answer without another admission", async () => {
   const f = await queuedSource();
-  f.config.now += WAIT_MS + 1;
+  f.config.now += hour + 1;
   const input = await f.input();
   const original = f.store.transaction.bind(f.store);
   let phase = 0;
@@ -102,17 +109,17 @@ it("coalesces concurrent UUIDs and recovers a lost answer without another admiss
   expect(snapshot(f.store)).toEqual(before);
 });
 
-it.each(["pause", "budget", "ip-quota", "global-quota"])("rolls back timeout cleanup and admission when blocked by %s", async gate => {
+it.each(["pause", "budget", "ip-quota", "global-quota"])("rolls back legacy queue cleanup and admission when blocked by %s", async gate => {
   const f = await queuedSource();
-  f.config.now += WAIT_MS + 1;
+  f.config.now += hour + 1;
   const input = await f.input();
   if (gate === "pause") {
     const scheduler = f.store.ledger.get("scheduler")!;
     scheduler.value = JSON.stringify({...JSON.parse(scheduler.value), pauseReason: "outcome_unknown"});
   }
   if (gate === "budget") f.config.budget = 0;
-  if (gate === "ip-quota") for (const [key, value] of f.store.ledger) if (key.startsWith("ip:")) value.value = "10";
-  if (gate === "global-quota") f.store.ledger.get("day:2026-11-01")!.value = "200";
+  if (gate === "ip-quota") for (const [key, value] of f.store.ledger) if (key.startsWith("ip:")) value.value = "100";
+  if (gate === "global-quota") f.store.ledger.get("day:2026-11-01")!.value = "2000";
   const before = snapshot(f.store);
   await expect(f.service.retryBaseGeneration(f.id, input, "203.0.113.8")).rejects.toMatchObject({code: gate === "pause" ? "generation_paused" : gate === "budget" ? "budget_exhausted" : "rate_limited"});
   expect(snapshot(f.store)).toEqual(before);
@@ -120,7 +127,7 @@ it.each(["pause", "budget", "ip-quota", "global-quota"])("rolls back timeout cle
 
 it("does not retry a source changed to an inflight stage after the options read", async () => {
   const f = await queuedSource();
-  f.config.now += WAIT_MS + 1;
+  f.config.now += hour + 1;
   const input = await f.input();
   const source = f.store.jobs.get(f.id)!;
   source.status = "generating";
@@ -132,7 +139,7 @@ it("does not retry a source changed to an inflight stage after the options read"
 
 it("rejects an active scheduler owner even if the queued record is inconsistent", async () => {
   const f = await queuedSource();
-  f.config.now += WAIT_MS + 1;
+  f.config.now += hour + 1;
   const input = await f.input();
   const scheduler = f.store.ledger.get("scheduler")!;
   scheduler.value = JSON.stringify({...JSON.parse(scheduler.value), active: {id: f.id, owner: "worker", until: f.config.now + 10000, inflight: true}});
@@ -142,7 +149,7 @@ it("rejects an active scheduler owner even if the queued record is inconsistent"
 });
 
 it("rejects a live queued source and an expired source without writes", async () => {
-  const f = await queuedSource();
+  const f = await queuedSource(false);
   const before = snapshot(f.store);
   await expect(f.service.getBaseRetryOptions(f.id)).rejects.toMatchObject({code: "base_retry_unavailable"});
   f.config.now += DAY;
@@ -152,7 +159,7 @@ it("rejects a live queued source and an expired source without writes", async ()
 
 it("preserves recorded spending and unknown charges when the old queue entry is settled", async () => {
   const f = await queuedSource();
-  f.config.now += WAIT_MS + 1;
+  f.config.now += hour + 1;
   const budget = f.store.ledger.get("budget")!;
   const stored = JSON.parse(budget.value);
   stored.spent["2026-11-01"] = 1_000_000;

@@ -4,7 +4,6 @@ import {GET as referenceGET} from "@/app/api/pet-generations/[id]/base-retries/r
 import {petGeneration} from "./service";
 import {baseRetryFixture} from "./base-retry-fixture.test-utils";
 import {randomUUID} from "node:crypto";
-import {WAIT_MS} from "./model";
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllEnvs();});
 const context=(id:string)=>({params:Promise.resolve({id})});
 const request=(body:unknown,extra:Record<string,string>={})=>new Request("https://pets.example/api",{method:"POST",headers:{origin:"https://pets.example","content-type":"application/json","x-pets-client-ip":"203.0.113.8",...extra},body:JSON.stringify(body)});
@@ -42,26 +41,17 @@ it("keeps private headers and distinct errors on invalid/expired/versioned reads
  const expired=await GET(new Request("https://pets.example/api"),context(f.id));expect(expired.status).toBe(410);expect(expired.headers.get("cache-control")).toContain("no-store");
 });
 
-it("offers an unpersisted timeout through GET and admits it once through POST", async () => {
+it("does not offer or admit a duplicate base retry for a long-waiting task", async () => {
  const f = await setup();
  const queued = await f.service.generate({requestId: randomUUID(), prompt: "Queued pet"}, "203.0.113.8", {reviewBase: true, reference: f.reference});
- f.config.now += WAIT_MS + 1;
- const before = structuredClone([...f.store.ledger]);
- const optionsResponse = await GET(new Request("https://pets.example/api"), context(queued.generationId));
- expect(optionsResponse.status).toBe(200);
- const {options} = await optionsResponse.json();
- expect(options.inputState).toBe("saved");
- expect([...f.store.ledger]).toEqual(before);
+ f.config.now += 12 * 60 * 60_000;
+ const before = structuredClone({jobs:[...f.store.jobs],ledger:[...f.store.ledger],artifacts:[...f.store.artifacts]});
+ const response = await GET(new Request("https://pets.example/api"), context(queued.generationId));
+ expect(response.status).toBe(409);
+ const rejected = await POST(request({requestId:randomUUID(),mode:"saved",sourceRevision:"a".repeat(64)}),context(queued.generationId));
+ expect(rejected.status).toBe(409);
  expect(f.store.jobs.get(queued.generationId)?.status).toBe("queued");
- const input = {requestId: randomUUID(), mode: "saved", sourceRevision: options.sourceRevision};
- const first = await POST(request(input), context(queued.generationId));
- const second = await POST(request(input), context(queued.generationId));
- expect(first.status).toBe(202);
- expect(second.status).toBe(202);
- const accepted = await first.json(), replay = await second.json();
- expect(replay.generation.generationId).toBe(accepted.generation.generationId);
- expect(replay.reused).toBe(true);
- expect(f.store.jobs.size).toBe(3);
+ expect(structuredClone({jobs:[...f.store.jobs],ledger:[...f.store.ledger],artifacts:[...f.store.artifacts]})).toEqual(before);
 });
 
 it("advertises and validates optional base retry limits in all three HTTP input modes",async()=>{

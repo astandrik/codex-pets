@@ -4,7 +4,7 @@ import {toPublicUrl} from "@/lib/base-path";
 import {admitGeneration,type AdmissionOptions} from "@/lib/pets/generation/admission";
 import {baseRetryEligibility,baseRetryInputSchema,digestSchema,type BaseRetryInput,type BaseRetryOptions,type BaseRetryReply} from "@/lib/pets/generation/base-retry-model";
 import {GENERATION_INPUT_ARTIFACT,readGenerationInput,readSavedGenerationReference} from "@/lib/pets/generation/generation-input";
-import {DAY,GENERATION_ID,GenerationError,generationDigest,moscowDay,withQueueTimeout,type GenerationJob,type GenerationInput} from "@/lib/pets/generation/model";
+import {DAY,GENERATION_ID,GenerationError,generationDigest,moscowDay,type GenerationJob,type GenerationInput} from "@/lib/pets/generation/model";
 import {publicJob} from "@/lib/pets/generation/public-job";
 import {scheduler} from "@/lib/pets/generation/scheduler";
 import type {GenerationStore,GenerationTransaction} from "@/lib/pets/generation/store";
@@ -25,7 +25,7 @@ export function createBaseRetryService(store:GenerationStore,options:Options){
   }
   function source(record:GenerationJob|null){
     if(!record)throw new GenerationError("not_found");
-    const job=withQueueTimeout(record,options.now());
+    const job=record;
     if(job.expiresAt<=options.now())throw new GenerationError("generation_expired");
     if(!baseRetryEligibility(job))throw new GenerationError("base_retry_unavailable");
     return job;

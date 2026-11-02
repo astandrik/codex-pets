@@ -55,6 +55,24 @@ it("advertises limits only when enabled and preserves legacy policy on omission"
   expect((await f.service.continueGeneration(f.job.id, body, "203.0.113.10")).operation.id).toBe(body.requestId);
 });
 
+it("records all configured attempts across more than one selected row",async()=>{
+  const f=await fixture(),input={...await f.input("regenerate",["idle","waving"]),maxRetries:50};
+  const accepted=await f.service.continueGeneration(f.job.id,input,"203.0.113.10");
+  const calls:string[]=[];
+  const worker=createSpriteGenerationWorker({service:f.service,store:f.store,now:()=>f.config.now,
+    wait:async ms=>{f.config.now+=ms;},renderer:{open:async()=>({prepare:async()=>{},cleanup:async()=>{},compose:async()=>f.image,
+      generate:async name=>{calls.push(name);throw new GenerationError("provider_rejected",undefined,
+        {httpStatus:400,code:"moderation_blocked",moderationStage:"output"},undefined,
+        {boundary:"provider_cli",reason:"process_exit"},{kind:"http_error",httpStatus:400});}})}});
+  expect(await worker("owner")).toBe("failed");
+  expect(calls.filter(name=>name==="idle")).toHaveLength(51);
+  expect(calls.filter(name=>name==="waving")).toHaveLength(51);
+  const current=(await f.store.readJob(accepted.generation!.generationId))!;
+  expect(current.animationRepair?.attempts).toHaveLength(102);
+  expect(JSON.parse(f.store.ledger.get("scheduler")!.value).pauseReason).toBeUndefined();
+  expect((await f.service.continueGeneration(f.job.id,input,"203.0.113.10")).generation!.generationId).toBe(current.id);
+});
+
 it("binds the explicit count to the receipt and replays after flag-off", async () => {
   const f = await fixture(), body = {...await f.input("regenerate", ["waving"]), maxRetries: 5};
   const accepted = await f.service.continueGeneration(f.job.id, body, "203.0.113.10");
