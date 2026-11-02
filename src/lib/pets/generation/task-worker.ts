@@ -1,3 +1,4 @@
+import {setWorkerPhase, type WorkerContext} from "@/lib/pets/generation/worker-diagnostics";
 import {createHash} from "node:crypto";
 import {GenerationError, HEARTBEAT_MS, type GenerationJob, type StageName} from "@/lib/pets/generation/model";
 import {WorkerYield, readActiveWorkerJob, scheduler, isTaskScheduler} from "@/lib/pets/generation/scheduler";
@@ -14,13 +15,14 @@ import type {SpriteSession, createSpriteGenerationWorker} from "@/lib/pets/gener
 
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 type Options = Parameters<typeof createSpriteGenerationWorker>[0];
-export async function runGenerationTask(initial: GenerationJob, options: Options): Promise<string> {
+export async function runGenerationTask(initial: GenerationJob, options: Options, diagnostic?: WorkerContext): Promise<string> {
   let job = initial;
   const task = job.workerTask!;
   const now = options.now ?? Date.now;
   let session: SpriteSession | undefined;
   let leaseError: unknown;
   let recordedTerminalFailure = false;
+  let primaryError: unknown;
   let heartbeat = Promise.resolve();
   const timer = setInterval(() => {
     heartbeat = heartbeat.then(() => options.service.heartbeat(initial)).then(() => undefined).catch(error => {leaseError = error;});
@@ -53,6 +55,7 @@ export async function runGenerationTask(initial: GenerationJob, options: Options
       reference = await options.store.readArtifact(job.id,"reference.png",now()) ?? undefined;
       if (!reference || hash(reference) !== job.reference.sha256) throw new GenerationError("saved_stage_unavailable");
     }
+    setWorkerPhase(diagnostic, "prepare", job);
     session = await options.renderer.open(job, saved, reference, atlas, {diagnosticOnly:composing});
     return session;
   }
@@ -74,7 +77,7 @@ export async function runGenerationTask(initial: GenerationJob, options: Options
     } else await options.service.authorizeStage(job, name);
     if (options.stopping?.()) {await options.service.deferUnsentStage(job,name);throw new WorkerYield();}
     let image;
-    try {checkLease(); image = await active.generate(name);}
+    try {checkLease(); setWorkerPhase(diagnostic, "provider", job, retry ? 2 : 1); image = await active.generate(name);}
     catch (error) {
       const failure = error instanceof GenerationError ? error : new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"renderer_process",reason:"unclassified"});
       await options.service.recordRowAttemptFailure(job,name,retry?2:1,failure);
@@ -85,7 +88,7 @@ export async function runGenerationTask(initial: GenerationJob, options: Options
       }
       throw failure;
     }
-    try {await options.service.saveStage(job,name,image.bytes,image);}
+    try {setWorkerPhase(diagnostic, "checkpoint", job); await options.service.saveStage(job,name,image.bytes,image);}
     catch (error) {
       if (initial.expiresAt <= now()) throw error;
       const saved = await refresh();if (saved.stages.find(s=>s.name===name)?.sha256 !== hash(image.bytes)) throw error;
@@ -101,6 +104,7 @@ export async function runGenerationTask(initial: GenerationJob, options: Options
       }
       const active = await open();
       if (name !== "base") await active.prepare(operation=>options.service.withHeavy(job,operation));
+      setWorkerPhase(diagnostic, "provider", job);
       if (name === "base" && job.baseRepair) await generateRepairBase(context,job,active);
       else if (isAnimationState(name) && job.animationRepair) await generateRepairAnimation(context,job,name,active);
       else await ordinaryImage(name,active);
@@ -138,9 +142,13 @@ export async function runGenerationTask(initial: GenerationJob, options: Options
       });
       await options.service.fail(job,failure.error.code,failure.error.providerFailure,failure.error.diagnostic,failure.diagnostics,failure.causes,failure.error.assemblyIssues);
     }
+    setWorkerPhase(diagnostic, "finalize", job);
     await options.service.completeTask(initial);
     return task.kind === "package" ? "completed" : task.kind === "review" ? "awaiting_confirmation" : task.kind === "fail" ? "failed" : "yielded";
   } catch (error) {
+    primaryError = error instanceof WorkerYield ? undefined : error;
+    const phase = diagnostic?.phase;
+    try {
     if (initial.expiresAt <= now()) {
       const uncertain = Boolean(leaseError) || !(error instanceof GenerationError) ||
         (["outcome_unknown", "stage_conflict", "invalid_provider_result"].includes(error.code) && !recordedTerminalFailure);
@@ -158,5 +166,19 @@ export async function runGenerationTask(initial: GenerationJob, options: Options
     const failure=error instanceof GenerationError?error:new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"checkpoint",reason:"unconfirmed_write"});
     await options.service.completeTask(initial,{error:failure});
     return "failed";
-  } finally {clearInterval(timer);await heartbeat;await session?.cleanup();}
+    } catch (secondary) {
+      if(error instanceof WorkerYield){setWorkerPhase(diagnostic,"finalize",job);throw secondary;}
+      if(!diagnostic?.primaryReported)diagnostic?.report(error);
+      setWorkerPhase(diagnostic,"finalize",job);
+      diagnostic?.report(secondary, true);
+      if (diagnostic && phase) diagnostic.phase = phase;
+      throw secondary;
+    }
+  } finally {
+    clearInterval(timer); await heartbeat;
+    try {await session?.cleanup();} catch (error) {
+      if (primaryError) {const phase=diagnostic?.phase;setWorkerPhase(diagnostic,"workspace_cleanup");diagnostic?.report(error,true);if(diagnostic&&phase)diagnostic.phase=phase;}
+      else {setWorkerPhase(diagnostic, "workspace_cleanup"); throw error;}
+    }
+  }
 }

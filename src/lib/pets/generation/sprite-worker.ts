@@ -1,3 +1,5 @@
+import type {FileResultJournal} from "@/lib/pets/generation/result-journal";
+import {setWorkerPhase, type WorkerContext} from "@/lib/pets/generation/worker-diagnostics";
 import {runGenerationTask} from "@/lib/pets/generation/task-worker";
 import {generateRepairBase} from "@/lib/pets/generation/base-repair-worker";
 import {WorkerYield} from "@/lib/pets/generation/scheduler";
@@ -31,17 +33,22 @@ export function createSpriteGenerationWorker(options: {
   now?: () => number;
   wait?: (ms:number)=>Promise<void>;
   stopping?: () => boolean;
+  resultJournal?: FileResultJournal;
 }) {
   let lastCleanup = -Infinity;
-  return async function runOnce(owner: string) {
+  return async function runOnce(owner: string, context?: WorkerContext) {
+    setWorkerPhase(context, "cleanup");
     const now = options.now ?? Date.now;
     if (options.stopping?.()) return "idle";
-    if (now() - lastCleanup >= 60_000) { lastCleanup = now(); await options.renderer.cleanupExpired?.(now()); await options.store.cleanup(now()); }
+    if (now() - lastCleanup >= 60_000) { lastCleanup = now(); await options.resultJournal?.expire(now()); await options.renderer.cleanupExpired?.(now()); await options.store.cleanup(now()); }
+    setWorkerPhase(context, "claim");
     let job = await options.service.claim(owner);
     if (!job) return "idle";
-    if (job.workerTask) return runGenerationTask(job, options);
+    setWorkerPhase(context, "prepare", job);
+    if (job.workerTask) return runGenerationTask(job, options, context);
     const initial = job;
     let session: SpriteSession | undefined;
+    let primaryError: unknown;
     let yieldAt: number | undefined;
     let leaseError: unknown;
     const stageDiagnostics:StageFailureDiagnostic[]=[];
@@ -291,6 +298,8 @@ export function createSpriteGenerationWorker(options: {
       }
       return "completed";
     } catch (error) {
+      primaryError = error instanceof WorkerYield ? undefined : error;
+      try {
       // Paid/provider ambiguity is classified at its boundary. A local processing
       // crash preserves the checkpoint for lease-based recovery without repayment.
       if (error instanceof WorkerYield) { yieldAt = error.eligibleAt; return "yielded"; }
@@ -306,10 +315,14 @@ export function createSpriteGenerationWorker(options: {
       const failure=leaseError?new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"lease",reason:"heartbeat_failed"}):error;
       await options.service.fail(initial, failure.code, failure.providerFailure,failure.diagnostic,stageDiagnostics,cliCauses.sort((a,b)=>STAGE_NAMES.indexOf(a.stage)-STAGE_NAMES.indexOf(b.stage)),failure.assemblyIssues);
       return "failed";
+      }catch(secondary){if(!context?.primaryReported)context?.report(error);context?.report(secondary,true);throw secondary;}
     } finally {
       clearInterval(timer);
       await heartbeat;
-      await session?.cleanup();
+      try { await session?.cleanup(); } catch (error) {
+        if (primaryError) {const phase=context?.phase;setWorkerPhase(context,"workspace_cleanup");context?.report(error,true);if(context&&phase)context.phase=phase;}
+        else {setWorkerPhase(context, "workspace_cleanup"); throw error;}
+      }
       if (yieldAt !== undefined) await options.service.yield(initial, yieldAt);
     }
   };

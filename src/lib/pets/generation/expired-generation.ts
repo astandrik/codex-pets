@@ -15,12 +15,13 @@ const receiptSchema = z.object({
 }).strict();
 type Receipt = z.infer<typeof receiptSchema>;
 const MAX_RESULT_RECEIPTS = STAGE_NAMES.length * (REGENERATION_RETRIES.max + 1) + 2;
-const key = (job: GenerationJob) => `generation-results:${job.id}`;
-async function read(tx: GenerationTransaction, job: GenerationJob, now: number): Promise<Receipt> {
+type ReceiptJob = Pick<GenerationJob,"id"|"createdAt"|"worker"|"workerLeaseId">;
+const key = (job: Pick<GenerationJob,"id">) => `generation-results:${job.id}`;
+async function read(tx: GenerationTransaction, job: Pick<GenerationJob,"id">, now: number): Promise<Receipt> {
   const raw = await tx.getLedger(key(job), now);
   return raw ? receiptSchema.parse(JSON.parse(raw)) : {results: {}};
 }
-async function write(tx: GenerationTransaction, job: GenerationJob, receipt: Receipt) {
+async function write(tx: GenerationTransaction, job: Pick<GenerationJob,"id"|"createdAt">, receipt: Receipt) {
   // Only accounting hashes survive the task; no image, prompt or task TTL is extended.
   await tx.putLedger(key(job), JSON.stringify(receipt), job.createdAt + 7 * DAY);
 }
@@ -30,7 +31,7 @@ function matches(receipt: Receipt, result: ResultReceipt) {
   return previous !== undefined;
 }
 
-export async function recordResultCost(tx: GenerationTransaction, job: GenerationJob, now: number, result: ResultReceipt, usage?: Pick<ImageUsage,"costUsd">, name?: StageName | "card") {
+export async function recordResultCost(tx: GenerationTransaction, job: ReceiptJob, now: number, result: ResultReceipt, usage?: Pick<ImageUsage,"costUsd">, name?: StageName | "card") {
   if (usage && (!Number.isFinite(usage.costUsd) || usage.costUsd < 0 || !Number.isSafeInteger(Math.ceil(usage.costUsd * 1_000_000)))) throw new GenerationError("invalid_provider_result");
   const receipt = await read(tx, job, now);
   if (matches(receipt, result)) return;
@@ -39,6 +40,22 @@ export async function recordResultCost(tx: GenerationTransaction, job: Generatio
   if (!await recordStageCost(tx, job.id, now, usage, name)) throw new GenerationError("outcome_unknown");
   receipt.results[result.key] = result.fingerprint;
   await write(tx, job, receipt);
+}
+
+
+export async function recordRecoveredResultCost(tx: GenerationTransaction, identity: {jobId:string;createdAt:number;operationKey:string;leaseId:string;owner:string}, now:number, result:ResultReceipt, usage?:Pick<ImageUsage,"costUsd">, name?:StageName|"card") {
+  if(now>=identity.createdAt+7*DAY)throw new GenerationError("generation_expired");
+  const job={id:identity.jobId,createdAt:identity.createdAt,worker:identity.owner,workerLeaseId:identity.leaseId};
+  const receipt=await read(tx,job,now);
+  if(matches(receipt,result))return;
+  if(usage&&(!Number.isFinite(usage.costUsd)||usage.costUsd<0||!Number.isSafeInteger(Math.ceil(usage.costUsd*1e6))))throw new GenerationError("invalid_provider_result");
+  const state=await scheduler(tx,now);
+  if(!isTaskScheduler(state)||state.tasks.some(t=>t.jobId===job.id&&t.status==="running")||
+    !state.providerSlots.some(s=>s.jobId===job.id&&s.key===identity.operationKey&&s.leaseId===identity.leaseId&&s.owner===identity.owner&&s.unknown))throw new GenerationError("stale_worker");
+  if(Object.keys(receipt.results).length>=MAX_RESULT_RECEIPTS)throw new GenerationError("invalid_stage");
+  if(!await recordStageCost(tx,job.id,now,usage,name))throw new GenerationError("outcome_unknown");
+  receipt.results[result.key]=result.fingerprint;
+  await write(tx,job,receipt);
 }
 
 export async function recordExpiredResult(tx: GenerationTransaction, state: Scheduler, job: GenerationJob, now: number, result: ResultReceipt, usage?: Pick<ImageUsage,"costUsd">, name?: StageName | "card") {

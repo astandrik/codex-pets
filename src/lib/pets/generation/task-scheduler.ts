@@ -1,3 +1,4 @@
+import {taskResourcesAvailable} from "@/lib/pets/generation/task-readiness";
 import {createHash, randomUUID} from "node:crypto";
 import {isDeepStrictEqual} from "node:util";
 import {checkStageBudget, settleBudget, type GenerationBudgetLimit} from "@/lib/pets/generation/budget";
@@ -139,9 +140,7 @@ export async function claimGenerationTask(tx: GenerationTransaction, state: Task
   const pivot = state.taskTurn ? state.queue.indexOf(state.taskTurn) + 1 : 0;
   const order = [...state.queue.slice(pivot), ...state.queue.slice(0, pivot)];
   for (const id of order) {
-    const task = state.tasks.find(t => t.jobId === id && t.status === "ready" && t.notBefore <= now && (!state.pauseReason || t.kind === "fail" || t.kind === "package") &&
-      (!providerTask(t) || (state.providerSlots.length < state.providerLimit && state.tasks.filter(a => a.status === "running" && providerTask(a)).length < state.providerLimit)) &&
-      (!heavyTask(t) || !state.heavy));
+    const task = state.tasks.find(t => t.jobId === id && t.status === "ready" && t.notBefore <= now && taskResourcesAvailable(t, state));
     if (!task) continue;
     const job = await tx.getJob(id);
     now = clock();

@@ -1,3 +1,4 @@
+import {currentWorkerContext,setWorkerPhase} from "@/lib/pets/generation/worker-diagnostics";
 import {readActiveWorkerJob, WorkerYield} from "@/lib/pets/generation/scheduler";
 import {createHash} from "node:crypto";
 import {isDeepStrictEqual} from "node:util";
@@ -65,7 +66,7 @@ export async function generateRepairBase(context:Context,job:GenerationJob,sessi
     });
     retryFailure=undefined;
     let image:StageImage;
-    try{image=await session.generate("base",{attempt:attempt.ordinal});}
+    try{setWorkerPhase(currentWorkerContext(),"provider",job,attempt.ordinal);image=await session.generate("base",{attempt:attempt.ordinal});}
     catch(error){
       const failure=error instanceof GenerationError?error:new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"renderer_process",reason:"unclassified"});
       const terminal=attempt.ordinal>=current.baseRepair.maxAttempts&&baseFailureRetryReason(failure)==="transport";

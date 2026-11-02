@@ -1,3 +1,4 @@
+import {currentWorkerContext,setWorkerPhase} from "@/lib/pets/generation/worker-diagnostics";
 import {WorkerYield} from "@/lib/pets/generation/scheduler";
 import { GenerationError, type GenerationJob } from "@/lib/pets/generation/model";
 import type { GenerationCardProvider } from "@/lib/pets/generation/card-provider";
@@ -55,6 +56,7 @@ export async function prepareGeneratedCard(
     await service.authorizeCardMetadata(job);
     checkLease();
     if (stopping()) {await service.deferUnsentCardMetadata(job); throw new WorkerYield();}
+    setWorkerPhase(currentWorkerContext(),"provider",job);
     const response = await provider.generate(request);
     try {
       return await service.saveCardMetadata(job, response);

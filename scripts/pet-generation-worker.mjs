@@ -9,12 +9,16 @@ register(new URL("./lib/related-pets-typescript-loader.mjs", import.meta.url), {
 });
 const { createSpriteGenerationWorker } = await import(pathToFileURL(path.join(sourceRoot, "lib/pets/generation/sprite-worker.ts")).href);
 const { spriteRenderer } = await import(pathToFileURL(path.join(sourceRoot, "lib/pets/generation/sprite-renderer.ts")).href);
-const { petGeneration } = await import(pathToFileURL(path.join(sourceRoot, "lib/pets/generation/service.ts")).href);
+const { createConfiguredGenerationService } = await import(pathToFileURL(path.join(sourceRoot, "lib/pets/generation/service.ts")).href);
 const { generationStore } = await import(pathToFileURL(path.join(sourceRoot, "lib/pets/generation/store.ts")).href);
 const { generationCardProvider } = await import(pathToFileURL(path.join(sourceRoot, "lib/pets/generation/card-provider.ts")).href);
 const {runWorkerPool} = await import(pathToFileURL(path.join(sourceRoot, "lib/pets/generation/worker-runner.ts")).href);
+const {logWorkerFailure} = await import(pathToFileURL(path.join(sourceRoot, "lib/pets/generation/worker-diagnostics.ts")).href);
+const {configuredResultJournal} = await import(pathToFileURL(path.join(sourceRoot, "lib/pets/generation/result-journal-runtime.ts")).href);
+const journal = await configuredResultJournal();
+const petGeneration = createConfiguredGenerationService(journal ? {journal} : undefined);
 const controller = new AbortController();
-const runPetGenerationWorkerOnce = createSpriteGenerationWorker({ service: petGeneration, store: generationStore, renderer: spriteRenderer, cardProvider: generationCardProvider, stopping: () => controller.signal.aborted });
+const runPetGenerationWorkerOnce = createSpriteGenerationWorker({ service: petGeneration, store: generationStore, renderer: spriteRenderer, cardProvider: generationCardProvider, stopping: () => controller.signal.aborted, resultJournal: journal });
 const { destroyYdbDriver } = await import(pathToFileURL(path.join(sourceRoot, "lib/ydb/client.ts")).href);
 const once = process.argv.includes("--once");
 process.on("SIGTERM", () => controller.abort());
@@ -22,7 +26,7 @@ process.on("SIGINT", () => controller.abort());
 try {
   const poolSize = await petGeneration.workerPoolSize();
   await runWorkerPool({runOnce: runPetGenerationWorkerOnce, maxActiveJobs: poolSize,
-    signal: controller.signal, once, delay: () => petGeneration.nextWakeDelay(),
+    signal: controller.signal, once, onError: logWorkerFailure, delay: () => petGeneration.nextWakeDelay(),
     onResult: status => {
       console.log(JSON.stringify({operation: "pet-generation-worker", status}));
       if (once && status === "iteration_failed") process.exitCode = 1;

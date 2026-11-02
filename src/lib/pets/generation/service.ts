@@ -1,3 +1,5 @@
+import {attachResultJournal,type ResultDurability} from "@/lib/pets/generation/checkpoint-journal";
+import {nextTaskWakeDelay} from "@/lib/pets/generation/task-readiness";
 import {configuredProviderCalls} from "@/lib/pets/generation/execution-limits";
 import {configuredActiveJobs} from "@/lib/pets/generation/worker-runner";
 import {claimGenerationTask, completeGenerationTask, assertTaskStage} from "@/lib/pets/generation/task-scheduler";
@@ -49,6 +51,7 @@ export function createGenerationService(store: GenerationStore, options: {
   automaticAnimationRepair?: () => boolean;
   baseRetries?: () => boolean;
   reviewFlow?: () => boolean;
+  resultDurability?: ResultDurability;
 }) {
   const clock = options.now ?? Date.now;
   const createId = options.createId ?? newGenerationId;
@@ -89,7 +92,7 @@ export function createGenerationService(store: GenerationStore, options: {
       return updated;
     });
   }
-  return {
+  const service = {
     readWorkerJob: (job: GenerationJob) => readActiveWorkerJob(store, job, clock()),
     completeTask: (job: GenerationJob, result?: {error?: GenerationError; eligibleAt?: number}) => completeGenerationTask(store, job, clock(), result),
     ...createBaseRepairService(store,{now:clock,enabled:options.enabled,budgetUsd}),
@@ -370,10 +373,7 @@ export function createGenerationService(store: GenerationStore, options: {
       return store.transaction(async tx => {
         const state = await scheduler(tx, clock());
         if (!isParallelScheduler(state)) return 5000;
-        if (isTaskScheduler(state)) {
-          const ready=state.tasks.filter(t=>t.status==="ready");
-          return ready.length?Math.max(50,Math.min(5000,...ready.map(t=>t.notBefore-clock()))):250;
-        }
+        if (isTaskScheduler(state)) return nextTaskWakeDelay(state, clock(), process.env.PET_GENERATION_DRAIN === "true");
         const waits = state.queue.map(id => Math.max(50, (state.resumes[id] ?? 0) - clock()));
         return waits.length ? Math.min(5000, ...waits) : 5000;
       });
@@ -442,7 +442,7 @@ export function createGenerationService(store: GenerationStore, options: {
         const logs=current.rowAttemptLogs??[];
         if(logs.some(item=>item.stage===name&&item.attempt===attempt))return;
         await tx.putJob({...current,rowAttemptLogs:[...logs,entry]});
-        if(error.code==="outcome_unknown")await recordStageCost(tx,job.id,now,undefined,name);
+        await recordResultCost(tx,job,now,{key:`failure:${name}:${attempt}`,fingerprint},error.code==="outcome_unknown"?undefined:{costUsd:0},name);
           await settleProviderOperation(tx,state,current,stageOperation(current,name),error.code==="outcome_unknown"&&!isRetryableImageCause(error.cliCause));
       });
     },
@@ -565,7 +565,8 @@ export function createGenerationService(store: GenerationStore, options: {
         if(await recordExpiredResult(tx,state,job,now,receipt,error==="outcome_unknown"?undefined:{costUsd:0},"card"))return null;
         if(!card||current.status!=="processing")throw new GenerationError("metadata_already_started");
         if(card.state==="completed"||card.state==="failed")return current;
-        await recordStageCost(tx,job.id,now,error==="outcome_unknown"?undefined:{costUsd:0},"card");
+        if(card.requestHash)await recordResultCost(tx,job,now,receipt,error==="outcome_unknown"?undefined:{costUsd:0},"card");
+        else await recordStageCost(tx,job.id,now,error==="outcome_unknown"?undefined:{costUsd:0},"card");
         if(error==="outcome_unknown")state.pauseReason="outcome_unknown";
           await settleProviderOperation(tx,state,current,`card:${card.requestHash}`,error==="outcome_unknown");
         const updated={...current,cardMetadata:{...card,state:"failed" as const,error,fields:{description:CARD_METADATA_FALLBACK,tags:[]}}};
@@ -673,15 +674,18 @@ export function createGenerationService(store: GenerationStore, options: {
       });
     },
   };
+  return options.resultDurability ? attachResultJournal(service,store,options.resultDurability) : service;
 }
 
-export const petGeneration = createGenerationService(generationStore, {
+export const createConfiguredGenerationService = (resultDurability?:ResultDurability) => createGenerationService(generationStore, {
+  resultDurability,
   enabled: generationEnabled, secret: readGenerationSecret,
   automaticCardMetadata:()=>true,
   automaticAnimationRepair: generationAnimationAutoRepairEnabled,
   baseRetries:generationBaseRetryEnabled,
   budgetUsd: generationBudgetLimit,
 });
+export const petGeneration = createConfiguredGenerationService();
 export type PublicGeneration = Awaited<ReturnType<typeof petGeneration.get>>;
 
 
