@@ -509,15 +509,21 @@
     z-index: 2;
     width: 100%;
     margin-top: 14px;
+
+    .install-command {
+      width: 100%;
+      margin: 0;
+      text-align: left;
+    }
   }
 
-  &__actions .g-button {
+  &__actions > .g-button {
     flex: 1 1 140px;
     min-width: 140px;
     justify-content: center;
   }
 
-  &__actions .g-button__text {
+  &__actions > .g-button .g-button__text {
     display: inline-flex;
     align-items: center;
     justify-content: center;
