@@ -1,9 +1,12 @@
 import {createHash, randomUUID} from "node:crypto";
+import {isDeepStrictEqual} from "node:util";
 import {checkStageBudget, settleBudget, type GenerationBudgetLimit} from "@/lib/pets/generation/budget";
 import {latestAnimationAttempt, isAnimationState} from "@/lib/pets/generation/animation-repair";
 import {latestBaseAttempt} from "@/lib/pets/generation/base-repair";
 import {recoverUnconfirmedCardMetadata} from "@/lib/pets/generation/card-metadata";
 import {configuredProviderCalls} from "@/lib/pets/generation/execution-limits";
+import {stageOperation} from "@/lib/pets/generation/execution-slots";
+import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
 import {GenerationError, LEASE_MS, generationStageNames, usesStageCheckpoints, type GenerationJob, type GenerationTask, type TaskScheduler} from "@/lib/pets/generation/model";
 import {isTaskScheduler, requireJobWithActiveWorkerLease, saveScheduler, scheduler} from "@/lib/pets/generation/scheduler";
 import type {GenerationStore, GenerationTransaction} from "@/lib/pets/generation/store";
@@ -11,6 +14,40 @@ import type {GenerationStore, GenerationTransaction} from "@/lib/pets/generation
 const providerTask = (task: GenerationTask) => task.kind === "image" || task.kind === "metadata";
 const heavyTask = (task: GenerationTask) => task.kind === "compose" || task.kind === "package";
 const key = (id: string, kind: GenerationTask["kind"], stage?: string) => `${id}:${kind}${stage ? `:${stage}` : ""}`;
+function hasUnknownProviderOperation(task: GenerationTask, job: GenerationJob, state: TaskScheduler) {
+  let operation: string | undefined;
+  if (task.kind === "metadata" && job.cardMetadata?.requestHash) operation = `card:${job.cardMetadata.requestHash}`;
+  else if (task.kind === "image" && task.stage) {
+    const baseAttempt = task.stage === "base" ? latestBaseAttempt(job) : undefined;
+    const animationAttempt = isAnimationState(task.stage) ? latestAnimationAttempt(job, task.stage) : undefined;
+    const attempt = baseAttempt ?? animationAttempt;
+    operation = attempt ? `${task.stage === "base" ? "base-attempt" : "attempt"}:${attempt.token}` : stageOperation(job, task.stage);
+  }
+  return operation !== undefined && state.providerSlots.some(slot => slot.jobId === job.id && slot.unknown && slot.key === operation);
+}
+function recordedProviderFailure(task: GenerationTask, job: GenerationJob): "transport" | "rejection" | undefined {
+  const error = task.error;
+  if (task.kind !== "image" || !task.stage || error?.diagnostic?.boundary !== "provider_cli") return;
+  let recorded: GenerationTask["error"];
+  let exhausted = false, attemptJournal = false;
+  const base = task.stage === "base" ? latestBaseAttempt(job) : undefined;
+  const animation = isAnimationState(task.stage) ? latestAnimationAttempt(job, task.stage) : undefined;
+  if (base) {
+    if (base.status !== "failed") return;
+    recorded = base.failure; exhausted = base.ordinal === job.baseRepair?.maxAttempts; attemptJournal = true;
+  } else if (animation) {
+    if (animation.status !== "failed") return;
+    recorded = animation.failure; exhausted = animation.ordinal === job.animationRepair?.maxAttempts; attemptJournal = true;
+  } else {
+    const row = job.rowAttemptLogs?.filter(log => log.stage === task.stage).at(-1);
+    recorded = row; exhausted = row?.attempt === 2;
+  }
+  if (!recorded || recorded.code !== error.code || !isDeepStrictEqual(recorded.diagnostic, error.diagnostic) ||
+      !isDeepStrictEqual(recorded.cliCause, error.cliCause) || (attemptJournal && !isDeepStrictEqual(recorded.providerFailure, error.providerFailure))) return;
+  if (error.code === "outcome_unknown" && exhausted && isRetryableImageCause(error.cliCause)) return "transport";
+  if ((error.code === "provider_rejected" || error.code === "provider_rate_limited") && error.cliCause?.kind === "http_error" &&
+      error.providerFailure?.httpStatus === error.cliCause.httpStatus && error.cliCause.httpStatus !== undefined) return "rejection";
+}
 function desiredTasks(job: GenerationJob): GenerationTask[] {
   const make = (kind: GenerationTask["kind"], attempt = "initial", stage?: GenerationTask["stage"], notBefore = 0): GenerationTask =>
     ({key: key(job.id, kind, stage), jobId: job.id, kind, ...(stage ? {stage} : {}), status: "ready", notBefore, attempt});
@@ -44,7 +81,9 @@ async function reconcile(tx: GenerationTransaction, state: TaskScheduler, now: n
     const desired = desiredTasks(job);
     const next = desired.map(want => {
       const old = existing.find(t => t.key === want.key);
-      if (old?.status === "running" || (old?.status === "failed" && old.attempt === want.attempt)) return old;
+      // beginStage can reserve an attempt after claim. Its new token must not
+      // erase a terminal failure; eligible retries explicitly yield ready work.
+      if (old?.status === "running" || old?.status === "failed") return old;
       return {...want, notBefore:Math.max(want.notBefore, old?.status === "ready" ? old.notBefore : 0)};
     });
     for (const task of existing) if ((task.status === "running" || task.status === "failed") && !next.some(t => t.key === task.key)) next.push(task);
@@ -52,7 +91,13 @@ async function reconcile(tx: GenerationTransaction, state: TaskScheduler, now: n
       // Finish already scheduled siblings before surfacing the parent's terminal error.
       const imageWork = next.some(t => t.kind === "image" && (t.status === "running" || (!state.pauseReason && t.status === "ready")));
       if (!imageWork && !next.some(t => t.status === "running")) {
-        const failed = next.find(t => t.status === "failed")!;
+        const failures = next.filter(t => t.status === "failed");
+        const recorded = failures.map(task => ({task, kind: recordedProviderFailure(task, job)}));
+        const failed = failures.find(t => t.error?.code === "outcome_unknown" && hasUnknownProviderOperation(t, job, state)) ??
+          recorded.find(f => f.task.error?.code === "outcome_unknown" && f.kind !== "transport")?.task ??
+          recorded.find(f => f.kind === "rejection")?.task ??
+          failures.find(t => t.error?.code === "outcome_unknown") ??
+          failures.find(t => t.error?.code !== "generation_paused") ?? failures[0];
         state.tasks = state.tasks.filter(t => t.jobId !== id);
         state.tasks.push({key: key(id, "fail"), jobId: id, kind: "fail", status: "ready", notBefore: 0, attempt: "failure", error: failed.error,
           diagnostics: next.flatMap(t=>t.stage&&t.error?.diagnostic?[{stage:t.stage,diagnostic:t.error.diagnostic}]:[]),

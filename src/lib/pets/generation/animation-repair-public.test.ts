@@ -5,6 +5,18 @@ import {jobSchema} from "./model";
 import {parseHistoryGeneration} from "./history";
 import {animationRepairProgressText} from "./animation-repair-progress";
 
+it("describes a checkpoint failure without claiming that the provider request was interrupted", () => {
+  const job = jobSchema.parse({id: "c".repeat(64), prompt: "private description", displayName: "Synthetic", status: "failed", error: "outcome_unknown",
+    createdAt: 1000, expiresAt: 100000, worker: "owner", promptRevision: "test", pipelineVersion: 2, stages: [],
+    failureDiagnostic: {boundary: "checkpoint", reason: "unconfirmed_write"}});
+  const value = publicJob(job, 3000);
+  expect(value.error).toMatchObject({code: "outcome_unknown", automaticRetry: false});
+  expect(value.error?.message).toContain("Saving the generation result");
+  expect(value.error?.hint).toContain("Do not start another task");
+  expect(JSON.stringify(value)).not.toMatch(/private description|unconfirmed_write|failureDiagnostic/);
+  expect(publicJob({...job, failureDiagnostic: undefined}, 3000).error?.message).toContain("image request was interrupted");
+});
+
 it("projects only safe repair progress without changing status or logical step bounds", () => {
   const id = "a".repeat(64), token = randomUUID();
   const job = jobSchema.parse({id, prompt: "private prompt", displayName: "Synthetic", status: "generating", createdAt: 1000, expiresAt: 100000,

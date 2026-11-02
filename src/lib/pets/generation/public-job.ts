@@ -20,6 +20,10 @@ export function publicJob(record: GenerationJob, now: number, metadata?:PublicCa
     totalSteps=Math.max(1,planned.length);
     completedSteps=planned.length?job.stages.filter(s=>s.status==="completed"&&planned.some(n=>n===s.name)).length:job.status==="completed"?1:0;
   }
+  const error = job.status === "failed" || job.error ? publicGenerationError(job.error ?? "generation_unavailable", job.providerFailure) : undefined;
+  if (error?.code === "outcome_unknown" && job.failureDiagnostic?.boundary === "checkpoint") {
+    error.message = "Saving the generation result could not be confirmed.";
+  }
   return {
     generationId: job.id,
       ...(generationBaseRetryEnabled()&&generationReviewFlowEnabled()&&baseRetryEligibility(job)?{canRetryBase:true}:{}),
@@ -40,7 +44,7 @@ export function publicJob(record: GenerationJob, now: number, metadata?:PublicCa
     canReviseAnimations: job.status === "completed" && !isUnacceptedAnimationRevision(job) && Boolean(job.continuation || job.animationRevision || job.stages.some(stage => stage.name === "base" && stage.status === "completed")),
     ...(job.animationRevision ? {animationRevision: {sourceGenerationId: job.animationRevision.sourceGenerationId, selectedStates: job.animationRevision.selectedStates, corrections: job.animationRevision.corrections, acceptedAt: job.animationRevision.acceptedAt, beforeSpritesheetUrl: toPublicUrl(`/api/pet-generations/${job.id}/animation-revision/source`)}} : {}),
     ...(metadata?{metadata}:{}),
-    ...(job.status === "failed" || job.error ? { error: publicGenerationError(job.error ?? "generation_unavailable", job.providerFailure) } : {}),
+    ...(error ? {error} : {}),
     ...(job.status === "completed" ? { pet: { displayName: job.displayName, spriteVersionNumber: 2 as const, petJsonUrl: toPublicUrl(root + "pet.json"), spritesheetUrl: toPublicUrl(root + "spritesheet.webp"), zipUrl: isUnacceptedAnimationRevision(job) ? undefined : toPublicUrl(root + "pet.zip") } } : {}),
   };
 }

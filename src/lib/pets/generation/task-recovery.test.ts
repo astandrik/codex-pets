@@ -1,8 +1,85 @@
 import {afterEach, expect, it, vi} from "vitest";
 import {taskFixture} from "./task-pool.test-utils";
-import {LEASE_MS} from "./model";
+import {GenerationError, LEASE_MS, STAGE_NAMES} from "./model";
+import {createSpriteGenerationWorker} from "./sprite-worker";
 
-afterEach(()=>vi.unstubAllEnvs());
+afterEach(()=>{vi.restoreAllMocks();vi.unstubAllEnvs();});
+it.each([true, false])("prefers the unresolved write over exhausted HTTP 520 retries; automatic repair=%s", async automaticRepair => {
+  const f = await taskFixture(20, automaticRepair);
+  const totalAttempts = automaticRepair ? 4 : 2;
+  const id = f.jobs[0].id;
+  f.saved(0, STAGE_NAMES.filter(name => name !== "idle" && name !== "waiting"));
+  const row = f.store.ledger.get("scheduler")!;
+  row.value = JSON.stringify({...JSON.parse(row.value), queue: [id]});
+  const transaction = f.store.transaction.bind(f.store);
+  vi.spyOn(f.store, "transaction").mockImplementation(operation => transaction(tx => operation({...tx,
+    putArtifact: async (jobId, kind, bytes, expiresAt) => {
+      if (jobId === id && kind === "stage-waiting.png") throw Error("Synthetic checkpoint failure");
+      return tx.putArtifact(jobId, kind, bytes, expiresAt);
+    }})));
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  let started!: () => void, finishWaiting!: () => void;
+  const waitingStarted = new Promise<void>(resolve => {started = resolve;});
+  const waitingResult = new Promise<void>(resolve => {finishWaiting = resolve;});
+  const calls: {stage: string; attempt?: number}[] = [];
+  const run = createSpriteGenerationWorker({service: f.service, store: f.store, now: () => f.clock.now,
+    renderer: {open: async () => ({prepare: async () => {}, cleanup: async () => {}, compose: async () => {throw Error("Must not assemble");},
+      generate: async (stage, context) => {
+        calls.push({stage, attempt: context?.attempt});
+        if (stage === "idle") throw new GenerationError("outcome_unknown", undefined, undefined, undefined,
+          {boundary: "provider_cli", reason: "process_exit"}, {kind: "http_error", httpStatus: 520});
+        expect(stage).toBe("waiting");started();await waitingResult;
+        return {bytes: Buffer.from("waiting image"), generationMs: 1, usage: {textInputTokens: 1, imageInputTokens: 0, outputTokens: 1, costUsd: .04}};
+      }})}});
+  expect(await run("idle-1")).toBe("yielded");
+  const pending = run("waiting");
+  await waitingStarted;
+  const waitingToken = f.store.jobs.get(id)!.animationRepair?.attempts.find(a => a.state === "waiting")!.token;
+  for (let attempt = 2; attempt <= totalAttempts; attempt++) {
+    f.clock.now += 5000;
+    expect(await run(`idle-${attempt}`)).toBe(attempt === totalAttempts ? "failed" : "yielded");
+  }
+  finishWaiting();expect(await pending).toBe("failed");
+  expect(await run("finalizer")).toBe("failed");
+  expect(await run("again")).toBe("idle");
+  expect(calls.filter(call => call.stage === "idle").map(call => call.attempt)).toEqual(automaticRepair ? [1, 2, 3, 4] : [undefined, undefined]);
+  expect(calls.filter(call => call.stage === "waiting")).toEqual([{stage: "waiting", attempt: automaticRepair ? 1 : undefined}]);
+  expect(f.store.jobs.get(id)).toMatchObject({id, expiresAt: f.jobs[0].expiresAt, status: "failed", error: "outcome_unknown",
+    failureDiagnostic: {boundary: "checkpoint", reason: "unconfirmed_write"},
+    stageFailureDiagnostics: [
+      {stage: "idle", diagnostic: {boundary: "provider_cli", reason: "process_exit"}},
+      {stage: "waiting", diagnostic: {boundary: "checkpoint", reason: "unconfirmed_write"}},
+    ]});
+  if (automaticRepair) expect(f.store.jobs.get(id)!.animationRepair!.attempts.find(a => a.state === "waiting")).toMatchObject({token: waitingToken, ordinal: 1, status: "started"});
+  expect(f.store.jobs.get(id)!.stages.filter(s => s.status === "completed")).toHaveLength(10);
+  expect(f.store.jobs.size).toBe(3);
+  const budget = JSON.parse(f.store.ledger.get("budget")!.value);
+  expect(budget.spent).toEqual({});
+  expect(budget.reservations[id].unknown).toBe(true);
+  expect(JSON.parse(f.store.ledger.get("scheduler")!.value)).toMatchObject({pauseReason: "outcome_unknown", providerSlots: [{key: automaticRepair ? `attempt:${waitingToken}` : "stage:waiting", unknown: true}]});
+  expect((await f.service.get(id)).error?.message).toContain("Saving the generation result");
+});
+it("keeps the primary checkpoint failure when an earlier sibling stops because of the pause", async () => {
+  const f = await taskFixture(20, true);
+  f.saved(0, STAGE_NAMES.filter(name => name !== "idle" && name !== "waiting"));
+  const row = f.store.ledger.get("scheduler")!;
+  row.value = JSON.stringify({...JSON.parse(row.value), queue: [f.jobs[0].id]});
+  const idle = (await f.service.claim("idle"))!, waiting = (await f.service.claim("waiting"))!;
+  expect(idle.workerTask?.stage).toBe("idle");
+  expect(waiting.workerTask?.stage).toBe("waiting");
+  await f.service.beginStage(waiting, "waiting");
+  const token = f.store.jobs.get(waiting.id)!.animationRepair!.attempts.find(a => a.state === "waiting")!.token;
+  await f.service.startAnimationAttempt(waiting, "waiting", token);
+  await f.service.completeTask(waiting, {error: new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary: "checkpoint", reason: "unconfirmed_write"})});
+  await f.service.completeTask(idle, {error: new GenerationError("generation_paused")});
+  const {createSpriteGenerationWorker} = await import("./sprite-worker");
+  const run = createSpriteGenerationWorker({service: f.service, store: f.store, now: () => f.clock.now,
+    renderer: {open: async () => {throw Error("Must not call provider");}}});
+  expect(await run("finalizer")).toBe("failed");
+  expect(f.store.jobs.get(waiting.id)).toMatchObject({error: "outcome_unknown", failureDiagnostic: {boundary: "checkpoint", reason: "unconfirmed_write"},
+    stageFailureDiagnostics: [{stage: "waiting", diagnostic: {boundary: "checkpoint", reason: "unconfirmed_write"}}]});
+  expect(JSON.parse(f.store.ledger.get("scheduler")!.value)).toMatchObject({pauseReason: "outcome_unknown", providerSlots: [{unknown: true}]});
+});
 it("reclaims an unsent task with the same operation but a new fenced lease",async()=>{
   const f=await taskFixture();
   const row=f.store.ledger.get("scheduler")!;
