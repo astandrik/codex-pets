@@ -1,5 +1,7 @@
+import {createHash} from "node:crypto";
+import {createPreparationCache} from "@/lib/pets/generation/preparation-cache";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile, readdir, mkdir } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -14,6 +16,27 @@ import {readFailureDiagnostic, type FailureDiagnostic} from "@/lib/pets/generati
 import {logSpriteHttpDiagnostic} from "@/lib/pets/generation/http-diagnostic";
 
 const execute = promisify(execFile);
+const preparationCache = createPreparationCache();
+async function preparationFiles(directory:string):Promise<ReadonlyMap<string,Buffer>> {
+  const files=new Map<string,Buffer>();let bytes=0;
+  async function walk(relative:string) {
+    for(const entry of await readdir(path.join(directory,relative),{withFileTypes:true})){
+      const name=path.join(relative,entry.name);
+      if(entry.isDirectory())await walk(name);
+      else if(entry.isFile()){
+        const data=await readFile(path.join(directory,name));bytes+=data.length;
+        if(files.size>=128||bytes>16*1024*1024)throw new Error("Preparation snapshot too large");
+        files.set(name,data);
+      }else throw new Error("Invalid preparation file");
+    }
+  }
+  await walk("run");
+  for(const name of ["look-0-157-guide.png","look-180-337-guide.png"]) {
+    try{files.set(name,await readFile(path.join(directory,name)));}
+    catch(error){if(!(error&&typeof error==="object"&&"code"in error&&error.code==="ENOENT"))throw error;}
+  }
+  return files;
+}
 const replySchema = z.object({ generationMs: z.number().nonnegative().optional(), usage: usageSchema.nullable().optional(), ok: z.boolean().optional() });
 const ERROR_CODES = new Set(["provider_rejected", "provider_rate_limited", "outcome_unknown", "invalid_sprite_extraction", "missing_animation_frame", "invalid_stage"]);
 export function parseSpritegenReply(text: string) {
@@ -65,11 +88,11 @@ export const spriteRenderer: SpriteRenderer = {
     }
     if (needsImages && !key) throw new GenerationError("provider_not_configured");
     const env: NodeJS.ProcessEnv = needsImages ? spritegenEnvironment(key) : {NODE_ENV: "production", PATH: "/usr/local/bin:/usr/bin:/bin", PYTHONDONTWRITEBYTECODE: "1", PYTHON_COLORS: "0"};
-    const directory = await mkdtemp(path.join(tmpdir(), "pets-row-worker-"));
+    const directory = await mkdtemp(path.join(tmpdir(), `pets-row-worker-${process.pid}-`));
     const python = process.env.PET_GENERATION_PYTHON ?? "/usr/local/bin/python3";
     const script = path.resolve("scripts/pet-spritegen/renderer.py");
     try {
-      await writeFile(path.join(directory, "workspace.json"), JSON.stringify({ expiresAt: job.expiresAt, pid: process.pid }), { mode: 0o600 });
+      await writeFile(path.join(directory, "workspace.json"), JSON.stringify({ expiresAt: job.expiresAt, pid: process.pid, active: true }), { mode: 0o600 });
       const rows = [...PET_STATES.map(state => ({ name: state.key, frames: state.frames, action: state.description, row: state.row })),
         { name: "look-0-157", frames: 8, action: "", row: 9 }, { name: "look-180-337", frames: 8, action: "", row: 10 }];
       await writeFile(path.join(directory, "job.json"), JSON.stringify({ prompt: job.prompt, rows, reviewBase: job.reviewBase === true, hasReference: Boolean(job.reference), animationAnatomyPolicy: job.animationAnatomyPolicy, ...(job.continuation?{continuation:job.continuation}:{}), ...(job.animationRevision ? {animationRevision: {selectedStates: job.animationRevision.selectedStates, corrections: job.animationRevision.corrections}} : {}), ...(job.animationPrompt ? {animationPrompt: job.animationPrompt} : {}) }), { mode: 0o600 });
@@ -111,8 +134,22 @@ export const spriteRenderer: SpriteRenderer = {
         throw new GenerationError(action === "generate" ? "outcome_unknown" : "invalid_sprite_extraction",undefined,undefined,undefined,processFailureDiagnostic(error,Date.now()-started));
       }
     }
+    async function prepare(withHeavy: (operation: () => Promise<void>) => Promise<void> = operation => operation()) {
+      if(!job.workerTask || !saved.has("base")){await withHeavy(async()=>{await command("prepare");});return;}
+      const input=await readFile(path.join(directory,"job.json"));
+      const cacheKey=createHash("sha256").update(job.id).update(python).update(input).update(saved.get("base")!).digest("hex");
+      let built=false;
+      const files=await preparationCache.get(cacheKey,job.expiresAt,Date.now(),async()=>{
+        built=true;await withHeavy(async()=>{await command("prepare");});
+        try{return await preparationFiles(directory);}catch{return new Map<string,Buffer>();}
+      });
+      if(!built) {
+        if(!files.size){await withHeavy(async()=>{await command("prepare");});return;}
+        for(const [name,bytes] of files){await mkdir(path.dirname(path.join(directory,name)),{recursive:true});await writeFile(path.join(directory,name),bytes,{mode:0o600});}
+      }
+    }
     return {
-      async prepare() { await command("prepare"); },
+      prepare,
       async generate(name, context) {
         if (diagnosticOnly) throw new GenerationError("invalid_stage");
         if (job.continuation && (name === "base" || !job.continuation.generationStages.includes(name))) throw new GenerationError("invalid_stage");
@@ -124,10 +161,14 @@ export const spriteRenderer: SpriteRenderer = {
         return { bytes, usage: result.usage ?? undefined, generationMs: result.generationMs };
       },
       async compose() {
+        if(job.workerTask)await prepare();
         await command("compose");
         return readFile(path.join(directory, "run/sprite-sheet-alpha.png"));
       },
-      async cleanup() { await rm(directory, { recursive: true, force: true }); },
+      async cleanup() {
+        await writeFile(path.join(directory, "workspace.json"), JSON.stringify({expiresAt: job.expiresAt, pid: process.pid, active: false}), {mode: 0o600}).catch(() => undefined);
+        await rm(directory, { recursive: true, force: true });
+      },
     };
   },
 };

@@ -1,9 +1,11 @@
+import {assertTaskStage} from "@/lib/pets/generation/task-scheduler";
+import {tryStartProviderOperation, settleProviderOperation, releaseUnsentProviderOperation, requireCapacity} from "@/lib/pets/generation/execution-slots";
 import {createHash, randomUUID} from "node:crypto";
 import {animationRepairSchema, ANIMATION_ATTEMPT_FAILURE_CODES, GenerationError, moscowDay, type AnimationAttempt, type GenerationJob, type Scheduler, type ImageUsage} from "@/lib/pets/generation/model";
 import {assemblyIssuesSchema, type AssemblyIssue, type ContinuationState} from "@/lib/pets/generation/continuation-model";
 import {getRepairScope, hasUnsettledAnimationAttempt, latestAnimationAttempt, selectRepairStates, animationFailureRetryReason} from "@/lib/pets/generation/animation-repair";
 import {checkStageBudget, type GenerationBudgetLimit} from "@/lib/pets/generation/budget";
-import {requireJobWithActiveWorkerLease, scheduler, saveScheduler} from "@/lib/pets/generation/scheduler";
+import {requireJobWithActiveWorkerLease, scheduler, saveScheduler, activeLease} from "@/lib/pets/generation/scheduler";
 import type {GenerationStore, GenerationTransaction} from "@/lib/pets/generation/store";
 import {persistResult, recordExpiredResult, recordResultCost, type ResultReceipt} from "@/lib/pets/generation/expired-generation";
 
@@ -35,6 +37,7 @@ export function createAnimationRepairService(store: GenerationStore, options: Op
     }), expiredError);
   }
   function requireAttempt(current: GenerationJob, name: ContinuationState, token: string) {
+    assertTaskStage(current, name);
     const attempt = latestAnimationAttempt(current, name);
     if (!getRepairScope(current).includes(name) || !attempt || attempt.token !== token) throw new GenerationError("invalid_stage");
     return attempt;
@@ -46,7 +49,7 @@ export function createAnimationRepairService(store: GenerationStore, options: Op
   async function save(tx: GenerationTransaction, job: GenerationJob, state: Scheduler) {
     animationRepairSchema.parse(job.animationRepair);
     await tx.putJob(job);
-    if (state.active) state.active.inflight = hasUnsettledAnimationAttempt(job) || job.stages.some(s => s.name === "base" && s.status === "inflight");
+    const lease = activeLease(state, job.id, job.workerLeaseId); if (lease) lease.inflight = hasUnsettledAnimationAttempt(job) || job.stages.some(s => s.name === "base" && s.status === "inflight");
     await saveScheduler(tx, state);
     return job;
   }
@@ -80,7 +83,7 @@ export function createAnimationRepairService(store: GenerationStore, options: Op
       });
     },
     async startAnimationAttempt(job: GenerationJob, name: ContinuationState, token: string) {
-      return withJob(job, async (tx, current, state, now) => {
+      const started = await withJob(job, async (tx, current, state, now) => {
         const attempt = requireAttempt(current, name, token);
         if (state.pauseReason) throw new GenerationError("generation_paused");
         if (attempt.status !== "reserved" || attempt.notBefore > now) throw new GenerationError("invalid_stage");
@@ -97,7 +100,18 @@ export function createAnimationRepairService(store: GenerationStore, options: Op
         await requireJobWithActiveWorkerLease(tx, state, job, decisionTime);
         if (!options.enabled() || (attempt.ordinal > 1 && !options.automaticAnimationRepair())) throw new GenerationError("generation_disabled");
         if (moscowDay(decisionTime) !== moscowDay(now)) await checkStageBudget(tx, current.id, decisionTime, options.budgetUsd());
+        if (!await tryStartProviderOperation(tx, state, current, `attempt:${token}`, decisionTime)) return null;
         return save(tx, replace(current, {...attempt, status: "started", startedAt: decisionTime}), state);
+      });
+      requireCapacity(started !== null, options.now() + 250); return started!;
+    },
+    async deferUnsentAnimationAttempt(job: GenerationJob, name: ContinuationState, token: string) {
+      return withJob(job, async (tx, current, state) => {
+        const attempt = requireAttempt(current, name, token);
+        if (attempt.status === "reserved") return current;
+        if (attempt.status !== "started") throw new GenerationError("invalid_stage");
+        await releaseUnsentProviderOperation(tx, state, current, `attempt:${token}`);
+        return save(tx, replace(current, {...attempt, status: "reserved", startedAt: undefined}), state);
       });
     },
     async saveAnimationAttempt(job: GenerationJob, name: ContinuationState, token: string, bytes: Buffer, metadata: {usage?: ImageUsage; generationMs: number}) {
@@ -115,6 +129,7 @@ export function createAnimationRepairService(store: GenerationStore, options: Op
         if (index < 0 || (attempt.sourceSha256 && current.stages[index].sha256 !== attempt.sourceSha256)) throw new GenerationError("stage_conflict");
         await tx.putArtifact(current.id, `stage-${name}.png`, bytes, current.expiresAt);
         await recordResultCost(tx, job, now, receipt, metadata.usage, name);
+        await settleProviderOperation(tx, state, current, `attempt:${token}`);
         const result = {usage: metadata.usage, generationMs: metadata.generationMs};
         const updated = replace(current, {...attempt, status: "saved", finishedAt: now, resultSha256: sha256, ...result});
         updated.animationRepair!.pending = updated.animationRepair!.pending.filter(state => state !== name);
@@ -133,6 +148,7 @@ export function createAnimationRepairService(store: GenerationStore, options: Op
         if (["failed", "unknown"].includes(attempt.status)) return current;
         if (attempt.status !== "started") throw new GenerationError("invalid_stage");
         const unknown = code === "outcome_unknown" && retryReason !== "transport";
+        await settleProviderOperation(tx, state, current, `attempt:${token}`, unknown);
         // A filtered output may have consumed provider work without returning usage.
         await recordResultCost(tx, job, now, receipt, usage, name);
         const failure = {code, ...(error.diagnostic ? {diagnostic: error.diagnostic} : {}), ...(error.cliCause ? {cliCause: error.cliCause} : {}), ...(error.providerFailure ? {providerFailure: error.providerFailure} : {})};

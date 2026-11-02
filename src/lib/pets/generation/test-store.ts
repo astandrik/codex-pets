@@ -1,4 +1,4 @@
-import type { GenerationJob } from "./model";
+import {storedGenerationJob, type GenerationJob } from "@/lib/pets/generation/model";
 import type { GenerationStore, GenerationTransaction, PendingGenerationSubmission } from "./store";
 export class MemoryStore implements GenerationStore {
   jobs = new Map<string, GenerationJob>();
@@ -25,7 +25,7 @@ export class MemoryStore implements GenerationStore {
           for (const id of ids) {const job = jobs.get(id); if (job) result.set(id, job);}
           return result;
         },
-        putJob: async (job) => { jobs.set(job.id, structuredClone(job)); },
+        putJob: async (job) => { jobs.set(job.id, structuredClone(storedGenerationJob(job))); },
         getLedger: async (key, now) => { const row = ledger.get(key); return row && row.expiresAt > now ? row.value : null; },
         putLedger: async (key, value, expiresAt) => { ledger.set(key, { value, expiresAt }); },
         getArtifact: async (id, kind, now) => { const row = artifacts.get(id + ":" + kind); return row && row.expiresAt > now ? row.bytes : null; },

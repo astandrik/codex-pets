@@ -1,5 +1,9 @@
+import {configuredProviderCalls} from "@/lib/pets/generation/execution-limits";
+import {configuredActiveJobs} from "@/lib/pets/generation/worker-runner";
+import {claimGenerationTask, completeGenerationTask, assertTaskStage} from "@/lib/pets/generation/task-scheduler";
 import {createBaseRepairService} from "@/lib/pets/generation/base-repair-service";
 import {reserveInitialBaseAttempt,canResumeBaseRepair,latestBaseAttempt,baseFailureRetryReason} from "@/lib/pets/generation/base-repair";
+import {tryStartProviderOperation, settleProviderOperation, releaseUnsentProviderOperation, stageOperation, requireCapacity, acquireHeavySlot, releaseHeavySlot} from "@/lib/pets/generation/execution-slots";
 import {reserveInitialAnimationAttempts, canResumeAnimationRepair, hasUnsettledAnimationAttempt, latestAnimationAttempt, isAnimationState, getRepairScope, animationFailureRetryReason} from "@/lib/pets/generation/animation-repair";
 import {admitGeneration} from "@/lib/pets/generation/admission";
 import {createBaseRetryService} from "@/lib/pets/generation/base-retries";
@@ -16,7 +20,7 @@ import { validateUploadedPackage } from "@/lib/pets/package";
 import { replaceGeneratedDetails, validateGeneratedSheet } from "@/lib/pets/generation/package";
 import { slugify } from "@/lib/pets/validation";
 import {
-  generationAnimationAutoRepairEnabled, generationBaseRetryEnabled, generationReviewFlowEnabled, generationStageNames, requiredStageNames, usesStageCheckpoints, isUnacceptedAnimationRevision, DAY, LEASE_MS, GENERATION_ID, MAX_PARALLEL_IMAGE_ROWS, GenerationError,
+  generationAnimationAutoRepairEnabled, generationBaseRetryEnabled, generationReviewFlowEnabled, generationStageNames, requiredStageNames, usesStageCheckpoints, isUnacceptedAnimationRevision, STAGE_NAMES, DAY, LEASE_MS, GENERATION_ID, MAX_PARALLEL_IMAGE_ROWS, GenerationError,
   generationInputSchema, generationDigest, generationEnabled, generationBudgetLimit, readGenerationSecret,
   newGenerationId, dedupSchema,
   rowAttemptLogSchema, ROW_RETRY_DELAY_MS, type RowAttemptLog, stageFailureDiagnosticSchema, type StageFailureDiagnostic, stageCliCauseSchema, type StageCliCause,
@@ -30,7 +34,7 @@ import { readFailureDiagnostic } from "@/lib/pets/generation/failure-diagnostic"
 import {CARD_METADATA_FALLBACK, normalizeCardMetadata, cardMetadataEditSchema, type CardMetadataFields, type CardMetadataRecord, type PublicCardMetadata} from "@/lib/pets/generation/card-metadata";
 import type {CardMetadataResult} from "@/lib/pets/generation/card-provider";
 import {publicJob} from "@/lib/pets/generation/public-job";
-import {scheduler, saveScheduler, expireQueue, requireJobWithActiveWorkerLease, requireActiveWorkerLease} from "@/lib/pets/generation/scheduler";
+import {scheduler, saveScheduler, expireQueue, requireJobWithActiveWorkerLease, requireActiveWorkerLease, activeLease, setActiveLease, releaseActiveLease, isParallelScheduler, claimParallel, isTaskScheduler, yieldParallel, readActiveWorkerJob} from "@/lib/pets/generation/scheduler";
 import {finishExpiredGeneration, persistResult, recordExpiredResult, recordResultCost} from "@/lib/pets/generation/expired-generation";
 import {createBaseReviewService, readSavedGenerationBase} from "@/lib/pets/generation/base-review";
 import {normalizeSavedGenerationBase} from "@/lib/pets/generation/reference-image";
@@ -58,6 +62,13 @@ export function createGenerationService(store: GenerationStore, options: {
       if (state.pauseReason) throw new GenerationError("generation_paused");
       if (current.reviewBase && current.baseConfirmedAt === undefined && names.some(name => name !== "base")) throw new GenerationError("base_not_ready");
       if (names.some(name => current.stages.some(stage => stage.name === name && stage.status === "completed"))) throw new GenerationError("stage_already_completed");
+      if (isTaskScheduler(state)) {
+        if (names.length !== 1) throw new GenerationError("invalid_stage");
+        assertTaskStage(job, names[0]);
+        if (!generationStageNames(current).includes(names[0])) throw new GenerationError("invalid_stage");
+        if (names[0] !== "base" && !current.continuation && !current.animationRevision && current.stages.find(s => s.name === "base")?.status !== "completed") throw new GenerationError("base_not_ready");
+        if (current.stages.some(s => s.name === names[0])) return current;
+      } else {
       const plan = requiredStageNames(current);
       const next = plan.slice(current.stages.length, current.stages.length + names.length);
       if (current.continuation) {
@@ -67,16 +78,20 @@ export function createGenerationService(store: GenerationStore, options: {
         || (current.pipelineVersion === 2 && current.stages.length === 0 && names.length !== 1)
         || current.stages.some((stage, index) => stage.status !== "completed" || stage.name !== requiredStageNames(current)[index])
         || names.some((name, index) => name !== next[index])) throw new GenerationError("invalid_stage");
+      }
       await checkStageBudget(tx, job.id, now, budgetUsd());
       let updated = reserveInitialAnimationAttempts({ ...current, stages: [...current.stages, ...names.map(name => ({ name, status: "inflight" as const, startedAt: now }))] }, names, now, randomUUID);
       if(names.length===1&&names[0]==="base")updated=reserveInitialBaseAttempt(updated,now,randomUUID);
+      if (isTaskScheduler(state)) updated.stages.sort((a,b) => STAGE_NAMES.indexOf(a.name) - STAGE_NAMES.indexOf(b.name));
       await tx.putJob(updated);
-      if (state.active) state.active.inflight = !(names.length===1&&names[0]==="base"&&updated.baseRepair);
+      const lease = activeLease(state, job.id, job.workerLeaseId); if (lease) lease.inflight = !(names.length===1&&names[0]==="base"&&updated.baseRepair);
       await saveScheduler(tx, state);
       return updated;
     });
   }
   return {
+    readWorkerJob: (job: GenerationJob) => readActiveWorkerJob(store, job, clock()),
+    completeTask: (job: GenerationJob, result?: {error?: GenerationError; eligibleAt?: number}) => completeGenerationTask(store, job, clock(), result),
     ...createBaseRepairService(store,{now:clock,enabled:options.enabled,budgetUsd}),
     ...createBaseRetryService(store,{now:clock,enabled:options.enabled,secret:options.secret,createId,budgetUsd,baseRetries:options.baseRetries??(()=>false),reviewFlow:options.reviewFlow??generationReviewFlowEnabled,automaticAnimationRepair:options.automaticAnimationRepair,automaticCardMetadata:options.automaticCardMetadata}),
     finishExpiredGeneration: (job: GenerationJob, uncertain: boolean) => finishExpiredGeneration(store, job, clock, uncertain),
@@ -253,10 +268,14 @@ export function createGenerationService(store: GenerationStore, options: {
       if (!options.enabled()) return null;
       return store.transaction(async (tx) => {
         const state = await scheduler(tx, clock());
+        const beforeTaskCleanup = isTaskScheduler(state) ? JSON.stringify(state) : undefined;
         let now = clock();
         const hadPendingWork = Boolean(state.active || state.queue.length);
         const queuedBeforeCleanup = state.queue.length;
         await expireQueue(tx, state, now);
+        if (isTaskScheduler(state)) return claimGenerationTask(tx, state, owner, clock, budgetUsd(), beforeTaskCleanup);
+        if (isParallelScheduler(state)) return claimParallel(tx, state, owner, clock);
+        if (process.env.PET_GENERATION_DRAIN === "true") return null;
         const saveQueueCleanup = async () => {
           if (state.queue.length !== queuedBeforeCleanup) await saveScheduler(tx, state);
         };
@@ -319,6 +338,49 @@ export function createGenerationService(store: GenerationStore, options: {
         return null;
       });
     },
+    async authorizeLegacyImage(job: GenerationJob) {
+      const acquired = await store.transaction(async tx => {
+        const state = await scheduler(tx, clock());
+        const current = await requireJobWithActiveWorkerLease(tx, state, job, clock());
+        if (!options.enabled() || state.pauseReason) throw new GenerationError("generation_paused");
+        await checkStageBudget(tx, job.id, clock(), budgetUsd());
+        return tryStartProviderOperation(tx, state, current, "legacy", clock());
+      });
+      requireCapacity(acquired, clock() + 250);
+    },
+    async withHeavy<T>(job: GenerationJob, operation: () => Promise<T>): Promise<T> {
+      const acquired = await store.transaction(async tx => {
+        const state = await scheduler(tx, clock());
+        await requireJobWithActiveWorkerLease(tx, state, job, clock());
+        return acquireHeavySlot(tx, state, job);
+      });
+      requireCapacity(acquired, clock() + 250);
+      try { return await operation(); }
+      finally { await store.transaction(async tx => {
+        const state = await scheduler(tx, clock());
+        // The local operation finished. Release its exact token even if job TTL elapsed;
+        // subsequent checkpoints still require an unexpired job and current lease.
+        await releaseHeavySlot(tx, state, job);
+      }); }
+    },
+    async workerPoolSize() {
+      return store.transaction(async tx => isTaskScheduler(await scheduler(tx, clock())) ? configuredProviderCalls() : configuredActiveJobs());
+    },
+    async nextWakeDelay() {
+      return store.transaction(async tx => {
+        const state = await scheduler(tx, clock());
+        if (!isParallelScheduler(state)) return 5000;
+        if (isTaskScheduler(state)) {
+          const ready=state.tasks.filter(t=>t.status==="ready");
+          return ready.length?Math.max(50,Math.min(5000,...ready.map(t=>t.notBefore-clock()))):250;
+        }
+        const waits = state.queue.map(id => Math.max(50, (state.resumes[id] ?? 0) - clock()));
+        return waits.length ? Math.min(5000, ...waits) : 5000;
+      });
+    },
+    async yield(job: GenerationJob, eligibleAt = 0) {
+      return store.transaction(async tx => yieldParallel(tx, await scheduler(tx, clock()), job, clock(), eligibleAt));
+    },
     async heartbeat(job: GenerationJob) {
       return store.transaction(async tx => {
         const state = await scheduler(tx, clock());
@@ -326,14 +388,14 @@ export function createGenerationService(store: GenerationStore, options: {
         const now = clock();
         requireActiveWorkerLease(state, job, now);
         if (job.expiresAt <= now) {
-          state.active = {...state.active!, until: now + LEASE_MS};
+          setActiveLease(state, {...activeLease(state, job.id, job.workerLeaseId)!, until: now + LEASE_MS});
           await saveScheduler(tx, state);
           return {...job, leaseUntil: now + LEASE_MS};
         }
-        if (!current || current.expiresAt <= now || current.worker !== job.worker) throw new GenerationError("stale_worker");
-        const updated = { ...current, leaseUntil: now + LEASE_MS };
+        if (!current || current.expiresAt <= now || (!job.workerTask && (current.worker !== job.worker || current.workerLeaseId !== job.workerLeaseId))) throw new GenerationError("stale_worker");
+        const updated = {...current, ...(job.workerTask ? {worker: job.worker, workerLeaseId: job.workerLeaseId, workerTask: job.workerTask} : {}), leaseUntil: now + LEASE_MS};
         await tx.putJob(updated);
-        state.active = { ...state.active, id: job.id, owner: job.worker, until: now + LEASE_MS };
+        setActiveLease(state, {...activeLease(state, job.id, job.workerLeaseId), id: job.id, owner: job.worker, leaseId: job.workerLeaseId, until: now + LEASE_MS});
         await saveScheduler(tx, state);
         return updated;
       });
@@ -343,15 +405,30 @@ export function createGenerationService(store: GenerationStore, options: {
       return beginStages(job, [name]);
     },
     async authorizeStage(job: GenerationJob, name: StageName) {
+      assertTaskStage(job, name);
       const now = clock();
-      await store.transaction(async tx => {
+      const acquired = await store.transaction(async tx => {
         const state = await scheduler(tx, now);
         const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
         if (!options.enabled()) throw new GenerationError("generation_disabled");
         if (state.pauseReason) throw new GenerationError("generation_paused");
         if (name !== "base" && current.reviewBase && current.baseConfirmedAt === undefined) throw new GenerationError("base_not_ready");
         if (!generationStageNames(current).includes(name) || current.status !== "generating" || current.stages.find(stage => stage.name === name)?.status !== "inflight") throw new GenerationError("invalid_stage");
+        if (current.rowAttemptLogs?.some(log => log.stage === name)) throw new GenerationError("invalid_stage");
         await checkStageBudget(tx, job.id, now, budgetUsd());
+          return tryStartProviderOperation(tx, state, current, stageOperation(current, name), clock());
+      });
+      requireCapacity(acquired, clock() + 250);
+    },
+    async deferUnsentStage(job: GenerationJob, name: StageName) {
+      return store.transaction(async tx => {
+        const state = await scheduler(tx, clock());
+        const current = await requireJobWithActiveWorkerLease(tx, state, job, clock());
+        if (current.status !== "generating" || current.stages.find(s => s.name === name)?.status !== "inflight") throw new GenerationError("invalid_stage");
+        await releaseUnsentProviderOperation(tx, state, current, stageOperation(current, name));
+        if (current.rowRetries?.some(r => r.stage === name && r.state === "started")) {
+          await tx.putJob({...current, rowRetries: current.rowRetries.map(r => r.stage === name ? {...r, state: "waiting"} : r)});
+        }
       });
     },
     async recordRowAttemptFailure(job:GenerationJob,name:StageName,attempt:1|2,error:GenerationError){
@@ -366,6 +443,7 @@ export function createGenerationService(store: GenerationStore, options: {
         if(logs.some(item=>item.stage===name&&item.attempt===attempt))return;
         await tx.putJob({...current,rowAttemptLogs:[...logs,entry]});
         if(error.code==="outcome_unknown")await recordStageCost(tx,job.id,now,undefined,name);
+          await settleProviderOperation(tx,state,current,stageOperation(current,name),error.code==="outcome_unknown"&&!isRetryableImageCause(error.cliCause));
       });
     },
     async beginRowRetry(job:GenerationJob,name:StageName){
@@ -381,17 +459,20 @@ export function createGenerationService(store: GenerationStore, options: {
       });
     },
     async authorizeRowRetry(job:GenerationJob,name:StageName,token:string){
-      const now=clock();return store.transaction(async tx=>{
+      const now=clock();const acquired=await store.transaction(async tx=>{
         const state=await scheduler(tx,now),current=await requireJobWithActiveWorkerLease(tx,state,job,now);
         if(!options.enabled())throw new GenerationError("generation_disabled");
         if(state.pauseReason)throw new GenerationError("generation_paused");
         const retry=current.rowRetries?.find(item=>item.stage===name);
         if(!requiredStageNames(current).includes(name)||current.status!=="generating"||current.stages.find(stage=>stage.name===name)?.status!=="inflight"||!retry||retry.token!==token||retry.state!=="waiting"||retry.notBefore>now)throw new GenerationError("invalid_stage");
         await checkStageBudget(tx,job.id,now,budgetUsd());
-        await tx.putJob({...current,rowRetries:current.rowRetries!.map(item=>item.stage===name?{...item,state:"started" as const}:item)});
+          if(!await tryStartProviderOperation(tx,state,current,`retry:${token}`,clock()))return false;
+        await tx.putJob({...current,rowRetries:current.rowRetries!.map(item=>item.stage===name?{...item,state:"started" as const}:item)});return true;
       });
+      requireCapacity(acquired, clock() + 250);
     },
     async saveStage(job: GenerationJob, name: StageName, bytes: Buffer, metadata: { usage?: ImageUsage; generationMs: number }) {
+      assertTaskStage(job, name);
       const hash = createHash("sha256").update(bytes).digest("hex");
       const receipt = {key: `stage:${name}`, fingerprint: hash};
       return persistResult(job, clock, () => store.transaction(async tx => {
@@ -412,9 +493,10 @@ export function createGenerationService(store: GenerationStore, options: {
         stages[index] = { ...stages[index], ...metadata, status: "completed", sha256: hash };
         await tx.putArtifact(job.id, "stage-" + name + ".png", bytes, current.expiresAt);
         await recordResultCost(tx, job, now, receipt, metadata.usage, name);
+        await settleProviderOperation(tx, state, current, stageOperation(current, name));
         const updated = { ...current, stages, ...(current.rowRetries?{rowRetries:current.rowRetries.map(item=>item.stage===name?{...item,state:"completed" as const}:item)}:{}) };
         await tx.putJob(updated);
-        if (state.active) state.active.inflight = stages.some(stage => stage.status === "inflight") || hasUnsettledAnimationAttempt(updated);
+        const lease = activeLease(state, job.id, job.workerLeaseId); if (lease) lease.inflight = stages.some(stage => stage.status === "inflight") || hasUnsettledAnimationAttempt(updated);
         await saveScheduler(tx, state);
         return updated;
       }));
@@ -427,16 +509,30 @@ export function createGenerationService(store: GenerationStore, options: {
         if(current.status!=="processing"||current.cardMetadata?.state!=="pending"||!/^[a-f0-9]{64}$/.test(requestHash))throw new GenerationError("metadata_already_started");
         await checkStageBudget(tx,job.id,now,budgetUsd());
         const updated={...current,cardMetadata:{...current.cardMetadata,state:"inflight" as const,requestHash,startedAt:now}};
-        await tx.putJob(updated);if(state.active)state.active.inflight=true;await saveScheduler(tx,state);return updated;
+        await tx.putJob(updated);const lease=activeLease(state,job.id,job.workerLeaseId);if(lease)lease.inflight=true;await saveScheduler(tx,state);return updated;
       });
     },
     async authorizeCardMetadata(job:GenerationJob){
-      const now=clock();return store.transaction(async tx=>{
+      const now=clock();const acquired=await store.transaction(async tx=>{
         const state=await scheduler(tx,now),current=await requireJobWithActiveWorkerLease(tx,state,job,now);
         if(!options.enabled())throw new GenerationError("generation_disabled");
         if(state.pauseReason)throw new GenerationError("generation_paused");
         if(current.status!=="processing"||current.cardMetadata?.state!=="inflight"||current.cardMetadata.requestHash!==job.cardMetadata?.requestHash)throw new GenerationError("metadata_already_started");
         await checkStageBudget(tx,job.id,now,budgetUsd());
+          return tryStartProviderOperation(tx,state,current,`card:${current.cardMetadata.requestHash}`,clock());
+      });
+      requireCapacity(acquired, clock() + 250);
+    },
+    async deferUnsentCardMetadata(job: GenerationJob) {
+      return store.transaction(async tx => {
+        const state = await scheduler(tx, clock());
+        const current = await requireJobWithActiveWorkerLease(tx, state, job, clock());
+        const card = current.cardMetadata;
+        if (current.status !== "processing" || card?.state !== "inflight" || card.requestHash !== job.cardMetadata?.requestHash) throw new GenerationError("metadata_already_started");
+        await releaseUnsentProviderOperation(tx, state, current, `card:${card.requestHash}`);
+        await tx.putJob({...current, cardMetadata: {...card, state: "pending", requestHash: undefined, startedAt: undefined}});
+        const lease = activeLease(state, job.id, job.workerLeaseId); if (lease) lease.inflight = false;
+        await saveScheduler(tx, state);
       });
     },
     async saveCardMetadata(job:GenerationJob,result:CardMetadataResult){
@@ -452,9 +548,10 @@ export function createGenerationService(store: GenerationStore, options: {
         if(card?.state==="completed"&&card.responseHash===result.responseHash)return current;
         if(current.status!=="processing"||card?.state!=="inflight"||card.requestHash!==job.cardMetadata?.requestHash)throw new GenerationError("metadata_already_started");
         await recordResultCost(tx,job,now,receipt,{costUsd:result.costUsd},"card");
+        await settleProviderOperation(tx,state,current,`card:${card.requestHash}`);
         const displayName=current.nameSource==="automatic"?(fields.displayName??current.displayName):current.displayName;
         const updated={...current,displayName,cardMetadata:{...card,state:"completed" as const,fields:{...fields,displayName},responseHash:result.responseHash,usage:{inputTokens:result.inputTokens,outputTokens:result.outputTokens,costUsd:result.costUsd}}};
-        await tx.putJob(updated);if(state.active)state.active.inflight=false;await saveScheduler(tx,state);return updated;
+        await tx.putJob(updated);const lease=activeLease(state,job.id,job.workerLeaseId);if(lease)lease.inflight=false;await saveScheduler(tx,state);return updated;
       }));
     },
     async failCardMetadata(job:GenerationJob,code:string){
@@ -470,8 +567,9 @@ export function createGenerationService(store: GenerationStore, options: {
         if(card.state==="completed"||card.state==="failed")return current;
         await recordStageCost(tx,job.id,now,error==="outcome_unknown"?undefined:{costUsd:0},"card");
         if(error==="outcome_unknown")state.pauseReason="outcome_unknown";
+          await settleProviderOperation(tx,state,current,`card:${card.requestHash}`,error==="outcome_unknown");
         const updated={...current,cardMetadata:{...card,state:"failed" as const,error,fields:{description:CARD_METADATA_FALLBACK,tags:[]}}};
-        await tx.putJob(updated);if(state.active)state.active.inflight=false;await saveScheduler(tx,state);return updated;
+        await tx.putJob(updated);const lease=activeLease(state,job.id,job.workerLeaseId);if(lease)lease.inflight=false;await saveScheduler(tx,state);return updated;
       }),new GenerationError(error==="outcome_unknown"?"outcome_unknown":"generation_expired"));
     },
     async saveSource(job: GenerationJob, bytes: Buffer, metadata: { usage?: ImageUsage; providerRequestId?: string; generationMs: number }) {
@@ -494,8 +592,9 @@ export function createGenerationService(store: GenerationStore, options: {
         } else if (usesStageCheckpoints(current) && (current.stages.length !== requiredStageNames(current).length || current.stages.some((stage, index) => stage.status !== "completed" || stage.name !== requiredStageNames(current)[index]))) throw new GenerationError("invalid_stage");
         const processing: GenerationJob = { ...current, ...metadata, status: "processing", leaseUntil: now + LEASE_MS };
         await tx.putArtifact(job.id, "source.png", bytes, job.expiresAt);
+        if (!usesStageCheckpoints(current)) await settleProviderOperation(tx, state, current, "legacy");
         await tx.putJob(processing);
-        state.active = { id: job.id, owner: job.worker, until: now + LEASE_MS, inflight: false };
+        setActiveLease(state, {id: job.id, owner: job.worker, leaseId: job.workerLeaseId, until: now + LEASE_MS, inflight: false});
         await saveScheduler(tx, state);
         return processing;
       }));
@@ -510,7 +609,7 @@ export function createGenerationService(store: GenerationStore, options: {
         for (const [kind, bytes] of Object.entries(files)) await tx.putArtifact(job.id, kind, bytes, job.expiresAt);
         await tx.putJob({ ...current, ...(current.continuation && current.animationRevision ? {animationRevision:{...current.animationRevision,acceptedAt:current.animationRevision.acceptedAt??now}}:{}), status: "completed", prompt: "" });
         await settleBudget(tx, job.id, now);
-        state.active = null;
+        releaseActiveLease(state, job.id);
         await saveScheduler(tx, state);
       });
     },
@@ -533,11 +632,20 @@ export function createGenerationService(store: GenerationStore, options: {
           ...(failure ? {failureDiagnostic:failure}:{}),
           ...(stages.length ? {stageFailureDiagnostics:stages}:{}),
           ...(causes.length ? {cliFailureCauses:causes}:{}), ...(assemblyIssues.length?{assemblyIssues}:{}) });
+        if (!usesStageCheckpoints(current)) await settleProviderOperation(tx, state, current, "legacy", code === "outcome_unknown");
         await settleBudget(tx, job.id, now, code === "outcome_unknown");
         const repairScope = new Set<StageName>(current.animationRepair ? getRepairScope(current) : []);
         // Quality retries keep the old completed image; the journal owns the new call.
         const unresolved=current.stages.filter(stage=>stage.status==="inflight" ||
-          (repairScope.has(stage.name) && isAnimationState(stage.name) && latestAnimationAttempt(current,stage.name)?.status!=="saved"));
+          (repairScope.has(stage.name) && isAnimationState(stage.name) && latestAnimationAttempt(current,stage.name)?.status!=="saved"))
+          .filter(stage => {
+            if (!isParallelScheduler(state)) return true;
+            const attempt = isAnimationState(stage.name) ? latestAnimationAttempt(current, stage.name) : undefined;
+            // A reserved attempt has not crossed the provider boundary.
+            if (attempt) return attempt.status !== "reserved";
+            return current.rowAttemptLogs?.some(log => log.stage === stage.name) ||
+              state.providerSlots.some(slot => slot.jobId === current.id && slot.key === stageOperation(current, stage.name));
+          });
         // Only fully recorded provider failures are local to this terminal job.
         // Missing checkpoints, retry acknowledgements and leases still stop the queue.
         const terminalProviderFailure=code==="outcome_unknown"&&usesStageCheckpoints(current)
@@ -559,7 +667,7 @@ export function createGenerationService(store: GenerationStore, options: {
               &&last.cliCause?.kind===cause.kind&&last.cliCause?.httpStatus===cause.httpStatus;
           });
         if (code === "outcome_unknown"&&!terminalProviderFailure) state.pauseReason = code;
-        state.active = null;
+        releaseActiveLease(state, job.id);
         await saveScheduler(tx, state);
       });
     },

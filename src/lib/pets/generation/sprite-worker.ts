@@ -1,4 +1,6 @@
+import {runGenerationTask} from "@/lib/pets/generation/task-worker";
 import {generateRepairBase} from "@/lib/pets/generation/base-repair-worker";
+import {WorkerYield} from "@/lib/pets/generation/scheduler";
 import {readSavedGenerationBase} from "@/lib/pets/generation/base-review";
 import {readRevisionAtlas} from "@/lib/pets/generation/animation-revisions";
 import { createHash } from "node:crypto";
@@ -14,7 +16,7 @@ import type { GenerationStore } from "@/lib/pets/generation/store";
 
 export type StageImage = { bytes: Buffer; usage?: ImageUsage; generationMs: number };
 export type SpriteSession = {
-  prepare(): Promise<void>;
+  prepare(withHeavy?: (operation: () => Promise<void>) => Promise<void>): Promise<void>;
   generate(name: StageName, context?: {attempt: number}): Promise<StageImage>;
   compose(): Promise<Buffer>;
   cleanup(): Promise<void>;
@@ -28,15 +30,19 @@ export function createSpriteGenerationWorker(options: {
   build?: (job: GenerationJob, source: Buffer) => Promise<Record<string, Buffer>>;
   now?: () => number;
   wait?: (ms:number)=>Promise<void>;
+  stopping?: () => boolean;
 }) {
   let lastCleanup = -Infinity;
   return async function runOnce(owner: string) {
     const now = options.now ?? Date.now;
-    if (now() - lastCleanup >= 60_000) { await options.renderer.cleanupExpired?.(now()); await options.store.cleanup(now()); lastCleanup = now(); }
+    if (options.stopping?.()) return "idle";
+    if (now() - lastCleanup >= 60_000) { lastCleanup = now(); await options.renderer.cleanupExpired?.(now()); await options.store.cleanup(now()); }
     let job = await options.service.claim(owner);
     if (!job) return "idle";
+    if (job.workerTask) return runGenerationTask(job, options);
     const initial = job;
     let session: SpriteSession | undefined;
+    let yieldAt: number | undefined;
     let leaseError: unknown;
     const stageDiagnostics:StageFailureDiagnostic[]=[];
     const cliCauses:StageCliCause[]=[];
@@ -52,6 +58,8 @@ export function createSpriteGenerationWorker(options: {
     };
     const repairContext = {service: options.service, store: options.store, now,
       onTerminalFailure: (name:StageName) => {recordedTerminalFailures.add(name);},
+      heavy: job.workerLeaseId ? <T,>(run: () => Promise<T>) => options.service.withHeavy(job!, run) : undefined,
+      beforeCall: () => {if (job?.workerLeaseId && options.stopping?.()) throw new WorkerYield();},
       wait: options.wait ?? (ms => new Promise<void>(resolve => setTimeout(resolve, ms))), mutate,
       checkLease: () => {
         if (leaseError) throw new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary: "lease", reason: "heartbeat_failed"});
@@ -78,8 +86,7 @@ export function createSpriteGenerationWorker(options: {
         const saved = new Map<StageName, Buffer>();
         for (const stage of job.stages.filter(s => !initial.continuation || requiredStageNames(initial).includes(s.name))) {
           const bytes = await options.store.readArtifact(job.id, "stage-" + stage.name + ".png", now());
-          if (job.baseRepair && stage.name === "base" && stage.status === "inflight") continue;
-          if (job.animationRepair && stage.status === "inflight" && isAnimationState(stage.name)) continue;
+          if (stage.status === "inflight" && (job.workerLeaseId || (job.baseRepair && stage.name === "base") || (job.animationRepair && isAnimationState(stage.name)))) continue;
           if (stage.status !== "completed" || !bytes || createHash("sha256").update(bytes).digest("hex") !== stage.sha256) throw new GenerationError("saved_stage_unavailable");
           saved.set(stage.name, bytes);
         }
@@ -106,7 +113,7 @@ export function createSpriteGenerationWorker(options: {
         session = activeSession;
         let prepared = false;
         const prepareRows = async () => {
-          if (!prepared) { await activeSession.prepare(); prepared = true; }
+          if (!prepared) { await (job!.workerLeaseId ? options.service.withHeavy(job!, () => activeSession.prepare()) : activeSession.prepare()); prepared = true; }
         };
         const remaining = generationStageNames(job).filter(name => !saved.has(name));
         while (remaining.length) {
@@ -115,7 +122,7 @@ export function createSpriteGenerationWorker(options: {
           if (leaseError) throw new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"lease",reason:"heartbeat_failed"});
           try {
             if (names[0] === "base") {
-              if(!job.baseRepair || !job.stages.some(stage=>stage.name==="base"))job = await options.service.beginStage(job, "base");
+              if(!job.stages.some(stage=>stage.name==="base"))job = await options.service.beginStage(job, "base");
             }
             else if (!batchAlreadyReserved(job, names)) {
               job = await options.service.beginStages(job, names);
@@ -124,7 +131,7 @@ export function createSpriteGenerationWorker(options: {
             if (error instanceof GenerationError) throw error;
             // This process has not called the provider for these intents yet.
             const readback = await options.store.readJob(job.id);
-            if (!readback || readback.worker !== owner || names.some(name => readback.stages.find(stage => stage.name === name)?.status !== "inflight")) throw new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"intent",reason:"unconfirmed_write"});
+            if (!readback || readback.worker !== owner || readback.workerLeaseId !== initial.workerLeaseId || names.some(name => readback.stages.find(stage => stage.name === name)?.status !== "inflight")) throw new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"intent",reason:"unconfirmed_write"});
             job = readback;
           }
           const batchJob = job;
@@ -139,7 +146,8 @@ export function createSpriteGenerationWorker(options: {
               saved.set(name, image.bytes);
               return;
             }
-            await options.service.authorizeStage(batchJob, name);
+            if (batchJob.workerLeaseId && options.stopping?.()) throw new WorkerYield();
+            const existingRetry = batchJob.workerLeaseId ? batchJob.rowRetries?.find(r => r.stage === name) : undefined;
             let image: StageImage;
             const call=async(attempt:1|2)=>{
               if (batchJob.expiresAt <= now()) throw new GenerationError("generation_expired");
@@ -154,19 +162,38 @@ export function createSpriteGenerationWorker(options: {
                 throw failure;
               }
             };
-            try{image=await call(1);}
+            try{
+              if(existingRetry){
+                if(existingRetry.notBefore>now())throw new WorkerYield(existingRetry.notBefore);
+                await mutate(()=>{
+                  if (options.stopping?.()) throw new WorkerYield();
+                  return options.service.authorizeRowRetry(batchJob,name,existingRetry.token);
+                });
+              } else {
+                await mutate(() => {
+                  if (batchJob.workerLeaseId && options.stopping?.()) throw new WorkerYield();
+                  return options.service.authorizeStage(batchJob, name);
+                });
+              }
+              if (batchJob.workerLeaseId && options.stopping?.()) {
+                await mutate(() => options.service.deferUnsentStage(batchJob, name));
+                throw new WorkerYield();
+              }
+              image=await call(existingRetry?2:1);
+            }
             catch(error){
-              if(!(error instanceof GenerationError)||error.code!=="outcome_unknown"||!isRetryableImageCause(error.cliCause))throw error;
+              if(existingRetry || !(error instanceof GenerationError)||error.code!=="outcome_unknown"||!isRetryableImageCause(error.cliCause))throw error;
               if(batchJob.expiresAt<=now())throw error;
               try{
                 const retry=await mutate(()=>options.service.beginRowRetry(batchJob,name));
+                if(batchJob.workerLeaseId)throw new WorkerYield(retry.notBefore);
                 await (options.wait??(ms=>new Promise(resolve=>setTimeout(resolve,ms))))(Math.max(0,retry.notBefore-now()));
                 if(leaseError)throw new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"lease",reason:"heartbeat_failed"});
                 await mutate(()=>options.service.authorizeRowRetry(batchJob,name,retry.token));
                 image=await call(2);
               }catch(retryError){
                 if(batchJob.expiresAt<=now()&&retryError instanceof GenerationError&&["stale_worker","generation_expired"].includes(retryError.code))throw error;
-                if(retryError instanceof GenerationError)throw retryError;
+                if(retryError instanceof GenerationError||retryError instanceof WorkerYield)throw retryError;
                 throw new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"intent",reason:"unconfirmed_write"});
               }
             }
@@ -178,7 +205,7 @@ export function createSpriteGenerationWorker(options: {
                 if (error instanceof GenerationError && error.code === "generation_expired") throw error;
                 const readback = await options.store.readJob(batchJob.id);
                 const stage = readback?.stages.find(item => item.name === name);
-                if (readback && readback.worker !== owner) throw new GenerationError("stale_worker");
+                if (readback && (readback.worker !== owner || readback.workerLeaseId !== initial.workerLeaseId)) throw new GenerationError("stale_worker");
                 if (!readback || stage?.status !== "completed" || stage.sha256 !== createHash("sha256").update(image.bytes).digest("hex")) throw new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"checkpoint",reason:"unconfirmed_write"});
               }
               saved.set(name, image.bytes);
@@ -194,20 +221,21 @@ export function createSpriteGenerationWorker(options: {
           // Do not finalize, release the reserve or delete shared files while a
           // sibling is still running. Unknown spending dominates a known refusal.
           const failures = results.flatMap((result,index) => result.status === "rejected"
-            ? [{name:names[index],error:result.reason instanceof GenerationError ? result.reason : new GenerationError("outcome_unknown")}]
+            ? [{name:names[index],error:result.reason instanceof GenerationError || result.reason instanceof WorkerYield ? result.reason : new GenerationError("outcome_unknown")}]
             : []);
           if (failures.length) {
             if (initial.expiresAt <= now()) {
-              const unresolved = failures.find(({name,error}) => uncertain(error) && !recordedTerminalFailures.has(name));
+              const unresolved = failures.find(({name,error}) => error instanceof GenerationError && uncertain(error) && !recordedTerminalFailures.has(name));
               if (unresolved) throw unresolved.error;
             }
-            throw (failures.find(({error}) => error.code === "outcome_unknown") ?? failures[0]).error;
+            throw (failures.find(({error}) => error instanceof GenerationError && error.code === "outcome_unknown") ?? failures.find(({error}) => error instanceof GenerationError) ?? failures[0]).error;
           }
           const refreshed = await options.store.readJob(job.id);
           if (!refreshed) throw new Error("Saved generation checkpoint unavailable");
-          if (refreshed.worker !== owner) throw new GenerationError("stale_worker");
+          if (refreshed.worker !== owner || refreshed.workerLeaseId !== initial.workerLeaseId) throw new GenerationError("stale_worker");
           job = refreshed;
           if (job.reviewBase && job.baseConfirmedAt === undefined && saved.has("base")) return await awaitReview(job);
+          if (job.workerLeaseId && remaining.length) throw new WorkerYield();
         }
         await prepareRows();
         let atlas: Buffer;
@@ -222,22 +250,22 @@ export function createSpriteGenerationWorker(options: {
             if (error instanceof GenerationError && error.cliCause) cliCauses.push({stage: name, cause: error.cliCause});
           });
           atlas = result.atlas; job = result.job;
-        } else atlas = await session.compose();
+        } else atlas = await (job.workerLeaseId ? options.service.withHeavy(job, () => session!.compose()) : session.compose());
         try {
           job = await options.service.saveSource(job, atlas, (job.animationRepair || job.baseRepair) ? repairGenerationTotals(job) : { generationMs: job.stages.reduce((sum, stage) => sum + (stage.generationMs ?? 0), 0) });
         } catch (error) {
           if (error instanceof GenerationError && error.code === "generation_expired") throw error;
           const readback = await options.store.readJob(job.id);
           const persisted = await options.store.readArtifact(job.id, "source.png", now());
-          if (readback && readback.worker !== owner) throw new GenerationError("stale_worker");
+          if (readback && (readback.worker !== owner || readback.workerLeaseId !== initial.workerLeaseId)) throw new GenerationError("stale_worker");
           if (!readback || readback.status !== "processing" || !persisted || !persisted.equals(atlas)) throw error;
           job = readback;
         }
       }
       const source = await options.store.readArtifact(job.id, "source.png", now());
       if (!source) throw new GenerationError("source_unavailable");
-      job=await prepareGeneratedCard(job,source,options.service,options.store,options.cardProvider,repairContext.checkLease,now);
-      const files = await (options.build ?? buildGeneratedPackage)(job, source);
+      job=await prepareGeneratedCard(job,source,options.service,options.store,options.cardProvider,repairContext.checkLease,now, () => Boolean(job?.workerLeaseId && options.stopping?.()));
+      const files = await (job.workerLeaseId ? options.service.withHeavy(job, () => (options.build ?? buildGeneratedPackage)(job!, source)) : (options.build ?? buildGeneratedPackage)(job, source));
       try { await options.service.finish(job, files); }
       catch (error) {
         const readback = await options.store.readJob(job.id);
@@ -247,6 +275,7 @@ export function createSpriteGenerationWorker(options: {
     } catch (error) {
       // Paid/provider ambiguity is classified at its boundary. A local processing
       // crash preserves the checkpoint for lease-based recovery without repayment.
+      if (error instanceof WorkerYield) { yieldAt = error.eligibleAt; return "yielded"; }
       if (!(error instanceof GenerationError)) throw error;
       if (initial.expiresAt <= now()) {
         const isolatedExpiredFailure = (error.diagnostic?.boundary === "provider_cli" || (initial.baseRepair && !error.diagnostic)) && stageFailures.length > 0
@@ -263,10 +292,11 @@ export function createSpriteGenerationWorker(options: {
       clearInterval(timer);
       await heartbeat;
       await session?.cleanup();
+      if (yieldAt !== undefined) await options.service.yield(initial, yieldAt);
     }
   };
 }
 
 function batchAlreadyReserved(job: GenerationJob, names: StageName[]) {
-  return Boolean(job.animationRepair && names.every(name => job.stages.some(stage => stage.name === name && stage.status === "inflight")));
+  return Boolean((job.animationRepair || job.workerLeaseId) && names.every(name => job.stages.some(stage => stage.name === name && stage.status === "inflight")));
 }

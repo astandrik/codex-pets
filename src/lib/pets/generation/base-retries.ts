@@ -1,3 +1,4 @@
+import {activeLease} from "@/lib/pets/generation/scheduler";
 import {createHash} from "node:crypto";
 import {z} from "zod";
 import {toPublicUrl} from "@/lib/base-path";
@@ -100,7 +101,7 @@ export function createBaseRetryService(store:GenerationStore,options:Options){
             const found=await existing(tx,id,body.requestId,fingerprint);if(found)return found;
             guard();const job=source(await tx.getJob(id));
             if(version(job)!==body.sourceRevision)throw new GenerationError("base_retry_source_conflict");
-            if((await scheduler(tx,options.now())).active?.id===id)throw new GenerationError("base_retry_unavailable");
+            if(activeLease(await scheduler(tx,options.now()),id))throw new GenerationError("base_retry_unavailable");
             const ref=await readSavedGenerationReference(job,tx.getArtifact,options.now);
             const values=await restoredInput(job,body,tx);
             const now=options.now();

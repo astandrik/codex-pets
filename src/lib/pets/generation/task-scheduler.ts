@@ -1,0 +1,160 @@
+import {createHash, randomUUID} from "node:crypto";
+import {checkStageBudget, settleBudget, type GenerationBudgetLimit} from "@/lib/pets/generation/budget";
+import {latestAnimationAttempt, isAnimationState} from "@/lib/pets/generation/animation-repair";
+import {latestBaseAttempt} from "@/lib/pets/generation/base-repair";
+import {configuredProviderCalls} from "@/lib/pets/generation/execution-limits";
+import {GenerationError, LEASE_MS, generationStageNames, usesStageCheckpoints, type GenerationJob, type GenerationTask, type TaskScheduler} from "@/lib/pets/generation/model";
+import {isTaskScheduler, requireJobWithActiveWorkerLease, saveScheduler, scheduler} from "@/lib/pets/generation/scheduler";
+import type {GenerationStore, GenerationTransaction} from "@/lib/pets/generation/store";
+
+const providerTask = (task: GenerationTask) => task.kind === "image" || task.kind === "metadata";
+const heavyTask = (task: GenerationTask) => task.kind === "compose" || task.kind === "package";
+const key = (id: string, kind: GenerationTask["kind"], stage?: string) => `${id}:${kind}${stage ? `:${stage}` : ""}`;
+function desiredTasks(job: GenerationJob): GenerationTask[] {
+  const make = (kind: GenerationTask["kind"], attempt = "initial", stage?: GenerationTask["stage"], notBefore = 0): GenerationTask =>
+    ({key: key(job.id, kind, stage), jobId: job.id, kind, ...(stage ? {stage} : {}), status: "ready", notBefore, attempt});
+  if (job.status === "processing") {
+    return [job.cardMetadata && !["completed", "failed"].includes(job.cardMetadata.state)
+      ? make("metadata", `metadata:${job.cardMetadata.revision}`) : make("package", "package")];
+  }
+  if (!["queued", "generating"].includes(job.status)) return [];
+  const base = job.stages.find(s => s.name === "base");
+  if (job.reviewBase && job.baseConfirmedAt === undefined && base?.status === "completed") return [make("review")];
+  const names = generationStageNames(job);
+  const stages = names.includes("base") && base?.status !== "completed" ? ["base" as const] : names.filter(n => n !== "base");
+  const pending = stages.filter(name => job.stages.find(s => s.name === name)?.status !== "completed" || (isAnimationState(name) && job.animationRepair?.pending.includes(name)));
+  if (pending.length) return pending.map(name => {
+    const attempt = name === "base" ? latestBaseAttempt(job) : isAnimationState(name) ? latestAnimationAttempt(job, name) : undefined;
+    const retry = job.rowRetries?.find(r => r.stage === name && r.state !== "completed");
+    return make("image", attempt?.token ?? retry?.token ?? "initial", name, attempt?.status === "reserved" ? attempt.notBefore : retry?.notBefore ?? 0);
+  });
+  const snapshot = createHash("sha256").update(JSON.stringify(job.stages.map(s => [s.name, s.sha256]))).digest("hex");
+  return [make("compose", snapshot)];
+}
+
+async function reconcile(tx: GenerationTransaction, state: TaskScheduler, now: number) {
+  for (const id of state.queue) {
+    const job = await tx.getJob(id);
+    if (!job || job.expiresAt <= now || !["queued", "generating", "processing"].includes(job.status)) continue;
+    if (!usesStageCheckpoints(job)) throw new GenerationError("generation_not_configured");
+    const existing = state.tasks.filter(t => t.jobId === id);
+    // A queued finalizer owns the terminal decision even when another parent runs first.
+    if (existing.some(t => t.kind === "fail" && (t.status === "ready" || t.status === "running"))) continue;
+    const desired = desiredTasks(job);
+    const next = desired.map(want => {
+      const old = existing.find(t => t.key === want.key);
+      if (old?.status === "running" || (old?.status === "failed" && old.attempt === want.attempt)) return old;
+      return {...want, notBefore:Math.max(want.notBefore, old?.status === "ready" ? old.notBefore : 0)};
+    });
+    for (const task of existing) if ((task.status === "running" || task.status === "failed") && !next.some(t => t.key === task.key)) next.push(task);
+    if (next.some(t => t.status === "failed")) {
+      // Finish already scheduled siblings before surfacing the parent's terminal error.
+      const imageWork = next.some(t => t.kind === "image" && (t.status === "running" || (!state.pauseReason && t.status === "ready")));
+      if (!imageWork && !next.some(t => t.status === "running")) {
+        const failed = next.find(t => t.status === "failed")!;
+        state.tasks = state.tasks.filter(t => t.jobId !== id);
+        state.tasks.push({key: key(id, "fail"), jobId: id, kind: "fail", status: "ready", notBefore: 0, attempt: "failure", error: failed.error,
+          diagnostics: next.flatMap(t=>t.stage&&t.error?.diagnostic?[{stage:t.stage,diagnostic:t.error.diagnostic}]:[]),
+          causes: next.flatMap(t=>t.stage&&t.error?.cliCause?[{stage:t.stage,cause:t.error.cliCause}]:[])});
+        continue;
+      }
+    }
+    state.tasks = [...state.tasks.filter(t => t.jobId !== id), ...next.filter(t => t.kind !== "compose" || !next.some(s => s.status === "failed"))];
+  }
+}
+
+export async function claimGenerationTask(tx: GenerationTransaction, state: TaskScheduler, owner: string, clock: () => number, budgetUsd: GenerationBudgetLimit, beforeCleanup = JSON.stringify(state)) {
+  let now = clock();
+  const saveChanges = async () => {
+    if (JSON.stringify(state) !== beforeCleanup) await saveScheduler(tx, state);
+  };
+  for (const task of state.tasks.filter(t => t.status === "running" && t.lease!.until <= now)) {
+    const slot = state.providerSlots.find(s => s.leaseId === task.lease!.leaseId);
+    if (slot && slot.dispatched !== false) {
+      slot.unknown = true; state.pauseReason = "outcome_unknown";
+      await settleBudget(tx, task.jobId, now, true);
+      task.status = "failed"; task.error = {code:"outcome_unknown",diagnostic:{boundary:"lease",reason:"heartbeat_failed"}}; delete task.lease; continue;
+    }
+    if (state.heavy?.leaseId === task.lease!.leaseId) continue;
+    state.providerSlots = state.providerSlots.filter(s => s.leaseId !== task.lease!.leaseId);
+    task.status = "ready"; delete task.lease;
+  }
+  if (process.env.PET_GENERATION_DRAIN === "true") {await saveChanges(); return null;}
+  try {if (configuredProviderCalls() !== state.providerLimit) throw Error("mismatch");}
+  catch {throw new GenerationError("generation_not_configured");}
+  await reconcile(tx, state, now);
+  const pivot = state.taskTurn ? state.queue.indexOf(state.taskTurn) + 1 : 0;
+  const order = [...state.queue.slice(pivot), ...state.queue.slice(0, pivot)];
+  for (const id of order) {
+    const task = state.tasks.find(t => t.jobId === id && t.status === "ready" && t.notBefore <= now && (!state.pauseReason || t.kind === "fail" || t.kind === "package") &&
+      (!providerTask(t) || (state.providerSlots.length < state.providerLimit && state.tasks.filter(a => a.status === "running" && providerTask(a)).length < state.providerLimit)) &&
+      (!heavyTask(t) || !state.heavy));
+    if (!task) continue;
+    const job = await tx.getJob(id);
+    now = clock();
+    if (!job || job.expiresAt <= now) continue;
+    // Metadata is optional: its existing service records a fallback if budget is exhausted.
+    if (task.kind === "image") {
+      try {await checkStageBudget(tx, id, now, budgetUsd);}
+      catch (error) {
+        if (!(error instanceof GenerationError)) throw error;
+        task.status = "failed"; task.error = {code: error.code}; continue;
+      }
+    }
+    now = clock();
+    if (job.expiresAt <= now) continue;
+    const leaseId = randomUUID();
+    task.status = "running"; task.lease = {id, owner, leaseId, until: now + LEASE_MS, inflight: false};
+    if (providerTask(task)) state.providerSlots.push({jobId: id, owner, leaseId, key: task.key, startedAt: now, dispatched: false});
+    if (heavyTask(task)) state.heavy = {jobId: id, owner, leaseId};
+    state.taskTurn = id; state.resumes[id] = 0;
+    const current = {...job, status: job.status === "queued" ? "generating" as const : job.status, executionVersion: 3 as const};
+    await tx.putJob(current); await saveScheduler(tx, state);
+    return {...current, worker: owner, workerLeaseId: leaseId, leaseUntil: now + LEASE_MS,
+      workerTask: {key: task.key, kind: task.kind, ...(task.stage ? {stage: task.stage} : {})}};
+  }
+  await saveChanges(); return null;
+}
+
+export function taskFailure(error: GenerationError): NonNullable<GenerationTask["error"]> {
+  return {code: error.code, ...(error.retryAt ? {retryAt: error.retryAt} : {}), ...(error.providerFailure ? {providerFailure: error.providerFailure} : {}),
+    ...(error.diagnostic ? {diagnostic: error.diagnostic} : {}), ...(error.cliCause ? {cliCause: error.cliCause} : {}),
+    ...(error.details ? {details: error.details} : {}), ...(error.assemblyIssues ? {assemblyIssues: error.assemblyIssues} : {})};
+}
+export function errorFromTask(task: GenerationTask) {
+  const e = task.error;
+  return new GenerationError(e?.code ?? "outcome_unknown", e?.retryAt, e?.providerFailure, undefined, e?.diagnostic, e?.cliCause, e?.details, e?.assemblyIssues);
+}
+export async function completeGenerationTask(store: GenerationStore, job: GenerationJob, now: number, result: {error?: GenerationError; eligibleAt?: number} = {}) {
+  return store.transaction(async tx => {
+    const state = await scheduler(tx, now);
+    if (!isTaskScheduler(state)) throw new GenerationError("invalid_stage");
+    const task = state.tasks.find(t => t.key === job.workerTask?.key);
+    // Parent completion may already have removed its tasks in the same fenced flow.
+    if (!task) {
+      const current = await tx.getJob(job.id);
+      if (current && ["completed", "failed", "awaiting_confirmation"].includes(current.status)) return;
+      throw new GenerationError("stale_worker");
+    }
+    const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
+    if (!task) throw new GenerationError("stale_worker");
+    const slot = state.providerSlots.find(s => s.leaseId === job.workerLeaseId);
+    if (slot && slot.dispatched !== false) {
+      const metadataFallback = !result.error && task.kind === "metadata" && slot.unknown &&
+        current.cardMetadata?.state === "failed" && current.cardMetadata.error === "outcome_unknown";
+      if (metadataFallback) { /* Keep the unknown permit while allowing local packaging. */ }
+      else if (result.error?.code === "outcome_unknown") {slot.unknown = true; state.pauseReason = "outcome_unknown"; await settleBudget(tx, job.id, now, true);}
+      else throw new GenerationError("outcome_unknown");
+    } else state.providerSlots = state.providerSlots.filter(s => s.leaseId !== job.workerLeaseId);
+    if (state.heavy?.leaseId === job.workerLeaseId) state.heavy = null;
+    task.status = result.error ? "failed" : result.eligibleAt !== undefined ? "ready" : "done";
+    if (result.error) task.error = taskFailure(result.error);
+    if (result.eligibleAt !== undefined) task.notBefore = result.eligibleAt;
+    delete task.lease;
+    await saveScheduler(tx, state);
+  });
+}
+
+export function assertTaskStage(job: GenerationJob, stage: string) {
+  if (job.workerTask && (job.workerTask.kind !== "image" || job.workerTask.stage !== stage)) throw new GenerationError("invalid_stage");
+}

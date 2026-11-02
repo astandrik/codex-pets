@@ -17,3 +17,16 @@ it("cleans expired files and dead-process leftovers while retaining live work an
     await expect(access(path.join(root,"unrelated"))).resolves.toBeUndefined();
   }finally{await rm(root,{recursive:true,force:true});}
 });
+
+it("does not delete another active renderer after job expiry or during initial metadata write", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "sprite-active-test-"));
+  try {
+    const working = path.join(root, "pets-row-worker-active");
+    const opening = path.join(root, "pets-row-worker-12345-opening");
+    await mkdir(working); await mkdir(opening);
+    await writeFile(path.join(working, "workspace.json"), JSON.stringify({expiresAt: 10, pid: 12345, active: true}));
+    await cleanupSpriteWorkspaces(root, 100, pid => pid === 12345);
+    await expect(access(working)).resolves.toBeUndefined();
+    await expect(access(opening)).resolves.toBeUndefined();
+  } finally { await rm(root, {recursive: true, force: true}); }
+});

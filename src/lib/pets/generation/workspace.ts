@@ -12,8 +12,13 @@ export async function cleanupSpriteWorkspaces(root: string, now: number, alive =
     let keep=false;
     try {
       const metadata: unknown=JSON.parse(await readFile(path.join(folder,"workspace.json"),"utf8"));
-      if (metadata && typeof metadata==="object" && "expiresAt" in metadata && typeof metadata.expiresAt==="number" && metadata.expiresAt>now && "pid" in metadata && typeof metadata.pid==="number" && Number.isSafeInteger(metadata.pid) && metadata.pid>0) keep=alive(metadata.pid);
-    } catch { /* Incomplete workspace metadata precedes any private file write. */ }
+      if (metadata && typeof metadata==="object" && "expiresAt" in metadata && typeof metadata.expiresAt==="number" &&
+        (metadata.expiresAt>now || ("active" in metadata && metadata.active === true)) && "pid" in metadata && typeof metadata.pid==="number" && Number.isSafeInteger(metadata.pid) && metadata.pid>0) keep=alive(metadata.pid);
+    } catch {
+      // A peer can observe mkdtemp before the first metadata write.
+      const owner = /^pets-row-worker-(\d+)-/.exec(entry.name);
+      if (owner) keep = alive(Number(owner[1]));
+    }
     if (!keep) await rm(folder,{recursive:true,force:true});
   }
 }

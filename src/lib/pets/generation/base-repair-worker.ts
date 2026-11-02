@@ -1,3 +1,4 @@
+import {readActiveWorkerJob, WorkerYield} from "@/lib/pets/generation/scheduler";
 import {createHash} from "node:crypto";
 import {isDeepStrictEqual} from "node:util";
 import {GenerationError,type GenerationJob} from "@/lib/pets/generation/model";
@@ -5,15 +6,11 @@ import {latestBaseAttempt,baseFailureRetryReason} from "@/lib/pets/generation/ba
 import type {createGenerationService} from "@/lib/pets/generation/service";
 import type {GenerationStore} from "@/lib/pets/generation/store";
 import type {SpriteSession,StageImage} from "@/lib/pets/generation/sprite-worker";
-type Context={service:ReturnType<typeof createGenerationService>;store:GenerationStore;now:()=>number;wait:(ms:number)=>Promise<void>;checkLease:()=>void;mutate:<T>(run:()=>Promise<T>)=>Promise<T>;onTerminalFailure?:(name:"base")=>void};
+type Context={service:ReturnType<typeof createGenerationService>;store:GenerationStore;now:()=>number;wait:(ms:number)=>Promise<void>;checkLease:()=>void;beforeCall?:()=>void;mutate:<T>(run:()=>Promise<T>)=>Promise<T>;onTerminalFailure?:(name:"base")=>void};
 const hash=(bytes:Buffer)=>createHash("sha256").update(bytes).digest("hex");
 const uncertain=(boundary:"intent"|"checkpoint")=>new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary,reason:"unconfirmed_write"});
 async function currentJob(context:Context,job:GenerationJob){
-  const current=await context.store.readJob(job.id);
-  if(!current||current.worker!==job.worker)throw new GenerationError("stale_worker");
-  if(current.expiresAt<=context.now())throw new GenerationError("generation_expired");
-  if(!current.leaseUntil||current.leaseUntil<=context.now())throw new GenerationError("stale_worker");
-  return current;
+  return readActiveWorkerJob(context.store, job, context.now());
 }
 function pendingRetryFailure(job:GenerationJob){
   let failed=latestBaseAttempt(job);
@@ -53,16 +50,18 @@ export async function generateRepairBase(context:Context,job:GenerationJob,sessi
         const saved=await currentJob(context,job).then(latestBaseAttempt).catch(()=>undefined);
         if(!saved||saved.status!=="reserved"||saved.ordinal!==attempt.ordinal+1||saved.reason!==reason)throw uncertain("intent");
       }
+      if(job.workerLeaseId)throw new WorkerYield(context.now()+5000);
       continue;
     }
     if(attempt.status!=="reserved")throw uncertain("intent");
     await beforeProviderCall(async()=>{
-      const delay=Math.max(0,attempt.notBefore-context.now());if(delay)await context.wait(delay);
-      context.checkLease();
-      try{await context.mutate(()=>context.service.startBaseAttempt(job,attempt.token));}
-      catch(error){if(error instanceof GenerationError)throw error;throw uncertain("intent");}
-      context.checkLease();
-      await currentJob(context,job);
+    const delay=Math.max(0,attempt.notBefore-context.now());if(delay&&job.workerLeaseId)throw new WorkerYield(attempt.notBefore);if(delay)await context.wait(delay);
+    context.checkLease();
+    try{await context.mutate(()=>{context.beforeCall?.();return context.service.startBaseAttempt(job,attempt.token);});}
+    catch(error){if(error instanceof GenerationError||error instanceof WorkerYield)throw error;throw uncertain("intent");}
+    context.checkLease();
+    await currentJob(context,job);
+    try{context.beforeCall?.();}catch(error){if(error instanceof WorkerYield)await context.mutate(()=>context.service.deferUnsentBaseAttempt(job,attempt.token));throw error;}
     });
     retryFailure=undefined;
     let image:StageImage;

@@ -1,3 +1,4 @@
+import {readActiveWorkerJob, WorkerYield} from "@/lib/pets/generation/scheduler";
 import {createHash} from "node:crypto";
 import {isDeepStrictEqual} from "node:util";
 import {GenerationError, type GenerationJob, type ImageUsage, type StageName} from "@/lib/pets/generation/model";
@@ -13,16 +14,15 @@ type Context = {
   now: () => number;
   wait: (ms: number) => Promise<void>;
   checkLease: () => void;
+  beforeCall?: () => void;
+  heavy?: <T>(operation: () => Promise<T>) => Promise<T>;
   mutate: <T>(run: () => Promise<T>) => Promise<T>;
   onTerminalFailure?: (name: ContinuationState) => void;
 };
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const uncertain = (boundary: "intent" | "checkpoint") => new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary, reason: "unconfirmed_write"});
 async function currentJob(context: Context, original: GenerationJob) {
-  const current = await context.store.readJob(original.id);
-  if (!current || current.worker !== original.worker) throw new GenerationError("stale_worker");
-  if (current.expiresAt <= context.now()) throw new GenerationError("generation_expired");
-  return current;
+  return readActiveWorkerJob(context.store, original, context.now());
 }
 async function reserveKnownAttempt(context: Context, job: GenerationJob, name: ContinuationState, reason: "quality" | "transport" | "moderation") {
   const previous = latestAnimationAttempt(await currentJob(context, job), name);
@@ -72,18 +72,28 @@ export async function generateRepairAnimation(context: Context, job: GenerationJ
         throw failure;
       }
       await beforeProviderCall(context, job, retryFailure, () => reserveKnownAttempt(context, job, name, reason));
+      if (job.workerLeaseId) throw new WorkerYield(context.now() + 5000);
       continue;
     }
     if (!attempt || attempt.status !== "reserved") throw uncertain("intent");
     await beforeProviderCall(context, job, retryFailure, async () => {
-      const delay = Math.max(0, attempt.notBefore - context.now());
-      if (delay) await context.wait(delay);
-      context.checkLease();
-      try { await context.mutate(() => context.service.startAnimationAttempt(job, name, attempt.token)); }
-      catch (error) { if (error instanceof GenerationError) throw error; throw uncertain("intent"); }
-      context.checkLease();
+    const delay = Math.max(0, attempt.notBefore - context.now());
+    if (delay && job.workerLeaseId) throw new WorkerYield(attempt.notBefore);
+    if (delay) await context.wait(delay);
+    context.checkLease();
+    context.beforeCall?.();
+    try { await context.mutate(() => {
+      context.beforeCall?.();
+      return context.service.startAnimationAttempt(job, name, attempt.token);
+    }); }
+    catch (error) { if (error instanceof GenerationError || error instanceof WorkerYield) throw error; throw uncertain("intent"); }
+    context.checkLease();
+    try { context.beforeCall?.(); }
+    catch (error) {
+      if (error instanceof WorkerYield) await context.mutate(() => context.service.deferUnsentAnimationAttempt(job, name, attempt.token));
+      throw error;
+    }
     });
-    // Once another call starts, its own result determines operational uncertainty.
     retryFailure = undefined;
     let image: StageImage;
     try { image = await session.generate(name, {attempt: attempt.ordinal}); }
@@ -109,6 +119,7 @@ export async function generateRepairAnimation(context: Context, job: GenerationJ
       if (!reason || attempt.ordinal >= maxAttempts) throw failure;
       retryFailure = failure.code === "outcome_unknown" ? failure : undefined;
       await beforeProviderCall(context, job, retryFailure, () => reserveKnownAttempt(context, job, name, reason));
+      if (job.workerLeaseId) throw new WorkerYield(context.now() + 5000);
       continue;
     }
     try { await context.mutate(() => context.service.saveAnimationAttempt(job, name, attempt.token, image.bytes, image)); }
@@ -145,6 +156,7 @@ export async function composeWithAnimationRepairs(context: Context, job: Generat
     const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
     if (failures.length) {
       const failure = failures.find(r => r.reason instanceof GenerationError && r.reason.code === "outcome_unknown")?.reason ?? failures[0].reason;
+      if (failure instanceof WorkerYield) throw failure;
       if (failure instanceof GenerationError) throw new GenerationError(failure.code, failure.retryAt, failure.providerFailure, failure.limitScope, failure.diagnostic, failure.cliCause, failure.details, job.animationRepair?.issues);
       throw uncertain("checkpoint");
     }
@@ -154,7 +166,7 @@ export async function composeWithAnimationRepairs(context: Context, job: Generat
   while (true) {
     context.checkLease();
     let atlas: Buffer;
-    try { atlas = await session.compose(); }
+    try { atlas = await (context.heavy ? context.heavy(() => session.compose()) : session.compose()); }
     catch (error) {
       if (!(error instanceof GenerationError) || !["invalid_sprite_extraction", "missing_animation_frame"].includes(error.code) ||
         error.diagnostic?.boundary !== "renderer_process" || !["invalid_image", "process_exit"].includes(error.diagnostic.reason) || !error.assemblyIssues?.length) throw error;
@@ -163,6 +175,7 @@ export async function composeWithAnimationRepairs(context: Context, job: Generat
       catch (failure) { if (failure instanceof GenerationError) throw failure; throw uncertain("checkpoint"); }
       if (!plan.states?.length) throw error;
       job = plan.job;
+      if (job.workerLeaseId) throw new WorkerYield();
       session = await reopen(plan.job);
       await session.prepare();
       await repairRound(plan.states);
