@@ -118,7 +118,7 @@ export async function runGenerationTask(initial: GenerationJob, options: Options
         throw new WorkerYield();
       }
       if (job.animationRepair && getRepairScope(job).length) {await options.service.completeAnimationRepair(job);await refresh();}
-      await options.service.saveSource(job,atlas,job.animationRepair?repairGenerationTotals(job):{generationMs:job.stages.reduce((sum,s)=>sum+(s.generationMs??0),0)});
+      await options.service.saveSource(job,atlas,(job.animationRepair || job.baseRepair)?repairGenerationTotals(job):{generationMs:job.stages.reduce((sum,s)=>sum+(s.generationMs??0),0)});
     } else if (task.kind === "metadata") {
       const source=await options.store.readArtifact(job.id,"source.png",now());
       if (!source) throw new GenerationError("source_unavailable");

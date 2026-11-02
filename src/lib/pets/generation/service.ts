@@ -640,7 +640,8 @@ export function createGenerationService(store: GenerationStore, options: {
           (repairScope.has(stage.name) && isAnimationState(stage.name) && latestAnimationAttempt(current,stage.name)?.status!=="saved"))
           .filter(stage => {
             if (!isParallelScheduler(state)) return true;
-            const attempt = isAnimationState(stage.name) ? latestAnimationAttempt(current, stage.name) : undefined;
+            const attempt = stage.name === "base" && current.baseRepair ? latestBaseAttempt(current)
+              : isAnimationState(stage.name) ? latestAnimationAttempt(current, stage.name) : undefined;
             // A reserved attempt has not crossed the provider boundary.
             if (attempt) return attempt.status !== "reserved";
             return current.rowAttemptLogs?.some(log => log.stage === stage.name) ||

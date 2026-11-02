@@ -27,5 +27,9 @@ export const cardMetadataRecordSchema = z.object({
   error:z.enum(["provider_rejected","outcome_unknown","budget_exhausted","generation_disabled","metadata_unavailable"]).optional(),
 });
 export type CardMetadataRecord=z.infer<typeof cardMetadataRecordSchema>;
+export function recoverUnconfirmedCardMetadata(record: CardMetadataRecord): CardMetadataRecord {
+  if (record.state !== "inflight") return record;
+  return {...record, state:"failed", error:"outcome_unknown", fields:{description:CARD_METADATA_FALLBACK, tags:[]}};
+}
 export const publicCardMetadataSchema=cardMetadataFieldsSchema.extend({revision:z.number().int().nonnegative(),editable:z.boolean(),automaticState:z.enum(["pending","inflight","completed","failed","legacy"]),edited:z.boolean()});
 export type PublicCardMetadata=z.infer<typeof publicCardMetadataSchema>;

@@ -3,6 +3,7 @@ import {LEASE_MS, GenerationError, generationQueueLimit, schedulerSchema, type G
 import type {GenerationTransaction} from "@/lib/pets/generation/store";
 import {settleBudget} from "@/lib/pets/generation/budget";
 import {configuredProviderCalls} from "@/lib/pets/generation/execution-limits";
+import {recoverUnconfirmedCardMetadata} from "@/lib/pets/generation/card-metadata";
 
 const SCHEDULER_EXPIRY = Date.UTC(2099, 0, 1);
 export const isParallelScheduler = (state: Scheduler): state is ParallelScheduler => "version" in state;
@@ -98,10 +99,19 @@ export async function claimParallel(tx: GenerationTransaction, state: ParallelSc
   const leaseId = randomUUID();
   for (const lease of [...state.active]) {
     if (lease.until > clock()) continue;
-    if (state.providerSlots.some(s => s.jobId === lease.id)) {
+    const slots = state.providerSlots.filter(s => s.jobId === lease.id);
+    if (slots.length) {
       state.pauseReason = "outcome_unknown";
-      for (const slot of state.providerSlots.filter(s => s.jobId === lease.id)) slot.unknown = true;
+      for (const slot of slots) slot.unknown = true;
       await settleBudget(tx, lease.id, clock(), true);
+      const job = await tx.getJob(lease.id);
+      if (job && job.expiresAt > clock() && job.status === "processing" && job.cardMetadata &&
+          ["inflight", "completed", "failed"].includes(job.cardMetadata.state) && slots.every(slot => slot.key === `card:${job.cardMetadata!.requestHash}`)) {
+        await tx.putJob({...job, cardMetadata:recoverUnconfirmedCardMetadata(job.cardMetadata), worker:"", workerLeaseId:undefined, leaseUntil:undefined});
+        releaseActiveLease(state, lease.id);
+        if (!state.queue.includes(job.id)) state.queue.push(job.id);
+        state.resumes[job.id] = 0;
+      }
       continue;
     }
     // An unconfirmed local operation keeps its lock, but is not unknown spending.
@@ -114,7 +124,7 @@ export async function claimParallel(tx: GenerationTransaction, state: ParallelSc
       state.resumes[job.id] = 0;
     } else await settleBudget(tx, lease.id, clock());
   }
-  if (state.pauseReason || process.env.PET_GENERATION_DRAIN === "true" || state.active.length >= state.activeLimit) {
+  if (process.env.PET_GENERATION_DRAIN === "true" || state.active.length >= state.activeLimit) {
     await saveScheduler(tx, state); return null;
   }
   const configured = process.env.PET_GENERATION_ACTIVE_JOBS ?? "1";
@@ -129,6 +139,7 @@ export async function claimParallel(tx: GenerationTransaction, state: ParallelSc
       state.queue = state.queue.filter(item => item !== id); delete state.resumes[id];
       await settleBudget(tx, id, now); continue;
     }
+    if (state.pauseReason && (job.status !== "processing" || !job.cardMetadata || !["failed", "completed"].includes(job.cardMetadata.state))) continue;
     state.queue = state.queue.filter(item => item !== id);
     delete state.resumes[id];
     const claimed: GenerationJob = {...job, status: job.status === "queued" ? "generating" : job.status, worker: owner, workerLeaseId: leaseId, leaseUntil: now + LEASE_MS};

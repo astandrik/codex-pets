@@ -148,6 +148,24 @@ export function createSpriteGenerationWorker(options: {
             }
             if (batchJob.workerLeaseId && options.stopping?.()) throw new WorkerYield();
             const existingRetry = batchJob.workerLeaseId ? batchJob.rowRetries?.find(r => r.stage === name) : undefined;
+            const recorded = batchJob.workerLeaseId ? batchJob.rowAttemptLogs?.filter(log => log.stage === name).at(-1) : undefined;
+            if (recorded) {
+              if (recorded.attempt !== 1 || recorded.code !== "outcome_unknown" || !isRetryableImageCause(recorded.cliCause)) {
+                throw new GenerationError(recorded.code, undefined, undefined, undefined, recorded.diagnostic, recorded.cliCause, recorded.details);
+              }
+              if (!existingRetry) {
+                let retry: NonNullable<GenerationJob["rowRetries"]>[number];
+                try { retry = await mutate(() => options.service.beginRowRetry(batchJob, name)); }
+                catch (error) {
+                  if (error instanceof GenerationError || error instanceof WorkerYield) throw error;
+                  const saved = await options.service.readWorkerJob(batchJob);
+                  const recovered = saved.rowRetries?.find(item => item.stage === name);
+                  if (!recovered || recovered.state !== "waiting") throw new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary:"checkpoint", reason:"unconfirmed_write"});
+                  retry = recovered;
+                }
+                throw new WorkerYield(retry.notBefore);
+              }
+            }
             let image: StageImage;
             const call=async(attempt:1|2)=>{
               if (batchJob.expiresAt <= now()) throw new GenerationError("generation_expired");

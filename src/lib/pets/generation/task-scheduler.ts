@@ -2,6 +2,7 @@ import {createHash, randomUUID} from "node:crypto";
 import {checkStageBudget, settleBudget, type GenerationBudgetLimit} from "@/lib/pets/generation/budget";
 import {latestAnimationAttempt, isAnimationState} from "@/lib/pets/generation/animation-repair";
 import {latestBaseAttempt} from "@/lib/pets/generation/base-repair";
+import {recoverUnconfirmedCardMetadata} from "@/lib/pets/generation/card-metadata";
 import {configuredProviderCalls} from "@/lib/pets/generation/execution-limits";
 import {GenerationError, LEASE_MS, generationStageNames, usesStageCheckpoints, type GenerationJob, type GenerationTask, type TaskScheduler} from "@/lib/pets/generation/model";
 import {isTaskScheduler, requireJobWithActiveWorkerLease, saveScheduler, scheduler} from "@/lib/pets/generation/scheduler";
@@ -73,6 +74,13 @@ export async function claimGenerationTask(tx: GenerationTransaction, state: Task
     if (slot && slot.dispatched !== false) {
       slot.unknown = true; state.pauseReason = "outcome_unknown";
       await settleBudget(tx, task.jobId, now, true);
+      const job = task.kind === "metadata" ? await tx.getJob(task.jobId) : null;
+      if (job && job.expiresAt > clock() && job.status === "processing" && job.cardMetadata &&
+          ["inflight", "completed", "failed"].includes(job.cardMetadata.state) && slot.key === `card:${job.cardMetadata.requestHash}`) {
+        await tx.putJob({...job, cardMetadata:recoverUnconfirmedCardMetadata(job.cardMetadata)});
+        // Keep the uncertain provider permit; only local packaging can follow.
+        task.status = "done"; delete task.error; delete task.lease; continue;
+      }
       task.status = "failed"; task.error = {code:"outcome_unknown",diagnostic:{boundary:"lease",reason:"heartbeat_failed"}}; delete task.lease; continue;
     }
     if (state.heavy?.leaseId === task.lease!.leaseId) continue;
