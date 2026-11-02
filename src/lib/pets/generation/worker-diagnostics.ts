@@ -3,7 +3,7 @@ import {createHash} from "node:crypto";
 import {YdbError} from "@/lib/ydb/client";
 import {GenerationError, STAGE_NAMES} from "@/lib/pets/generation/model";
 
-export type WorkerPhase = "cleanup" | "claim" | "prepare" | "provider" | "checkpoint" | "finalize" | "workspace_cleanup";
+export type WorkerPhase = "cleanup" | "claim" | "prepare" | "intent" | "provider" | "checkpoint" | "finalize" | "workspace_cleanup";
 export type WorkerContext = {
   primaryReported?: boolean; phase: WorkerPhase; startedAt: number; iterationHash: string;
   targetHash?: string; task?: string; stage?: string; attempt?: number; checkpointPass?: number;

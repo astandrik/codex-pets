@@ -5,6 +5,7 @@ import {isDeepStrictEqual} from "node:util";
 import {GenerationError, type GenerationJob, type ImageUsage, type StageName} from "@/lib/pets/generation/model";
 import type {ContinuationState} from "@/lib/pets/generation/continuation-model";
 import {latestAnimationAttempt, animationFailureRetryReason} from "@/lib/pets/generation/animation-repair";
+import {recoverProviderIntent} from "@/lib/pets/generation/provider-intent-recovery";
 import type {createGenerationService} from "@/lib/pets/generation/service";
 import type {GenerationStore} from "@/lib/pets/generation/store";
 import type {SpriteSession, StageImage} from "@/lib/pets/generation/sprite-worker";
@@ -83,11 +84,15 @@ export async function generateRepairAnimation(context: Context, job: GenerationJ
     if (delay) await context.wait(delay);
     context.checkLease();
     context.beforeCall?.();
+    setWorkerPhase(currentWorkerContext(), "intent", job, attempt.ordinal);
     try { await context.mutate(() => {
       context.beforeCall?.();
       return context.service.startAnimationAttempt(job, name, attempt.token);
     }); }
-    catch (error) { if (error instanceof GenerationError || error instanceof WorkerYield) throw error; throw uncertain("intent"); }
+    catch (error) {
+      if (error instanceof GenerationError || error instanceof WorkerYield) throw error;
+      await recoverProviderIntent(context.store, job, name, attempt.token, error, context.now);
+    }
     context.checkLease();
     try { context.beforeCall?.(); }
     catch (error) {
