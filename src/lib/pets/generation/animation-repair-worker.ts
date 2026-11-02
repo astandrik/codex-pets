@@ -1,3 +1,4 @@
+import {currentWorkerContext,setWorkerPhase} from "@/lib/pets/generation/worker-diagnostics";
 import {readActiveWorkerJob, WorkerYield} from "@/lib/pets/generation/scheduler";
 import {createHash} from "node:crypto";
 import {isDeepStrictEqual} from "node:util";
@@ -96,7 +97,7 @@ export async function generateRepairAnimation(context: Context, job: GenerationJ
     });
     retryFailure = undefined;
     let image: StageImage;
-    try { image = await session.generate(name, {attempt: attempt.ordinal}); }
+    try { setWorkerPhase(currentWorkerContext(),"provider",job,attempt.ordinal); image = await session.generate(name, {attempt: attempt.ordinal}); }
     catch (error) {
       const failure = error instanceof GenerationError ? error : new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary: "renderer_process", reason: "unclassified"});
       const reason = animationFailureRetryReason(failure);

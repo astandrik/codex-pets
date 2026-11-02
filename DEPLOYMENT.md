@@ -927,3 +927,99 @@ transaction conflicts, retries, unknown outcomes and the Node/Python process-tre
 memory. The budget remains a recorded-spend threshold, not a prepaid hard limit.
 Local validation uses `PET_GENERATION_TASK_POOL_YDB=1` and only a loopback database
 named `/local/codex_parallelism_test_<suffix>`; fake results never call a model.
+
+## Durable provider-result journal
+
+`PET_GENERATION_RESULT_JOURNAL_ENABLED` defaults to false. Enable it only in the
+worker after mounting a persistent private directory and validating the new
+reader/writer code. Set `PET_GENERATION_RESULT_JOURNAL_DIR` to that absolute mount
+path. Journal-enabled workers require scheduler v3; startup rejects legacy/v2
+schedulers before constructing the worker or dispatching provider calls. Workers
+without the journal retain their existing legacy/v2 behavior. The web process
+does not need this mount. Missing/unsafe configuration or a
+tmpfs journal fails startup before new provider calls; `/tmp` is not durable.
+
+The worker user must own the directory, mode0700; files use0600. Keep the same
+volume across worker/container replacement and share it between worker processes
+using the same scheduler. The journal reserves bounded space before dispatch
+(512MiB total, up to8MiB per image plus bounded metadata). Full capacity defers
+an unsent attempt without a new token or provider call. Unacknowledged outcomes
+are never evicted to admit new calls. Each reservation has a unique generation
+identifier inside its capacity slot. Confirmed or explicitly unused records move
+atomically to `retired/` before cleanup; startup and periodic maintenance finish
+that cleanup without deleting a newer reservation that reused the slot.
+Payload expiry covers both `ready/` and interrupted `publish-*/` directories.
+Each capacity slot retains a checksummed intent before it is published; the
+record links that already-synced file instead of writing a second partial copy.
+Active record data lives inside a unique reservation subdirectory. Retirement
+moves that exact subdirectory, so a stale worker cannot move a replacement that
+uses the same operation key. Older flat records remain readable and are retired
+without moving a newer reservation's directory. Keep compatible readers/writers
+with this layout during rollout or rollback.
+If reservation stops before the record exists, maintenance reclaims its slot at
+the original seven-day receipt deadline. Earlier slots without an intent copy
+are held for a full seven days after their last directory change. Active records
+and unexpired reservations are preserved; orphan cleanup never submits work.
+
+An outcome is published with fsync and atomic rename before its YDB checkpoint.
+Checkpoint retries do not call the provider; the original attempt token, operation
+and accounting receipt remain authoritative. After retry exhaustion, retain the
+journal and the existing protective pause. A process/disk failure before durable
+publication is still an unknown result; never automatically resend that request.
+
+Worker startup inventories the journal. It does not resume failed jobs or clear
+scheduler pauses. Cleanup removes image/metadata payloads at the original job
+expiry and accounting metadata at the original seven-day receipt deadline. Keep a
+compatible maintenance worker with the journal mounted when disabling admission.
+Never mount a recovered journal into an incompatible writer.
+
+Inspect one retained record without writes:
+
+```sh
+node scripts/recover-generation-result.mjs \
+  --journal-dir=/var/lib/codex-pets/generation-results \
+  --record=<journal-key-sha256>
+```
+
+The result includes the required current scheduler revision and job hash. An
+operator must review that exact result and create a private backup destination
+before applying a restore:
+
+```sh
+node scripts/recover-generation-result.mjs \
+  --journal-dir=/var/lib/codex-pets/generation-results \
+  --record=<journal-key-sha256> \
+  --expected-revision=<reviewed-revision> \
+  --expected-job-hash=<reviewed-sha256-or-absent> \
+  --backup=/private/operator-backups/checkpoint-before.json --apply
+```
+
+`--apply` requires separate operator authorization. It never creates a generation,
+changes attempts, clears a pause, or queues the parent. Restoring the first base
+for a review-flow job moves it to `awaiting_confirmation`; a separate explicit
+user confirmation is still required before animation work. Other restored image
+jobs remain failed for their existing continuation workflow. Current leases,
+changed jobs/attempts, mismatched artifacts and receipt expiry reject the restore.
+An expired/missing job permits accounting-only recovery before its original
+seven-day receipt deadline; it never recreates the job or extends retention.
+Completed or edited metadata uses accounting-only recovery without rewriting
+fields or packages. Already recorded outcomes are no-ops, including after a lost
+acknowledgement. Preserve unrelated unknown-cost markers.
+
+A journal cannot recover bytes already lost before it was enabled. Rollback must
+preserve the volume and compatible readers; do not restart an old writer to replay
+uncertain operations or restore a stale scheduler/budget snapshot over new work.
+
+The isolated integration check uses a dedicated local server on loopback12136
+with the three normal generation tables and no production credentials:
+
+```sh
+PET_GENERATION_DURABILITY_YDB=1 YDB_ANONYMOUS_CREDENTIALS=1 \
+YDB_PETS_ENDPOINT=grpc://127.0.0.1:12136 YDB_PETS_DATABASE=/local \
+PET_GENERATION_PROVIDER_CALLS=20 \
+npx vitest run src/lib/pets/generation/result-durability-ydb.integration.test.ts --maxWorkers=1
+```
+
+It launches two processes, supplies synthetic images, injects lost DB commit
+acknowledgements and verifies20shared permits,20single charges and empty journal
+state after confirmation. It makes no provider requests.
