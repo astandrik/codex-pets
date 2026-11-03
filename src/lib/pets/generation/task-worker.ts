@@ -2,9 +2,10 @@ import {setWorkerPhase, type WorkerContext} from "@/lib/pets/generation/worker-d
 import {createHash} from "node:crypto";
 import {GenerationError, HEARTBEAT_MS, type GenerationJob, type StageName} from "@/lib/pets/generation/model";
 import {WorkerYield, readActiveWorkerJob, scheduler, isTaskScheduler} from "@/lib/pets/generation/scheduler";
-import {generateRepairAnimation, repairGenerationTotals} from "@/lib/pets/generation/animation-repair-worker";
+import {generateRepairAnimation, reserveAnimationRetry, repairGenerationTotals} from "@/lib/pets/generation/animation-repair-worker";
 import {isAnimationState, latestAnimationAttempt, getRepairScope} from "@/lib/pets/generation/animation-repair";
 import {generateRepairBase} from "@/lib/pets/generation/base-repair-worker";
+import {readRetrySnapshot, recoverRetryReservation} from "@/lib/pets/generation/retry-reservation-recovery";
 import {readSavedGenerationBase} from "@/lib/pets/generation/base-review";
 import {readRevisionAtlas} from "@/lib/pets/generation/animation-revisions";
 import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
@@ -59,6 +60,15 @@ export async function runGenerationTask(initial: GenerationJob, options: Options
     session = await options.renderer.open(job, saved, reference, atlas, {diagnosticOnly:composing});
     return session;
   }
+  async function reserveRowRetry(name: StageName) {
+    const before = await readRetrySnapshot(options.store, initial, name, now);
+    job = before;
+    try {return await options.service.beginRowRetry(job, name);}
+    catch (error) {
+      if (error instanceof GenerationError || error instanceof WorkerYield) throw error;
+      return recoverRetryReservation(options.store, before, {kind: "row", stage: name}, error, now);
+    }
+  }
   async function ordinaryImage(name: StageName, active: SpriteSession) {
     const retry = job.rowRetries?.find(r => r.stage === name && r.state !== "completed");
     beforeCall();
@@ -67,7 +77,7 @@ export async function runGenerationTask(initial: GenerationJob, options: Options
       const retryable = recorded.attempt === 1 && recorded.code === "outcome_unknown" && isRetryableImageCause(recorded.cliCause);
       if (!retryable) throw new GenerationError(recorded.code, undefined, undefined, undefined, recorded.diagnostic, recorded.cliCause, recorded.details);
       if (!retry) {
-        const recovered = await options.service.beginRowRetry(job, name);
+        const recovered = await reserveRowRetry(name);
         throw new WorkerYield(recovered.notBefore);
       }
     }
@@ -84,7 +94,7 @@ export async function runGenerationTask(initial: GenerationJob, options: Options
       if (retry && failure.code === "outcome_unknown" && isRetryableImageCause(failure.cliCause) && failure.diagnostic?.boundary === "provider_cli") recordedTerminalFailure = true;
       if (initial.expiresAt <= now()) throw failure;
       if (!retry && failure.code === "outcome_unknown" && isRetryableImageCause(failure.cliCause)) {
-        const next = await options.service.beginRowRetry(job,name);throw new WorkerYield(next.notBefore);
+        const next = await reserveRowRetry(name);throw new WorkerYield(next.notBefore);
       }
       throw failure;
     }
@@ -100,7 +110,7 @@ export async function runGenerationTask(initial: GenerationJob, options: Options
       const name = task.stage!;
       if (!job.stages.some(s=>s.name===name)) {await options.service.beginStage(job,name);await refresh();}
       if (isAnimationState(name) && job.animationRepair?.pending.includes(name) && latestAnimationAttempt(job,name)?.status === "saved") {
-        const retry = await options.service.reserveAnimationAttempt(job,name,"quality");throw new WorkerYield(retry.attempt.notBefore);
+        const retry = await reserveAnimationRetry(context,job,name,"quality");throw new WorkerYield(retry.notBefore);
       }
       const active = await open();
       if (name !== "base") await active.prepare(operation=>options.service.withHeavy(job,operation));

@@ -6,6 +6,7 @@ import {GenerationError, type GenerationJob, type ImageUsage, type StageName} fr
 import type {ContinuationState} from "@/lib/pets/generation/continuation-model";
 import {latestAnimationAttempt, animationFailureRetryReason} from "@/lib/pets/generation/animation-repair";
 import {recoverProviderIntent} from "@/lib/pets/generation/provider-intent-recovery";
+import {readRetrySnapshot, recoverRetryReservation} from "@/lib/pets/generation/retry-reservation-recovery";
 import type {createGenerationService} from "@/lib/pets/generation/service";
 import type {GenerationStore} from "@/lib/pets/generation/store";
 import type {SpriteSession, StageImage} from "@/lib/pets/generation/sprite-worker";
@@ -26,13 +27,14 @@ const uncertain = (boundary: "intent" | "checkpoint") => new GenerationError("ou
 async function currentJob(context: Context, original: GenerationJob) {
   return readActiveWorkerJob(context.store, original, context.now());
 }
-async function reserveKnownAttempt(context: Context, job: GenerationJob, name: ContinuationState, reason: "quality" | "transport" | "moderation") {
-  const previous = latestAnimationAttempt(await currentJob(context, job), name);
-  try { await context.mutate(() => context.service.reserveAnimationAttempt(job, name, reason)); }
-  catch (error) {
-    if (error instanceof GenerationError) throw error;
-    const saved = latestAnimationAttempt(await currentJob(context, job), name);
-    if (!saved || saved.status !== "reserved" || saved.reason !== reason || saved.ordinal !== (previous?.ordinal ?? 0) + 1) throw uncertain("intent");
+export async function reserveAnimationRetry(context: Context, job: GenerationJob, name: ContinuationState, reason: "quality" | "transport" | "moderation") {
+  const before = await readRetrySnapshot(context.store, job, name, context.now);
+  try {
+    const result = await context.mutate(() => context.service.reserveAnimationAttempt(job, name, reason));
+    return {notBefore: result.attempt.notBefore};
+  } catch (error) {
+    if (error instanceof GenerationError || error instanceof WorkerYield) throw error;
+    return recoverRetryReservation(context.store, before, {kind: "animation", stage: name, reason}, error, context.now);
   }
 }
 
@@ -61,7 +63,7 @@ async function beforeProviderCall<T>(context: Context, job: GenerationJob, retry
 export async function generateRepairAnimation(context: Context, job: GenerationJob, name: ContinuationState, session: SpriteSession): Promise<StageImage> {
   let retryFailure = pendingRetryFailure(job, name);
   while (true) {
-    const current = await beforeProviderCall(context, job, retryFailure, () => currentJob(context, job));
+    const current = await beforeProviderCall(context, job, retryFailure, () => readRetrySnapshot(context.store, job, name, context.now));
     retryFailure = pendingRetryFailure(current, name);
     const attempt = latestAnimationAttempt(current, name);
     const maxAttempts = current.animationRepair?.maxAttempts;
@@ -73,7 +75,7 @@ export async function generateRepairAnimation(context: Context, job: GenerationJ
         if (reason === "transport" && failure.diagnostic?.boundary === "provider_cli") context.onTerminalFailure?.(name);
         throw failure;
       }
-      await beforeProviderCall(context, job, retryFailure, () => reserveKnownAttempt(context, job, name, reason));
+      await beforeProviderCall(context, job, retryFailure, () => reserveAnimationRetry(context, job, name, reason));
       if (job.workerLeaseId) throw new WorkerYield(context.now() + 5000);
       continue;
     }
@@ -124,7 +126,7 @@ export async function generateRepairAnimation(context: Context, job: GenerationJ
       if (terminal) context.onTerminalFailure?.(name);
       if (!reason || attempt.ordinal >= maxAttempts) throw failure;
       retryFailure = failure.code === "outcome_unknown" ? failure : undefined;
-      await beforeProviderCall(context, job, retryFailure, () => reserveKnownAttempt(context, job, name, reason));
+      await beforeProviderCall(context, job, retryFailure, () => reserveAnimationRetry(context, job, name, reason));
       if (job.workerLeaseId) throw new WorkerYield(context.now() + 5000);
       continue;
     }
@@ -153,7 +155,7 @@ export async function composeWithAnimationRepairs(context: Context, job: Generat
       try {
         await beforeProviderCall(context, job, pendingRetryFailure(job, name), async () => {
           const last = latestAnimationAttempt(await currentJob(context, job), name);
-          if (last?.status !== "reserved" && last?.status !== "failed") await reserveKnownAttempt(context, job, name, "quality");
+          if (last?.status !== "reserved" && last?.status !== "failed") await reserveAnimationRetry(context, job, name, "quality");
         });
         const image = await generateRepairAnimation(context, job, name, session);
         saved.set(name, image.bytes);

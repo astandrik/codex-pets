@@ -5,6 +5,7 @@ import {isDeepStrictEqual} from "node:util";
 import {GenerationError,type GenerationJob} from "@/lib/pets/generation/model";
 import {latestBaseAttempt,baseFailureRetryReason} from "@/lib/pets/generation/base-repair";
 import {recoverProviderIntent} from "@/lib/pets/generation/provider-intent-recovery";
+import {readRetrySnapshot, recoverRetryReservation} from "@/lib/pets/generation/retry-reservation-recovery";
 import type {createGenerationService} from "@/lib/pets/generation/service";
 import type {GenerationStore} from "@/lib/pets/generation/store";
 import type {SpriteSession,StageImage} from "@/lib/pets/generation/sprite-worker";
@@ -36,7 +37,7 @@ export async function generateRepairBase(context:Context,job:GenerationJob,sessi
     }
   };
   while(true){
-    const current=await beforeProviderCall(()=>currentJob(context,job)),attempt=latestBaseAttempt(current);
+    const current=await beforeProviderCall(()=>readRetrySnapshot(context.store,job,"base",context.now)),attempt=latestBaseAttempt(current);
     retryFailure=pendingRetryFailure(current);
     if(!current.baseRepair||!attempt)throw uncertain("intent");
     if((attempt.status==="failed"||attempt.status==="unknown")&&attempt.failure){
@@ -46,12 +47,13 @@ export async function generateRepairBase(context:Context,job:GenerationJob,sessi
         if(attempt.status==="failed"&&reason==="transport")context.onTerminalFailure?.("base");
         throw failure;
       }
-      try{await beforeProviderCall(()=>context.mutate(()=>context.service.reserveBaseAttempt(job,reason)));}
-      catch(error){
-        if(error instanceof GenerationError)throw error;
-        const saved=await currentJob(context,job).then(latestBaseAttempt).catch(()=>undefined);
-        if(!saved||saved.status!=="reserved"||saved.ordinal!==attempt.ordinal+1||saved.reason!==reason)throw uncertain("intent");
-      }
+      await beforeProviderCall(async()=>{
+        try{await context.mutate(()=>context.service.reserveBaseAttempt(job,reason));}
+        catch(error){
+          if(error instanceof GenerationError || error instanceof WorkerYield)throw error;
+          await recoverRetryReservation(context.store,current,{kind:"base",stage:"base",reason},error,context.now);
+        }
+      });
       if(job.workerLeaseId)throw new WorkerYield(context.now()+5000);
       continue;
     }
