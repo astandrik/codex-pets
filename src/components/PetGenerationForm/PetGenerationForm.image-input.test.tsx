@@ -5,19 +5,22 @@ import {createRoot, type Root} from "react-dom/client";
 import {ThemeProvider} from "@gravity-ui/uikit";
 import {afterEach, beforeEach, expect, it, vi} from "vitest";
 import {PetGenerationForm} from "./PetGenerationForm";
+import {mockImageDecoding, settleImagePreparation} from "./image-test-utils";
 
 (globalThis as {IS_REACT_ACT_ENVIRONMENT?: boolean}).IS_REACT_ACT_ENVIRONMENT = true;
 window.matchMedia ??= ((media: string) => ({media, matches:false, addEventListener(){}, removeEventListener(){}})) as typeof window.matchMedia;
 let root: Root, host: HTMLDivElement;
+let imageMocks: ReturnType<typeof mockImageDecoding>;
 const fetchMock = vi.fn();
 beforeEach(() => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   sessionStorage.clear(); localStorage.clear(); fetchMock.mockReset();
   vi.stubGlobal("crypto", webcrypto); vi.stubGlobal("fetch", fetchMock);
+  imageMocks = mockImageDecoding();
   vi.spyOn(URL, "createObjectURL").mockImplementation(blob => "blob:" + (blob as File).name);
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
 });
-afterEach(async () => {await act(async () => root.unmount());host.remove();vi.restoreAllMocks();vi.unstubAllGlobals();});
+afterEach(async () => {await act(async () => root.unmount());host.remove();imageMocks.restore();vi.restoreAllMocks();vi.unstubAllGlobals();});
 async function render(enabled = true, reviewBase = true) {
   await act(async () => root.render(<ThemeProvider theme="light"><PetGenerationForm enabled={enabled} reviewBase={reviewBase}/></ThemeProvider>));
 }
@@ -31,6 +34,7 @@ async function transfer(type: "paste" | "drop" | "dragenter" | "dragleave" | "dr
   const data = {files: itemsOnly ? [] : files, items: files.map(value => ({kind:"file",getAsFile:()=>value})), types: textOnly ? ["text/plain"] : files.length ? ["Files"] : [], dropEffect:"none"};
   Object.defineProperty(event, type === "paste" ? "clipboardData" : "dataTransfer", {value:data});
   await act(async () => target.dispatchEvent(event));
+  await settleImagePreparation(host);
   return event;
 }
 async function input(selector: string, text: string) {
@@ -41,6 +45,7 @@ async function choose(value: File) {
   const node=host.querySelector<HTMLInputElement>('input[type="file"]')!;
   Object.defineProperty(node,"files",{configurable:true,value:[value]});
   await act(async () => node.dispatchEvent(new Event("change",{bubbles:true})));
+  await settleImagePreparation(host);
 }
 async function submit(expectedCalls: number) {
   await act(async () => {host.querySelector("form")!.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}));await vi.waitFor(()=>expect(fetchMock).toHaveBeenCalledTimes(expectedCalls));});
