@@ -45,6 +45,12 @@ async function setPrompt(value: string) {
     field.dispatchEvent(new Event("input", {bubbles: true}));
   });
 }
+async function beginSubmit() {
+  await act(async () => {host.querySelector("form")!.dispatchEvent(new Event("submit", {bubbles: true, cancelable: true}));});
+}
+async function previewError() {
+  await act(async () => {host.querySelector("img")!.dispatchEvent(new Event("error"));});
+}
 
 it("starts reading before clearing the picker or inspecting source size, and blocks submit until ready", async () => {
   const item = galleryFile("pending.png");
@@ -161,4 +167,73 @@ it("preserves byte identity and UUID after reading the same image again", async 
   const second = request.mock.calls[1][1].body as FormData;
   expect(second.get("requestId")).toBe(first.get("requestId"));
   expect(Array.from(new Uint8Array(await (second.get("referenceImage") as File).arrayBuffer()))).toEqual([1, 2, 3]);
+});
+
+it("retains a preview error while disabled and blocks submission after re-enabling", async () => {
+  await setPrompt("Keep this draft"); await choose(galleryFile("disabled-preview.png").file); await ready();
+  await act(async () => root.render(<ThemeProvider><PetGenerationForm enabled={false} reviewBase/></ThemeProvider>));
+  await previewError();
+  await act(async () => root.render(<ThemeProvider><PetGenerationForm enabled reviewBase/></ThemeProvider>));
+  expect(host.textContent).toContain("Could not read");
+  expect(host.querySelector("img")).toBeNull();
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+  expect(host.querySelector("textarea")!.value).toBe("Keep this draft");
+  await beginSubmit(); expect(request).not.toHaveBeenCalled();
+});
+
+it("retains preview failure and recovery identity after a lost response, then replays the same bytes", async () => {
+  await setPrompt("Keep the scarf"); await choose(galleryFile("first.png").file); await ready();
+  await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent?.includes("Add a name"))!.click());
+  const name = host.querySelector<HTMLInputElement>("#pet-generation-name")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(name, "Saved name");
+    name.dispatchEvent(new Event("input", {bubbles: true}));
+  });
+  let reject!: (error: Error) => void;
+  request.mockImplementationOnce(() => new Promise((_resolve, fail) => {reject = fail;}));
+  await beginSubmit(); await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
+  const stored = sessionStorage.getItem("pets-generation-request");
+  const firstId = (request.mock.calls[0][1].body as FormData).get("requestId");
+  await previewError();
+  expect(sessionStorage.getItem("pets-generation-request")).toBe(stored);
+  await act(async () => reject(new Error("Lost response")));
+  expect(host.textContent).toContain("Could not read");
+  expect(host.textContent).toContain("Your request may already exist");
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+  expect(host.querySelector("textarea")!.value).toBe("Keep the scarf");
+  expect(name.value).toBe("Saved name");
+  await beginSubmit(); expect(request).toHaveBeenCalledOnce();
+  await choose(galleryFile("same-bytes.png").file); await ready();
+  request.mockRejectedValueOnce(new Error("Still offline"));
+  await beginSubmit(); await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+  expect((request.mock.calls[1][1].body as FormData).get("requestId")).toBe(firstId);
+});
+
+it("does not send a request if preview failure arrives during request preparation", async () => {
+  await choose(galleryFile("hashing.png").file); await ready();
+  let finish!: (bytes: ArrayBuffer) => void;
+  vi.spyOn(File.prototype, "arrayBuffer").mockReturnValueOnce(new Promise(resolve => {finish = resolve;}));
+  await beginSubmit();
+  await previewError();
+  await act(async () => {finish(new Uint8Array([1, 2, 3]).buffer);});
+  await vi.waitFor(async () => {
+    await act(async () => {await Promise.resolve();});
+    expect(host.textContent).not.toContain("Sending your request.");
+  });
+  expect(request).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Could not read");
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+});
+
+it("keeps an accepted private link after a preview failure during submission", async () => {
+  await choose(galleryFile("accepted.png").file); await ready();
+  let finish!: (value: unknown) => void;
+  request.mockImplementation(() => new Promise(resolve => {finish = resolve;}));
+  await beginSubmit(); await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
+  await previewError();
+  await act(async () => finish({ok: true, json: async () => ({generation: {generationId: "a".repeat(64), expiresAt: new Date(Date.now() + 86400000).toISOString()}})}));
+  expect(host.querySelector('a[href="/generated/' + "a".repeat(64) + '"]')).not.toBeNull();
+  expect(host.textContent).toContain("Task accepted");
+  expect(host.querySelector('button[type="submit"]')).toBeNull();
+  expect(request).toHaveBeenCalledOnce();
 });

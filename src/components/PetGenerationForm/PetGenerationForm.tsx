@@ -57,15 +57,17 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
   const [historyWarning, setHistoryWarning] = useState(false);
   const [reference, setReference] = useState<{file: File; url: string}>();
   const [readingImage, setReadingImage] = useState(false);
+  const [previewFailed, setPreviewFailed] = useState(false);
   const [draftRevision, setDraftRevision] = useState(0);
   const [recoveryRevision, setRecoveryRevision] = useState<number>();
   const submitting = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const imageRead = useRef<AbortController | null>(null);
   const referenceUrl = useRef<string | undefined>(undefined);
+  const failedPreviewUrl = useRef<string | undefined>(undefined);
   const dragDepth = useRef(0);
   const locked = busy || !enabled || Boolean(accepted);
-  const imageError = error?.kind === "image";
+  const imageError = error?.kind === "image" || previewFailed;
   const recovering = recoveryRevision !== undefined;
   const unchanged = recovering && recoveryRevision === draftRevision;
   const admissionUnavailable = queueLimit === null || dailyQuotaLimits === null;
@@ -91,12 +93,17 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
   }, [enabled, reviewBase]);
 
   function editDraft() { setDraftRevision(value => value + 1); }
+  function clearPreviewFailure() {
+    failedPreviewUrl.current = undefined;
+    setPreviewFailed(false);
+  }
   function clearImage() {
     if (locked || submitting.current) return;
     const pending = imageRead.current;
     imageRead.current = null;
     pending?.abort();
     setReadingImage(false);
+    clearPreviewFailure();
     releaseReference();
     setReference(undefined);
     setError(undefined);
@@ -110,6 +117,7 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
     const controller = new AbortController();
     imageRead.current = controller;
     setReadingImage(true);
+    clearPreviewFailure();
     editDraft();
     releaseReference();
     setReference(undefined);
@@ -169,10 +177,11 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
   }
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting.current || imageRead.current || !enabled || accepted || imageError || (!prompt.trim() && !(reviewBase && reference))) return;
+    if (submitting.current || imageRead.current || failedPreviewUrl.current || !enabled || accepted || imageError || (!prompt.trim() && !(reviewBase && reference))) return;
     submitting.current = true; setBusy(true); setError(undefined);
     try {
       const input = await prepareGenerationRequest(sessionStorage, {prompt, displayName, referenceImage: reference?.file, replayOnly: admissionUnavailable});
+      if (failedPreviewUrl.current) return;
       let body: string | FormData = JSON.stringify(input);
       if (reviewBase) {
         body = new FormData(); body.set("prompt", input.prompt); body.set("requestId", input.requestId);
@@ -196,6 +205,7 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
       const expiresAt = "expiresAt" in generation && typeof generation.expiresAt === "string" ? generation.expiresAt : "";
       setRecoveryRevision(undefined);
       setAccepted({url: withBasePath("/generated/" + generation.generationId), expiresAt: Number.isFinite(Date.parse(expiresAt)) ? expiresAt : undefined});
+      clearPreviewFailure();
       releaseReference();
       setPrompt(""); setDisplayName(""); setReference(undefined);
       if (fileInput.current) fileInput.current.value = "";
@@ -234,7 +244,7 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
           <p>{accepted.expiresAt ? <>Available until <time dateTime={accepted.expiresAt}>{new Date(accepted.expiresAt).toLocaleString()}</time>.</> : "Available for 24 hours from task acceptance, including time in the queue."}</p>
         </div> : <>
           {admissionUnavailable && <p role="status" className="pet-generation-form__notice">New requests are temporarily unavailable.{enabled && " Use the same details to check a previously submitted request."}</p>}
-          {(error || recovering) && !imageError && <div role="alert" className="pet-generation-form__notice">
+          {(error || recovering) && error?.kind !== "image" && <div role="alert" className="pet-generation-form__notice">
             <strong>{recovering ? "We could not confirm the request" : "Generation could not be started"}</strong>
             <p>{error?.message ?? RECOVERY_MESSAGE}</p>
             {recovering && <><p>{recoveryHint}</p>{submitButton}</>}
@@ -249,13 +259,12 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
               <div className="pet-generation-form__file-info">
                 {/* The local reference must not pass through the Next image optimizer. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={reference.url} alt="Selected character reference" onError={() => {
-                  if (locked || submitting.current || referenceUrl.current !== reference.url) return;
+                {!previewFailed && <img src={reference.url} alt="Selected character reference" onError={() => {
+                  if (referenceUrl.current !== reference.url) return;
+                  failedPreviewUrl.current = reference.url;
+                  setPreviewFailed(true);
                   releaseReference();
-                  setReference(undefined);
-                  setError({kind: "image", message: IMAGE_READ_ERROR});
-                  editDraft();
-                }} />
+                }} />}
                 <span>{reference.file.name}</span>
               </div>
               <div className="pet-generation-form__file-actions">
@@ -266,7 +275,7 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
               <div className="pet-generation-form__choose"><span>Reference image<small>Optional</small></span><Button type="button" view="outlined" size="l" disabled={locked} onClick={() => fileInput.current?.click()}>Choose image</Button></div>
               <p className="pet-generation-form__hint">Paste an image (Ctrl/⌘V) or drop it anywhere in this form. PNG, JPEG or WebP · up to 5 MiB</p>
             </>}
-            {imageError && <div role="alert" className="pet-generation-form__image-error"><p>{error.message}</p><Button type="button" view="outlined" disabled={locked} onClick={clearImage}>Use description only</Button></div>}
+            {imageError && <div role="alert" className="pet-generation-form__image-error"><p>{previewFailed ? IMAGE_READ_ERROR : error?.message}</p><Button type="button" view="outlined" disabled={locked} onClick={clearImage}>Use description only</Button></div>}
             <p className="pet-generation-form__hint">{reference && "Paste or drop to replace. "}Sent to AI when you submit. Private for up to 24h.</p>
           </div>}
           <Button type="button" view="outlined" size="xl" width="max" className="pet-generation-form__name-toggle" aria-expanded={nameOpen} aria-controls="pet-generation-name-panel" onClick={() => setNameOpen(value => !value)}>{nameOpen ? "Pet name (optional) −" : "Add a name (optional) +"}</Button>
