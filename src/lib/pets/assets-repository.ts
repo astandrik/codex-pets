@@ -119,10 +119,25 @@ export async function readPetSpritesheetAsset(input: {
     return readMockPetSpritesheetAsset(input);
   }
 
-  const { row, spritesheetExt } = await readAssetRow(input.assetId);
-  const filename = `spritesheet.${spritesheetExt}`;
+  const result = await withSession((session) =>
+    session.executeQuery(
+      `
+DECLARE $asset_id AS Utf8;
+SELECT spritesheet_bytes, spritesheet_ext
+FROM ${TABLES.assets}
+WHERE asset_id = $asset_id
+LIMIT 1;
+      `,
+      { $asset_id: TypedValues.utf8(input.assetId) },
+    ),
+  );
+  const row = rowsFromResult(result)[0];
+  if (!row) {
+    throw new PetAssetNotFoundError("Asset not found.");
+  }
+  const filename = `spritesheet.${textAt(row, 1) === "png" ? "png" : "webp"}`;
   return {
-    buffer: bytesAt(row, 1),
+    buffer: bytesAt(row, 0),
     contentType: ASSET_CONTENT_TYPES.get(filename) ?? "image/webp",
     filename,
   };
