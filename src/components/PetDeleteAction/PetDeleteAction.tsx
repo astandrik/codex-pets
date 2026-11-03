@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode, type RefObject } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Dialog, Text, useToaster } from "@gravity-ui/uikit";
 import { TrashBin } from "@gravity-ui/icons";
@@ -9,21 +9,26 @@ import { withBasePath } from "@/lib/base-path";
 
 type PetDeleteActionProps = {
   petId: string;
-  mode: "admin" | "owner";
+  mode: "admin" | "owner" | null;
+  renderTrigger?: (openDelete?: () => void) => ReactNode;
+  returnFocus?: RefObject<HTMLButtonElement | null>;
 };
 
-export function PetDeleteAction({ petId, mode }: PetDeleteActionProps) {
+export function PetDeleteAction({ petId, mode, renderTrigger, returnFocus }: PetDeleteActionProps) {
   const router = useRouter();
   const { add } = useToaster();
-  const [open, setOpen] = useState(false);
+  const [openForId, setOpenForId] = useState<string | null>(null);
+  const open = mode !== null && openForId === petId;
+  const close = () => setOpenForId(null);
+  const openDelete = () => setOpenForId(petId);
   const [busy, setBusy] = useState(false);
 
-  const url =
-    mode === "admin"
-      ? withBasePath(`/api/admin/submissions/${petId}/delete`)
-      : withBasePath(`/api/my-pets/${petId}/delete`);
-
   async function deletePet() {
+    if (!mode) return;
+    const url =
+      mode === "admin"
+        ? withBasePath(`/api/admin/submissions/${petId}/delete`)
+        : withBasePath(`/api/my-pets/${petId}/delete`);
     setBusy(true);
     try {
       const response = await fetch(url, { method: "POST" });
@@ -41,7 +46,7 @@ export function PetDeleteAction({ petId, mode }: PetDeleteActionProps) {
         theme: "success",
         title: "Pet deleted",
       });
-      setOpen(false);
+      close();
       router.replace("/");
       router.refresh();
     } finally {
@@ -49,15 +54,24 @@ export function PetDeleteAction({ petId, mode }: PetDeleteActionProps) {
     }
   }
 
-  return (
-    <>
-      <Button view="outlined-danger" size="l" onClick={() => setOpen(true)}>
+  let trigger: ReactNode = null;
+  if (renderTrigger) {
+    trigger = renderTrigger(mode ? openDelete : undefined);
+  } else if (mode) {
+    trigger = (
+      <Button view="outlined-danger" size="l" onClick={openDelete}>
         <Button.Icon>
           <TrashBin />
         </Button.Icon>
         Delete
       </Button>
-      <Dialog open={open} onClose={() => setOpen(false)} size="s">
+    );
+  }
+
+  return (
+    <>
+      {trigger}
+      <Dialog open={open} onClose={close} size="s" returnFocus={returnFocus} disableBodyScrollLock={!open}>
         <Dialog.Header caption="Delete this pet?" />
         <Dialog.Body>
           <Text variant="body-2">
@@ -69,7 +83,7 @@ export function PetDeleteAction({ petId, mode }: PetDeleteActionProps) {
         <Dialog.Footer
           textButtonApply="Delete"
           textButtonCancel="Cancel"
-          onClickButtonCancel={() => setOpen(false)}
+          onClickButtonCancel={close}
           onClickButtonApply={deletePet}
           propsButtonApply={{ view: "outlined-danger", loading: busy }}
         />
