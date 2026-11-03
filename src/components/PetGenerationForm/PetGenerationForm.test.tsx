@@ -6,17 +6,27 @@ import { ThemeProvider } from "@gravity-ui/uikit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readGenerationHistory } from "@/lib/pets/generation/history";
 import { PetGenerationForm } from "./PetGenerationForm";
+import {mockImageDecoding, settleImagePreparation} from "./image-test-utils";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?:boolean }).IS_REACT_ACT_ENVIRONMENT=true;
 window.matchMedia ??= ((query:string)=>({matches:false,media:query,onchange:null,addListener(){},removeListener(){},addEventListener(){},removeEventListener(){},dispatchEvent:()=>false})) as typeof window.matchMedia;
-let root:Root;let element:HTMLDivElement; const fetchMock=vi.fn();
-beforeEach(()=>{element=document.createElement("div");document.body.append(element);root=createRoot(element);sessionStorage.clear();localStorage.clear();vi.stubGlobal("crypto",webcrypto);vi.stubGlobal("fetch",fetchMock);fetchMock.mockReset();});
-afterEach(async()=>{await act(async()=>root.unmount());element.remove();vi.unstubAllGlobals();});
+let root:Root;let element:HTMLDivElement;let imageMocks:ReturnType<typeof mockImageDecoding>; const fetchMock=vi.fn();
+beforeEach(()=>{imageMocks=mockImageDecoding();element=document.createElement("div");document.body.append(element);root=createRoot(element);sessionStorage.clear();localStorage.clear();vi.stubGlobal("crypto",webcrypto);vi.stubGlobal("fetch",fetchMock);fetchMock.mockReset();});
+afterEach(async()=>{await act(async()=>root.unmount());element.remove();imageMocks.restore();vi.unstubAllGlobals();});
 function prompt(value:string) {
   const input=element.querySelector("textarea")!;
   act(()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")!.set!.call(input,value);input.dispatchEvent(new Event("input",{bubbles:true}));});
 }
-async function submit(){await act(async()=>{element.querySelector("form")!.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}));await new Promise(resolve=>setTimeout(resolve,20));});}
+async function beginSubmit(){
+  await act(async()=>{element.querySelector("form")!.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}));});
+}
+async function submit(){
+  await beginSubmit();
+  await vi.waitFor(async()=>{
+    await act(async()=>{await Promise.resolve();});
+    expect(element.textContent).not.toContain("Sending your request.");
+  });
+}
 describe("generation form payment guard",()=>{
   it.each([['ip', 'IP address'], ['global', 'whole service']])("identifies the %s daily quota without showing private provider data", async (limitScope, expected) => {
     act(()=>root.render(<ThemeProvider theme="light"><PetGenerationForm enabled/></ThemeProvider>));prompt("Synthetic fox");
@@ -59,16 +69,22 @@ it("keeps the accepted link and never offers a paid retry when history storage i
 it("uploads image-only, retains it on retry, supports replacing/removing and clears it after acceptance", async () => {
   const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:synthetic-reference");
   const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+  const readBytes = File.prototype.arrayBuffer;
+  const delayedRead = vi.spyOn(File.prototype, "arrayBuffer").mockImplementation(async function (this: File) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    return readBytes.call(this);
+  });
   try {
     act(() => root.render(<ThemeProvider theme="light"><PetGenerationForm enabled reviewBase /></ThemeProvider>));
-    function choose(name: string) {
+    async function choose(name: string) {
       const file = new File(["synthetic-" + name], name, {type: "image/png"});
       Object.defineProperty(file, "arrayBuffer", {value: async () => new TextEncoder().encode(name).buffer});
       const input = element.querySelector<HTMLInputElement>('input[type="file"]')!;
       Object.defineProperty(input, "files", {configurable: true, value: [file]});
-      act(() => input.dispatchEvent(new Event("change", {bubbles: true})));
+      await act(() => input.dispatchEvent(new Event("change", {bubbles: true})));
+      await settleImagePreparation(element);
     }
-    choose("first.png");
+    await choose("first.png");
     expect(element.textContent).toContain("What should change?"); expect(element.querySelector("textarea")!.getAttribute("aria-required")).toBe("false");
     expect(element.querySelector('img')?.getAttribute("src")).toBe("blob:synthetic-reference");
     fetchMock.mockRejectedValueOnce(Error("lost response")); await submit();
@@ -76,15 +92,15 @@ it("uploads image-only, retains it on retry, supports replacing/removing and cle
     expect(first.get("prompt")).toBe(""); expect((first.get("referenceImage") as File).name).toBe("first.png");
     fetchMock.mockRejectedValueOnce(Error("still offline")); await submit();
     expect((fetchMock.mock.calls[1][1].body as FormData).get("requestId")).toBe(first.get("requestId"));
-    choose("second.png"); expect(revoke).toHaveBeenCalled();
+    await choose("second.png"); expect(revoke).toHaveBeenCalled();
     act(() => [...element.querySelectorAll("button")].find(button => (button.getAttribute("aria-label") || button.textContent) === "Remove image" || button.textContent === "Use description only")!.click());
     expect(element.querySelector("img")).toBeNull(); expect(element.textContent).toContain("Describe your pet");
     await submit(); expect(fetchMock).toHaveBeenCalledTimes(2);
-    choose("second.png");
+    await choose("second.png");
     fetchMock.mockResolvedValueOnce({ok: true, json: async () => ({generation: {generationId: "d".repeat(64), expiresAt: new Date(Date.now() + 86400000).toISOString()}})});
     await submit(); expect(element.querySelector("img")).toBeNull(); expect(fetchMock.mock.calls[2][1].headers).toBeUndefined();
     expect(JSON.stringify(sessionStorage)).not.toContain("second.png"); expect(JSON.stringify(localStorage)).not.toContain("second.png");
-  } finally {create.mockRestore(); revoke.mockRestore();}
+  } finally {delayedRead.mockRestore(); create.mockRestore(); revoke.mockRestore();}
 });
 
 it("does not silently submit a previous reference after a rejected replacement", async () => {
@@ -96,10 +112,12 @@ it("does not silently submit a previous reference after a rejected replacement",
     const first = new File(["synthetic"], "first.png", {type: "image/png"});
     Object.defineProperty(first, "arrayBuffer", {value: async () => new TextEncoder().encode("synthetic").buffer});
     Object.defineProperty(input, "files", {configurable: true, value: [first]});
-    act(() => input.dispatchEvent(new Event("change", {bubbles: true})));
+    await act(() => input.dispatchEvent(new Event("change", {bubbles: true})));
+    await settleImagePreparation(element);
     const invalid = new File(["not-an-image"], "replacement.svg", {type: "image/svg+xml"});
     Object.defineProperty(input, "files", {configurable: true, value: [invalid]});
-    act(() => input.dispatchEvent(new Event("change", {bubbles: true})));
+    await act(() => input.dispatchEvent(new Event("change", {bubbles: true})));
+    await settleImagePreparation(element);
     await submit();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(element.querySelector("img")).toBeNull();
@@ -173,7 +191,8 @@ it('guards a delayed double submission with one operation', async () => {
   act(() => root.render(<ThemeProvider theme="light"><PetGenerationForm enabled /></ThemeProvider>)); prompt('Fox');
   let resolve!: (value: unknown) => void;
   fetchMock.mockImplementation(() => new Promise(r => {resolve = r;}));
-  await submit(); await submit(); expect(fetchMock).toHaveBeenCalledOnce();
+  await beginSubmit(); await beginSubmit();
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
   expect(element.querySelector('textarea')!.disabled).toBe(true);
   await act(async () => {resolve({ok:true,json:async()=>({generation:{generationId:'e'.repeat(64),expiresAt:'2026-10-28T09:00:00.000Z'}})});});
   expect(element.querySelector('time')?.dateTime).toBe('2026-10-28T09:00:00.000Z');
@@ -201,7 +220,8 @@ it('ignores whitespace and can clear an invalid image without submitting', async
   act(() => root.render(<ThemeProvider theme="light"><PetGenerationForm enabled reviewBase /></ThemeProvider>)); prompt('  '); await submit();
   const input = element.querySelector<HTMLInputElement>('input[type="file"]')!;
   Object.defineProperty(input,'files',{configurable:true,value:[new File(['x'],'bad.svg',{type:'image/svg+xml'})]});
-  act(()=>input.dispatchEvent(new Event('change',{bubbles:true}))); prompt('Fox'); click('Use description only');
+  await act(async()=>{input.dispatchEvent(new Event('change',{bubbles:true}));});
+  await settleImagePreparation(element); prompt('Fox'); click('Use description only');
   expect(fetchMock).not.toHaveBeenCalled(); expect(element.querySelector('[role="alert"]')).toBeNull();
 });
 
@@ -213,9 +233,10 @@ it.each([
  act(()=>root.render(<ThemeProvider theme="light"><PetGenerationForm enabled reviewBase/></ThemeProvider>));prompt('Keep this text');
  const input=element.querySelector<HTMLInputElement>('input[type="file"]')!;
  Object.defineProperty(input,'files',{configurable:true,value:[file]});act(()=>input.dispatchEvent(new Event('change',{bubbles:true})));
+ await settleImagePreparation(element);
  await submit();expect(fetchMock).not.toHaveBeenCalled();expect(sessionStorage.length).toBe(0);expect(element.querySelector('textarea')!.value).toBe('Keep this text');expect(element.querySelector('[role="alert"]')).not.toBeNull();
 });
-it('rejects multiple references and accepts the exact size boundary without preparing a request',()=>{
+it('rejects multiple references and accepts the exact size boundary without preparing a request',async()=>{
  const create=vi.spyOn(URL,'createObjectURL').mockReturnValue('blob:boundary');const revoke=vi.spyOn(URL,'revokeObjectURL').mockImplementation(()=>{});
  try {
   act(()=>root.render(<ThemeProvider theme="light"><PetGenerationForm enabled reviewBase/></ThemeProvider>));
@@ -223,6 +244,7 @@ it('rejects multiple references and accepts the exact size boundary without prep
   Object.defineProperty(input,'files',{configurable:true,value:[new File(['a'],'a.png',{type:'image/png'}),new File(['b'],'b.png',{type:'image/png'})]});act(()=>input.dispatchEvent(new Event('change',{bubbles:true})));
   expect(element.querySelector('[role="alert"]')).not.toBeNull();
   Object.defineProperty(input,'files',{configurable:true,value:[new File([new Uint8Array(5*1024*1024)],'valid.png',{type:'image/png'})]});act(()=>input.dispatchEvent(new Event('change',{bubbles:true})));
+  await settleImagePreparation(element);
   expect(element.querySelector('[role="alert"]')).toBeNull();expect(element.querySelector('img')).not.toBeNull();expect(fetchMock).not.toHaveBeenCalled();expect(sessionStorage.length).toBe(0);
  } finally {create.mockRestore();revoke.mockRestore();}
 });
@@ -231,7 +253,9 @@ it('keeps the changed-request warning after clearing an invalid replacement duri
  act(()=>root.render(<ThemeProvider theme="light"><PetGenerationForm enabled reviewBase/></ThemeProvider>));prompt('Fox');
  fetchMock.mockRejectedValueOnce(Error('lost'));await submit();
  const input=element.querySelector<HTMLInputElement>('input[type="file"]')!;
- Object.defineProperty(input,'files',{configurable:true,value:[new File(['bad'],'bad.svg',{type:'image/svg+xml'})]});act(()=>input.dispatchEvent(new Event('change',{bubbles:true})));
+ Object.defineProperty(input,'files',{configurable:true,value:[new File(['bad'],'bad.svg',{type:'image/svg+xml'})]});
+ await act(async()=>{input.dispatchEvent(new Event('change',{bubbles:true}));});
+ await settleImagePreparation(element);
  click('Use description only');expect(element.textContent).toContain('may create a new task');expect(element.textContent).not.toContain('Retry unchanged request');expect(fetchMock).toHaveBeenCalledOnce();
 });
 
@@ -269,14 +293,15 @@ it('can recover unchanged after a server error and removes retry actions on acce
   expect(element.querySelector('button[type="submit"]')).toBeNull();
   expect(element.textContent).not.toContain('Retry unchanged request');
 });
-it('uses large accessible reference actions without submitting when they are used', () => {
+it('uses large accessible reference actions without submitting when they are used', async () => {
   const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:reference-actions');
   const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
   try {
     act(() => root.render(<ThemeProvider theme="light"><PetGenerationForm enabled reviewBase /></ThemeProvider>));
     const input = element.querySelector<HTMLInputElement>('input[type="file"]')!;
     Object.defineProperty(input, 'files', {configurable: true, value: [new File(['reference'], 'ref.png', {type: 'image/png'})]});
-    act(() => input.dispatchEvent(new Event('change', {bubbles: true})));
+    await act(() => input.dispatchEvent(new Event('change', {bubbles: true})));
+    await settleImagePreparation(element);
     const buttons = [...element.querySelectorAll<HTMLButtonElement>('.pet-generation-form__file-actions button')];
     expect(buttons).toHaveLength(2);
     for (const button of buttons) expect(button.classList.contains('g-button_size_xl')).toBe(true);

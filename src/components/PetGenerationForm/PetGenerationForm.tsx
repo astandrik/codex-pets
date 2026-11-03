@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, TextArea, TextInput } from "@gravity-ui/uikit";
 import { withBasePath } from "@/lib/base-path";
 import { rememberGeneration } from "@/lib/pets/generation/history";
 import { prepareGenerationRequest } from "./request";
+import {prepareReferenceImage, ReferenceImageError} from "./prepare-reference-image";
 import {DEFAULT_GENERATION_QUEUE_LIMIT} from "@/lib/pets/generation/queue-policy";
 import {DEFAULT_DAILY_QUOTA_LIMITS, type GenerationDailyQuotaLimits} from "@/lib/pets/generation/quota-limits";
 import { GenerationLimitsDialog } from "./GenerationLimitsDialog";
@@ -12,6 +13,7 @@ import "./PetGenerationForm.scss";
 import {ANIMATION_AUTO_REPAIR_NOTICE} from "@/lib/pets/generation/disclosure";
 
 const RECOVERY_MESSAGE = "The connection or browser storage was interrupted. Submit the same description and image again to check the existing request.";
+const IMAGE_READ_ERROR = "Could not read this image. Choose it again, or select it from Files/Downloads.";
 
 const ERRORS: Record<string,string> = {
   rate_limited: "Today's generation limit has been reached. Try again after midnight Moscow time.",
@@ -54,49 +56,93 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
   const [accepted, setAccepted] = useState<AcceptedTask>();
   const [historyWarning, setHistoryWarning] = useState(false);
   const [reference, setReference] = useState<{file: File; url: string}>();
+  const [readingImage, setReadingImage] = useState(false);
   const [draftRevision, setDraftRevision] = useState(0);
   const [recoveryRevision, setRecoveryRevision] = useState<number>();
   const submitting = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const imageRead = useRef<AbortController | null>(null);
+  const referenceUrl = useRef<string | undefined>(undefined);
   const dragDepth = useRef(0);
   const locked = busy || !enabled || Boolean(accepted);
   const imageError = error?.kind === "image";
   const recovering = recoveryRevision !== undefined;
   const unchanged = recovering && recoveryRevision === draftRevision;
   const admissionUnavailable = queueLimit === null || dailyQuotaLimits === null;
-  useEffect(() => () => { if (reference) URL.revokeObjectURL(reference.url); }, [reference]);
+  const releaseReference = useCallback(() => {
+    const url = referenceUrl.current;
+    referenceUrl.current = undefined;
+    if (url) URL.revokeObjectURL(url);
+  }, []);
+  useEffect(() => () => {
+    const pending = imageRead.current;
+    imageRead.current = null;
+    pending?.abort();
+    releaseReference();
+  }, [releaseReference]);
+  useEffect(() => {
+    if ((!enabled || !reviewBase) && imageRead.current) {
+      const pending = imageRead.current;
+      imageRead.current = null;
+      pending.abort();
+      setReadingImage(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  }, [enabled, reviewBase]);
 
   function editDraft() { setDraftRevision(value => value + 1); }
   function clearImage() {
     if (locked || submitting.current) return;
+    const pending = imageRead.current;
+    imageRead.current = null;
+    pending?.abort();
+    setReadingImage(false);
+    releaseReference();
     setReference(undefined);
     setError(undefined);
     if (fileInput.current) fileInput.current.value = "";
     editDraft();
   }
-  function selectImage(inputFiles: FileList | readonly File[] | null) {
+  async function selectImage(inputFiles: FileList | readonly File[] | null) {
     if (locked || submitting.current || !inputFiles?.length) return;
     const files = Array.from(inputFiles);
-    if (fileInput.current) fileInput.current.value = "";
+    imageRead.current?.abort();
+    const controller = new AbortController();
+    imageRead.current = controller;
+    setReadingImage(true);
     editDraft();
+    releaseReference();
     setReference(undefined);
-    if (files.length !== 1 || !["image/png", "image/jpeg", "image/webp"].includes(files[0].type) || !files[0].size) {
-      setError({kind: "image", message: "Choose one PNG, JPEG or WebP image, or remove it to continue with text only."});
-      return;
-    }
-    if (files[0].size > 5 * 1024 * 1024) {
-      setError({kind: "image", message: ERRORS.reference_image_too_large});
-      return;
-    }
-    setReference({file: files[0], url: URL.createObjectURL(files[0])});
     setError(undefined);
+    try {
+      if (files.length !== 1) throw new ReferenceImageError("invalid");
+      const prepared = await prepareReferenceImage(files[0], controller.signal);
+      if (imageRead.current !== controller || controller.signal.aborted) {
+        URL.revokeObjectURL(prepared.url);
+        return;
+      }
+      referenceUrl.current = prepared.url;
+      setReference(prepared);
+    } catch (cause) {
+      if (imageRead.current !== controller || controller.signal.aborted) return;
+      let message = IMAGE_READ_ERROR;
+      if (cause instanceof ReferenceImageError && cause.code === "too_large") message = ERRORS.reference_image_too_large;
+      if (cause instanceof ReferenceImageError && cause.code === "invalid") message = "Choose one PNG, JPEG or WebP image, or remove it to continue with text only.";
+      setError({kind: "image", message});
+    } finally {
+      if (imageRead.current === controller) {
+        imageRead.current = null;
+        setReadingImage(false);
+        if (fileInput.current) fileInput.current.value = "";
+      }
+    }
   }
   function pasteImage(event: React.ClipboardEvent<HTMLFormElement>) {
     if (!reviewBase) return;
     const files = transferFiles(event.clipboardData);
     if (!files.length) return;
     event.preventDefault();
-    selectImage(files);
+    void selectImage(files);
   }
   function resetDrag() { dragDepth.current = 0; setDragging(false); }
   function enterDrag(event: React.DragEvent<HTMLFormElement>) {
@@ -119,11 +165,11 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
     const files = transferFiles(event.dataTransfer);
     if (!files.length && !hasFileTransfer(event.dataTransfer)) return;
     event.preventDefault();
-    if (reviewBase) selectImage(files);
+    if (reviewBase) void selectImage(files);
   }
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting.current || !enabled || accepted || imageError || (!prompt.trim() && !(reviewBase && reference))) return;
+    if (submitting.current || imageRead.current || !enabled || accepted || imageError || (!prompt.trim() && !(reviewBase && reference))) return;
     submitting.current = true; setBusy(true); setError(undefined);
     try {
       const input = await prepareGenerationRequest(sessionStorage, {prompt, displayName, referenceImage: reference?.file, replayOnly: admissionUnavailable});
@@ -150,6 +196,7 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
       const expiresAt = "expiresAt" in generation && typeof generation.expiresAt === "string" ? generation.expiresAt : "";
       setRecoveryRevision(undefined);
       setAccepted({url: withBasePath("/generated/" + generation.generationId), expiresAt: Number.isFinite(Date.parse(expiresAt)) ? expiresAt : undefined});
+      releaseReference();
       setPrompt(""); setDisplayName(""); setReference(undefined);
       if (fileInput.current) fileInput.current.value = "";
       setHistoryWarning(!rememberGeneration(generation.generationId, expiresAt));
@@ -168,7 +215,7 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
   if (admissionUnavailable && !unchanged) submitLabel = "Check existing request";
   let recoveryHint = unchanged ? "Your request may already exist. Retry with the same description, image and name to avoid a second task." : "Your draft has changed. Submitting it may create a new task.";
   if (admissionUnavailable) recoveryHint = "Only a matching previously submitted request can be checked.";
-  const submitButton = <Button type="submit" view="action" size="xl" width="max" loading={busy} disabled={!enabled || imageError || (!prompt.trim() && !(reviewBase && reference)) || Boolean(accepted)}>{submitLabel}</Button>;
+  const submitButton = <Button type="submit" view="action" size="xl" width="max" loading={busy} disabled={!enabled || readingImage || imageError || (!prompt.trim() && !(reviewBase && reference)) || Boolean(accepted)}>{submitLabel}</Button>;
   return <div className="pet-generation-screen">
     <header className="pet-generation-screen__intro">
       <span className="pet-generation-screen__eyebrow">CREATE A PET</span>
@@ -195,13 +242,20 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
           <div className="pet-generation-form__label"><label htmlFor="pet-generation-prompt">{reference ? "What should change? (optional)" : "Describe your pet"}</label><span id="pet-generation-count" aria-live="off">{prompt.length} / 2000</span></div>
           <TextArea id="pet-generation-prompt" value={prompt} onUpdate={value => {setPrompt(value); editDraft();}} size="l" minRows={5} controlProps={{maxLength: 2000, "aria-required": !reference, "aria-describedby": "pet-generation-count"}} disabled={locked} placeholder={reference ? "Keep the glasses, but make the sweater red…" : "An orange fox with a green scarf, soft fur and a curious expression…"} />
           {reference && <p className="pet-generation-form__hint">Leave this blank to keep the appearance in your reference.</p>}
-          {reviewBase && <div className="pet-generation-form__reference" role="group" aria-label="Reference image" tabIndex={locked ? -1 : 0}>
-            <input ref={fileInput} id="pet-generation-reference" className="pet-generation-form__file" type="file" aria-label="Character image (optional)" accept="image/png,image/jpeg,image/webp" disabled={locked} onChange={event => selectImage(event.target.files)} />
+          {reviewBase && <div className="pet-generation-form__reference" role="group" aria-label="Reference image" aria-busy={readingImage} tabIndex={locked ? -1 : 0}>
+            <input ref={fileInput} id="pet-generation-reference" className="pet-generation-form__file" type="file" aria-label="Character image (optional)" accept="image/png,image/jpeg,image/webp" disabled={locked} onChange={event => {void selectImage(event.target.files);}} />
+            {readingImage && <div role="status"><p>Reading image…</p><Button type="button" size="xl" view="outlined" disabled={locked} onClick={clearImage}>Cancel image</Button></div>}
             {reference ? <>
               <div className="pet-generation-form__file-info">
                 {/* The local reference must not pass through the Next image optimizer. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={reference.url} alt="Selected character reference" />
+                <img src={reference.url} alt="Selected character reference" onError={() => {
+                  if (locked || submitting.current || referenceUrl.current !== reference.url) return;
+                  releaseReference();
+                  setReference(undefined);
+                  setError({kind: "image", message: IMAGE_READ_ERROR});
+                  editDraft();
+                }} />
                 <span>{reference.file.name}</span>
               </div>
               <div className="pet-generation-form__file-actions">
