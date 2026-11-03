@@ -1,0 +1,23 @@
+.public-pet-poster {
+  width: 192px;
+  aspect-ratio: 192 / 208;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--g-color-base-generic);
+  color: var(--g-color-text-secondary);
+  text-align: center;
+
+  img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  @media (max-width: 767px) {
+    width: 96px;
+    font-size: 12px;
+  }
+}

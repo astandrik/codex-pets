@@ -132,7 +132,9 @@ export async function listApprovedPetsForSearch(): Promise<PublicPet[]> {
   return listApprovedPetsWithQuery({}, approvedPetsCatalogQuery());
 }
 
-export async function listApprovedPetSitemapEntries(): Promise<
+export async function listApprovedPetSitemapEntries(
+  { requireComplete = false }: { requireComplete?: boolean } = {},
+): Promise<
   ApprovedPetSitemapEntry[]
 > {
   if (isMockPetsDataSource()) {
@@ -149,20 +151,37 @@ export async function listApprovedPetSitemapEntries(): Promise<
 
   if (!isYdbConfigured()) return [];
 
-  const result = await withSession((session) =>
-    session.executeQuery(
-      `
+  const query = `
 DECLARE $status AS Utf8;
 SELECT slug, created_at, updated_at, approved_at
 FROM ${TABLES.pets}
 WHERE status = $status
 ORDER BY created_at DESC, slug ASC;
-      `,
-      { $status: TypedValues.utf8("approved") },
-    ),
-  );
+  `;
+  const parameters = { $status: TypedValues.utf8("approved") };
+  const rows = await withSession(async (session) => {
+    if (!requireComplete) {
+      return rowsFromResult(await session.executeQuery(query, parameters));
+    }
 
-  return rowsFromResult(result).map((row) => ({
+    // Table ExecuteDataQuery can silently cap its result. A scan streams the full list.
+    // Keep accumulation inside the session attempt so a retry cannot reuse partial rows.
+    const collected: ReturnType<typeof rowsFromResult> = [];
+    let incomplete = false;
+    await session.streamExecuteScanQuery(query, (part) => {
+      if (incomplete) return;
+      const chunk = rowsFromResult({ resultSets: [part.resultSet] });
+      if (part.resultSet?.truncated || collected.length + chunk.length > 50_000) {
+        incomplete = true;
+        return;
+      }
+      collected.push(...chunk);
+    }, parameters);
+    if (incomplete) throw new Error("Incomplete image sitemap result");
+    return collected;
+  });
+
+  return rows.map((row) => ({
     slug: textAt(row, 0),
     createdAt: textAt(row, 1),
     updatedAt: textAt(row, 2) || null,

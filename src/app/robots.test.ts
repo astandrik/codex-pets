@@ -89,7 +89,11 @@ describe("robots", () => {
         "/codex-pets/my-generations",
       ]),
     );
-    expect(result.sitemap).toBe("https://pets.example/codex-pets/sitemap.xml");
+    expect(result.sitemap).toEqual([
+      "https://pets.example/codex-pets/sitemap.xml",
+      "https://pets.example/codex-pets/sitemap-images.xml",
+    ]);
+    expect(allowsPath("/codex-pets/pets/boba/preview.webp", [firstRule.allow ?? []].flat(), [firstRule.disallow ?? []].flat())).toBe(true);
 
     vi.unstubAllEnvs();
   });

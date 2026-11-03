@@ -7,6 +7,21 @@
 
   &__header {
     margin-bottom: var(--spacing-3xl);
+
+    &--with-poster {
+      display: grid;
+      grid-template-columns: 192px minmax(0, 1fr);
+      gap: var(--spacing-xl);
+      align-items: start;
+
+      @media (max-width: 767px) {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    h1, p {
+      overflow-wrap: anywhere;
+    }
   }
 
   &__lead {

@@ -9,6 +9,7 @@ import {
 } from "@/lib/pets/gallery-filters";
 import { CATALOG_PAGE_SIZE } from "@/lib/pets/pagination";
 import type { PublicPet } from "@/lib/pets/types";
+import { getPublicPetPreviewPath } from "@/lib/pets/asset-urls";
 import {
   PAGE_VIEW_METADATA_NAME,
   serializePageViewMetadata,
@@ -627,6 +628,13 @@ export function getPetJsonLd(
     description: pet.description,
     url: toPublicUrl(`/pets/${pet.slug}`),
     identifier: pet.slug,
+    image: {
+      "@type": "ImageObject",
+      contentUrl: toPublicUrl(getPublicPetPreviewPath(pet.slug)),
+      width: 192,
+      height: 208,
+      caption: `${pet.displayName} Codex pet preview`,
+    },
     genre: pet.kind,
     keywords: pet.tags,
     creator: {

@@ -6,9 +6,14 @@ import {
   getPetAssetRefFromSpritesheetUrl,
   getPetIdleStripUrl,
   getPetPreviewUrl,
+  getPublicPetPreviewPath,
 } from "@/lib/pets/asset-urls";
 
 describe("asset URLs", () => {
+  it("builds an independent public poster path", () => {
+    expect(getPublicPetPreviewPath("legacy-")).toBe("/pets/legacy-/preview.webp");
+    expect(getPublicPetPreviewPath("a/b")).toBe("/pets/a%2Fb/preview.webp");
+  });
   it("builds internal asset URLs", () => {
     expect(assetUrl("asset_123456789abc", "pet.json")).toBe(
       "/api/assets/asset_123456789abc/pet.json",

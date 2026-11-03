@@ -29,6 +29,7 @@ import { PetDownloadButton } from "@/components/PetDownloadButton/PetDownloadBut
 import { PetBreadcrumbs } from "@/components/PetDetails/PetBreadcrumbs";
 import { InstallCommandButton } from "@/components/InstallCommand/InstallCommandButton";
 import { PetMetaList } from "@/components/PetDetails/PetMetaList";
+import { PublicPetPoster } from "@/components/PetDetails/PublicPetPoster";
 import { PetLikeButton } from "@/components/PetLikeButton/PetLikeButton";
 import { PetSharePanel } from "@/components/PetSharePanel/PetSharePanel";
 import { RelatedPets } from "@/components/RelatedPets/RelatedPets";
@@ -100,6 +101,9 @@ export async function generateMetadata({
   }
 
   const path = `/pets/${pet.slug}`;
+  const title = pet.status === "approved"
+    ? `${pet.displayName} — Animated Codex pet`
+    : pet.displayName;
   const socialImageUrl = getPetSocialImagePath(pet.slug);
   const description = getPetMetadataDescription(
     pet.displayName,
@@ -116,9 +120,9 @@ export async function generateMetadata({
   };
 
   return {
-    title: pet.displayName,
+    title,
     description,
-    other: getPageViewOtherMetadata(path, pet.displayName),
+    other: getPageViewOtherMetadata(path, title),
     alternates: {
       canonical: withBasePath(path),
       types: getPetResourceAlternateTypes(pet.slug, pet.displayName),
@@ -127,7 +131,7 @@ export async function generateMetadata({
     openGraph: {
       type: "article",
       siteName: SITE_NAME,
-      title: buildPageTitle(pet.displayName),
+      title: buildPageTitle(title),
       description,
       url: withBasePath(path),
       images: getOpenGraphImages([petSocialImage], {
@@ -136,7 +140,7 @@ export async function generateMetadata({
     },
     twitter: {
       card: "summary_large_image",
-      title: buildPageTitle(pet.displayName),
+      title: buildPageTitle(title),
       description,
       images: getTwitterImages([petSocialImage], {
         includeFallback: false,
@@ -228,7 +232,10 @@ export default async function PetPage({ params }: PetPageProps) {
       ) : null}
       <PetBreadcrumbs displayName={pet.displayName} />
 
-      <header className="pet-detail__header">
+      <header className={`pet-detail__header${pet.status === "approved" ? " pet-detail__header--with-poster" : ""}`}>
+        {pet.status === "approved" ? (
+          <PublicPetPoster slug={pet.slug} displayName={pet.displayName} description={pet.description} />
+        ) : null}
         <Flex direction="column" gap={3}>
           <Flex gap={2} wrap>
             <Label theme={kindLabelTheme(pet.kind)}>{pet.kind}</Label>

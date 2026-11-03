@@ -183,6 +183,39 @@ describe("/pets/[slug] related pets section", () => {
     return container;
   }
 
+  it("renders an approved poster in server HTML and links the same JSON-LD image", async () => {
+    const container = await renderPetPage();
+    const image = container.querySelector<HTMLImageElement>('img[data-pet-poster]');
+    expect(image?.getAttribute("src")).toBe("/pets/orbit-otter/preview.webp");
+    expect(image?.getAttribute("width")).toBe("192");
+    expect(image?.alt).toContain("Orbit Otter");
+    const graphs = [...container.querySelectorAll('script[type="application/ld+json"]')].map(x => JSON.parse(x.textContent!));
+    const graph = graphs.find(x => x["@type"] === "CreativeWork");
+    expect(graph.image).toMatchObject({"@type":"ImageObject",contentUrl:"http://localhost:3000/pets/orbit-otter/preview.webp",width:192,height:208});
+    const {generateMetadata} = await import("./page");
+    const metadata = await generateMetadata({params:Promise.resolve({slug:approvedPetRow.slug})});
+    expect(metadata.title).toBe("Orbit Otter — Animated Codex pet");
+  },20_000);
+
+  it.each(["pending","rejected"])("never adds the search poster for %s", async status => {
+    repositoryMocks.getPetBySlug.mockResolvedValue({...approvedPetRow,status});
+    const container = await renderPetPage();
+    expect(container.querySelector('[data-pet-poster]')).toBeNull();
+    expect(container.innerHTML).not.toContain('/preview.webp');
+  },20_000);
+
+  it("keeps Unicode and HTML-like published text literal and canonical clean", async () => {
+    const name = 'Кот <script>alert(1)</script> 🐈';
+    repositoryMocks.getPetBySlug.mockResolvedValue({ ...approvedPetRow, displayName: name });
+    const container = await renderPetPage();
+    expect(container.querySelector("h1")?.textContent).toBe(name);
+    expect(container.querySelector<HTMLImageElement>("img[data-pet-poster]")?.alt).toContain(name);
+    const { generateMetadata } = await import("./page");
+    const metadata = await generateMetadata({ params: Promise.resolve({ slug: "orbit-otter" }) });
+    expect(metadata.alternates?.canonical).toBe("/pets/orbit-otter");
+    expect(container.querySelectorAll("script:not([type='application/ld+json'])")).toHaveLength(0);
+  });
+
   it("renders a card per related slug in selector order after the body", async () => {
     const container = await renderPetPage();
 
