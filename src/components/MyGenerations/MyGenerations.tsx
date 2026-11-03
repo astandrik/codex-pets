@@ -16,6 +16,10 @@ type Refresh={version:number;force:boolean;imageRetry:number};
 const subscribeToBrowser=()=>()=>{};
 const LABELS={queued:"Queued",generating:"Generating",awaiting_confirmation:"Review character",processing:"Processing",completed:"Ready",failed:"Failed"};
 const live=(result?:Result)=>!result?.generation||["queued","generating","processing"].includes(result.generation.status);
+function needsStatusRead(result?:Result){
+  const failedReads=result?.failedReads??0;
+  return !result?.unavailable&&failedReads<3&&(live(result)||failedReads>0);
+}
 
 function HistoryNavigationLink(props:ComponentProps<typeof Link>&{component?:unknown}){
   // Keep native link semantics and omit Gravity's custom-component prop.
@@ -76,7 +80,7 @@ function BrowserGenerations({refresh,onRefresh}:{refresh:Refresh;onRefresh:()=>v
     async function poll(){
       if(disposed||document.hidden)return;
       const now=Date.now();round=new AbortController();const controller=round;
-      const pending=history.entries.filter(entry=>entry.expiresAt>now&&((firstRound&&(forceRefresh||!historyStatusFresh(entry,signal,now)))||(!cache.get(entry.generationId)?.unavailable&&live(cache.get(entry.generationId))&&(cache.get(entry.generationId)?.failedReads??0)<3)));
+      const pending=history.entries.filter(entry=>entry.expiresAt>now&&((firstRound&&(forceRefresh||!historyStatusFresh(entry,signal,now)))||needsStatusRead(cache.get(entry.generationId))));
       firstRound=false;
       for(let start=0;start<pending.length&&!disposed;start+=3){
           await Promise.all(pending.slice(start,start+3).map(async entry=>{
@@ -105,7 +109,7 @@ function BrowserGenerations({refresh,onRefresh}:{refresh:Refresh;onRefresh:()=>v
       if(disposed)return;
       const updated=rowsFrom(history,cache);publishRows();
       const current=Date.now();const nextExpiry=Math.min(...updated.filter(row=>row.expiresAt>current).map(row=>row.expiresAt-current));
-      const polling=updated.some(row=>row.expiresAt>current&&!row.unavailable&&live(row)&&row.failedReads<3);
+      const polling=updated.some(row=>row.expiresAt>current&&needsStatusRead(row));
       if(polling||Number.isFinite(nextExpiry))timer=setTimeout(()=>{void poll();},polling?5000:Math.max(1,nextExpiry+1));
     }
     if(history.available&&history.entries.some(entry=>entry.expiresAt>Date.now()))void poll();

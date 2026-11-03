@@ -145,6 +145,100 @@ it("prunes expired records only after the history DOM is committed", async () =>
   expect(localStorage.getItem(HISTORY_PREFIX + staleId)).toBeNull();
 });
 
+describe("cached status retry recovery", () => {
+  const cases = ["completed", "failed", "awaiting_confirmation"].flatMap(status =>
+    ["HTTP 503", "timeout"].map(error => ({status, error})),
+  );
+  function savedResponse(status: string, displayName = "Cached fox") {
+    return {ok: true, status: 200, json: async () => ({generation: {
+      generationId: id, status, expiresAt: expiry(),
+      progress: {completedSteps: status === "completed" ? 12 : 3, totalSteps: 12},
+      pet: {displayName}, baseUrl: `/api/pet-generations/${id}/base`,
+    }})};
+  }
+  function failRead(error: string) {
+    return (_url: string, init: RequestInit) => {
+      if (error === "HTTP 503") return Promise.resolve({ok: false, status: 503});
+      return new Promise((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(new DOMException("Timed out", "AbortError")), {once: true});
+      });
+    };
+  }
+  async function refreshStatuses() {
+    await act(async () => [...element.querySelectorAll("button")].find(button => button.textContent === "Refresh statuses")!.click());
+  }
+
+  it.each(cases)("stops after three failed reads of cached $status after $error while preserving its row and image", async ({status, error}) => {
+    rememberGeneration(id, expiry());
+    const saved = localStorage.getItem(HISTORY_PREFIX + id);
+    request.mockResolvedValueOnce(savedResponse(status)).mockImplementation(failRead(error));
+    await render();
+    const row = element.querySelector("li"), image = element.querySelector("img");
+    expect(row).not.toBeNull();
+    expect(image).not.toBeNull();
+    await act(async () => image!.dispatchEvent(new Event("load")));
+    await refreshStatuses();
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (error === "timeout") {
+        await tick(14999);
+        expect(element.textContent?.includes("Could not refresh")).toBe(attempt > 1);
+        await tick(1);
+      }
+      expect(request).toHaveBeenCalledTimes(1 + attempt);
+      expect(element.textContent).toContain("Could not refresh");
+      expect(element.textContent).toContain("Cached fox");
+      expect(element.textContent).not.toContain("Checking status");
+      expect(element.querySelector("li")).toBe(row);
+      expect(element.querySelector("img")).toBe(image);
+      if (attempt < 3) {
+        await tick(4999);
+        expect(request).toHaveBeenCalledTimes(1 + attempt);
+        await tick(1);
+      }
+    }
+    await tick(30000);
+    expect(request).toHaveBeenCalledTimes(4); // Initial success plus three failed revalidation reads.
+    expect(localStorage.getItem(HISTORY_PREFIX + id)).toBe(saved);
+    expect(request.mock.calls.every(([url, init]) => url === `/api/pet-generations/${id}` && (!init?.method || init.method === "GET"))).toBe(true);
+  });
+
+  it.each(["HTTP 503", "timeout"])("recovers from %s and stops retrying once the status is current", async error => {
+    rememberGeneration(id, expiry());
+    request.mockResolvedValueOnce(savedResponse("completed"))
+      .mockImplementationOnce(failRead(error))
+      .mockResolvedValue(savedResponse("completed", "Updated fox"));
+    await render();
+    const row = element.querySelector("li"), image = element.querySelector("img");
+    expect(image).not.toBeNull();
+    await act(async () => image!.dispatchEvent(new Event("load")));
+    await refreshStatuses();
+    if (error === "timeout") await tick(15000);
+    expect(element.textContent).toContain("Could not refresh");
+    await tick();
+    expect(element.textContent).toContain("Updated fox");
+    expect(element.textContent).not.toContain("Could not refresh");
+    expect(element.querySelector("li")).toBe(row);
+    expect(element.querySelector("img")).toBe(image);
+    await tick(30000);
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([404, 410])("stops retrying after a cached result becomes unavailable with HTTP %i", async status => {
+    rememberGeneration(id, expiry());
+    request.mockResolvedValueOnce(savedResponse("completed"))
+      .mockResolvedValueOnce({ok: false, status: 503})
+      .mockResolvedValue({ok: false, status});
+    await render();
+    await refreshStatuses();
+    await tick();
+    expect(element.textContent).toContain("Expired");
+    expect(element.querySelector("img")).toBeNull();
+    await tick(30000);
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+});
+
 describe("generation thumbnails", () => {
   const imageUrl = () => new URL(element.querySelector("img")!.getAttribute("src")!, window.location.href);
   function withBase(status = "failed") {
