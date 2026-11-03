@@ -11,7 +11,7 @@ const id="a".repeat(64);let element:HTMLDivElement,root:Root;const request=vi.fn
 const expiry=()=>new Date(Date.now()+86400000).toISOString();
 function reply(status="queued",generationId=id){return{ok:true,status:200,json:async()=>({generation:{generationId,status,expiresAt:expiry(),progress:{completedSteps:status==="completed"?12:3,totalSteps:12},...(status==="completed"?{pet:{displayName:"Synthetic fox"}}:{})}})}}
 beforeEach(()=>{vi.useFakeTimers();localStorage.clear();element=document.createElement("div");document.body.append(element);root=createRoot(element);request.mockReset();vi.stubGlobal("fetch",request);});
-afterEach(async()=>{await act(async()=>root.unmount());element.remove();vi.useRealTimers();vi.unstubAllGlobals();vi.restoreAllMocks();});
+afterEach(async()=>{await act(async()=>{localStorage.clear();window.dispatchEvent(new StorageEvent("storage",{key:null}));});await act(async()=>root.unmount());element.remove();vi.useRealTimers();vi.unstubAllGlobals();vi.restoreAllMocks();});
 async function render(){await act(async()=>root.render(<ThemeProvider theme="light"><MyGenerations/></ThemeProvider>));}
 async function tick(ms=5000){await act(async()=>vi.advanceTimersByTimeAsync(ms));}
 describe("my browser generations",()=>{
@@ -41,6 +41,56 @@ describe("my browser generations",()=>{
   request.mockImplementationOnce(()=>new Promise(resolve=>{old=resolve})).mockResolvedValue(reply("completed"));await render();
   await act(async()=>[...element.querySelectorAll("button")].find(b=>b.textContent==="Refresh statuses")!.click());
   await act(async()=>old(reply("generating")));expect(element.textContent).toContain("Ready");expect(element.textContent).not.toContain("Generating");
+ });
+ it("keeps ready rows and thumbnails mounted when returning to the tab",async()=>{
+  rememberGeneration(id,expiry());request.mockResolvedValue(reply("completed"));await render();
+  const row=element.querySelector("li"),image=element.querySelector("img");
+  request.mockImplementation(()=>new Promise(()=>{}));
+  await act(async()=>document.dispatchEvent(new Event("visibilitychange")));
+  expect(element.querySelector("li")).toBe(row);
+  expect(element.querySelector("img")).toBe(image);
+  expect(element.textContent).toContain("Synthetic fox");
+  expect(request).toHaveBeenCalledTimes(1);
+ });
+ it("keeps known content visible during manual revalidation",async()=>{
+  rememberGeneration(id,expiry());request.mockResolvedValue(reply("completed"));await render();
+  const row=element.querySelector("li");let finish!:(value:unknown)=>void;
+  request.mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+  await act(async()=>[...element.querySelectorAll("button")].find(b=>b.textContent==="Refresh statuses")!.click());
+  expect(element.querySelector("li")).toBe(row);expect(element.textContent).toContain("Synthetic fox");
+  await act(async()=>finish(reply("failed")));expect(element.textContent).toContain("Failed");
+ });
+ it("shows each returned row without waiting for another slow request",async()=>{
+  rememberGeneration(id,expiry());rememberGeneration("b".repeat(64),expiry());
+  request.mockImplementation((url:string)=>url.endsWith(id)?Promise.resolve(reply("completed")):new Promise(()=>{}));
+  await render();expect(element.textContent).toContain("Synthetic fox");expect(element.textContent).toContain("Checking status");
+ });
+ it("reuses fresh statuses after leaving the page and returning",async()=>{
+  rememberGeneration(id,expiry());request.mockResolvedValue(reply("completed"));await render();
+  await act(async()=>root.unmount());root=createRoot(element);
+  request.mockImplementation(()=>new Promise(()=>{}));await render();
+  expect(element.textContent).toContain("Synthetic fox");expect(request).toHaveBeenCalledTimes(1);
+ });
+ it("revalidates an older cached status without clearing it",async()=>{
+  rememberGeneration(id,expiry());request.mockResolvedValue(reply("completed"));await render();
+  await act(async()=>root.unmount());root=createRoot(element);await tick(30001);
+  request.mockImplementation(()=>new Promise(()=>{}));await render();
+  expect(element.textContent).toContain("Synthetic fox");expect(request).toHaveBeenCalledTimes(2);
+ });
+ it("revalidates after a same-tab result update while history is unmounted",async()=>{
+  rememberGeneration(id,expiry());request.mockResolvedValue(reply("completed"));await render();
+  await act(async()=>root.unmount());root=createRoot(element);
+  localStorage.setItem(HISTORY_PREFIX+"refresh","new-status");
+  request.mockResolvedValue(reply("failed"));await render();
+  expect(element.textContent).toContain("Failed");expect(request).toHaveBeenCalledTimes(2);
+ });
+ it("forgets cached results when browser history is cleared",async()=>{
+  const expiresAt=expiry();rememberGeneration(id,expiresAt);request.mockResolvedValue(reply("completed"));await render();
+  await act(async()=>{localStorage.clear();window.dispatchEvent(new StorageEvent("storage",{key:null}));});
+  expect(element.textContent).toContain("No generations saved");
+  request.mockImplementation(()=>new Promise(()=>{}));rememberGeneration(id,expiresAt);
+  await act(async()=>window.dispatchEvent(new StorageEvent("storage",{key:HISTORY_PREFIX+id})));
+  expect(element.textContent).not.toContain("Synthetic fox");expect(request).toHaveBeenCalledTimes(2);
  });
 });
 
@@ -93,6 +143,100 @@ it("prunes expired records only after the history DOM is committed", async () =>
   expect(committedAtRemoval.length).toBeGreaterThan(0);
   expect(committedAtRemoval.every(Boolean)).toBe(true);
   expect(localStorage.getItem(HISTORY_PREFIX + staleId)).toBeNull();
+});
+
+describe("cached status retry recovery", () => {
+  const cases = ["completed", "failed", "awaiting_confirmation"].flatMap(status =>
+    ["HTTP 503", "timeout"].map(error => ({status, error})),
+  );
+  function savedResponse(status: string, displayName = "Cached fox") {
+    return {ok: true, status: 200, json: async () => ({generation: {
+      generationId: id, status, expiresAt: expiry(),
+      progress: {completedSteps: status === "completed" ? 12 : 3, totalSteps: 12},
+      pet: {displayName}, baseUrl: `/api/pet-generations/${id}/base`,
+    }})};
+  }
+  function failRead(error: string) {
+    return (_url: string, init: RequestInit) => {
+      if (error === "HTTP 503") return Promise.resolve({ok: false, status: 503});
+      return new Promise((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(new DOMException("Timed out", "AbortError")), {once: true});
+      });
+    };
+  }
+  async function refreshStatuses() {
+    await act(async () => [...element.querySelectorAll("button")].find(button => button.textContent === "Refresh statuses")!.click());
+  }
+
+  it.each(cases)("stops after three failed reads of cached $status after $error while preserving its row and image", async ({status, error}) => {
+    rememberGeneration(id, expiry());
+    const saved = localStorage.getItem(HISTORY_PREFIX + id);
+    request.mockResolvedValueOnce(savedResponse(status)).mockImplementation(failRead(error));
+    await render();
+    const row = element.querySelector("li"), image = element.querySelector("img");
+    expect(row).not.toBeNull();
+    expect(image).not.toBeNull();
+    await act(async () => image!.dispatchEvent(new Event("load")));
+    await refreshStatuses();
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (error === "timeout") {
+        await tick(14999);
+        expect(element.textContent?.includes("Could not refresh")).toBe(attempt > 1);
+        await tick(1);
+      }
+      expect(request).toHaveBeenCalledTimes(1 + attempt);
+      expect(element.textContent).toContain("Could not refresh");
+      expect(element.textContent).toContain("Cached fox");
+      expect(element.textContent).not.toContain("Checking status");
+      expect(element.querySelector("li")).toBe(row);
+      expect(element.querySelector("img")).toBe(image);
+      if (attempt < 3) {
+        await tick(4999);
+        expect(request).toHaveBeenCalledTimes(1 + attempt);
+        await tick(1);
+      }
+    }
+    await tick(30000);
+    expect(request).toHaveBeenCalledTimes(4); // Initial success plus three failed revalidation reads.
+    expect(localStorage.getItem(HISTORY_PREFIX + id)).toBe(saved);
+    expect(request.mock.calls.every(([url, init]) => url === `/api/pet-generations/${id}` && (!init?.method || init.method === "GET"))).toBe(true);
+  });
+
+  it.each(["HTTP 503", "timeout"])("recovers from %s and stops retrying once the status is current", async error => {
+    rememberGeneration(id, expiry());
+    request.mockResolvedValueOnce(savedResponse("completed"))
+      .mockImplementationOnce(failRead(error))
+      .mockResolvedValue(savedResponse("completed", "Updated fox"));
+    await render();
+    const row = element.querySelector("li"), image = element.querySelector("img");
+    expect(image).not.toBeNull();
+    await act(async () => image!.dispatchEvent(new Event("load")));
+    await refreshStatuses();
+    if (error === "timeout") await tick(15000);
+    expect(element.textContent).toContain("Could not refresh");
+    await tick();
+    expect(element.textContent).toContain("Updated fox");
+    expect(element.textContent).not.toContain("Could not refresh");
+    expect(element.querySelector("li")).toBe(row);
+    expect(element.querySelector("img")).toBe(image);
+    await tick(30000);
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([404, 410])("stops retrying after a cached result becomes unavailable with HTTP %i", async status => {
+    rememberGeneration(id, expiry());
+    request.mockResolvedValueOnce(savedResponse("completed"))
+      .mockResolvedValueOnce({ok: false, status: 503})
+      .mockResolvedValue({ok: false, status});
+    await render();
+    await refreshStatuses();
+    await tick();
+    expect(element.textContent).toContain("Expired");
+    expect(element.querySelector("img")).toBeNull();
+    await tick(30000);
+    expect(request).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe("generation thumbnails", () => {
@@ -202,5 +346,14 @@ describe("generation thumbnails", () => {
     expect(element.querySelector("img")).toBe(image);
     expect(element.textContent).toContain("Processing");
     expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["ready","failed"])("manual refresh retries a failed thumbnail and preserves a %s one",async status=>{
+    rememberGeneration(id,expiry());request.mockResolvedValue(withBase());await render();
+    const image=element.querySelector("img")!;
+    await act(async()=>image.dispatchEvent(new Event(status==="ready"?"load":"error")));
+    await act(async()=>[...element.querySelectorAll("button")].find(b=>b.textContent==="Refresh statuses")!.click());
+    const next=element.querySelector("img");expect(next).not.toBeNull();
+    if(status==="ready")expect(next).toBe(image);else expect(next).not.toBe(image);
   });
 });

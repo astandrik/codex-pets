@@ -67,8 +67,7 @@ export function AppHeaderNav() {
   function link(href: string, label: string, badge?: number) {
     const className = `app-header__menu-item${isActive(href) ? " app-header__menu-item_active" : ""}`;
     const content = <><span>{label}</span>{badge !== undefined && <Label theme={badge > 0 ? "warning" : "unknown"} size="s">{badge}</Label>}</>;
-    return href === "/my-generations" ? <a key={`${href}:${label}`} href={withBasePath(href)} className={className} aria-current={isActive(href) ? "page" : undefined} onClick={close}>{content}</a>
-      : <Link key={`${href}:${label}`} href={href} prefetch={false} className={className} aria-current={isActive(href) ? "page" : undefined} onClick={close}>{content}</Link>;
+    return <Link key={`${href}:${label}`} href={href} prefetch={false} className={className} aria-current={isActive(href) ? "page" : undefined} onClick={close}>{content}</Link>;
   }
   return <nav aria-label="Primary" className="app-header__nav">
     <div className="app-header__primary-links">{link("/", "Gallery")}{link("/generate", "Generate")}{link("/my-generations", "My generations")}</div>
