@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { createElement } from "react";
+import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -39,7 +39,7 @@ vi.mock("@/lib/auth/repository", () => authMocks);
 vi.mock("next/navigation", () => navigationMocks);
 vi.mock("@/components/AskAI/AskAIPanel", () => ({ AskAIPanel: () => null }));
 vi.mock("@/components/PetDeleteAction/PetDeleteGate", () => ({
-  PetDeleteGate: () => null,
+  PetDeleteGate: ({ renderTrigger }: { renderTrigger?: (open?: () => void) => ReactNode }) => renderTrigger?.(),
 }));
 vi.mock("@/components/PetDetails/PetBreadcrumbs", () => ({
   PetBreadcrumbs: () => null,
@@ -196,6 +196,17 @@ describe("/pets/[slug] related pets section", () => {
     const metadata = await generateMetadata({params:Promise.resolve({slug:approvedPetRow.slug})});
     expect(metadata.title).toBe("Orbit Otter — Animated Codex pet");
   },20_000);
+
+  it("groups identity and primary actions without exposing secondary buttons in the header", async () => {
+    const container = await renderPetPage();
+    const header = container.querySelector(".pet-detail__header")!;
+    expect(header.querySelector(".pet-detail__identity h1")?.textContent).toBe("Orbit Otter");
+    const actions = header.querySelector(".pet-detail__actions")!;
+    expect(actions.parentElement).toBe(header);
+    expect(actions.textContent).toContain("Download ZIP");
+    expect(actions.textContent).toContain("More");
+    expect(actions.querySelector('a[target="_blank"]')).toBeNull();
+  });
 
   it.each(["pending","rejected"])("never adds the search poster for %s", async status => {
     repositoryMocks.getPetBySlug.mockResolvedValue({...approvedPetRow,status});

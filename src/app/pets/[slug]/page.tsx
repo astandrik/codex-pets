@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import {
-  Button,
   Card,
   Container,
   Flex,
@@ -12,9 +11,7 @@ import {
 } from "@/components/GravityUI/GravityUI";
 import {
   ArrowDownToLine,
-  FileText,
   FolderArrowDown,
-  Picture,
 } from "@gravity-ui/icons";
 import { unstable_cache } from "next/cache";
 
@@ -24,7 +21,7 @@ import {
   ASK_AI_PRODUCT_NAME,
   buildPetDetailAskAIPrompt,
 } from "@/components/AskAI/ask-ai-content";
-import { PetDeleteGate } from "@/components/PetDeleteAction/PetDeleteGate";
+import { PetDetailMoreActions } from "@/components/PetDetails/PetDetailMoreActions";
 import { PetDownloadButton } from "@/components/PetDownloadButton/PetDownloadButton";
 import { PetBreadcrumbs } from "@/components/PetDetails/PetBreadcrumbs";
 import { InstallCommandButton } from "@/components/InstallCommand/InstallCommandButton";
@@ -236,7 +233,7 @@ export default async function PetPage({ params }: PetPageProps) {
         {pet.status === "approved" ? (
           <PublicPetPoster slug={pet.slug} displayName={pet.displayName} description={pet.description} />
         ) : null}
-        <Flex direction="column" gap={3}>
+        <Flex direction="column" gap={2} className="pet-detail__identity">
           <Flex gap={2} wrap>
             <Label theme={kindLabelTheme(pet.kind)}>{pet.kind}</Label>
             {pet.status !== "approved" ? (
@@ -245,57 +242,44 @@ export default async function PetPage({ params }: PetPageProps) {
               </Label>
             ) : null}
           </Flex>
-          <Text variant="display-2" as="h1">
+          <Text variant="display-2" as="h1" className="pet-detail__title">
             {pet.displayName}
           </Text>
-          <Text variant="body-2" color="secondary" className="pet-detail__lead">
-            {pet.description}
-            {pet.status !== "approved" ? ` ${statusSummary.message}` : ""}
-          </Text>
-          <div className="pet-detail__metrics" aria-label="Pet metrics">
-            {pet.status === "approved" ? (
-              <PetLikeButton
-                slug={pet.slug}
-                initialLikeCount={metrics.likeCount}
-              />
-            ) : (
-              <span className="pet-detail__metric">
-                {formatMetricCount(metrics.likeCount)}{" "}
-                {metricLabel(metrics.likeCount, "like")}
-              </span>
-            )}
-            <span className="pet-detail__metric">
-              <ArrowDownToLine width={16} height={16} />
-              {formatMetricCount(metrics.downloadCount)}{" "}
-              {metricLabel(metrics.downloadCount, "download")}
-            </span>
-            <span className="pet-detail__metric">
-              <FolderArrowDown width={16} height={16} />
-              {formatMetricCount(metrics.installCount)}{" "}
-              {metricLabel(metrics.installCount, "install")}
-            </span>
-          </div>
-          <Flex gap={3} wrap className="pet-detail__actions">
-            {pet.status === "approved" ? (
-              <InstallCommandButton slug={pet.slug} surface="detail" />
-            ) : null}
-            <PetDownloadButton slug={pet.slug} />
-            <Button view="outlined" size="l" href={petJsonUrl} target="_blank">
-              <FileText width={18} height={18} />
-              pet.json
-            </Button>
-            <Button
-              view="outlined"
-              size="l"
-              href={spritesheetUrl}
-              target="_blank"
-            >
-              <Picture width={18} height={18} />
-              spritesheet
-            </Button>
-            <PetDeleteGate petId={pet.id} slug={pet.slug} />
-          </Flex>
         </Flex>
+        <Text variant="body-2" as="p" color="secondary" className="pet-detail__lead">
+          {pet.description}
+          {pet.status !== "approved" ? ` ${statusSummary.message}` : ""}
+        </Text>
+        <div className="pet-detail__metrics" aria-label="Pet metrics">
+          {pet.status === "approved" ? (
+            <PetLikeButton
+              slug={pet.slug}
+              initialLikeCount={metrics.likeCount}
+            />
+          ) : (
+            <span className="pet-detail__metric">
+              {formatMetricCount(metrics.likeCount)}{" "}
+              {metricLabel(metrics.likeCount, "like")}
+            </span>
+          )}
+          <span className="pet-detail__metric">
+            <ArrowDownToLine width={16} height={16} />
+            {formatMetricCount(metrics.downloadCount)}{" "}
+            {metricLabel(metrics.downloadCount, "download")}
+          </span>
+          <span className="pet-detail__metric">
+            <FolderArrowDown width={16} height={16} />
+            {formatMetricCount(metrics.installCount)}{" "}
+            {metricLabel(metrics.installCount, "install")}
+          </span>
+        </div>
+        <div className={`pet-detail__actions${pet.status === "approved" ? " pet-detail__actions--with-install" : ""}`}>
+          {pet.status === "approved" ? (
+            <InstallCommandButton slug={pet.slug} surface="detail" />
+          ) : null}
+          <PetDownloadButton slug={pet.slug} />
+          <PetDetailMoreActions petId={pet.id} slug={pet.slug} petJsonUrl={petJsonUrl} spritesheetUrl={spritesheetUrl} />
+        </div>
       </header>
 
       <section className="pet-detail__body">
