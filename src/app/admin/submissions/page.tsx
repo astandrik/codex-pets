@@ -1,4 +1,7 @@
 import type { Metadata } from "next";
+import { notFound, redirect } from "next/navigation";
+import { AdminQueuePagination, adminQueueHref } from "@/components/AdminQueuePagination/AdminQueuePagination";
+import { parseCatalogPage } from "@/lib/pets/pagination";
 
 import {
   Button,
@@ -40,10 +43,20 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function AdminSubmissionsPage() {
+type PageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function AdminSubmissionsPage({ searchParams }: PageProps) {
   const principal = await getCurrentPrincipal();
   const isAdmin = isAdminUser(principal);
-  const pets = isAdmin ? await listPendingPets() : [];
+  const parsed = isAdmin ? parseCatalogPage(await searchParams) : { ok: true as const, page: 1 };
+  if (!parsed.ok) notFound();
+  const queue = isAdmin ? await listPendingPets(parsed.page) : null;
+  if (queue && queue.pagination.page !== parsed.page) {
+    redirect(adminQueueHref("/admin/submissions", queue.pagination.page));
+  }
+  const pets = queue?.items ?? [];
   const rows: SubmissionRow[] = pets.map((pet) => ({
     id: pet.id,
     slug: pet.slug,
@@ -70,6 +83,13 @@ export default async function AdminSubmissionsPage() {
         </Text>
       </Flex>
 
+      {queue ? (
+        <AdminQueuePagination
+          pagination={queue.pagination}
+          pathname="/admin/submissions"
+          itemLabel="pending submissions"
+        />
+      ) : null}
       <section className="page-section">
         {!principal ? (
           <PlaceholderContainer

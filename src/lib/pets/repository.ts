@@ -1,3 +1,4 @@
+import { createAdminQueuePagination, type AdminQueuePage } from "@/lib/pets/admin-pagination";
 import { withSerializableTransaction } from "@/lib/ydb/transaction";
 import { findAvailablePublicPetSlug } from "@/lib/pets/public-slug-allocation";
 import type { YdbQueryExecutor } from "@/lib/ydb/client";
@@ -459,61 +460,75 @@ WHERE status = $status AND (${predicate});
   );
 }
 
-export async function listPendingPets(): Promise<PublicPet[]> {
+export async function listPendingPets(page = 1): Promise<AdminQueuePage<PublicPet>> {
   if (isMockPetsDataSource()) {
-    return listMockPets({}, "pending");
+    const pets = listMockPets({}, "pending").sort((a, b) =>
+      a.createdAt.localeCompare(b.createdAt) || a.slug.localeCompare(b.slug),
+    );
+    const pagination = createAdminQueuePagination(pets.length, page);
+    const offset = (pagination.page - 1) * pagination.pageSize;
+    return { items: pets.slice(offset, offset + pagination.pageSize), pagination };
   }
 
-  if (!isYdbConfigured()) return [];
+  if (!isYdbConfigured()) {
+    return { items: [], pagination: createAdminQueuePagination(0, page) };
+  }
 
-  const result = await withSession((session) =>
-    session.executeQuery(
+  const { rows, pagination } = await withSerializableTransaction(async (execute) => {
+    const totalItems = await readPendingPetCount(execute);
+    const pagination = createAdminQueuePagination(totalItems, page);
+    const result = await execute(
       `
 DECLARE $status AS Utf8;
+DECLARE $limit AS Uint64;
+DECLARE $offset AS Uint64;
 SELECT ${petColumns()}
 FROM ${TABLES.pets}
 WHERE status = $status
-ORDER BY created_at ASC
-LIMIT 200;
+ORDER BY created_at ASC, slug ASC
+LIMIT $limit OFFSET $offset;
       `,
-      { $status: TypedValues.utf8("pending") },
-    ),
-  );
-
-  const rows = rowsFromResult(result).map(parsePetRow);
+      {
+        $status: TypedValues.utf8("pending"),
+        $limit: TypedValues.uint64(pagination.pageSize),
+        $offset: TypedValues.uint64((pagination.page - 1) * pagination.pageSize),
+      },
+    );
+    return { rows: rowsFromResult(result).map(parsePetRow), pagination };
+  });
   const metricsBySlug = await getMetricsBySlugs(rows.map((row) => row.slug));
   const profilesByUserId = await getOwnerProfilesByRows(rows);
 
-  return rows.map((row) =>
-    toPublicPet(
+  return {
+    items: rows.map((row) => toPublicPet(
       row,
       metricsBySlug.get(row.slug) ?? EMPTY_METRICS,
       profilesByUserId.get(row.ownerId),
-    ),
+    )),
+    pagination,
+  };
+}
+
+async function readPendingPetCount(execute: YdbQueryExecutor): Promise<number> {
+  const result = await execute(
+    `
+DECLARE $status AS Utf8;
+SELECT COUNT(*) AS pending_count
+FROM ${TABLES.pets}
+WHERE status = $status;
+    `,
+    { $status: TypedValues.utf8("pending") },
   );
+  const row = rowsFromResult(result)[0];
+  return row ? uintAt(row, 0) : 0;
 }
 
 export async function countPendingPets(): Promise<number> {
   if (isMockPetsDataSource()) {
     return listMockPetRecords().filter((pet) => pet.status === "pending").length;
   }
-
   if (!isYdbConfigured()) return 0;
-
-  const result = await withSession((session) =>
-    session.executeQuery(
-      `
-DECLARE $status AS Utf8;
-SELECT COUNT(*) AS pending_count
-FROM ${TABLES.pets}
-WHERE status = $status;
-      `,
-      { $status: TypedValues.utf8("pending") },
-    ),
-  );
-
-  const row = rowsFromResult(result)[0];
-  return row ? uintAt(row, 0) : 0;
+  return withSession((session) => readPendingPetCount((sql, params) => session.executeQuery(sql, params)));
 }
 
 export async function createPendingPet(
