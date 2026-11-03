@@ -62,13 +62,26 @@ it.each(["admin", "owner"])("requires explicit confirmation for %s deletion", as
   expect(posts()[0][0]).toBe(mode === "admin" ? "/api/admin/submissions/pet-a/delete" : "/api/my-pets/pet-a/delete");
 });
 
-it("cancels without POST and returns focus to More", async () => {
-  fetchMock.mockResolvedValue(response(true)); await render(); const trigger = button("More");
-  await openMenu(); await act(async () => menuItem("Delete…").click());
-  await act(async () => button("Cancel").click());
+it.each([
+  { mode: "owner", closeWith: "Cancel" },
+  { mode: "owner", closeWith: "Escape" },
+  { mode: "admin", closeWith: "Cancel" },
+  { mode: "admin", closeWith: "Escape" },
+])("closes $mode confirmation with $closeWith and restores focus and scrolling", async ({ mode, closeWith }) => {
+  fetchMock.mockResolvedValue(response(mode === "admin", mode === "owner"));
+  await render();
+  const trigger = button("More");
+  const initialOverflow = document.body.style.overflow;
+  await openMenu();
+  await act(async () => menuItem("Delete…").click());
+  expect(document.querySelector(".g-modal_open")).not.toBeNull();
+  await act(async () => {
+    if (closeWith === "Cancel") button("Cancel").click();
+    else document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
   expect(posts()).toHaveLength(0);
-  expect(document.querySelector('.g-modal_open')).toBeNull();
-  expect(document.body.style.overflow).not.toBe("hidden");
+  expect(document.querySelector(".g-modal_open")).toBeNull();
+  expect(document.body.style.overflow).toBe(initialOverflow);
   await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
 });
 
@@ -79,10 +92,26 @@ it("does not carry delete permission into a different pet", async () => {
   expect(menuItem("Delete…")).toBeUndefined(); expect(posts()).toHaveLength(0);
 });
 
-it("does not reopen another pet's confirmation after a route change", async () => {
-  fetchMock.mockResolvedValue(response(true)); await render(); await openMenu();
+it.each(["owner", "admin"])("does not reopen stale %s confirmation after A → B → A", async mode => {
+  fetchMock.mockResolvedValue(response(mode === "admin", mode === "owner"));
+  await render();
+  await openMenu();
   await act(async () => menuItem("Delete…").click());
+  expect(document.querySelector(".g-modal_open")).not.toBeNull();
+
   await render({ ...props, petId: "pet-b", slug: "other" });
-  expect(document.querySelector('.g-modal_open')).toBeNull();
+  expect(document.querySelector(".g-modal_open")).toBeNull();
+  await render(props);
+  expect(posts()).toHaveLength(0);
+  expect(document.querySelector(".g-modal_open")).toBeNull();
+
+  const trigger = button("More");
+  await openMenu();
+  await act(async () => menuItem("Delete…").click());
+  expect(document.querySelector(".g-modal_open")).not.toBeNull();
+  await act(async () => button("Cancel").click());
+  expect(document.querySelector(".g-modal_open")).toBeNull();
+  expect(document.body.style.overflow).not.toBe("hidden");
+  await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
   expect(posts()).toHaveLength(0);
 });

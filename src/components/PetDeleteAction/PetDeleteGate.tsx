@@ -52,5 +52,5 @@ export function PetDeleteGate({ petId, slug, renderTrigger, returnFocus }: PetDe
   let mode: "admin" | "owner" | null = null;
   if (current?.canAdminDelete) mode = "admin";
   else if (current?.canOwnerDelete) mode = "owner";
-  return <PetDeleteAction petId={petId} mode={mode} renderTrigger={renderTrigger} returnFocus={returnFocus} />;
+  return <PetDeleteAction key={petId} petId={petId} mode={mode} renderTrigger={renderTrigger} returnFocus={returnFocus} />;
 }
