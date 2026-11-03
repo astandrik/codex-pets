@@ -1,3 +1,4 @@
+import {Buffer} from "node:buffer";
 import {vi} from "vitest";
 import {act} from "react";
 
@@ -15,7 +16,11 @@ export function mockImageDecoding() {
     value(this: File) {
       return new Promise<ArrayBuffer>((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.onload = () => {
+          // Node 20 WebCrypto rejects ArrayBuffers from jsdom's realm.
+          const bytes = Buffer.from(new Uint8Array(reader.result as ArrayBuffer));
+          resolve(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+        };
         reader.onerror = () => reject(reader.error);
         reader.readAsArrayBuffer(this);
       });
