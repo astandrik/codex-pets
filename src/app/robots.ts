@@ -62,6 +62,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: PUBLIC_DISALLOW_PATHS.map(withBasePath),
       },
     ],
-    sitemap: toPublicUrl("/sitemap.xml"),
+    sitemap: [toPublicUrl("/sitemap.xml"), toPublicUrl("/sitemap-images.xml")],
   };
 }

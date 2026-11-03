@@ -12,6 +12,13 @@ import { getPreviewRewritePath } from "@/lib/preview/request";
 export function middleware(request: NextRequest): Response {
   const basePath = request.nextUrl.basePath || BASE_PATH || undefined;
   const pathname = stripBasePath(request.nextUrl.pathname, basePath);
+  if (pathname === "/_next/image" && isPublicPetPosterUrl(request.nextUrl.searchParams.get("url"), request.nextUrl.origin, basePath)) {
+    // Optimizer cache hits bypass the poster route's live publication check.
+    return new NextResponse(null, {
+      status: 404,
+      headers: { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" },
+    });
+  }
   if (pathname === "/admin/generation-limits" || pathname.startsWith("/api/admin/generation-quotas") || pathname.startsWith("/generated/") || pathname.startsWith("/api/pet-generations/")) {
     const response = NextResponse.next();
     response.headers.set("Cache-Control", "private, no-store");
@@ -66,6 +73,19 @@ export function middleware(request: NextRequest): Response {
   appendVaryForMarkdownNegotiation(response.headers, pathname);
   appendAgentLinkHeaders(response.headers, pathname);
   return response;
+}
+
+function isPublicPetPosterUrl(value: string | null, origin: string, basePath?: string): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value, origin);
+    if (url.origin !== origin) return false;
+    const pathname = decodeURIComponent(url.pathname).replace(/\\/g, "/").replace(/\/{2,}/g, "/");
+    const pattern = /^\/pets\/[^/]+\/preview\.webp\/?$/;
+    return pattern.test(pathname) || pattern.test(stripBasePath(pathname, basePath));
+  } catch {
+    return false;
+  }
 }
 
 function getMarkdownRewritePath(

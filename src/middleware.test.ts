@@ -1,6 +1,44 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+describe("public poster optimizer boundary", () => {
+  beforeEach(() => { vi.resetModules(); vi.unstubAllEnvs(); });
+
+  it.each(["", "/codex-pets", "/api"])("denies optimized posters before any cache for base %s", async (basePath) => {
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", basePath);
+    const { middleware } = await import("@/middleware");
+    for (const source of [
+      `${basePath}/pets/boba/preview.webp`,
+      `${basePath}/pets/legacy-/preview.webp?old=1`,
+      `${basePath}/pets/boba/%70review.webp`,
+      `${basePath}/pets/boba/preview.webp/`,
+      `${basePath}/pets//boba/preview.webp`,
+      `https://pets.example${basePath}/pets/boba/preview.webp`,
+    ]) {
+      for (const method of ["GET", "HEAD"]) {
+        const url = new URL(`https://pets.example${basePath}/_next/image`);
+        url.searchParams.set("url", source);
+        url.searchParams.set("w", "256");
+        url.searchParams.set("q", "75");
+        const response = middleware(new NextRequest(url, { method }));
+        expect(response.status, source).toBe(404);
+        expect(response.headers.get("Cache-Control")).toBe("no-store");
+        expect(response.headers.get("X-Robots-Tag")).toBe("noindex");
+      }
+    }
+  });
+
+  it("preserves the direct poster and other local image optimization", async () => {
+    const { middleware } = await import("@/middleware");
+    for (const url of [
+      "https://pets.example/pets/boba/preview.webp",
+      "https://pets.example/_next/image?url=%2Fapi%2Fassets%2Fa%2Fspritesheet.webp&w=256&q=75",
+      "https://pets.example/_next/image?url=%2Ffavicon.png&w=64&q=75",
+      "https://pets.example/_next/image?url=https%3A%2F%2Fimages.r2.dev%2Fpets%2Fboba%2Fpreview.webp&w=256&q=75",
+    ]) expect(middleware(new NextRequest(url)).headers.get("x-middleware-next")).toBe("1");
+  });
+});
+
 describe("middleware markdown content negotiation", () => {
   beforeEach(() => {
     vi.resetModules();

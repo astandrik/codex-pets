@@ -1,5 +1,9 @@
 export const ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
 
+export function getPublicPetPreviewPath(slug: string): string {
+  return `/pets/${encodeURIComponent(slug)}/preview.webp`;
+}
+
 export function assetUrl(assetId: string, filename: string): string {
   return `/api/assets/${assetId}/${filename}`;
 }
