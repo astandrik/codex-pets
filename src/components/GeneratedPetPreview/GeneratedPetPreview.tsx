@@ -5,6 +5,7 @@ import {BaseGenerationRetry} from "./BaseGenerationRetry";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Container, TextInput } from "@gravity-ui/uikit";
 import Image from "next/image";
+import Link from "next/link";
 import { GeneratedPetResult } from "./GeneratedPetResult";
 import { toPublicUrl, withBasePath } from "@/lib/base-path";
 import { parsePublicPetSlug, suggestPublicPetSlug } from "@/lib/pets/public-slug";
@@ -275,7 +276,7 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
     {previousGenerationId && <p><a href={withBasePath(`/generated/${generationId}`)}>Open this version</a>{" · "}<a href={withBasePath(`/generated/${previousGenerationId}`)}>Open previous version</a></p>}
   </>;
   return <Container as="main" maxWidth={ready ? undefined : "xl"} gutters={recoveryVisible ? 2 : 5} className={ready ? "page-shell generated-pet-ready" : "page-shell"}>
-    <a className={ready ? "generated-pet-ready__back" : undefined} href={withBasePath("/my-generations")}>{ready && <Image src={withBasePath("/assets/s09-arrow-left.svg")} alt="" width={16} height={16} unoptimized />}My generations</a>
+    <Link prefetch={false} className={ready ? "generated-pet-ready__back" : undefined} href="/my-generations">{ready && <Image src={withBasePath("/assets/s09-arrow-left.svg")} alt="" width={16} height={16} unoptimized />}My generations</Link>
     <div hidden={recoveryVisible} className={ready ? "generated-pet-ready__heading" : undefined}><h1>{generation?.pet?.displayName ?? "Generated pet"}</h1>{ready && <span className="generated-pet-ready__status" role="status">Ready</span>}</div>
     {ready && <p className="generated-pet-ready__intro">Preview your pet, then download its pack.</p>}
     {generation?.status==="processing"&&generation.metadata?.automaticState==="inflight"&&<p role="status">Preparing the name, description and tags…</p>}
