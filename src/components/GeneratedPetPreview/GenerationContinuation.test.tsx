@@ -24,6 +24,7 @@ it("shows all eleven strips and freezes input while sending",async()=>{
  await act(async()=>button("Продолжить").click());expect([...element.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].every(input=>input.disabled)).toBe(true);
  const body=JSON.parse(fetchMock.mock.calls.find(([,init])=>init?.method==="POST")![1].body);expect(body.states).toEqual(["running-right"]);
  await act(async()=>resolve(response(accepted(body.requestId,"b".repeat(64)))));expect(push).toHaveBeenCalledWith("/generated/"+"b".repeat(64));
+ expect(JSON.parse(localStorage.getItem("pets-generation-history-v2:"+"b".repeat(64))!)).toMatchObject({parentGenerationId:id,kind:"continuation"});
 });
 it("retries identical UUID and input after a lost response",async()=>{
  let attempts=0;fetchMock.mockImplementation(async(_url,init)=>{if(!init?.method)return response({options:options()});if(++attempts===1)throw Error("network");return response(accepted(JSON.parse(init.body).requestId,"b".repeat(64)));});

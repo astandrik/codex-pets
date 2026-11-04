@@ -9,9 +9,9 @@ export default function MyGenerationsPage(){
   return <Container as="main" maxWidth="xl" gutters={5} className="page-shell">
     <Flex direction="column" gap={3} className="page-section-header">
       <Text variant="display-2" as="h1">My generations</Text>
-      <Text variant="body-2" color="secondary">Tasks saved in this browser, without signing in. Accepted tasks and private results you open are remembered here.</Text>
+      <Text variant="body-2" color="secondary">Pets saved in this browser, without signing in. Corrections and retries appear in each pet’s version history.</Text>
       <p>Results are available for 24 hours after acceptance. Download your ZIP before it expires. Clearing browser data removes this list; it does not cancel tasks or reset limits.</p>
-      <p>The latest 50 entries are kept here for up to seven days after their results expire. Older links can be added by opening an available private result.</p>
+      <p>The latest 50 pets and their versions are kept here for up to seven days after their results expire. Older links can be added by opening an available private result.</p>
     </Flex>
     <section className="page-section"><MyGenerations/></section>
     <p><a href={withBasePath("/generate")}>Generate a pet</a></p>

@@ -26,6 +26,7 @@ export function publicJob(record: GenerationJob, now: number, metadata?:PublicCa
   }
   return {
     generationId: job.id,
+    createdAt: new Date(job.createdAt).toISOString(),
       ...(generationBaseRetryEnabled()&&generationReviewFlowEnabled()&&baseRetryEligibility(job)?{canRetryBase:true}:{}),
       ...(job.baseRetrySourceId?{baseRetrySourceId:job.baseRetrySourceId}:{}),
     status: job.status,

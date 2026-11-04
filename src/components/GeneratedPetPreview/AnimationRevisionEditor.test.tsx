@@ -30,6 +30,7 @@ it("pins the submitted text and selection after lost response and retries the sa
   await submit("Повторить тот же запрос");
   expect(fetchMock.mock.calls[1][1].body).toBe(fetchMock.mock.calls[0][1].body);
   expect(navigation.push).toHaveBeenCalledWith("/generated/"+"b".repeat(64));
+  expect(JSON.parse(localStorage.getItem("pets-generation-history-v2:"+"b".repeat(64))!)).toMatchObject({parentGenerationId:id,kind:"animation-revision"});
   expect(JSON.stringify({...sessionStorage,...localStorage})).not.toContain("Tilt gently");
 });
 it("unlocks input only after a definite first refusal",async()=>{

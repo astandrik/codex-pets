@@ -110,7 +110,7 @@ it("keeps the recovery identity when local history cannot save the accepted link
     expect(navigate).not.toHaveBeenCalled();
     expect(host.querySelector(`a[href="/generated/${child}?from=${original}"]`)).not.toBeNull();
     expect(host.querySelector("[role=alert]")?.textContent).toMatch(/My generations/);
-    expect(localStorage.getItem("pets-generation-history-v1:" + child)).toBeNull();
+    expect(localStorage.getItem("pets-generation-history-v2:" + child)).toBeNull();
     const {hasPendingRefinement} = await import("../PetGenerationForm/request");
     expect(await hasPendingRefinement(sessionStorage, original)).toBe(true);
   } finally {spy.mockRestore();}
@@ -129,7 +129,7 @@ it("allows changed text after a definitive quota rejection", async () => {
   const bodies = posts().map(([, init]) => JSON.parse(String(init.body)));
   expect(bodies).toHaveLength(2); expect(bodies[1].prompt).toBe("Make the scarf green");
   expect(bodies[1].requestId).not.toBe(bodies[0].requestId);
-  expect(localStorage.getItem("pets-generation-history-v1:" + child)).not.toBeNull();
+  expect(localStorage.getItem("pets-generation-history-v2:" + child)).not.toBeNull();
 });
 
 it.each(["http", "receipt"])("pins the submitted text after an uncertain %s response", async kind => {
@@ -145,7 +145,7 @@ it.each(["http", "receipt"])("pins the submitted text after an uncertain %s resp
   expect(host.querySelector("textarea")?.disabled).toBe(true);
   await submit();
   expect(String(posts()[1][1].body)).toBe(String(posts()[0][1].body));
-  expect(localStorage.getItem("pets-generation-history-v1:" + child)).not.toBeNull();
+  expect(localStorage.getItem("pets-generation-history-v2:" + child)).not.toBeNull();
 });
 
 
@@ -233,7 +233,7 @@ it("keeps standalone recovery available when the initial status response is410",
   await act(async () => findButton("Recover submitted edit")!.click());
   changeText("Make the scarf red"); await submit();
   expect(JSON.parse(String(posts()[0][1].body)).requestId).toBe(saved.requestId);
-  expect(localStorage.getItem("pets-generation-history-v1:" + child)).not.toBeNull();
+  expect(localStorage.getItem("pets-generation-history-v2:" + child)).not.toBeNull();
 });
 
 const refusalCodes = ["generation_paused", "generation_disabled", "generation_review_disabled", "saved_stage_unavailable", "client_ip_unavailable"];
@@ -255,7 +255,7 @@ it.each(refusalCodes)("unlocks text after the first acknowledged %s refusal with
   changeText("Make the scarf green"); await submit();
   const second = JSON.parse(String(posts()[1][1].body));
   expect(second.prompt).toBe("Make the scarf green"); expect(second.requestId).not.toBe(first.requestId);
-  expect(localStorage.getItem("pets-generation-history-v1:" + child)).not.toBeNull();
+  expect(localStorage.getItem("pets-generation-history-v2:" + child)).not.toBeNull();
 });
 
 it.each([...refusalCodes, "rate_limited", "base_not_ready"])("preserves an earlier uncertain request when a retry reports %s", async code => {

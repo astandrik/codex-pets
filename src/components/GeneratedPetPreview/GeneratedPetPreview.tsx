@@ -12,7 +12,7 @@ import { parsePublicPetSlug, suggestPublicPetSlug } from "@/lib/pets/public-slug
 import type { PublicGeneration } from "@/lib/pets/generation/service";
 import { publicGenerationError } from "@/lib/pets/generation/public-error";
 import {GeneratedPetMetadataEditor} from "@/components/GeneratedPetMetadataEditor/GeneratedPetMetadataEditor";
-import { notifyGenerationHistory, rememberGeneration } from "@/lib/pets/generation/history";
+import { notifyGenerationHistory, rememberGenerationVersion } from "@/lib/pets/generation/history";
 import {RefinementRecovery} from "./BaseRefinement";
 import {AnimationRevisionEditor, AnimationRevisionCorrections} from "./AnimationRevisionEditor";
 import {AnimationRevisionComparison} from "./AnimationRevisionComparison";
@@ -107,7 +107,7 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
             animationPromptIntent.current !== (body.generation.animationPrompt ?? "")) setDifferentAnimationPrompt(true);
         setGeneration(body.generation);
         setError(""); setUnavailable(false);
-        rememberGeneration(generationId,body.generation.expiresAt);
+        rememberGenerationVersion(body.generation);
         if (observedStatus.current !== body.generation.status) {
           observedStatus.current = body.generation.status;
           notifyGenerationHistory();
