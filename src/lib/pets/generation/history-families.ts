@@ -41,6 +41,35 @@ export function groupGenerationVersions<T extends HistoryVersionIdentity>(versio
     members.push(version);
     groups.set(familyId, members);
   }
-  return [...groups].map(([familyId, members]) => ({familyId, versions: members.sort(compareVersions)}))
+  return [...groups].map(([familyId, members]) => ({familyId, versions: orderFamilyVersions(members)}))
     .sort((a, b) => compareVersions(a.versions[0], b.versions[0]));
+}
+
+// Bound an ancestor's fallback time by its descendants before sorting. This
+// keeps the comparator transitive, including when parallel branches coexist.
+function orderFamilyVersions<T extends HistoryVersionIdentity>(versions:T[]):T[] {
+  const byId=new Map(versions.map(version=>[version.generationId,version]));
+  const keys=new Map(versions.map(version=>[version.generationId,{time:versionTime(version),depth:0}]));
+  const childCounts=new Map(versions.map(version=>[version.generationId,0]));
+  for(const version of versions){
+    if(version.parentGenerationId&&byId.has(version.parentGenerationId))childCounts.set(version.parentGenerationId,childCounts.get(version.parentGenerationId)!+1);
+  }
+  const ready=versions.filter(version=>childCounts.get(version.generationId)===0);
+  let processed=0;
+  while(ready.length){
+    const child=ready.pop()!,parent=byId.get(child.parentGenerationId??'');
+    processed++;
+    if(!parent)continue;
+    const childKey=keys.get(child.generationId)!,parentKey=keys.get(parent.generationId)!;
+    parentKey.time=Math.min(parentKey.time,childKey.time);
+    parentKey.depth=Math.max(parentKey.depth,childKey.depth+1);
+    const remaining=childCounts.get(parent.generationId)!-1;
+    childCounts.set(parent.generationId,remaining);
+    if(!remaining)ready.push(parent);
+  }
+  if(processed!==versions.length)return versions.sort(compareVersions);
+  return versions.sort((a,b)=>{
+    const left=keys.get(a.generationId)!,right=keys.get(b.generationId)!;
+    return right.time-left.time||left.depth-right.depth||a.generationId.localeCompare(b.generationId);
+  });
 }

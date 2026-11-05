@@ -131,3 +131,35 @@ it('expires lineage metadata after its last retained descendant, without touchin
  pruneGenerationHistory(now+8*day+1,storage);
  expect([...storage.values.keys()]).toEqual(['pets-continuation-request']);
 });
+
+it('keeps known descendants ahead of late-opened ancestors without scrambling parallel versions',()=>{
+ const entries=[
+  {generationId:id(1),savedAt:now+100},
+  {generationId:id(2),savedAt:now+90,createdAt:now+2,parentGenerationId:id(1)},
+  {generationId:id(3),savedAt:now+80,createdAt:now+3,parentGenerationId:id(2)},
+  {generationId:id(4),savedAt:now+70,createdAt:now+4,parentGenerationId:id(1)},
+ ];
+ for(const input of [entries,[...entries].reverse(),[entries[2],entries[0],entries[3],entries[1]]]){
+  expect(groupGenerationVersions(input)[0].versions.map(v=>v.generationId)).toEqual([id(4),id(3),id(2),id(1)]);
+ }
+});
+it('cleans expired history on a quota failure and retries the same save once',()=>{
+ const storage=reviewStorage();rememberGenerationVersion(gen(1),undefined,now,storage);
+ storage.setItem('pending-request-uuid','keep');
+ const later=now+9*day,write=storage.setItem;let attempts=0;
+ storage.setItem=(key,value)=>{if(key.endsWith(id(2))){attempts++;if(storage.getItem(HISTORY_V2_PREFIX+id(1)))throw new DOMException('full','QuotaExceededError');}write(key,value);};
+ expect(rememberGenerationVersion({generationId:id(2),expiresAt:new Date(later+day).toISOString()},undefined,later,storage)).toBe(true);
+ expect(attempts).toBe(2);expect(storage.getItem(HISTORY_V2_PREFIX+id(1))).toBeNull();expect(storage.getItem('pending-request-uuid')).toBe('keep');
+});
+it('stops after one quota retry without changing pending operation data',()=>{
+ const storage=reviewStorage();storage.setItem('pending-request-uuid','same');
+ let attempts=0;storage.setItem=()=>{attempts++;throw new DOMException('full','QuotaExceededError');};
+ expect(rememberGenerationVersion({generationId:id(2),expiresAt:gen(2).expiresAt},undefined,now,storage)).toBe(false);
+ expect(attempts).toBe(2);expect(storage.getItem('pending-request-uuid')).toBe('same');
+});
+it('does not rescan the history for every status update after scheduled cleanup',()=>{
+ const storage=reviewStorage();for(let n=1;n<=200;n++)rememberGenerationVersion(gen(n,n),n===1?undefined:{generationId:id(1),kind:'continuation'},now+n,storage);
+ const get=storage.getItem;let reads=0;storage.getItem=key=>{reads++;return get(key);};
+ for(let n=1;n<=200;n++)rememberGenerationVersion(gen(n,n),undefined,now+300000,storage);
+ expect(reads).toBeLessThan(10000);
+});

@@ -11,6 +11,8 @@ const ID = /^[a-f0-9]{64}$/;
 const DAY = 86_400_000;
 const CLOCK_SKEW_MS = 5 * 60_000;
 const EXPIRED_RETENTION_MS = 7 * DAY;
+const CLEANUP_INTERVAL_MS = 5 * 60_000;
+const cleanups = new WeakMap<ReadableHistoryStorage,{checkedAt:number}>();
 type ReadableHistoryStorage = Pick<Storage, 'length' | 'key' | 'getItem'>;
 type PrunableHistoryStorage = ReadableHistoryStorage & Pick<Storage, 'removeItem'>;
 type HistoryStorage = PrunableHistoryStorage & Pick<Storage, 'setItem'>;
@@ -147,6 +149,7 @@ export function pruneGenerationHistory(now=Date.now(),storage?:PrunableHistorySt
     for(const {key,raw,fact} of snapshot.facts){
       if(!needed.has(fact.generationId)&&fact.expiresAt+EXPIRED_RETENTION_MS<=now){try {if(target.getItem(key)===raw)target.removeItem(key);} catch {/* Best effort cleanup. */}}
     }
+    cleanups.set(target,{checkedAt:now});
     return true;
   } catch {return false;}
 }
@@ -162,6 +165,9 @@ export function historyParent(generation:HistoryGenerationReference):{generation
   return new Set(valid.map(x=>x.generationId)).size===1?valid[0]:undefined;
 }
 export function rememberGenerationVersion(input:unknown,source?:{generationId:string;kind:HistoryVersionKind},now=Date.now(),storage?:HistoryStorage):boolean {
+  return saveGenerationVersion(input,source,now,storage,true);
+}
+function saveGenerationVersion(input:unknown,source:{generationId:string;kind:HistoryVersionKind}|undefined,now:number,storage:HistoryStorage|undefined,allowQuotaRetry:boolean):boolean {
   try {
     const parsed=historyGenerationSchema.pick({generationId:true,expiresAt:true,createdAt:true,baseRetrySourceId:true,continuation:true,animationRevision:true}).safeParse(input);
     if(!parsed.success)return false;
@@ -177,8 +183,18 @@ export function rememberGenerationVersion(input:unknown,source?:{generationId:st
     if(createdAt!==undefined)writeFact(target,{generationId:id,expiresAt:deadline,createdAt});
     if(parent)writeFact(target,{generationId:id,expiresAt:deadline,parentGenerationId:parent.generationId,familyId:previous?.parentGenerationId?previous.familyId:parent.generationId,kind:parent.kind});
     writeEntryIfMissing(target,{generationId:id,savedAt:previous?.savedAt??now,expiresAt:deadline,familyId:previous?.familyId??parent?.generationId??id,...(createdAt!==undefined?{createdAt}:{}),...(previous?.parentGenerationId?{parentGenerationId:previous.parentGenerationId,kind:previous.kind}:parent?{parentGenerationId:parent.generationId,kind:parent.kind}:{})},now);
+    const lastCleanup=cleanups.get(target)?.checkedAt;
+    if(lastCleanup===undefined||now<lastCleanup||now-lastCleanup>=CLEANUP_INTERVAL_MS)pruneGenerationHistory(now,target);
     return true;
-  } catch {return false;}
+  } catch(cause) {
+    if(allowQuotaRetry&&typeof cause==='object'&&cause!==null&&'name' in cause&&cause.name==='QuotaExceededError'){
+      try {
+        const target=storage??window.localStorage;
+        if(pruneGenerationHistory(now,target))return saveGenerationVersion(input,source,now,target,false);
+      } catch {/* Preserve the caller's pending request when storage stays unavailable. */}
+    }
+    return false;
+  }
 }
 export function notifyGenerationHistory(storage?:Pick<Storage,'setItem'>):boolean {
   try {(storage??window.localStorage).setItem(HISTORY_PREFIX+'refresh',crypto.randomUUID());return true;} catch {return false;}
