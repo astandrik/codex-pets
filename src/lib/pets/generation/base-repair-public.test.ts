@@ -52,3 +52,17 @@ it("rejects malformed exhausted journal rather than creating a fresh child",()=>
  expect(baseRetryEligibility({...job,baseRepair:{...job.baseRepair,attempts:[failed(2),failed(2)]}})).toBe(false);
  expect(baseRetryEligibility({...job,baseRepair:{...job.baseRepair,attempts:[failed(1),{...failed(2),reason:"transport"}]}})).toBe(false);
 });
+it.each([1,2])("permits a manual retry after input refusal at attempt %i without accepting an ambiguous journal",ordinal=>{
+ const last={...failed(ordinal),failure:{code:"provider_rejected" as const,providerFailure:{httpStatus:400,code:"moderation_blocked",moderationStage:"input" as const},diagnostic:{boundary:"provider_cli" as const,reason:"process_exit" as const},cliCause:{kind:"http_error" as const,httpStatus:400}}};
+ const attempts=ordinal===1?[last]:[failed(1),last];
+ const job={...base(),status:"failed" as const,error:last.failure.code,providerFailure:last.failure.providerFailure,failureDiagnostic:last.failure.diagnostic,baseRepair:{policy:1 as const,maxAttempts:6,phase:"stopped" as const,attempts}};
+ expect(jobSchema.safeParse(job).success).toBe(true);
+ expect(baseRetryEligibility(job)).toBe(true);
+ for(const unsafe of [
+  {...job,baseRepair:{...job.baseRepair,phase:"active" as const}},
+  {...job,providerFailure:{...last.failure.providerFailure,moderationStage:"output" as const}},
+  {...job,baseRepair:{...job.baseRepair,attempts:[...attempts.slice(0,-1),{...last,status:"unknown" as const}]}},
+  {...job,baseRepair:{...job.baseRepair,attempts:[...attempts.slice(0,-1),{...last,failure:{...last.failure,diagnostic:{boundary:"checkpoint" as const,reason:"io_error" as const}}}]}},
+  {...job,baseRepair:{...job.baseRepair,attempts:[...attempts.slice(0,-1),{...last,failure:{...last.failure,cliCause:{kind:"http_error" as const,httpStatus:520}}}]}},
+ ])expect(baseRetryEligibility(unsafe)).toBe(false);
+});

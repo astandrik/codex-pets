@@ -5,9 +5,12 @@ import { ThemeProvider } from "@gravity-ui/uikit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GeneratedPetPreview } from "./GeneratedPetPreview";
 import { publicGenerationError } from "@/lib/pets/generation/public-error";
+import {publicJob} from "@/lib/pets/generation/public-job";
+import type {GenerationJob} from "@/lib/pets/generation/model";
 
 vi.mock("@/components/StatePreview/StatePreview", () => ({ StatePreview: ({slots, active = true}: {active?: boolean; slots?: {afterStage?: ReactNode; sidePanel?: ReactNode; afterControls?: ReactNode}}) => <div>{active && <>Animation preview{slots?.afterStage}</>}{slots?.sidePanel}{active && slots?.afterControls}</div> }));
-vi.mock("next/navigation", () => ({useRouter: () => ({push: vi.fn()})}));
+const router = {push: vi.fn()};
+vi.mock("next/navigation", () => ({useRouter: () => router}));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 window.matchMedia ??= ((query: string) => ({ matches: false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as typeof window.matchMedia;
 let root: Root; let element: HTMLDivElement;
@@ -26,11 +29,12 @@ function defaultFetch(url: string, init?: RequestInit) {
 }
 beforeEach(() => {
   vi.useFakeTimers(); element = document.createElement("div"); document.body.append(element); root = createRoot(element);
+  router.push.mockReset();
   vi.stubGlobal("fetch", fetchMock); vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://pets.example");
   fetchMock.mockReset(); fetchMock.mockImplementation(defaultFetch);
 });
 afterEach(async () => { await act(async () => root.unmount()); element.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
-async function render() { await act(async () => root.render(<ThemeProvider theme="light"><GeneratedPetPreview generationId={id} /></ThemeProvider>)); }
+async function render(theme:"light"|"dark"="light") { await act(async () => root.render(<ThemeProvider theme={theme}><GeneratedPetPreview generationId={id} /></ThemeProvider>)); }
 async function tick(ms = 300) { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); }
 function button() { return [...document.body.querySelectorAll("button")].find(b => b.textContent?.includes("Submit for review")); }
 function input() { return document.body.querySelector<HTMLInputElement>("#generated-pet-public-slug")!; }
@@ -38,6 +42,21 @@ function edit(value: string) { act(() => { Object.getOwnPropertyDescriptor(HTMLI
 function puts() { return fetchMock.mock.calls.filter(([, init]) => init?.method === "PUT"); }
 
 describe("generated pet public URL and moderation", () => {
+  it.each(["light","dark"] as const)("offers an input-moderation manual retry from real public state in %s theme without starting it",async theme=>{
+    vi.stubEnv("PET_GENERATION_BASE_RETRY_ENABLED","true");vi.stubEnv("PET_GENERATION_REVIEW_FLOW_ENABLED","true");
+    const now=Date.now();
+    const job:GenerationJob={id,prompt:"Original description",displayName:"Pet",worker:"",createdAt:now,expiresAt:now+86400000,pipelineVersion:2,promptRevision:"test",reviewBase:true,status:"failed",error:"provider_rejected",providerFailure:{httpStatus:400,code:"moderation_blocked",moderationStage:"input"},stages:[{name:"base",status:"inflight",startedAt:now}]};
+    const data={generation:publicJob(job,now)};
+    fetchMock.mockImplementation(async(url:string)=>url.endsWith("/base-retries")?response({options:{sourceRevision:"c".repeat(64),sourceExpiresAt:new Date(job.expiresAt).toISOString(),inputState:"saved",prompt:job.prompt,availableModes:["saved"]}}):response(data));
+    await render(theme);await tick(30000);
+    const retry=[...document.querySelectorAll("button")].find(b=>b.textContent==="Повторить создание персонажа");
+    expect(retry).toBeDefined();expect(retry?.disabled).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async()=>retry!.click());
+    await tick(0);
+    expect(document.querySelector('[role="dialog"][aria-labelledby="base-generation-retry-title"]')?.textContent).toContain("Original description");
+    expect(fetchMock.mock.calls.every(([,init])=>!init?.method||init.method==="GET")).toBe(true);
+  });
   it.each(["provider_rejected", "queue_timeout"])("offers an explicit base retry after %s without sending an operation on page load",async code=>{
     fetchMock.mockResolvedValue(response({generation:{...generation(undefined,"failed").generation,reviewBase:true,baseConfirmed:false,canRetryBase:true,error:publicGenerationError(code)}}));
     await render();

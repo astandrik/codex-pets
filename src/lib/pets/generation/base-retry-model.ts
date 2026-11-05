@@ -29,14 +29,24 @@ export const baseRetryOptionsSchema = z.union([
 ]);
 export type BaseRetryOptions = z.infer<typeof baseRetryOptionsSchema>;
 
+// A known input refusal may be retried by the user, never by automatic repair.
+function isManualInputModerationFailure(failure: Parameters<typeof baseFailureRetryReason>[0] | undefined): boolean {
+  return failure?.code === "provider_rejected" && failure.providerFailure?.httpStatus === 400 &&
+    failure.providerFailure.code === "moderation_blocked" && failure.providerFailure.moderationStage === "input" &&
+    (!failure.diagnostic || failure.diagnostic.boundary === "provider_cli") &&
+    (!failure.cliCause || (failure.cliCause.kind === "http_error" && failure.cliCause.httpStatus === 400));
+}
+
 export function baseRetryEligibility(job: GenerationJob): boolean {
   if (job.status!=="failed" || job.pipelineVersion!==2 || !job.reviewBase || job.baseConfirmedAt!==undefined || job.continuation || job.animationRevision || job.stages.some(s=>s.name==="base"&&s.status==="completed")) return false;
   if (job.error==="queue_timeout") return job.stages.length===0 && !job.rowAttemptLogs?.length && !job.rowRetries?.length;
   if(job.stages.length!==1 || job.stages[0].name!=="base" || job.stages[0].status!=="inflight" || job.animationRepair?.attempts.length || job.animationRepair?.pending.length)return false;
   if(job.baseRepair){
     const repair=job.baseRepair,last=repair.attempts.at(-1);
-    return Boolean(validBaseRepairSequence(repair) && job.baseRetrySourceId && repair.phase==="stopped" && repair.attempts.length===repair.maxAttempts &&
-      repair.attempts.every((a,i)=>a.ordinal===i+1 && a.status==="failed" && a.failure && baseFailureRetryReason(a.failure)) &&
+    const inputRefusal=isManualInputModerationFailure(last?.failure);
+    return Boolean(validBaseRepairSequence(repair) && job.baseRetrySourceId && repair.phase==="stopped" && (repair.attempts.length===repair.maxAttempts || inputRefusal) &&
+      repair.attempts.every((a,i)=>a.ordinal===i+1 && a.status==="failed" && a.failure &&
+        (baseFailureRetryReason(a.failure) || (i===repair.attempts.length-1 && inputRefusal))) &&
       new Set(repair.attempts.map(a=>a.token)).size===repair.attempts.length && !job.rowAttemptLogs?.length && !job.rowRetries?.length &&
       last?.failure && last.failure.code===job.error && JSON.stringify(last.failure.providerFailure)===JSON.stringify(job.providerFailure) &&
       JSON.stringify(last.failure.diagnostic)===JSON.stringify(job.failureDiagnostic) &&
@@ -51,5 +61,6 @@ export function baseRetryEligibility(job: GenerationJob): boolean {
   if(last?.cliCause && (last.cliCause.kind!=="http_error" || last.cliCause.httpStatus!==failure?.httpStatus))return false;
   if(job.cliFailureCauses?.some(entry=>entry.stage!=="base" || entry.cause.kind!=="http_error" || entry.cause.httpStatus!==failure?.httpStatus))return false;
   return (job.error==="provider_rejected" && isOutputModerationFailure(failure)) ||
-    (job.error==="provider_rate_limited" && failure?.httpStatus===429);
+    (job.error==="provider_rate_limited" && failure?.httpStatus===429) ||
+    isManualInputModerationFailure({code:job.error??"",providerFailure:failure,diagnostic:job.failureDiagnostic,cliCause:last?.cliCause});
 }

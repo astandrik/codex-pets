@@ -26,6 +26,16 @@ it("serves options/reference and lookup without creating work",async()=>{
  const input=await f.input(),created=await POST(request(input),context(f.id));expect(created.status).toBe(202);
  const check=await GET(new Request("https://pets.example/api?requestId="+input.requestId),context(f.id));expect(await check.json()).toEqual({...await created.json(),reused:true});
 });
+it("exposes and accepts one explicit input-moderation retry through the existing endpoint",async()=>{
+ const f=await setup();f.store.jobs.get(f.id)!.providerFailure={httpStatus:400,code:"moderation_blocked",moderationStage:"input"};
+ const options=await GET(new Request("https://pets.example/api"),context(f.id));expect(options.status).toBe(200);
+ expect((await options.json()).options).toMatchObject({inputState:"saved",prompt:"Original input"});
+ const input=await f.input();
+ const accepted=await POST(request(input),context(f.id));expect(accepted.status).toBe(202);
+ const duplicate=await POST(request(input),context(f.id));expect(duplicate.status).toBe(202);
+ expect((await duplicate.json()).generation.generationId).toBe((await accepted.json()).generation.generationId);
+ expect(f.store.jobs.size).toBe(2);
+});
 it("rejects foreign origin, forged IP fallback, unknown fields and oversized JSON",async()=>{
  const f=await setup(),input=await f.input();
  expect((await POST(request(input,{origin:"https://evil.invalid"}),context(f.id))).status).toBe(403);
