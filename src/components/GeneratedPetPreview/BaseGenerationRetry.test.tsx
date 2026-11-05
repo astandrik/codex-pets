@@ -46,6 +46,7 @@ it("coalesces double submission and leaves a real accepted URL",async()=>{
  expect(posts()).toHaveLength(1);const requestId=JSON.parse(posts()[0][1].body).requestId;
  await act(async()=>resolve(response(reply(requestId))));await waitForIdle();
  expect(document.querySelector(`a[href="/generated/${child}"]`)).not.toBeNull();expect(push).toHaveBeenCalledWith("/generated/"+child);
+ expect(JSON.parse(localStorage.getItem("pets-generation-history-v2:"+child)!)).toMatchObject({parentGenerationId:id,kind:"base-retry"});
 });
 it("keeps legacy input across close/theme/resize and requires a choice",async()=>{
  fetcher.mockResolvedValue(response({options:{...options,inputState:"legacy",prompt:undefined,availableModes:["legacy-image-only","legacy-text"]}}));

@@ -8,11 +8,12 @@ import {withBasePath} from "@/lib/base-path";
 import type {HistoryGeneration} from "@/lib/pets/generation/history";
 import {getPetSheet, inferSpriteVersionNumber} from "@/lib/pets/types";
 
-export function GenerationThumbnail({generationId, generation, expired, refreshKey=0}: {
+export function GenerationThumbnail({generationId, generation, expired, refreshKey=0, onUnavailable}: {
   generationId: string;
   generation?: HistoryGeneration;
   expired: boolean;
   refreshKey?: number;
+  onUnavailable?: () => void;
 }) {
   const atlas = !generation?.baseUrl && generation?.status === "completed";
   // Server URLs signal availability; build the private URL from the validated history ID.
@@ -22,11 +23,11 @@ export function GenerationThumbnail({generationId, generation, expired, refreshK
     else if (atlas) url = withBasePath(`/api/pet-generations/${generationId}/files/spritesheet.webp`);
   }
   return <div className="my-generations__thumbnail" aria-hidden="true">
-    {url ? <ThumbnailImage key={url} url={url} atlas={atlas} refreshKey={refreshKey}/> : <Icon data={Picture} size={24}/>}
+    {url ? <ThumbnailImage key={url} url={url} atlas={atlas} refreshKey={refreshKey} onUnavailable={onUnavailable}/> : <Icon data={Picture} size={24}/>}
   </div>;
 }
 
-function ThumbnailImage({url, atlas, refreshKey}: {url: string; atlas: boolean; refreshKey:number}) {
+function ThumbnailImage({url, atlas, refreshKey, onUnavailable}: {url: string; atlas: boolean; refreshKey:number; onUnavailable?:()=>void}) {
   const [imageState,setImage]=useState<{status:"loading"|"ready"|"failed";refreshKey:number}>({status:"loading",refreshKey});
   if(imageState.refreshKey!==refreshKey)setImage({...imageState,refreshKey,status:imageState.status==="failed"?"loading":imageState.status});
   const status=imageState.status;
@@ -45,9 +46,11 @@ function ThumbnailImage({url, atlas, refreshKey}: {url: string; atlas: boolean; 
     unoptimized
     onLoad={event => {
       const {naturalWidth, naturalHeight} = event.currentTarget;
-      setImage(current=>({...current,status:atlas && !inferSpriteVersionNumber(naturalWidth, naturalHeight) ? "failed" : "ready"}));
+      const invalid=atlas && !inferSpriteVersionNumber(naturalWidth, naturalHeight);
+      setImage(current=>({...current,status:invalid ? "failed" : "ready"}));
+      if(invalid)onUnavailable?.();
     }}
-    onError={() => setImage(current=>({...current,status:"failed"}))}
+    onError={() => {setImage(current=>({...current,status:"failed"}));onUnavailable?.();}}
   />;
   return <>
     {status === "loading" && <Icon data={Picture} size={24}/>}

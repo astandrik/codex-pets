@@ -65,8 +65,8 @@ it("uses the displayed base, preserves its link and confirms only the resulting 
   await act(async () => current!.dispatchEvent(new Event("load")));
   await act(async () => findButton("Animate this character")!.click());
   expect(posts().map(([url]) => url)).toEqual([`/api/pet-generations/${original}/refine`, `/api/pet-generations/${child}/confirm`]);
-  expect(localStorage.getItem("pets-generation-history-v1:" + original)).not.toBeNull();
-  expect(localStorage.getItem("pets-generation-history-v1:" + child)).not.toBeNull();
+  expect(localStorage.getItem("pets-generation-history-v2:" + original)).not.toBeNull();
+  expect(JSON.parse(localStorage.getItem("pets-generation-history-v2:" + child)!)).toMatchObject({parentGenerationId:original,kind:"base-refinement"});
   expect(JSON.stringify({...sessionStorage, ...localStorage})).not.toContain("Make the scarf red");
 });
 
@@ -113,7 +113,7 @@ it("keeps an accepted refinement response recoverable when the source expires wh
   await act(async () => {await new Promise(resolve => setTimeout(resolve, 1550));});
   await act(async () => {finish(Response.json(reply(child), {status: 202})); await new Promise(resolve => setTimeout(resolve, 20));});
   expect(navigate).toHaveBeenCalledWith(`/generated/${child}?from=${original}`);
-  expect(localStorage.getItem("pets-generation-history-v1:" + child)).not.toBeNull();
+  expect(JSON.parse(localStorage.getItem("pets-generation-history-v2:" + child)!)).toMatchObject({parentGenerationId:original,kind:"base-refinement"});
 });
 
 it("replays the fixed submitted edit after an expired source and a lost response", async () => {
@@ -149,7 +149,7 @@ it("receives the new version when another tab confirms the source during the req
   expect(signal.aborted).toBe(false);
   await act(async () => {finish(Response.json(reply(child), {status: 202})); await new Promise(resolve => setTimeout(resolve, 20));});
   expect(navigate).toHaveBeenCalledWith(`/generated/${child}?from=${original}`);
-  expect(localStorage.getItem("pets-generation-history-v1:" + child)).not.toBeNull();
+  expect(JSON.parse(localStorage.getItem("pets-generation-history-v2:" + child)!)).toMatchObject({parentGenerationId:original,kind:"base-refinement"});
 });
 
 it("creates a fresh request when the user returns to the original and intentionally repeats the same edit", async () => {
@@ -188,5 +188,5 @@ it.each(["expired", "confirmed"])("recovers a lost receipt after remount with a 
   await act(async () => {findButton("Check submitted version")!.click(); await new Promise(resolve => setTimeout(resolve, 50));});
   expect(posts()).toHaveLength(2); expect(String(posts()[1][1].body)).toBe(body);
   expect(navigate).toHaveBeenCalledWith(`/generated/${child}?from=${original}`);
-  expect(localStorage.getItem("pets-generation-history-v1:" + child)).not.toBeNull();
+  expect(JSON.parse(localStorage.getItem("pets-generation-history-v2:" + child)!)).toMatchObject({parentGenerationId:original,kind:"base-refinement"});
 });

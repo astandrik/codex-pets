@@ -1,13 +1,14 @@
 "use client";
 
-import {useEffect,useState,useSyncExternalStore,type ComponentProps} from "react";
+import {useCallback,useEffect,useLayoutEffect,useRef,useState,useSyncExternalStore,type ComponentProps} from "react";
 import Link from "next/link";
 import {Button,Label,Text} from "@gravity-ui/uikit";
 import {withBasePath} from "@/lib/base-path";
-import {HISTORY_PREFIX,parseHistoryGeneration,readGenerationHistory,pruneGenerationHistory,type GenerationHistoryEntry} from "@/lib/pets/generation/history";
+import {HISTORY_PREFIX,HISTORY_FAMILY_LIMIT,isGenerationHistoryKey,rememberGenerationVersion,historyParent,parseHistoryGeneration,readGenerationHistory,readGenerationHistoryForReconciliation,pruneGenerationHistory,type GenerationHistoryEntry} from "@/lib/pets/generation/history";
 import {GenerationThumbnail} from "./GenerationThumbnail";
 import {cachedHistoryStatus,cacheHistoryStatus,historyStatusFresh,pruneHistoryStatuses,type HistoryStatus} from "./history-status-cache";
 import {animationRepairProgressText} from "@/lib/pets/generation/animation-repair-progress";
+import {groupGenerationVersions,versionTime} from "@/lib/pets/generation/history-families";
 import "./MyGenerations.scss";
 
 type Result=HistoryStatus;
@@ -45,7 +46,7 @@ export function MyGenerations(){
   const browser=useSyncExternalStore(subscribeToBrowser,()=>true,()=>false);
   const [refresh,setRefresh]=useState<Refresh>({version:0,force:false,imageRetry:0});
   useEffect(()=>{
-    const onStorage=(event:StorageEvent)=>{if(event.key===null||event.key.startsWith(HISTORY_PREFIX))setRefresh(v=>({...v,version:v.version+1,force:true}));};
+    const onStorage=(event:StorageEvent)=>{if(event.key===null||isGenerationHistoryKey(event.key)){window.dispatchEvent(new Event("pets-history-before-refresh"));setRefresh(v=>({...v,version:v.version+1,force:true}));}};
     const onVisible=()=>{if(!document.hidden)setRefresh(v=>({...v,version:v.version+1,force:false}));};
     window.addEventListener("storage",onStorage);document.addEventListener("visibilitychange",onVisible);
     return()=>{window.removeEventListener("storage",onStorage);document.removeEventListener("visibilitychange",onVisible);};
@@ -55,15 +56,47 @@ export function MyGenerations(){
 }
 
 function rowsFrom(history:ReturnType<typeof readGenerationHistory>,cache:Map<string,Result>):Row[]{
-  return history.entries.map(entry=>{const result=cache.get(entry.generationId);const expiresAt=Math.min(entry.expiresAt,result?.generation?Date.parse(result.generation.expiresAt):entry.expiresAt);return {...entry,...result,expiresAt,expired:expiresAt<=Date.now(),failedReads:result?.failedReads??0};});
+  return history.entries.map(entry=>{const result=cache.get(entry.generationId);const expiresAt=Math.min(entry.expiresAt,result?.generation?Date.parse(result.generation.expiresAt):entry.expiresAt);const parent=result?.generation?historyParent(result.generation):undefined;const createdAt=result?.generation?.createdAt?Date.parse(result.generation.createdAt):undefined;return {...entry,...(!entry.parentGenerationId&&parent?{parentGenerationId:parent.generationId,familyId:parent.generationId,kind:parent.kind}:{}),...(entry.createdAt===undefined&&createdAt?{createdAt}:{}),...result,expiresAt,expired:expiresAt<=Date.now(),failedReads:result?.failedReads??0};});
 }
 function readSignal(){try{return localStorage.getItem(HISTORY_PREFIX+"refresh");}catch{return null;}}
-function initialRows(){const history=readGenerationHistory();return {history,rows:rowsFrom(history,new Map(history.entries.map(entry=>[entry.generationId,cachedHistoryStatus(entry)??{failedReads:0}])))};}
+function initialRows(){const history=readGenerationHistoryForReconciliation();return {history,rows:rowsFrom(history,new Map(history.entries.map(entry=>[entry.generationId,cachedHistoryStatus(entry)??{failedReads:0}])))};}
 
 function BrowserGenerations({refresh,onRefresh}:{refresh:Refresh;onRefresh:()=>void}){
   const [view,setView]=useState(()=>({...initialRows(),refresh}));
   if(view.refresh!==refresh)setView({...initialRows(),refresh});
   const {history,rows}=view;
+  const restoreFocus=useRef<{element:HTMLElement;href:string;summary?:boolean}|null>(null);
+  const restoreExpanded=useRef<string[]>([]);
+  const captureUi=useCallback(()=>{
+    const active=document.activeElement;
+    if(active instanceof HTMLAnchorElement&&active.closest('.my-generations'))restoreFocus.current={element:active,href:active.getAttribute('href')??''};
+    else if(active instanceof HTMLElement&&active.matches('summary[data-generation-id]'))restoreFocus.current={element:active,href:withBasePath(`/generated/${active.dataset.generationId}`),summary:true};
+    restoreExpanded.current=[...document.querySelectorAll<HTMLElement>('.my-generations details[open] > summary')].flatMap(summary=>summary.dataset.generationId?[summary.dataset.generationId]:[]);
+  },[]);
+  useEffect(()=>{
+    window.addEventListener('pets-history-before-refresh',captureUi);
+    return()=>window.removeEventListener('pets-history-before-refresh',captureUi);
+  },[captureUi]);
+  useLayoutEffect(()=>{
+    const versionElements=[...document.querySelectorAll<HTMLElement>('.my-generations [data-history-version]')];
+    const itemForVersion=(id:string)=>versionElements.find(element=>element.dataset.historyVersion===id)?.closest('.my-generations__item');
+    for(const id of restoreExpanded.current){
+      const item=itemForVersion(id);
+      const details=item?.querySelector('details');if(details)details.open=true;
+    }
+    restoreExpanded.current=[];
+    const previous=restoreFocus.current;restoreFocus.current=null;
+    if(!previous)return;
+    const active=document.activeElement;
+    if(active!==document.body&&active!==previous.element)return;
+    if(previous.element.isConnected&&(previous.summary||previous.element.getAttribute('href')===previous.href))return;
+    const candidates=[...document.querySelectorAll<HTMLAnchorElement>('.my-generations a')].filter(link=>link.getAttribute('href')===previous.href);
+    const visible=candidates.find(link=>!link.closest('details:not([open])'));
+    const versionId=previous.href.split('/').at(-1)??'';
+    const target=previous.summary?itemForVersion(versionId)?.querySelector('summary'):visible??candidates[0];
+    const details=target?.closest('details');if(details)details.open=true;
+    target?.focus({preventScroll:true});
+  },[rows]);
   useEffect(()=>{
     const signal=readSignal();
     pruneHistoryStatuses(history.available?history.entries:[]);
@@ -74,6 +107,8 @@ function BrowserGenerations({refresh,onRefresh}:{refresh:Refresh;onRefresh:()=>v
     const publishRows=()=>setView(current=>current.refresh===refresh?{...current,rows:rowsFrom(history,cache)}:current);
     const update=(entry:GenerationHistoryEntry,result:Result)=>{
       if(disposed)return;
+      captureUi();
+      if(result.generation)rememberGenerationVersion(result.generation);
       cache.set(entry.generationId,result);cacheHistoryStatus(entry,result,signal,Date.now());publishRows();
     };
     const forceRefresh=refresh.force;
@@ -107,37 +142,61 @@ function BrowserGenerations({refresh,onRefresh}:{refresh:Refresh;onRefresh:()=>v
           }));
         }
       if(disposed)return;
+      pruneGenerationHistory();
       const updated=rowsFrom(history,cache);publishRows();
       const current=Date.now();const nextExpiry=Math.min(...updated.filter(row=>row.expiresAt>current).map(row=>row.expiresAt-current));
       const polling=updated.some(row=>row.expiresAt>current&&needsStatusRead(row));
-      if(polling||Number.isFinite(nextExpiry))timer=setTimeout(()=>{void poll();},polling?5000:Math.max(1,nextExpiry+1));
+      if(polling||Number.isFinite(nextExpiry))timer=setTimeout(()=>{void poll();},polling?Math.min(5000,Math.max(1,nextExpiry+1)):Math.max(1,nextExpiry+1));
     }
     if(history.available&&history.entries.some(entry=>entry.expiresAt>Date.now()))void poll();
     return()=>{disposed=true;round?.abort();if(timer)clearTimeout(timer);};
-  },[history,refresh]);
+  },[history,refresh,captureUi]);
 
   if(!history.available)return <p role="alert">Browser storage is unavailable. Keep the private link shown after generation to open your pet.</p>;
   if(!rows.length)return <p>No generations saved in this browser yet. <a href={withBasePath("/generate")}>Generate a pet</a> to start.</p>;
   return <div className="my-generations">
     <Button view="outlined" onClick={onRefresh}>Refresh statuses</Button>
     <ul className="my-generations__list">
-      {rows.map(row=>{
-        const expired=row.expired||row.unavailable;
-        const status=statusLabel(row,Boolean(expired));
-        return <li key={row.generationId} className="my-generations__item">
-          <div className="my-generations__identity">
-            <GenerationThumbnail generationId={row.generationId} generation={row.generation} expired={Boolean(expired)} refreshKey={refresh.imageRetry}/>
-            <div className="my-generations__heading"><Text variant="subheader-2" as="h2">{row.generation?.pet?.displayName??"Pet generation"}</Text><Label theme={statusTheme(row,Boolean(expired))}>{status}</Label></div>
-          </div>
-          {row.generation?.continuation&&<p>{row.generation.continuation.mode === "rebuild" ? "Повторная сборка" : "Продолжение предыдущей генерации"}</p>}
-          {!expired&&row.generation?.canContinue&&<p><Link prefetch={false} href={`/generated/${row.generationId}`}>Продолжить генерацию</Link></p>}
-          <Text variant="body-1" color="secondary">Saved {new Date(row.savedAt).toLocaleString()}</Text>
-          {!expired&&row.generation&&live(row)&&<p role="status">{animationRepairProgressText(row.generation.animationRepair) ?? `${row.generation.progress.completedSteps} / ${row.generation.progress.totalSteps} steps completed`}</p>}
-          {row.failedReads>0&&!expired&&<p role="status">Could not refresh the status. Your task is unchanged; refresh statuses or open its page.</p>}
-          <p>{expired?"The temporary result is no longer available.":`Available until ${new Date(row.expiresAt).toLocaleString()}`}</p>
-          {!expired&&<Button component={HistoryNavigationLink} prefetch={false} view={row.generation?.status==="completed"?"action":"outlined"} href={`/generated/${row.generationId}`}>{row.generation?.status==="completed"?"Open pet":"Open generation"}</Button>}
-        </li>;
-      })}
+      {groupGenerationVersions(rows).slice(0,HISTORY_FAMILY_LIMIT).map(family=><FamilyRow key={family.familyId} versions={family.versions} refreshKey={refresh.imageRetry}/>)}
     </ul>
   </div>;
+}
+
+const VERSION_LABELS={initial:"Исходная генерация","base-refinement":"Изменение персонажа","base-retry":"Повтор создания персонажа",continuation:"Исправление анимаций","animation-revision":"Новая версия анимаций"};
+function available(row:Row){return !row.expired&&!row.unavailable;}
+function acceptedReady(row:Row){return available(row)&&row.generation?.status==="completed"&&(!row.generation.animationRevision||row.generation.animationRevision.acceptedAt!==undefined);}
+function openLabel(row:Row){return row.generation?.animationRevision&&row.generation.animationRevision.acceptedAt===undefined?"Review version":acceptedReady(row)?"Open pet":"Open generation";}
+function FamilyRow({versions,refreshKey}:{versions:Row[];refreshKey:number}){
+  const row=versions[0];
+  const [thumbnailFailures,setThumbnailFailures]=useState<{refreshKey:number;ids:string[]}>({refreshKey,ids:[]});
+  if(thumbnailFailures.refreshKey!==refreshKey)setThumbnailFailures({refreshKey,ids:[]});
+  const ready=versions.find(acceptedReady);
+  const image=versions.find(version=>!thumbnailFailures.ids.includes(version.generationId)&&available(version)&&(version.generation?.baseUrl||version.generation?.status==="completed"));
+  const name=versions.find(version=>version.generation?.pet?.displayName)?.generation?.pet?.displayName??"Pet generation";
+  const otherActive=versions.slice(1).filter(version=>available(version)&&version.generation&&live(version)).length;
+  return <li className="my-generations__item" data-history-version={row.generationId}>
+    <div className="my-generations__identity">
+      <GenerationThumbnail generationId={image?.generationId??row.generationId} generation={image?.generation} expired={!image} refreshKey={refreshKey} onUnavailable={()=>{if(image)setThumbnailFailures(current=>current.ids.includes(image.generationId)?current:{...current,ids:[...current.ids,image.generationId]});}}/>
+      <div className="my-generations__heading"><Text variant="subheader-2" as="h2">{name}</Text><Label theme={statusTheme(row,!available(row))}>{statusLabel(row,!available(row))}</Label></div>
+    </div>
+    <Text variant="body-1" color="secondary">Saved {new Date(versionTime(row)).toLocaleString()}</Text>
+    {available(row)&&row.generation&&live(row)&&<p role="status">{animationRepairProgressText(row.generation.animationRepair)??`${row.generation.progress.completedSteps} / ${row.generation.progress.totalSteps} steps completed`}</p>}
+    {otherActive>0&&<p>Других версий в работе: {otherActive}</p>}
+    {row.failedReads>0&&available(row)&&<p role="status">Could not refresh the status. Your task is unchanged; refresh statuses or open its page.</p>}
+    <p>{available(row)?`Available until ${new Date(row.expiresAt).toLocaleString()}`:"The temporary result is no longer available."}</p>
+    <div className="my-generations__actions">
+      {available(row)&&<Button component={HistoryNavigationLink} prefetch={false} view={acceptedReady(row)?"action":"outlined"} href={`/generated/${row.generationId}`}>{openLabel(row)}</Button>}
+      {ready&&ready.generationId!==row.generationId&&<Button component={HistoryNavigationLink} prefetch={false} view="outlined" href={`/generated/${ready.generationId}`}>Открыть предыдущий готовый результат</Button>}
+      {available(row)&&row.generation?.canContinue&&<Link prefetch={false} href={`/generated/${row.generationId}`}>Продолжить генерацию</Link>}
+    </div>
+    {versions.length>1&&<details className="my-generations__versions">
+      <summary data-generation-id={row.generationId}>История версий · {versions.length}</summary>
+      <ol>{versions.map(version=><li key={version.generationId} data-history-version={version.generationId}>
+        <span>{VERSION_LABELS[version.kind??"initial"]}</span>
+        <span>{new Date(versionTime(version)).toLocaleString()} · {statusLabel(version,!available(version))}</span>
+        <span>{available(version)?`Available until ${new Date(version.expiresAt).toLocaleString()}`:"The temporary result is no longer available."}</span>
+        {available(version)&&<Link prefetch={false} href={`/generated/${version.generationId}`}>Открыть версию</Link>}
+      </li>)}</ol>
+    </details>}
+  </li>;
 }

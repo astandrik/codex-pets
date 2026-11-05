@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@gravity-ui/uikit";
 import { useRouter } from "next/navigation";
 import { withBasePath } from "@/lib/base-path";
-import { rememberGeneration, notifyGenerationHistory } from "@/lib/pets/generation/history";
+import { rememberGenerationVersion, notifyGenerationHistory } from "@/lib/pets/generation/history";
 import { publicGenerationError } from "@/lib/pets/generation/public-error";
 import { CONTINUATION_STATES, REGENERATION_RETRIES, type ContinuationInput, type ContinuationOptions, type ContinuationState } from "@/lib/pets/generation/continuation-model";
 import { readContinuationId, readContinuationInput, rememberContinuation, rememberContinuationInput, parseMaxRetriesInput, clearContinuation, continuationReplySchema, continuationOptionsSchema } from "./continuation-request";
@@ -121,7 +121,7 @@ function ContinuationForm({ generationId, enabled, onContinued, onVisibilityChan
             throw Error("invalid_receipt");
         const url = withBasePath(`/generated/${g.generationId}`);
         setAcceptedUrl(url);
-        if (!rememberGeneration(g.generationId, g.expiresAt)) {
+        if (!rememberGenerationVersion(g, {generationId, kind: "continuation"})) {
             setError("Результат принят, но история браузера недоступна. Сохраните ссылку ниже.");
             return;
         }

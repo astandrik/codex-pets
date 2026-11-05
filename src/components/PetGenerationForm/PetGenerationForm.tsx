@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, TextArea, TextInput } from "@gravity-ui/uikit";
 import { withBasePath } from "@/lib/base-path";
-import { rememberGeneration } from "@/lib/pets/generation/history";
+import { rememberGenerationVersion } from "@/lib/pets/generation/history";
 import { prepareGenerationRequest } from "./request";
 import {prepareReferenceImage, ReferenceImageError} from "./prepare-reference-image";
 import {DEFAULT_GENERATION_QUEUE_LIMIT} from "@/lib/pets/generation/queue-policy";
@@ -209,7 +209,7 @@ export function PetGenerationForm({ enabled, reviewBase = false, automaticAnimat
       releaseReference();
       setPrompt(""); setDisplayName(""); setReference(undefined);
       if (fileInput.current) fileInput.current.value = "";
-      setHistoryWarning(!rememberGeneration(generation.generationId, expiresAt));
+      setHistoryWarning(!rememberGenerationVersion({...generation, expiresAt}));
     } catch (cause) {
       if (admissionUnavailable && cause instanceof Error && cause.message === "refinement_replay_mismatch") {
         setError({kind: "server", message: "Use the same description, name and reference image as your earlier request. New requests are temporarily unavailable."});

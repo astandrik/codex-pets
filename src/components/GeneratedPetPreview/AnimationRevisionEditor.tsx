@@ -4,7 +4,7 @@ import {Button, TextArea} from "@gravity-ui/uikit";
 import {useRouter} from "next/navigation";
 import {PET_STATES} from "@/lib/pets/types";
 import {withBasePath} from "@/lib/base-path";
-import {rememberGeneration} from "@/lib/pets/generation/history";
+import {rememberGenerationVersion} from "@/lib/pets/generation/history";
 import {publicGenerationError} from "@/lib/pets/generation/public-error";
 import {clearAnimationRevision, prepareAnimationRevision, readAnimationRevision, type PendingAnimationRevision} from "./animation-revision-request";
 import type {AnimationState} from "@/lib/pets/generation/animation-revision-input";
@@ -40,7 +40,7 @@ function AnimationRevisionForm({generationId, metadataRevision, canEdit, blocked
     const generation = result && typeof result === "object" && "generation" in result ? result.generation : null;
     if (!generation || typeof generation !== "object" || !("generationId" in generation) || typeof generation.generationId !== "string" || !/^[a-f0-9]{64}$/.test(generation.generationId) || generation.generationId === generationId || !("expiresAt" in generation) || typeof generation.expiresAt !== "string" || !Number.isFinite(Date.parse(generation.expiresAt))) throw Error("invalid_receipt");
     const url = withBasePath(`/generated/${generation.generationId}`); setAcceptedUrl(url);
-    if (!rememberGeneration(generation.generationId, generation.expiresAt)) {setError("Не удалось сохранить историю. Сохраните ссылку на новую версию; данные восстановления оставлены в этой вкладке."); return;}
+    if (!rememberGenerationVersion(generation, {generationId, kind: "animation-revision"})) {setError("Не удалось сохранить историю. Сохраните ссылку на новую версию; данные восстановления оставлены в этой вкладке."); return;}
     try {clearAnimationRevision(sessionStorage, generationId, requestId);} catch { /* Receipt and direct link remain usable. */ }
     router.push(url);
   }

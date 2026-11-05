@@ -20,7 +20,7 @@ export const baseRetryInputSchema = z.discriminatedUnion("mode",[
 ]);
 export type BaseRetryInput = z.infer<typeof baseRetryInputSchema>;
 export type BaseRetryMode = BaseRetryInput["mode"];
-export const retryGenerationSchema = z.object({generationId:digestSchema,status:z.enum(["queued","generating","awaiting_confirmation","processing","completed","failed"]),expiresAt:z.iso.datetime(),previewUrl:z.string(),baseRepair:baseRepairProgressSchema.optional()});
+export const retryGenerationSchema = z.object({generationId:digestSchema,createdAt:z.iso.datetime().optional(),status:z.enum(["queued","generating","awaiting_confirmation","processing","completed","failed"]),expiresAt:z.iso.datetime(),previewUrl:z.string(),baseRepair:baseRepairProgressSchema.optional()});
 export const baseRetryReplySchema = z.object({requestId:z.uuid(),sourceGenerationId:digestSchema,reused:z.boolean(),generation:retryGenerationSchema});
 export type BaseRetryReply = z.infer<typeof baseRetryReplySchema>;
 export const baseRetryOptionsSchema = z.union([

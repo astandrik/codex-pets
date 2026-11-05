@@ -4,7 +4,7 @@ import {useCallback,useEffect,useRef,useState,useSyncExternalStore} from "react"
 import {Button,Dialog,TextArea} from "@gravity-ui/uikit";
 import {useRouter} from "next/navigation";
 import {withBasePath} from "@/lib/base-path";
-import {rememberGeneration} from "@/lib/pets/generation/history";
+import {rememberGenerationVersion} from "@/lib/pets/generation/history";
 import {publicGenerationError} from "@/lib/pets/generation/public-error";
 import {baseRetryOptionsSchema,baseRetryReplySchema,type BaseRetryInput,type BaseRetryMode,type BaseRetryOptions,type BaseRetryReply} from "@/lib/pets/generation/base-retry-model";
 import {readBaseRetryRequest,prepareBaseRetryRequest,clearBaseRetryRequest,readBaseRetrySettings,type SavedBaseRetryRequest} from "./base-retry-request";
@@ -42,7 +42,7 @@ function BaseGenerationRetryForm({generationId,canRetry}:Props){
     if(generation.generationId===generationId)throw Error("invalid_reply");
     setAcceptedGeneration(generation);
     const url=withBasePath(`/generated/${generation.generationId}`);setAcceptedUrl(url);
-    if(!rememberGeneration(generation.generationId,generation.expiresAt)){
+    if(!rememberGenerationVersion(generation,{generationId,kind:"base-retry"})){
       setError("Повтор принят, но историю сохранить не удалось. Сохраните ссылку ниже.");return;
     }
     if(requestId){try{clearBaseRetryRequest(localStorage,generationId,requestId);}catch{/* The accepted link remains usable. */}setPending(null);}

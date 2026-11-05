@@ -4,7 +4,7 @@ import {useEffect, useRef, useState} from "react";
 import {Button, TextArea} from "@gravity-ui/uikit";
 import {useRouter} from "next/navigation";
 import {withBasePath} from "@/lib/base-path";
-import {rememberGeneration} from "@/lib/pets/generation/history";
+import {rememberGenerationVersion} from "@/lib/pets/generation/history";
 import {publicGenerationError} from "@/lib/pets/generation/public-error";
 import {prepareRefinementRequest, hasPendingRefinement} from "@/components/PetGenerationForm/request";
 
@@ -80,7 +80,7 @@ function RefinementForm({generationId, disabled, blocked, recoveryOnly = false, 
           !("expiresAt" in generation) || typeof generation.expiresAt !== "string" || !Number.isFinite(Date.parse(generation.expiresAt))) throw Error("invalid_refinement_receipt");
       const url = withBasePath(`/generated/${generation.generationId}?from=${generationId}`);
       setAcceptedUrl(url);
-      if (!rememberGeneration(generation.generationId, generation.expiresAt)) {
+      if (!rememberGenerationVersion(generation, {generationId, kind: "base-refinement"})) {
         setError("Could not save this version to My generations. Keep the new version link below. Your recovery request is still saved in this tab.");
         return;
       }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import {afterEach,beforeEach, describe, expect, it, vi} from "vitest";
-import {HISTORY_PREFIX, readGenerationHistory, pruneGenerationHistory, rememberGeneration, notifyGenerationHistory, parseHistoryGeneration} from "./history";
+import {HISTORY_PREFIX, HISTORY_V2_PREFIX, readGenerationHistory, pruneGenerationHistory, rememberGeneration, notifyGenerationHistory, parseHistoryGeneration} from "./history";
 const now=Date.parse("2026-10-12T12:00:00Z"), id="a".repeat(64), expires=new Date(now+86400000).toISOString();
 beforeEach(()=>localStorage.clear());
 afterEach(()=>vi.restoreAllMocks());
@@ -8,8 +8,8 @@ describe("private browser generation history",()=>{
  it("persists only private ID and timestamps, deduplicates and survives a new read",()=>{
   expect(rememberGeneration(id,expires,now)).toBe(true);
   expect(rememberGeneration(id,expires,now+1000)).toBe(true);
-  expect(readGenerationHistory(now+2000)).toEqual({available:true,entries:[{generationId:id,savedAt:now,expiresAt:Date.parse(expires)}]});
-  expect(Object.keys(JSON.parse(localStorage.getItem(HISTORY_PREFIX+id)!)).sort()).toEqual(["expiresAt","generationId","savedAt"]);
+  expect(readGenerationHistory(now+2000)).toEqual({available:true,entries:[{generationId:id,savedAt:now,expiresAt:Date.parse(expires),familyId:id}]});
+  expect(Object.keys(JSON.parse(localStorage.getItem(HISTORY_V2_PREFIX+id)!)).sort()).toEqual(["expiresAt","familyId","generationId","savedAt","version"]);
  });
  it("keeps independent tab additions instead of overwriting an entire list",()=>{
   rememberGeneration(id,expires,now);rememberGeneration("b".repeat(64),expires,now+1);
@@ -63,7 +63,7 @@ describe("history read and cleanup separation", () => {
   it("reads and filters a storage interface that has no mutation methods", () => {
     const storage = memoryStorage({ [HISTORY_PREFIX + staleId]: staleEntry, [HISTORY_PREFIX + id]: currentEntry });
     const readOnly = { length: storage.length, key: storage.key, getItem: storage.getItem };
-    expect(readGenerationHistory(now, readOnly)).toEqual({ available: true, entries: [JSON.parse(currentEntry)] });
+    expect(readGenerationHistory(now, readOnly)).toEqual({ available: true, entries: [{...JSON.parse(currentEntry),familyId:id}] });
   });
 
   it("limits a read to fifty entries without pruning until explicitly requested", () => {
@@ -81,14 +81,15 @@ describe("history read and cleanup separation", () => {
     expect(storage.removeItem).not.toHaveBeenCalled();
     expect(storage.setItem).not.toHaveBeenCalled();
     expect(pruneGenerationHistory(now + 53, storage)).toBe(true);
-    expect(storage.length).toBe(50);
+    // Keep overflow records until expiry: a delayed server response may identify a parent.
+    expect(storage.length).toBe(52);
   });
 
   it("keeps the exact seven-day boundary and ignores unrelated or malformed records", () => {
     const malformedKey = HISTORY_PREFIX + "f".repeat(64);
     const storage = memoryStorage({ [HISTORY_PREFIX + staleId]: staleEntry, unrelated: "keep", [malformedKey]: "not-json" });
     expect(pruneGenerationHistory(now - 1, storage)).toBe(true);
-    expect(storage.getItem(HISTORY_PREFIX + staleId)).toBe(staleEntry);
+    expect(JSON.parse(storage.getItem(HISTORY_V2_PREFIX + staleId)!)).toMatchObject(JSON.parse(staleEntry));
     expect(pruneGenerationHistory(now, storage)).toBe(true);
     expect(storage.getItem(HISTORY_PREFIX + staleId)).toBeNull();
     expect(storage.getItem("unrelated")).toBe("keep");
@@ -99,7 +100,7 @@ describe("history read and cleanup separation", () => {
     const storage = memoryStorage({ [HISTORY_PREFIX + staleId]: staleEntry, [HISTORY_PREFIX + id]: currentEntry });
     storage.removeItem.mockImplementation(() => { throw new Error("cleanup blocked"); });
     expect(pruneGenerationHistory(now, storage)).toBe(true);
-    expect(readGenerationHistory(now, storage).entries).toEqual([JSON.parse(currentEntry)]);
+    expect(readGenerationHistory(now, storage).entries).toEqual([{...JSON.parse(currentEntry),familyId:id}]);
   });
 
   it("continues cleanup after one key fails", () => {
@@ -116,7 +117,7 @@ describe("history read and cleanup separation", () => {
     const storage = memoryStorage({ [HISTORY_PREFIX + staleId]: staleEntry });
     storage.removeItem.mockImplementation(() => { throw new Error("cleanup blocked"); });
     expect(rememberGeneration(id, expires, now, storage)).toBe(true);
-    expect(JSON.parse(storage.getItem(HISTORY_PREFIX + id)!)).toEqual({ generationId: id, savedAt: now, expiresAt: Date.parse(expires) });
+    expect(JSON.parse(storage.getItem(HISTORY_V2_PREFIX + id)!)).toEqual({ generationId: id, savedAt: now, expiresAt: Date.parse(expires),familyId:id,version:2 });
     expect(storage.setItem).toHaveBeenCalledTimes(1);
   });
 
@@ -134,15 +135,15 @@ describe("history read and cleanup separation", () => {
 describe("cross-window history notification", () => {
   it("changes one non-entry key without changing existing entries or storing private input", () => {
     rememberGeneration(id, expires, now);
-    const original = localStorage.getItem(HISTORY_PREFIX + id);
+    const original = localStorage.getItem(HISTORY_V2_PREFIX + id);
     expect(notifyGenerationHistory()).toBe(true);
     const first = localStorage.getItem(HISTORY_PREFIX + "refresh");
     expect(first).toMatch(/^[a-f0-9-]{36}$/);
     expect(notifyGenerationHistory()).toBe(true);
     expect(localStorage.getItem(HISTORY_PREFIX + "refresh")).not.toBe(first);
     expect(localStorage.length).toBe(2);
-    expect(localStorage.getItem(HISTORY_PREFIX + id)).toBe(original);
-    expect(readGenerationHistory(now).entries).toEqual([JSON.parse(original!)]);
+    expect(localStorage.getItem(HISTORY_V2_PREFIX + id)).toBe(original);
+    expect(readGenerationHistory(now).entries).toEqual([{generationId:id,savedAt:now,expiresAt:Date.parse(expires),familyId:id}]);
     expect(pruneGenerationHistory(now)).toBe(true);
     expect(readGenerationHistory(now).entries).toHaveLength(1);
   });
