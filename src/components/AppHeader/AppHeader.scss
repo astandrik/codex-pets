@@ -4,7 +4,7 @@
   &__brand-text { font-size: 16px; }
   &__nav { display: flex; align-items: center; flex: 1; gap: 28px; min-width: 0; }
   &__primary-links { display: flex; align-items: center; gap: 12px; margin-left: 32px; }
-  &__menu-trigger { width: 140px; margin-left: auto; flex-shrink: 0; }
+  &__menu-trigger { width: auto; min-width: 140px; margin-left: auto; flex-shrink: 0; }
   &__menu-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 8px 10px; color: var(--g-color-text-secondary); text-decoration: none; border-radius: 8px; font-size: 13px; overflow-wrap: anywhere;
     &:hover, &_active { background: var(--g-color-base-simple-hover); color: var(--g-color-text-primary); }
   }
@@ -17,12 +17,16 @@
     padding: 16px;
     &__primary-links { display: none; }
     &__nav { justify-content: flex-end; }
-    &__menu-trigger { width: 143px; }
+    &__menu-trigger { min-width: 143px; }
   }
-  @media (max-width: 359px) { &__menu-trigger { width: auto; } }
+  @media (max-width: 359px) { &__menu-trigger { min-width: 0; --g-button-padding: 12px; } }
 }
 
 .app-header__menu-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; h1 { font-size: 20px; margin: 0; } }
 .g-container.app-header { max-width: 1280px; }
 .g-dialog.app-header__menu-dialog { width: min(560px, calc(100vw - 40px)); max-width: 100%; }
 .g-root_theme_light .app-header__menu-heading img { filter: brightness(0.45); }
+
+.app-header__menu-content { display: inline-flex; align-items: center; gap: 8px; height: 100%; }
+
+.app-header__menu-content .g-label { align-self: center; }

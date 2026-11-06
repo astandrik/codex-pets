@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, type ReactNode } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -11,20 +11,8 @@ const metricsMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/metrics/yandex", () => metricsMocks);
-vi.mock("@/components/GravityUI/GravityUI", () => ({
-  Button: ({
-    children,
-    onClick,
-    ...props
-  }: {
-    children: ReactNode;
-    onClick?: () => void;
-    [key: string]: unknown;
-  }) => (
-    <button type="button" onClick={onClick} {...props}>
-      {children}
-    </button>
-  ),
+vi.mock("@/components/GravityUI/GravityUI", async original => ({
+  ...await original<typeof import("@/components/GravityUI/GravityUI")>(),
 }));
 
 import { InstallCommandButton } from "@/components/InstallCommand/InstallCommandButton";

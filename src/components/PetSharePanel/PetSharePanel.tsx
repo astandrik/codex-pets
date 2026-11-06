@@ -200,9 +200,9 @@ export function PetSharePanel({ slug, source }: PetSharePanelProps) {
                       className="pet-share-panel__button"
                     >
                       {copied ? (
-                        <Check width={16} height={16} />
+                        <Button.Icon><Check width={16} height={16} /></Button.Icon>
                       ) : (
-                        <Copy width={16} height={16} />
+                        <Button.Icon><Copy width={16} height={16} /></Button.Icon>
                       )}
                       <span>{buttonText(copyStatus)}</span>
                     </Button>

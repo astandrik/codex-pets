@@ -10,9 +10,8 @@ vi.mock("@/lib/metrics/yandex", () => ({ trackGoal: mocks.trackGoal }));
 vi.mock("./approval-preparation-client", async original => ({
   ...await original<typeof import("./approval-preparation-client")>(), pollApprovalPreparation: mocks.poll,
 }));
-vi.mock("@gravity-ui/icons", () => ({ Check: () => null, EllipsisVertical: () => null, TrashBin: () => null, Xmark: () => null }));
-vi.mock("@gravity-ui/uikit", () => ({
-  Button: ({ children, onClick, disabled }: React.PropsWithChildren<{ onClick?: () => void; disabled?: boolean }>) => <button disabled={disabled} onClick={onClick}>{children}</button>,
+vi.mock("@gravity-ui/uikit", async original => ({
+  Button: (await original<typeof import("@gravity-ui/uikit")>()).Button,
   Dialog: Object.assign(() => null, { Header: () => null, Body: () => null, Footer: () => null }),
   DropdownMenu: () => null, Checkbox: () => null, Flex: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   Text: () => null, TextArea: () => null, useToaster: () => ({ add: mocks.add }),

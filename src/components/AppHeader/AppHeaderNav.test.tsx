@@ -49,3 +49,16 @@ it("closes with Escape and keeps public links available after a navigation read 
   await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
   expect(trigger().getAttribute("aria-expanded")).toBe("false");
 });
+
+it.each([0, 1, 48, 1000])("keeps counter %i and the close icon in separate layout slots", async count => {
+  fetchMock.mockResolvedValue({ok:true,json:async()=>({principal:{...principal,role:"admin"},pendingReviewCount:count,openRequestCount:0})});
+  await act(async()=>root.render(<ThemeProvider theme="light"><AppHeaderNav/></ThemeProvider>));
+  expect(trigger().querySelector('.app-header__menu-content')?.textContent).toBe(count ? `Menu${count}` : 'Menu');
+  expect(trigger().querySelectorAll('.g-label')).toHaveLength(count ? 1 : 0);
+  await act(async()=>{trigger().focus();trigger().click();});
+  const close=document.querySelector<HTMLButtonElement>('button[aria-label="Close menu"]')!;
+  expect(close.querySelector('.g-button__icon img')).not.toBeNull();
+  await act(async()=>close.click());
+  await vi.waitFor(()=>expect(document.activeElement).toBe(trigger()));
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});

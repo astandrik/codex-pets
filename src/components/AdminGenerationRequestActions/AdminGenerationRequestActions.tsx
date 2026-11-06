@@ -139,14 +139,14 @@ export function AdminGenerationRequestActions({
     <div className="admin-generation-request-actions">
       {canStart ? (
         <Button view="action" size="m" onClick={start} loading={busy}>
-          <Check />
+          <Button.Icon><Check /></Button.Icon>
           Start
         </Button>
       ) : null}
       <DropdownMenu
         renderSwitcher={(props) => (
           <Button {...props} view="outlined" size="m" aria-label="More actions">
-            <EllipsisVertical />
+            <Button.Icon><EllipsisVertical /></Button.Icon>
           </Button>
         )}
         items={[

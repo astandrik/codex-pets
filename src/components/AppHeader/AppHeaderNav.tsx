@@ -72,10 +72,10 @@ export function AppHeaderNav() {
   return <nav aria-label="Primary" className="app-header__nav">
     <div className="app-header__primary-links">{link("/", "Gallery")}{link("/generate", "Generate")}{link("/my-generations", "My generations")}</div>
     <Button type="button" size="xl" view="outlined" className="app-header__menu-trigger" aria-haspopup="dialog" aria-expanded={open} onClick={() => setMenu({ pathname, open: true })}>
-      Menu{isAdmin && pendingReviewCount + openRequestCount > 0 && <Label theme="warning" size="s">{pendingReviewCount + openRequestCount}</Label>}
+      <span className="app-header__menu-content">Menu{isAdmin && pendingReviewCount + openRequestCount > 0 && <Label theme="warning" size="s">{pendingReviewCount + openRequestCount}</Label>}</span>
     </Button>
     <Dialog open={open} onClose={close} returnFocus contentOverflow="auto" size="m" className="app-header__menu-dialog" aria-label="Menu" hasCloseButton={false}>
-      <Dialog.Header caption="Menu" as="h1" className="app-header__menu-heading" insertAfter={<Button type="button" view="flat" size="xl" aria-label="Close menu" onClick={close}><Image src={withBasePath("/assets/s09-close.svg")} width={16} height={16} alt="" unoptimized /></Button>} />
+      <Dialog.Header caption="Menu" as="h1" className="app-header__menu-heading" insertAfter={<Button type="button" view="flat" size="xl" aria-label="Close menu" onClick={close}><Button.Icon><Image src={withBasePath("/assets/s09-close.svg")} width={16} height={16} alt="" unoptimized /></Button.Icon></Button>} />
       <Dialog.Body>
         <section><h2>Explore</h2>{link("/", "Gallery")}{link("/about", "About")}{link("/agents", "Agents")}{link("/developers", "Developers")}</section>
         <section><h2>Create</h2>{link("/generate", "Generate a pet")}{link("/request", "Request a pet")}{link("/submit", "Submit a pet")}</section>

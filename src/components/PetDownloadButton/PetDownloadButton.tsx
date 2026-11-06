@@ -31,7 +31,7 @@ export function PetDownloadButton({ slug }: PetDownloadButtonProps) {
       href={withBasePath(`/api/pets/${slug}/download`)}
       onClick={trackDownloadClick}
     >
-      <ArrowDownToLine width={18} height={18} />
+      <Button.Icon><ArrowDownToLine width={18} height={18} /></Button.Icon>
       Download ZIP
     </Button>
   );
