@@ -84,7 +84,9 @@ class ProxyTests(unittest.IsolatedAsyncioTestCase):
     async def test_handshake_timeout_reaps_child_without_replay(self):
         p=await self.start(mode='hang',handshake_timeout=.1)
         r,w,h=await self.connect(p);self.assertIn(b'200',h);self.assertEqual(await asyncio.wait_for(r.read(),2),b'');w.close();await w.wait_closed();await p.close()
-        self.assertEqual(len(self.pids()),1)
+        started=[event for event in self.logs if event['event']=='ssh_started']
+        self.assertEqual(len(started),1)
+        with self.assertRaises(ProcessLookupError):os.kill(started[0]['pid'],0)
     async def test_failed_handshake_keeps_slot_until_child_exits(self):
         p=await self.start(mode='stubborn',max_handshakes=1,handshake_timeout=.1)
         live=[];peaks=[]
