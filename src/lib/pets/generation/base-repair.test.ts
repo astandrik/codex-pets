@@ -108,9 +108,9 @@ it.each(["reserved","failed","exhausted","saved","started"])("recovers %s withou
  expect(f.calls).toHaveLength(["saved","started","exhausted"].includes(state)?0:1);
  if(state!=="started")expect(JSON.parse(f.store.ledger.get("scheduler")!.value).pauseReason).toBeUndefined();
 });
-it.each(["input","unknown",undefined])("stops without retrying unsupported moderation provenance %s",async stage=>{
+it.each(["input","unknown",undefined])("stops automatic retries for moderation provenance %s",async stage=>{
  const f=await fixture(5);f.generate.mockRejectedValue(new GenerationError("provider_rejected",undefined,{httpStatus:400,code:"moderation_blocked",...(stage?{moderationStage:stage}:{})}));
- expect(await f.worker("owner")).toBe("failed");expect(f.calls).toHaveLength(0);expect(f.generate).toHaveBeenCalledTimes(1);expect(baseRetryEligibility(f.current())).toBe(false);
+ expect(await f.worker("owner")).toBe("failed");expect(f.calls).toHaveLength(0);expect(f.generate).toHaveBeenCalledTimes(1);expect(baseRetryEligibility(f.current())).toBe(stage==="input");
 });
 it("stops and pauses for unclassified provider uncertainty",async()=>{
  const f=await fixture(5);f.generate.mockRejectedValue(new GenerationError("outcome_unknown"));
