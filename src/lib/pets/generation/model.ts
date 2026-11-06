@@ -47,7 +47,7 @@ export function generationBudgetLimit(): number | null {
   if (!Number.isFinite(value) || value < 0) throw new GenerationError("generation_not_configured");
   return value === 0 ? null : value;
 }
-export const GENERATION_MODEL = "gpt-image-2.5-sunburst";
+export const GENERATION_MODEL = "gpt-image-2.6-sunburst";
 export const PROMPT_REVISION = "pet-v2-rows-20261010-1";
 export const STAGE_NAMES = ["base", "idle", "running", "running-left", "running-right", "waving", "jumping", "waiting", "failed", "review", "look-0-157", "look-180-337"] as const;
 export type StageName = typeof STAGE_NAMES[number];

@@ -93,7 +93,7 @@ export async function generateImage(job: GenerationJob): Promise<GeneratedImage>
     const textInput = usage?.input_tokens_details?.text_tokens ?? usage?.input_tokens ?? 0;
     const measured = usage ? {
       textInputTokens: textInput, imageInputTokens: imageInput, outputTokens: usage.output_tokens,
-      // GPT Image 2.5 published rates, USD per million tokens (2026-10-09).
+      // Sunburst 2.5/2.6 standard rates, USD per million tokens (2026-11-06).
       costUsd: (textInput * 5 + imageInput * 8 + usage.output_tokens * 30) / 1_000_000,
     } : undefined;
     return { bytes: Buffer.from(encoded, "base64"), usage: measured, providerRequestId: request_id ?? undefined, generationMs: Date.now() - start };
