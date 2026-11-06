@@ -1,6 +1,8 @@
 """Scoped HTTP metadata capture in a single CLI subprocess; no bodies or secrets."""
 import http.client
 import re
+import ssl
+from contextvars import ContextVar
 
 PREFIX = 'PET_HTTP_DIAGNOSTIC '
 MAX_BYTES = (1 << 53) - 1
@@ -34,6 +36,9 @@ class HttpDiagnostics:
     def __init__(self, on_update=None):
         self.on_update = on_update
         self.response = None
+        self.request_started = False
+        self.unsent_tls_error = None
+        self.connecting = ContextVar('provider_tls_connect', default=False)
         self.record = {'status': None, 'expectedBodyBytes': None, 'receivedBodyBytes': 0,
                        'receivedBodyBytesExact': False, 'bodyComplete': False,
                        'chunked': False, 'phase': 'before_headers', 'requestId': None, 'cfRay': None}
@@ -53,10 +58,43 @@ class HttpDiagnostics:
     def __enter__(self):
         self.original_begin = http.client.HTTPResponse.begin
         self.original_read = http.client.HTTPResponse.read
+        self.original_connect = http.client.HTTPSConnection.connect
+        self.original_send = http.client.HTTPConnection.send
+        self.original_handshake = ssl.SSLSocket.do_handshake
+
+        def provider(connection):
+            return (connection._tunnel_host or connection.host) == 'api.openai.com'
+
+        def connect(connection):
+            is_provider = provider(connection)
+            token = self.connecting.set(is_provider)
+            try:
+                result = self.original_connect(connection)
+                if is_provider:
+                    # From here on, treat any failure as possibly sent, even if
+                    # sendall later fails without reporting a byte count.
+                    self.request_started = True
+                return result
+            finally:
+                self.connecting.reset(token)
+
+        def send(connection, data):
+            if provider(connection) and not self.connecting.get() and connection.sock is not None:
+                self.request_started = True
+            return self.original_send(connection, data)
+
+        def handshake(socket, *args, **kwargs):
+            try:
+                return self.original_handshake(socket, *args, **kwargs)
+            except ssl.SSLError as error:
+                if self.connecting.get() and not self.request_started:
+                    self.unsent_tls_error = error
+                raise
 
         def begin(response):
             result = self.original_begin(response)
             if response._method != 'CONNECT':
+                self.request_started = True
                 self.response = response
                 length = response.getheader('Content-Length', '')
                 expected = int(length) if re.fullmatch(r'[0-9]{1,16}', length) else None
@@ -94,9 +132,15 @@ class HttpDiagnostics:
 
         http.client.HTTPResponse.begin = begin
         http.client.HTTPResponse.read = read
+        http.client.HTTPSConnection.connect = connect
+        http.client.HTTPConnection.send = send
+        ssl.SSLSocket.do_handshake = handshake
         self.publish()
         return self
 
     def __exit__(self, *args):
         http.client.HTTPResponse.begin = self.original_begin
         http.client.HTTPResponse.read = self.original_read
+        http.client.HTTPSConnection.connect = self.original_connect
+        http.client.HTTPConnection.send = self.original_send
+        ssl.SSLSocket.do_handshake = self.original_handshake

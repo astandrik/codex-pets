@@ -13,7 +13,7 @@ from urllib.error import HTTPError, URLError
 from http_diagnostics import HttpDiagnostics
 
 
-def classify(error):
+def classify(error, unsent_tls_error=None):
     chain = []
     while isinstance(error, BaseException) and len(chain) < 8 and all(error is not item for item in chain):
         chain.append(error)
@@ -54,6 +54,8 @@ def classify(error):
             result = {'kind': kind}
             number = getattr(item, 'errno', None)
             if type(number) is int and -4096 <= number <= 4096: result['errno'] = number
+            if kind == 'tls_error' and item is unsent_tls_error:
+                result['requestSent'] = False
             return result
     if any(isinstance(item, URLError) for item in chain): return {'kind': 'transport_error'}
     return {'kind': 'unclassified'}
@@ -115,12 +117,14 @@ def main():
     def update_http(value):
         payload['httpDiagnostic'] = value
         write_diagnostic(diagnostic_path, payload)
+    capture = HttpDiagnostics(update_http) if sys.argv[1:2] == ['gen'] else None
     try:
-        with HttpDiagnostics(update_http) if sys.argv[1:2] == ['gen'] else nullcontext():
+        with capture if capture is not None else nullcontext():
             runpy.run_module('sprite_gen.cli', run_name='__main__', alter_sys=True)
     except BaseException as error:
         if not isinstance(error, SystemExit) or error.code not in (None, 0):
-            payload.update(cause=classify(error), details=error_details(error))
+            unsent = capture.unsent_tls_error if capture is not None and not capture.request_started else None
+            payload.update(cause=classify(error, unsent_tls_error=unsent), details=error_details(error))
         raise
     finally:
         if payload: write_diagnostic(diagnostic_path, payload)

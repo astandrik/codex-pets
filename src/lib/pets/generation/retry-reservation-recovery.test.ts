@@ -17,7 +17,7 @@ afterEach(async () => {
   vi.restoreAllMocks(); vi.unstubAllEnvs();
   for (const folder of folders.splice(0)) await rm(folder, {recursive: true, force: true});
 });
-async function fixture(kind: Kind, mode: "before" | "rollback" | "after", error: Error = new Aborted("reservation aborted"), quality = false) {
+async function fixture(kind: Kind, mode: "before" | "rollback" | "after", error: Error = new Aborted("reservation aborted"), quality = false, initialFailure?: GenerationError) {
   const f = await taskFixture(20, kind !== "row"), id = f.jobs[0].id;
   if (kind === "animation") f.saved(0, STAGE_NAMES.filter(stage => stage !== "idle"));
   if (kind === "base") f.store.jobs.set(id, {...f.jobs[0], reviewBase: true, baseRetrySourceId: "b".repeat(64),
@@ -54,10 +54,10 @@ async function fixture(kind: Kind, mode: "before" | "rollback" | "after", error:
   let calls = 0, composes = 0;
   const generate = vi.fn(async () => {
     calls++;
-    if (!quality && calls <= (kind === "row" ? 1 : 2)) throw kind === "row"
+    if (!quality && calls <= (kind === "row" ? 1 : 2)) throw initialFailure ?? (kind === "row"
       ? new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary: "provider_cli", reason: "process_exit"}, {kind: "http_error", httpStatus: 520})
       : new GenerationError("provider_rejected", undefined, {httpStatus: 400, code: "moderation_blocked", moderationStage: "output"}, undefined,
-        {boundary: "provider_cli", reason: "process_exit"}, {kind: "http_error", httpStatus: 400});
+        {boundary: "provider_cli", reason: "process_exit"}, {kind: "http_error", httpStatus: 400}));
     return {bytes: Buffer.from("saved-" + calls), generationMs: 1, usage: {textInputTokens: 1, imageInputTokens: 0, outputTokens: 1, costUsd: .01}};
   });
   const events: {error: unknown; phase: string; secondary: boolean}[] = [];
@@ -141,6 +141,44 @@ it.each(["rollback", "after"] as const)("recovers an ordinary transport retry re
   expect(f.job().rowRetries![0]).toMatchObject({token: retry.token, state: "completed"});
   expect(f.job().rowAttemptLogs).toHaveLength(1);
   expect(f.state().pauseReason).toBeUndefined();
+});
+
+it.each(["rollback", "after"] as const)("recovers a proven unsent TLS reservation (%s) without changing identity or charging twice", async mode => {
+  const failure = new GenerationError("provider_not_sent", undefined, undefined, undefined,
+    {boundary: "provider_cli", reason: "process_exit"}, {kind: "tls_error", errno: 8, requestSent: false});
+  const f = await fixture("row", mode, mode === "rollback" ? new Aborted("reservation aborted") : Error("lost acknowledgement"), false, failure);
+  const identity = structuredClone(f.job());
+  const requests = [...f.store.ledger].filter(([key]) => key.startsWith("request:"));
+  expect(requests).not.toHaveLength(0);
+  expect(await f.step()).toBe("yielded");
+  expect(f.faulted()).toBe(true);
+  expect(f.generate).toHaveBeenCalledTimes(1);
+  expect(f.state().pauseReason).toBeUndefined();
+  expect(f.store.ledger.get("budget")!.value).toBe(f.atFaultBudget());
+  if (mode === "rollback") {f.clock.now += 5001; expect(await f.step()).toBe("yielded");}
+  const retry = structuredClone(f.job().rowRetries![0]);
+  expect(f.job().rowRetries).toHaveLength(1);
+  expect(f.generate).toHaveBeenCalledTimes(1);
+  f.clock.now = retry.notBefore + 1;
+  expect(await f.step()).toBe("yielded");
+  expect(f.job().rowRetries).toEqual([{...retry, state: "completed"}]);
+  expect(f.generate).toHaveBeenCalledTimes(2);
+  expect(f.job().rowAttemptLogs).toHaveLength(1);
+  expect(f.job()).toMatchObject({id: identity.id, createdAt: identity.createdAt, expiresAt: identity.expiresAt});
+  expect([...f.store.ledger].filter(([key]) => key.startsWith("request:"))).toEqual(requests);
+  expect(JSON.parse(f.store.ledger.get("budget")!.value).spent["2026-11-01"]).toBe(10000);
+  expect(f.state().pauseReason).toBeUndefined();
+  expect(await f.journal.list()).toEqual([]);
+});
+
+it("keeps an unconfirmed TLS retry reservation blocked without another call", async () => {
+  const failure = new GenerationError("provider_not_sent", undefined, undefined, undefined,
+    {boundary: "provider_cli", reason: "process_exit"}, {kind: "tls_error", errno: 8, requestSent: false});
+  const f = await fixture("row", "before", Error("unconfirmed write"), false, failure);
+  await f.step(); await f.step();
+  expect(f.generate).toHaveBeenCalledTimes(1);
+  expect(f.job().rowRetries ?? []).toEqual([]);
+  expect(f.state().pauseReason).toBe("outcome_unknown");
 });
 
 it("preserves a saved image while its quality retry reservation is deferred", async () => {

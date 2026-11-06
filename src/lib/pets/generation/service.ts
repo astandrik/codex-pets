@@ -12,10 +12,11 @@ import {createBaseRetryService} from "@/lib/pets/generation/base-retries";
 import {createAnimationRepairService} from "@/lib/pets/generation/animation-repair-service";
 import {createContinuationService} from "@/lib/pets/generation/continuations";
 import {createAnimationRevisionService, requireAcceptedAnimationRevision} from "@/lib/pets/generation/animation-revisions";
-import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
+import {isRetryableImageCause,isRetryableImageFailure,isUnsentImageFailure} from "@/lib/pets/generation/cli-cause";
 import { parsePublicPetSlug } from "@/lib/pets/public-slug";
 import { findAvailablePublicPetSlug, PublicPetSlugUnavailableError } from "@/lib/pets/public-slug-allocation";
 import { createHash, randomUUID } from "node:crypto";
+import {isDeepStrictEqual} from "node:util";
 import type { AppPrincipal } from "@/lib/auth/session";
 import { assetUrl } from "@/lib/pets/asset-urls";
 import { validateUploadedPackage } from "@/lib/pets/package";
@@ -452,7 +453,7 @@ export function createGenerationService(store: GenerationStore, options: {
         if(!options.enabled())throw new GenerationError("generation_disabled");
         if(state.pauseReason)throw new GenerationError("generation_paused");
         const first=current.rowAttemptLogs?.find(log=>log.stage===name&&log.attempt===1);
-        if(!requiredStageNames(current).includes(name)||current.status!=="generating"||current.stages.find(stage=>stage.name===name)?.status!=="inflight"||first?.code!=="outcome_unknown"||!isRetryableImageCause(first.cliCause)||current.rowRetries?.some(retry=>retry.stage===name))throw new GenerationError("invalid_stage");
+        if(!requiredStageNames(current).includes(name)||current.status!=="generating"||current.stages.find(stage=>stage.name===name)?.status!=="inflight"||!first||!isRetryableImageFailure(first)||current.rowRetries?.some(retry=>retry.stage===name))throw new GenerationError("invalid_stage");
         await checkStageBudget(tx,job.id,now,budgetUsd());
         const retry={stage:name,token,notBefore:now+ROW_RETRY_DELAY_MS,state:"waiting" as const};
         await tx.putJob({...current,rowRetries:[...(current.rowRetries??[]),retry]});return retry;
@@ -665,8 +666,9 @@ export function createGenerationService(store: GenerationStore, options: {
             if(matches.length!==1||!last||(last.diagnostic?.boundary!=="provider_cli" && !(stage.name==="base"&&current.baseRepair&&!last.diagnostic)))return false;
             const cause=matches[0].cause;
             const reason=stage.name==="base"&&current.baseRepair?baseFailureRetryReason(last):animationFailureRetryReason(last);
-            return (reason==="transport"||(reason==="moderation"&&cause.kind==="http_error"&&cause.httpStatus===400))
-              &&last.cliCause?.kind===cause.kind&&last.cliCause?.httpStatus===cause.httpStatus;
+            const unsent=isUnsentImageFailure(last) && stages.some(entry=>entry.stage===stage.name&&isDeepStrictEqual(entry.diagnostic,last.diagnostic));
+            return (unsent||reason==="transport"||(reason==="moderation"&&cause.kind==="http_error"&&cause.httpStatus===400))
+              &&isDeepStrictEqual(last.cliCause,cause);
           });
         if (code === "outcome_unknown"&&!terminalProviderFailure) state.pauseReason = code;
         releaseActiveLease(state, job.id);
