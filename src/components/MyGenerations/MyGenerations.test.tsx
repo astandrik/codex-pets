@@ -203,7 +203,7 @@ describe("cached status retry recovery", () => {
     expect(request.mock.calls.every(([url, init]) => url === `/api/pet-generations/${id}` && (!init?.method || init.method === "GET"))).toBe(true);
   });
 
-  it.each(["HTTP 503", "timeout"])("recovers from %s and stops retrying once the status is current", async error => {
+  it.each(["HTTP 503", "timeout"])("recovers from %s and returns to normal submission revalidation", async error => {
     rememberGeneration(id, expiry());
     request.mockResolvedValueOnce(savedResponse("completed"))
       .mockImplementationOnce(failRead(error))
@@ -220,8 +220,11 @@ describe("cached status retry recovery", () => {
     expect(element.textContent).not.toContain("Could not refresh");
     expect(element.querySelector("li")).toBe(row);
     expect(element.querySelector("img")).toBe(image);
-    await tick(30000);
+    await tick(29999);
     expect(request).toHaveBeenCalledTimes(3);
+    await tick(1);
+    expect(request).toHaveBeenCalledTimes(4);
+    expect(element.textContent).not.toContain("Could not refresh");
   });
 
   it.each([404, 410])("stops retrying after a cached result becomes unavailable with HTTP %i", async status => {

@@ -88,3 +88,8 @@
 .my-generations__versions ol {padding-left:24px;margin:0;display:grid;gap:var(--g-spacing-3);}
 .my-generations__versions li {display:grid;gap:var(--g-spacing-1);padding:var(--g-spacing-2);border-left:2px solid var(--g-color-line-generic);}
 .my-generations__versions a {width:fit-content;min-height:44px;display:flex;align-items:center;}
+
+.my-generations__toolbar,.my-generations__filter,.my-generations__submission {display:flex;align-items:center;flex-wrap:wrap;gap:var(--g-spacing-3);}
+.my-generations__filter {min-height:44px;cursor:pointer;}
+.my-generations__filter input {width:18px;height:18px;accent-color:var(--g-color-base-brand);}
+.my-generations__item[hidden] {display:none;}
