@@ -125,3 +125,82 @@ it.each(['503','timeout'])('bounds failed submission refreshes after %s without 
  await act(async()=>vi.advanceTimersByTimeAsync(120000));expect(fetcher).toHaveBeenCalledTimes(4);
  expect(fetcher.mock.calls.every(([,init])=>!init?.method||init.method==='GET')).toBe(true);
 });
+
+it('retains a confirmation received across expiry after a cold reload without changing recovery data',async()=>{
+ const expiresAt=new Date(now+1100).toISOString();
+ const generation=(await response(1,'completed',{expiresAt}).json()).generation;
+ rememberGenerationVersion(generation);
+ const original=readGenerationHistory().entries[0];
+ const recovery=JSON.stringify({requestId:'unchanged-uuid',mode:'regenerate',states:['failed']});
+ localStorage.setItem('pending-request',recovery);
+ let finish!:(value:ReturnType<typeof response>)=>void;
+ const fetcher=vi.fn(()=>new Promise(resolve=>{finish=resolve;}));vi.stubGlobal('fetch',fetcher);
+ await act(async()=>root.render(<ThemeProvider theme='light'><MyGenerations/></ThemeProvider>));
+ await act(async()=>vi.advanceTimersByTimeAsync(1100));
+ const receipt={petId:'pet_a',slug:'fox',submittedAt:new Date(now+100).toISOString()};
+ await act(async()=>finish(response(1,'completed',{expiresAt,submission:receipt})));
+ expect(element.textContent).toContain('Отправлен на ревью');
+ expect(readGenerationHistory().entries[0]).toEqual({...original,submission:receipt});
+ expect(localStorage.getItem('pending-request')).toBe(recovery);
+ await act(async()=>root.unmount());pruneHistoryStatuses([]);root=createRoot(element);
+ await act(async()=>root.render(<ThemeProvider theme='light'><MyGenerations/></ThemeProvider>));
+ expect(element.textContent).toContain('Отправлен на ревью');
+ expect(element.textContent).toContain('Expired');
+ expect(fetcher).toHaveBeenCalledOnce();
+ expect(localStorage.getItem('pending-request')).toBe(recovery);
+});
+
+it.each(['link','summary'])('moves an expired filtered %s to the checkbox without fetching again',async control=>{
+ save(1);
+ rememberGenerationVersion({generationId:id(2),createdAt:new Date(now+2).toISOString(),expiresAt:new Date(now+1100).toISOString()},{generationId:id(1),kind:'continuation'});
+ for(const n of [1,2]){
+   const generation=(await response(n,'completed',n===2?{expiresAt:new Date(now+1100).toISOString()}:{}).json()).generation;
+   cacheHistoryStatus(readGenerationHistory().entries.find(entry=>entry.generationId===id(n))!,{generation,failedReads:0},null,now+100);
+ }
+ const fetcher=vi.fn();vi.stubGlobal('fetch',fetcher);
+ await act(async()=>root.render(<ThemeProvider theme='light'><MyGenerations/></ThemeProvider>));
+ const filter=element.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+ await act(async()=>filter.click());
+ const row=element.querySelector<HTMLLIElement>('.my-generations__item')!;
+ const focused=row.querySelector<HTMLElement>(control==='summary'?'summary':'a')!;focused.focus();
+ await act(async()=>vi.advanceTimersByTimeAsync(1100));
+ expect(row.hidden).toBe(true);expect(document.activeElement).toBe(filter);
+ expect(fetcher).not.toHaveBeenCalled();
+});
+
+it.each(['link','summary'])('restores a filtered %s after an unchanged recheck and keeps the row and thumbnail',async control=>{
+ save(1);save(2,1);
+ for(const n of [1,2]){
+   cacheHistoryStatus(readGenerationHistory().entries.find(entry=>entry.generationId===id(n))!,{generation:(await response(n,'completed').json()).generation,failedReads:0},null,now+100);
+ }
+ let finish!:(value:ReturnType<typeof response>)=>void;
+ const fetcher=vi.fn((url:string)=>url.endsWith(id(2))?new Promise(resolve=>{finish=resolve;}):Promise.resolve(response(1,'completed')));vi.stubGlobal('fetch',fetcher);
+ await act(async()=>root.render(<ThemeProvider theme='light'><MyGenerations/></ThemeProvider>));
+ const filter=element.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+ await act(async()=>filter.click());
+ const row=element.querySelector<HTMLLIElement>('.my-generations__item')!;
+ const thumbnail=row.querySelector('img');
+ const details=row.querySelector('details')!;details.open=true;
+ const focused=row.querySelector<HTMLElement>(control==='summary'?'summary':'a')!;focused.focus();
+ await act(async()=>vi.advanceTimersByTimeAsync(31000));
+ expect(row.hidden).toBe(true);
+ await act(async()=>finish(response(2,'completed')));
+ expect(row.hidden).toBe(false);expect(document.activeElement).toBe(focused);
+ expect(row.querySelector('img')).toBe(thumbnail);expect(details.open).toBe(true);
+ expect(element.querySelector('.my-generations__item')).toBe(row);
+});
+
+it('does not restore a rechecked row after the user moves focus away and back to the filter',async()=>{
+ save(1);const entry=readGenerationHistory().entries[0];
+ cacheHistoryStatus(entry,{generation:(await response(1,'completed').json()).generation,failedReads:0},null,now+100);
+ let finish!:(value:ReturnType<typeof response>)=>void;
+ vi.stubGlobal('fetch',vi.fn(()=>new Promise(resolve=>{finish=resolve;})));
+ await act(async()=>root.render(<ThemeProvider theme='light'><MyGenerations/></ThemeProvider>));
+ const filter=element.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+ await act(async()=>filter.click());element.querySelector<HTMLAnchorElement>('.my-generations__item a')!.focus();
+ await act(async()=>vi.advanceTimersByTimeAsync(31000));
+ element.querySelector<HTMLButtonElement>('button')!.focus();filter.focus();
+ await act(async()=>finish(response(1,'completed')));
+ expect(element.querySelector<HTMLLIElement>('.my-generations__item')!.hidden).toBe(false);
+ expect(document.activeElement).toBe(filter);
+});

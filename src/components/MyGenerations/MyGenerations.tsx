@@ -4,7 +4,7 @@ import {useCallback,useEffect,useLayoutEffect,useRef,useState,useMemo,useSyncExt
 import Link from "next/link";
 import {Button,Label,Text} from "@gravity-ui/uikit";
 import {withBasePath} from "@/lib/base-path";
-import {HISTORY_PREFIX,HISTORY_FAMILY_LIMIT,SUBMISSION_HISTORY_PREFIX,SUBMISSION_HISTORY_EVENT,parseSubmissionNotice,readSubmissionHistoryEvent,isGenerationHistoryKey,rememberGenerationVersion,historyParent,parseHistoryGeneration,readGenerationHistory,readGenerationHistoryForReconciliation,pruneGenerationHistory,type GenerationHistoryEntry} from "@/lib/pets/generation/history";
+import {HISTORY_PREFIX,HISTORY_FAMILY_LIMIT,SUBMISSION_HISTORY_PREFIX,SUBMISSION_HISTORY_EVENT,parseSubmissionNotice,readSubmissionHistoryEvent,isGenerationHistoryKey,rememberGenerationVersion,rememberGenerationSubmission,historyParent,parseHistoryGeneration,readGenerationHistory,readGenerationHistoryForReconciliation,pruneGenerationHistory,type GenerationHistoryEntry} from "@/lib/pets/generation/history";
 import {GenerationThumbnail} from "./GenerationThumbnail";
 import {cachedHistoryStatus,cacheHistoryStatus,cacheHistorySubmission,historyStatusFresh,statusObservationFresh,HISTORY_STATUS_FRESH_MS,pruneHistoryStatuses,type HistoryStatus} from "./history-status-cache";
 import {animationRepairProgressText} from "@/lib/pets/generation/animation-repair-progress";
@@ -69,6 +69,7 @@ function BrowserGenerations({refresh,onRefresh}:{refresh:Refresh;onRefresh:()=>v
   const [announcement,setAnnouncement] = useState('');
   const filterRef = useRef<HTMLInputElement>(null);
   const focusedControl = useRef<HTMLElement | null>(null);
+  const recheckFocus = useRef<{element:HTMLElement;familyId:string} | null>(null);
   const previousVisible = useRef<string[]>([]);
   const previousReadyOnly = useRef(false);
   const families = useMemo(()=>groupGenerationVersions(rows).slice(0,HISTORY_FAMILY_LIMIT),[rows]);
@@ -86,6 +87,12 @@ function BrowserGenerations({refresh,onRefresh}:{refresh:Refresh;onRefresh:()=>v
     window.addEventListener('pets-history-before-refresh',captureUi);
     return()=>window.removeEventListener('pets-history-before-refresh',captureUi);
   },[captureUi]);
+  useEffect(()=>{
+    const onFocus=(event:FocusEvent)=>{if(event.target!==filterRef.current)recheckFocus.current=null;};
+    const onBlur=()=>{recheckFocus.current=null;};
+    document.addEventListener('focusin',onFocus);window.addEventListener('blur',onBlur);
+    return()=>{document.removeEventListener('focusin',onFocus);window.removeEventListener('blur',onBlur);};
+  },[]);
   useLayoutEffect(()=>{
     const hiddenBySubmission = readyOnly && previousReadyOnly.current && previousVisible.current.some(id => !visibleIds.includes(id) && families.some(family => family.familyId === id && family.versions[0].submission));
     previousVisible.current = visibleIds;
@@ -93,7 +100,21 @@ function BrowserGenerations({refresh,onRefresh}:{refresh:Refresh;onRefresh:()=>v
     if (hiddenBySubmission) setAnnouncement('Отправлено на ревью. Запись скрыта фильтром «Готовы к отправке».');
     const focused = focusedControl.current;
     focusedControl.current = null;
-    if (readyOnly && focused && (!focused.isConnected || focused.closest('[hidden]')) && (document.activeElement === focused || document.activeElement === document.body)) filterRef.current?.focus({preventScroll:true});
+    if (readyOnly && focused && (!focused.isConnected || focused.closest('[hidden]')) && (document.activeElement === focused || document.activeElement === document.body)) {
+      const row=focused.closest<HTMLElement>('.my-generations__item');
+      const family=families.find(item=>item.versions[0].generationId===row?.dataset.historyVersion);
+      recheckFocus.current=family?.versions[0].checking&&refreshableSubmission(family.versions[0])?{element:focused,familyId:family.familyId}:null;
+      filterRef.current?.focus({preventScroll:true});
+    }
+    const pendingFocus=recheckFocus.current;
+    if(pendingFocus){
+      const family=families.find(item=>item.familyId===pendingFocus.familyId);
+      if(!readyOnly||!family||!pendingFocus.element.isConnected)recheckFocus.current=null;
+      else if(visibleIds.includes(family.familyId)){
+        recheckFocus.current=null;
+        if(document.activeElement===filterRef.current&&!pendingFocus.element.closest('[hidden]'))pendingFocus.element.focus({preventScroll:true});
+      }else if(!family.versions[0].checking||!refreshableSubmission(family.versions[0]))recheckFocus.current=null;
+    }
     const versionElements=[...document.querySelectorAll<HTMLElement>('.my-generations [data-history-version]')];
     const itemForVersion=(id:string)=>versionElements.find(element=>element.dataset.historyVersion===id)?.closest('.my-generations__item');
     for(const id of restoreExpanded.current){
@@ -120,11 +141,19 @@ function BrowserGenerations({refresh,onRefresh}:{refresh:Refresh;onRefresh:()=>v
     pruneGenerationHistory();
     let disposed=false,timer:ReturnType<typeof setTimeout>|undefined,round:AbortController|undefined;
     let firstRound=true;
-    const publishRows=()=>setView(current=>current.refresh===refresh?{...current,rows:rowsFrom(history,cache)}:current);
+    const publishRows=()=>{
+      captureUi();
+      setView(current=>current.refresh===refresh?{...current,rows:rowsFrom(history,cache)}:current);
+    };
     const update=(entry:GenerationHistoryEntry,result:Result)=>{
       if(disposed)return;
-      captureUi();
-      if(result.generation)rememberGenerationVersion(result.generation);
+      if(result.generation){
+        const deadline=Math.min(entry.expiresAt,Date.parse(result.generation.expiresAt));
+        if(result.generation.submission&&deadline<=Date.now()){
+          // A GET may finish after expiry; retain its receipt without admitting an expired version.
+          rememberGenerationSubmission(entry.generationId,new Date(deadline).toISOString(),result.generation.submission);
+        }else rememberGenerationVersion(result.generation);
+      }
       const submission = result.submission ?? result.generation?.submission ?? cache.get(entry.generationId)?.submission ?? cachedHistoryStatus(entry)?.submission;
       const merged = {...result,checkedAt:Date.now(),checking:false,...(submission?{submission}:{})};
       cache.set(entry.generationId,merged);cacheHistoryStatus(entry,merged,signal,Date.now());publishRows();
@@ -135,7 +164,6 @@ function BrowserGenerations({refresh,onRefresh}:{refresh:Refresh;onRefresh:()=>v
       if (!entry) return;
       const previous = cache.get(entry.generationId) ?? {failedReads:0};
       if (previous.submission) return;
-      captureUi();
       cache.set(entry.generationId,{...previous,submission:notice.submission});
       cacheHistorySubmission(entry,notice.submission);
       publishRows();
@@ -151,7 +179,6 @@ function BrowserGenerations({refresh,onRefresh}:{refresh:Refresh;onRefresh:()=>v
       const pending=rowsFrom(history,cache).filter(row=>!row.expired&&((firstRound&&(forceRefresh||!historyStatusFresh(row,signal,now)))||needsStatusRead(row)||(refreshableSubmission(row)&&!statusObservationFresh(row,now))));
       firstRound=false;
       if(pending.length){
-        captureUi();
         for(const entry of pending)cache.set(entry.generationId,{...(cache.get(entry.generationId)??{failedReads:0}),checking:true});
         publishRows();
       }
@@ -197,7 +224,7 @@ function BrowserGenerations({refresh,onRefresh}:{refresh:Refresh;onRefresh:()=>v
   return <div className="my-generations">
     <div className="my-generations__toolbar">
       <Button view="outlined" onClick={onRefresh}>Refresh statuses</Button>
-      <label className="my-generations__filter"><input ref={filterRef} type="checkbox" checked={readyOnly} onChange={event=>{setAnnouncement('');setReadyOnly(event.target.checked);}}/>Готовы к отправке</label>
+      <label className="my-generations__filter"><input ref={filterRef} type="checkbox" checked={readyOnly} onChange={event=>{recheckFocus.current=null;setAnnouncement('');setReadyOnly(event.target.checked);}}/>Готовы к отправке</label>
     </div>
     <p role="status" aria-live="polite">{announcement}</p>
     {readyOnly && !visibleIds.length && <p>Нет готовых текущих версий, ожидающих отправки.</p>}
