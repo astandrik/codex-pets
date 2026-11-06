@@ -38,11 +38,7 @@
     z-index: 2;
     flex: none;
 
-    .g-button__text {
-      display: inline-flex;
-      align-items: center;
-      gap: var(--spacing-xs);
-    }
+    min-width: 32px;
   }
 
   &_card {
@@ -52,7 +48,7 @@
     padding: var(--spacing-xs) var(--spacing-xs) var(--spacing-xs)
       var(--spacing-md);
 
-    .install-command__button-text {
+    .install-command__button .g-button__text {
       display: none;
     }
 
@@ -71,7 +67,7 @@
 
 @media (max-width: 520px) {
   .install-command {
-    &__button-text {
+    &__button .g-button__text {
       display: none;
     }
   }

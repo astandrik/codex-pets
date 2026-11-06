@@ -253,7 +253,7 @@ export function GalleryFilter({
                 activeTags.size === 0
               }
             >
-              <Xmark />
+              <Button.Icon><Xmark /></Button.Icon>
               Clear
             </Button>
           </Flex>

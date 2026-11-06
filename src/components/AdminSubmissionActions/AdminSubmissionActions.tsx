@@ -130,7 +130,7 @@ export function AdminSubmissionActions({ petId, publicEmailRequested, contactEma
         loading={busy}
         disabled={busy || approval.progress?.phase === "succeeded"}
       >
-        <Check />
+        <Button.Icon><Check /></Button.Icon>
         {approval.progress?.phase === "succeeded" ? "Approved" : approval.hasRequest ? "Check status" : "Approve"}
       </Button>
       {approval.progress?.phase === "manual_review" && <Button view="outlined" size="m" disabled={busy} onClick={() => {
@@ -140,7 +140,7 @@ export function AdminSubmissionActions({ petId, publicEmailRequested, contactEma
       <DropdownMenu
         renderSwitcher={(props) => (
           <Button {...props} view="outlined" size="m" aria-label="More actions" disabled={busy}>
-            <EllipsisVertical />
+            <Button.Icon><EllipsisVertical /></Button.Icon>
           </Button>
         )}
         items={[

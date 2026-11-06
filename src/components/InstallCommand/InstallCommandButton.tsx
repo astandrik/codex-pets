@@ -68,9 +68,9 @@ export function InstallCommandButton({
         className="install-command__button"
       >
         {status === "copied" ? (
-          <Check width={16} height={16} />
+          <Button.Icon><Check width={16} height={16} /></Button.Icon>
         ) : (
-          <Copy width={16} height={16} />
+          <Button.Icon><Copy width={16} height={16} /></Button.Icon>
         )}
         <span className="install-command__button-text">{buttonText}</span>
       </Button>

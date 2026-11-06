@@ -194,7 +194,7 @@ export function HomeHeroPetPicker({
           onClick={handleShuffleClick}
           disabled={pets.length < 2}
         >
-          <Shuffle width={16} height={16} />
+          <Button.Icon><Shuffle width={16} height={16} /></Button.Icon>
           I&apos;m feeling lucky
         </Button>
         <InstallCommandButton key={pet.slug} slug={pet.slug} surface="card" />
@@ -205,7 +205,7 @@ export function HomeHeroPetPicker({
           onClick={() => trackViewPetClick("button")}
         >
           View pet
-          <ArrowRight width={16} height={16} />
+          <Button.Icon><ArrowRight width={16} height={16} /></Button.Icon>
         </Button>
       </Flex>
     </div>

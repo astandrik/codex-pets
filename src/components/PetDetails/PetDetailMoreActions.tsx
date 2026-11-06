@@ -24,7 +24,7 @@ export function PetDetailMoreActions({ petId, slug, petJsonUrl, spritesheetUrl }
           size="l"
           renderSwitcher={(props) => (
             <Button {...props} ref={triggerRef} view="outlined" size="xl" aria-label="More pet actions">
-              <EllipsisVertical width={18} height={18} />
+              <Button.Icon><EllipsisVertical width={18} height={18} /></Button.Icon>
               More
             </Button>
           )}

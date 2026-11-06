@@ -116,18 +116,14 @@
   &__button {
     flex: none;
 
-    .g-button__text {
-      display: inline-flex;
-      align-items: center;
-      gap: var(--spacing-xs);
-    }
+    min-width: 32px;
   }
 }
 
 @media (max-width: 520px) {
   .pet-share-panel {
     &__button {
-      span {
+      .g-button__text {
         display: none;
       }
     }

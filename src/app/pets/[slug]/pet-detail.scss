@@ -57,7 +57,7 @@
     gap: var(--spacing-md);
     margin-top: var(--spacing-sm);
 
-    > .g-button { min-height: 44px; }
+    > .g-button { --g-button-height: 44px; }
     .install-command_detail { width: 100%; }
 
     &--with-install {

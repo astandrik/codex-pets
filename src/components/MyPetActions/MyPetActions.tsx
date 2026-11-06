@@ -50,7 +50,7 @@ export function MyPetActions({ petId }: MyPetActionsProps) {
   return (
     <div className="my-pet-actions">
       <Button view="outlined-danger" size="m" onClick={() => setOpen(true)}>
-        <TrashBin />
+        <Button.Icon><TrashBin /></Button.Icon>
         Delete
       </Button>
       <Dialog open={open} onClose={() => setOpen(false)} size="s">

@@ -52,7 +52,7 @@
   padding: 0;
   border: 1px solid var(--line);
   background: var(--g-color-base-float);
-  > .g-button { min-height: 44px; --g-button-background-color: var(--g-color-base-float); --g-button-border-color: var(--line); }
+  > .g-button { --g-button-height: 44px; --g-button-background-color: var(--g-color-base-float); --g-button-border-color: var(--line); }
 }
 .g-root_theme_dark .generated-pet-ready {
   --g-color-base-float: #262329;

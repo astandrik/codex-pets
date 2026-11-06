@@ -27,7 +27,7 @@ export function AboutResourceLinks({
           });
         }}
       >
-        <LogoGithub />
+        <Button.Icon><LogoGithub /></Button.Icon>
         GitHub
       </Button>
       <Button
@@ -42,7 +42,7 @@ export function AboutResourceLinks({
           });
         }}
       >
-        <Box />
+        <Button.Icon><Box /></Button.Icon>
         npm package
       </Button>
     </>
