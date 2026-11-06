@@ -449,3 +449,48 @@ it("keeps successful base repair at explicit character confirmation",async()=>{
  fetchMock.mockResolvedValue(response({generation:{...generation(undefined,"awaiting_confirmation").generation,expiresAt:new Date(Date.now()+86400000).toISOString(),reviewBase:true,baseConfirmed:false,baseRepair:{maxAttempts:6,attempts:2,phase:"complete"}}}));await render();
  expect(document.body.textContent).toContain("Animate this character");expect(document.body.textContent).not.toContain("Base attempt");expect(fetchMock.mock.calls.every(([,init])=>init?.method!=="POST")).toBe(true);
 });
+
+it('persists a confirmed submission',async()=>{
+ vi.setSystemTime(Date.parse('2026-10-11T10:00:00Z'));localStorage.clear();
+ await render();await tick();
+ await act(async()=>{button()!.click();});
+ const {readGenerationHistory}=await import('@/lib/pets/generation/history');
+ expect(readGenerationHistory().entries.find(x=>x.generationId===id)?.submission).toEqual(receipt);
+ expect(puts()).toHaveLength(1);
+ localStorage.clear();
+});
+it('keeps accepted submission visible when its local history write fails',async()=>{
+ vi.setSystemTime(Date.parse('2026-10-11T10:00:00Z'));localStorage.clear();
+ await render();await tick();
+ const write=vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw new Error('blocked');});
+ try {
+  await act(async()=>{button()!.click();});
+  expect(element.textContent).toContain('Sent for review');
+  expect(element.textContent).toContain('отметку не удалось сохранить');
+  expect(puts()).toHaveLength(1);
+ } finally {write.mockRestore();localStorage.clear();}
+});
+
+it('recovers a lost submission response through GET without another PUT',async()=>{
+ vi.setSystemTime(Date.parse('2026-10-11T10:00:00Z'));localStorage.clear();let accepted=false;
+ fetchMock.mockImplementation((url:string,init?:RequestInit)=>{
+  if(init?.method==='PUT'){accepted=true;return Promise.reject(new Error('lost response'));}
+  if(/\/api\/pet-generations\/[a-f0-9]+$/.test(url))return Promise.resolve(response(generation(accepted?receipt:undefined)));
+  return defaultFetch(url,init);
+ });
+ await render();await tick();await act(async()=>{button()!.click();});
+ const {readGenerationHistory}=await import('@/lib/pets/generation/history');
+ expect(readGenerationHistory().entries[0]?.submission).toBeUndefined();
+ await act(async()=>root.render(null));await render();await tick();
+ expect(readGenerationHistory().entries[0]?.submission).toEqual(receipt);expect(puts()).toHaveLength(1);
+ localStorage.clear();
+});
+it('does not mark a malformed receipt from a status response as submitted',async()=>{
+ vi.setSystemTime(Date.parse('2026-10-11T10:00:00Z'));localStorage.clear();
+ fetchMock.mockResolvedValue(response(generation({...receipt,submittedAt:'invalid'})));
+ await render();await tick();
+ expect(element.textContent).not.toContain('Sent for review');
+ const {readGenerationHistory}=await import('@/lib/pets/generation/history');
+ expect(readGenerationHistory().entries[0]?.submission).toBeUndefined();
+ localStorage.clear();
+});

@@ -1,11 +1,14 @@
 import {baseRepairProgressSchema} from "@/lib/pets/generation/base-repair-progress";
 import {z} from "zod";
+import {parsePublicPetSlug} from "@/lib/pets/public-slug";
 import {animationRepairProgressSchema} from "@/lib/pets/generation/animation-repair-progress";
 import {groupGenerationVersions, type HistoryVersionKind} from './history-families';
 
 export const HISTORY_PREFIX = "pets-generation-history-v1:";
 export const HISTORY_V2_PREFIX = "pets-generation-history-v2:";
 export const HISTORY_FACT_PREFIX = "pets-generation-history-fact-v1:";
+export const SUBMISSION_HISTORY_PREFIX = HISTORY_FACT_PREFIX + "submission:";
+export const SUBMISSION_HISTORY_EVENT = "pets-generation-submission";
 export const HISTORY_FAMILY_LIMIT = 50;
 const ID = /^[a-f0-9]{64}$/;
 const DAY = 86_400_000;
@@ -29,7 +32,61 @@ const entrySchema = z.object({
 });
 const legacySchema = entrySchema.pick({generationId:true,savedAt:true,expiresAt:true});
 const factSchema = entrySchema.omit({savedAt:true}).refine(value=>value.createdAt!==undefined||value.parentGenerationId!==undefined);
-export type GenerationHistoryEntry = z.infer<typeof entrySchema>;
+const submissionReceiptSchema = z.object({
+  petId: z.string().min(1).max(128),
+  slug: z.string().refine(value => parsePublicPetSlug(value) !== null),
+  submittedAt: z.iso.datetime(),
+});
+export type GenerationSubmission = z.infer<typeof submissionReceiptSchema>;
+const submissionNoticeSchema = z.object({generationId: identity, expiresAt: z.number().finite().positive(), submission: submissionReceiptSchema});
+export type SubmissionNotice = z.infer<typeof submissionNoticeSchema>;
+export type GenerationHistoryEntry = z.infer<typeof entrySchema> & {submission?: GenerationSubmission};
+
+export function parseGenerationSubmission(value: unknown): GenerationSubmission | null {
+  const parsed = submissionReceiptSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+export function parseSubmissionNotice(value: unknown, now = Date.now()): SubmissionNotice | null {
+  const parsed = submissionNoticeSchema.safeParse(value);
+  if (!parsed.success) return null;
+  const notice = parsed.data, submitted = Date.parse(notice.submission.submittedAt);
+  return notice.expiresAt <= now + DAY + CLOCK_SKEW_MS && submitted > 0 && submitted <= Math.min(now + CLOCK_SKEW_MS, notice.expiresAt) ? notice : null;
+}
+export function readSubmissionHistoryEvent(key: string | null, raw: string | null): SubmissionNotice | null {
+  if (!key?.startsWith(SUBMISSION_HISTORY_PREFIX) || !raw || raw.length > 2048) return null;
+  try {
+    const notice = parseSubmissionNotice(JSON.parse(raw));
+    return notice && key === SUBMISSION_HISTORY_PREFIX + notice.generationId ? notice : null;
+  } catch { return null; }
+}
+function isQuotaExceeded(cause:unknown):boolean {
+  return typeof cause === 'object' && cause !== null && 'name' in cause && cause.name === 'QuotaExceededError';
+}
+function writeSubmissionNotice(notice:SubmissionNotice, target:Pick<Storage,'getItem'|'setItem'>, now:number):boolean {
+  const key=SUBMISSION_HISTORY_PREFIX+notice.generationId,raw=target.getItem(key);
+  if(raw!==null){
+    const previous=parseSubmissionNotice(JSON.parse(raw),now);
+    return previous?.generationId===notice.generationId && JSON.stringify(previous.submission)===JSON.stringify(notice.submission);
+  }
+  target.setItem(key,JSON.stringify(notice));
+  return true;
+}
+export function rememberGenerationSubmission(generationId: string, expiresAt: string, submission: unknown, now = Date.now(), storage?: HistoryStorage): boolean {
+  const notice=parseSubmissionNotice({generationId,expiresAt:Date.parse(expiresAt),submission},now);
+  if(!notice || notice.expiresAt+EXPIRED_RETENTION_MS<=now)return false;
+  try {
+    const target=storage??window.localStorage;
+    try {return writeSubmissionNotice(notice,target,now);}
+    catch(cause){
+      if(!isQuotaExceeded(cause)||!pruneGenerationHistory(now,target))return false;
+      return writeSubmissionNotice(notice,target,now);
+    }
+  } catch {return false;}
+}
+export function notifyGenerationSubmission(generationId: string, expiresAt: string, submission: unknown): void {
+  const notice = parseSubmissionNotice({generationId, expiresAt: Date.parse(expiresAt), submission});
+  if (notice && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(SUBMISSION_HISTORY_EVENT, {detail: notice}));
+}
 type HistoryFact = z.infer<typeof factSchema>;
 export type HistoryGenerationReference = {generationId: string; expiresAt: string; createdAt?: string; baseRetrySourceId?: string; continuation?: {sourceGenerationId: string; mode: string}; animationRevision?: {sourceGenerationId?: string}};
 export function isGenerationHistoryKey(key: string): boolean {
@@ -75,10 +132,18 @@ function scanGenerationHistory(now:number,storage:ReadableHistoryStorage) {
   const keys=Array.from({length:storage.length},(_,index)=>storage.key(index)).filter((key):key is string=>key!==null&&isGenerationHistoryKey(key));
   const records:Array<{key:string;raw:string;entry:GenerationHistoryEntry}>=[];
   const facts:Array<{key:string;raw:string;fact:HistoryFact}>=[];
+  const submissions:Array<{key:string;raw:string;notice:SubmissionNotice}>=[];
   const byId=new Map<string,GenerationHistoryEntry>();
   keys.sort((a,b)=>Number(a.startsWith(HISTORY_V2_PREFIX))-Number(b.startsWith(HISTORY_V2_PREFIX)));
   for(const key of keys){
     const raw=storage.getItem(key);
+    if(key.startsWith(SUBMISSION_HISTORY_PREFIX)){
+      try {
+        const notice = raw && raw.length <= 2048 ? parseSubmissionNotice(JSON.parse(raw), now) : null;
+        if (notice && key === SUBMISSION_HISTORY_PREFIX + notice.generationId && raw) submissions.push({key,raw,notice});
+      } catch {/* Ignore malformed local proof. */}
+      continue;
+    }
     if(key.startsWith(HISTORY_FACT_PREFIX)){
       const fact=parseFact(raw,key,now);
       if(fact&&raw)facts.push({key,raw,fact});
@@ -109,8 +174,13 @@ function scanGenerationHistory(now:number,storage:ReadableHistoryStorage) {
   }
   const roots=new Map(groupGenerationVersions([...nodes.values()]).flatMap(group=>group.versions.map(entry=>[entry.generationId,group.familyId] as const)));
   const allEntries=[...byId.values()].filter(entry=>entry.expiresAt+EXPIRED_RETENTION_MS>now).map(entry=>({...nodes.get(entry.generationId)!,familyId:roots.get(entry.generationId)!})).filter(entry=>entry.expiresAt+EXPIRED_RETENTION_MS>now);
+  const submittedById = new Map(submissions.filter(({notice}) => notice.expiresAt + EXPIRED_RETENTION_MS > now).map(({notice}) => [notice.generationId, notice.submission]));
+  for (const entry of allEntries) {
+    const submission = submittedById.get(entry.generationId);
+    if (submission) entry.submission = submission;
+  }
   const groups=groupGenerationVersions(allEntries);
-  return {records,facts,nodes,allEntries:groups.flatMap(group=>group.versions),entries:groups.slice(0,HISTORY_FAMILY_LIMIT).flatMap(group=>group.versions)};
+  return {records,facts,submissions,nodes,allEntries:groups.flatMap(group=>group.versions),entries:groups.slice(0,HISTORY_FAMILY_LIMIT).flatMap(group=>group.versions)};
 }
 export function readGenerationHistory(now=Date.now(),storage?:ReadableHistoryStorage):{available:boolean;entries:GenerationHistoryEntry[]} {
   try {return {available:true,entries:scanGenerationHistory(now,storage??window.localStorage).entries};} catch {return {available:false,entries:[]};}
@@ -149,6 +219,11 @@ export function pruneGenerationHistory(now=Date.now(),storage?:PrunableHistorySt
     for(const {key,raw,fact} of snapshot.facts){
       if(!needed.has(fact.generationId)&&fact.expiresAt+EXPIRED_RETENTION_MS<=now){try {if(target.getItem(key)===raw)target.removeItem(key);} catch {/* Best effort cleanup. */}}
     }
+    for (const {key,raw,notice} of snapshot.submissions) {
+      if (notice.expiresAt + EXPIRED_RETENTION_MS <= now) {
+        try {if (target.getItem(key) === raw) target.removeItem(key);} catch {/* Best effort cleanup. */}
+      }
+    }
     cleanups.set(target,{checkedAt:now});
     return true;
   } catch {return false;}
@@ -169,7 +244,7 @@ export function rememberGenerationVersion(input:unknown,source?:{generationId:st
 }
 function saveGenerationVersion(input:unknown,source:{generationId:string;kind:HistoryVersionKind}|undefined,now:number,storage:HistoryStorage|undefined,allowQuotaRetry:boolean):boolean {
   try {
-    const parsed=historyGenerationSchema.pick({generationId:true,expiresAt:true,createdAt:true,baseRetrySourceId:true,continuation:true,animationRevision:true}).safeParse(input);
+    const parsed=historyGenerationSchema.pick({generationId:true,expiresAt:true,createdAt:true,baseRetrySourceId:true,continuation:true,animationRevision:true,submission:true}).safeParse(input);
     if(!parsed.success)return false;
     const generation=parsed.data,expiresAt=Date.parse(generation.expiresAt),id=generation.generationId;
     if(expiresAt<=now||expiresAt>now+DAY+CLOCK_SKEW_MS)return false;
@@ -183,11 +258,15 @@ function saveGenerationVersion(input:unknown,source:{generationId:string;kind:Hi
     if(createdAt!==undefined)writeFact(target,{generationId:id,expiresAt:deadline,createdAt});
     if(parent)writeFact(target,{generationId:id,expiresAt:deadline,parentGenerationId:parent.generationId,familyId:previous?.parentGenerationId?previous.familyId:parent.generationId,kind:parent.kind});
     writeEntryIfMissing(target,{generationId:id,savedAt:previous?.savedAt??now,expiresAt:deadline,familyId:previous?.familyId??parent?.generationId??id,...(createdAt!==undefined?{createdAt}:{}),...(previous?.parentGenerationId?{parentGenerationId:previous.parentGenerationId,kind:previous.kind}:parent?{parentGenerationId:parent.generationId,kind:parent.kind}:{})},now);
+    if(generation.submission){
+      const notice=parseSubmissionNotice({generationId:id,expiresAt:deadline,submission:generation.submission},now);
+      if(!notice||!writeSubmissionNotice(notice,target,now))return false;
+    }
     const lastCleanup=cleanups.get(target)?.checkedAt;
     if(lastCleanup===undefined||now<lastCleanup||now-lastCleanup>=CLEANUP_INTERVAL_MS)pruneGenerationHistory(now,target);
     return true;
   } catch(cause) {
-    if(allowQuotaRetry&&typeof cause==='object'&&cause!==null&&'name' in cause&&cause.name==='QuotaExceededError'){
+    if(allowQuotaRetry&&isQuotaExceeded(cause)){
       try {
         const target=storage??window.localStorage;
         if(pruneGenerationHistory(now,target))return saveGenerationVersion(input,source,now,target,false);
@@ -211,6 +290,7 @@ const historyGenerationSchema = z.object({
   }).refine((value) => value.completedSteps <= value.totalSteps),
   canContinue: z.boolean().optional(),
   baseUrl: z.string().optional(),
+  submission: submissionReceiptSchema.optional(),
   animationRepair: animationRepairProgressSchema.optional(),
   baseRepair: baseRepairProgressSchema.optional(),
   continuation: z.object({sourceGenerationId:z.string().regex(ID),mode:z.enum(["rebuild","regenerate"])}).optional(),

@@ -12,7 +12,7 @@ import { parsePublicPetSlug, suggestPublicPetSlug } from "@/lib/pets/public-slug
 import type { PublicGeneration } from "@/lib/pets/generation/service";
 import { publicGenerationError } from "@/lib/pets/generation/public-error";
 import {GeneratedPetMetadataEditor} from "@/components/GeneratedPetMetadataEditor/GeneratedPetMetadataEditor";
-import { notifyGenerationHistory, rememberGenerationVersion } from "@/lib/pets/generation/history";
+import { notifyGenerationHistory, rememberGenerationVersion, rememberGenerationSubmission, notifyGenerationSubmission, parseGenerationSubmission } from "@/lib/pets/generation/history";
 import {RefinementRecovery} from "./BaseRefinement";
 import {AnimationRevisionEditor, AnimationRevisionCorrections} from "./AnimationRevisionEditor";
 import {AnimationRevisionComparison} from "./AnimationRevisionComparison";
@@ -26,10 +26,7 @@ type Submission = NonNullable<PublicGeneration["submission"]>;
 type SlugCheck = { slug: string; status: "checking" | "available" | "error"; available?: boolean; suggestedSlug?: string; message?: string };
 
 function readSubmission(value: unknown): Submission | null {
-  if (!value || typeof value !== "object" || !("slug" in value) ||
-      !("petId" in value) || typeof value.petId !== "string" || !("submittedAt" in value) || typeof value.submittedAt !== "string") return null;
-  const slug = parsePublicPetSlug(value.slug);
-  return slug ? { petId: value.petId, slug, submittedAt: value.submittedAt } : null;
+  return parseGenerationSubmission(value);
 }
 
 export function GeneratedPetPreview({ generationId, previousGenerationId, animationHintsEnabled = false, animationRevisionsEnabled = false, continuationEnabled = false }: { generationId: string; previousGenerationId?: string; animationHintsEnabled?: boolean; animationRevisionsEnabled?: boolean; continuationEnabled?: boolean }) {
@@ -52,6 +49,9 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
   const [submission, setSubmission] = useState<Submission>();
   const [submitting, setSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState("");
+  const [submissionHistoryError,setSubmissionHistoryError] = useState(false);
+  const submissionDeadline = useRef<string | null>(null);
+  const notifiedSubmission = useRef<string | null>(null);
   const [slug, setSlug] = useState("");
   const [slugCheck, setSlugCheck] = useState<SlugCheck | null>(null);
   const [slugNotice, setSlugNotice] = useState("");
@@ -74,15 +74,26 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
     return () => {window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh);};
   }, [generation?.status, pendingAcceptance]);
 
-  const rememberSubmission = useCallback((receipt: Submission) => {
+  const rememberSubmission = useCallback((value: unknown) => {
+    const receipt = parseGenerationSubmission(value);
+    if (!receipt) return;
     savedSubmission.current = receipt;
+    const deadline = submissionDeadline.current;
+    if (deadline) {
+      setSubmissionHistoryError(!rememberGenerationSubmission(generationId,deadline,receipt));
+      const key = generationId + ':' + receipt.petId;
+      if (notifiedSubmission.current !== key) {
+        notifiedSubmission.current = key;
+        notifyGenerationSubmission(generationId,deadline,receipt);
+      }
+    }
     checkSequence.current++;
     setSubmission(receipt);
     setSlug(receipt.slug);
     setSlugCheck(null);
     setSlugNotice("");
     setSubmissionError("");
-  }, []);
+  }, [generationId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -105,6 +116,7 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
         if (controller.signal.aborted) return;
         if (body.generation.baseConfirmed && animationPromptIntent.current !== null &&
             animationPromptIntent.current !== (body.generation.animationPrompt ?? "")) setDifferentAnimationPrompt(true);
+        submissionDeadline.current = body.generation.expiresAt;
         setGeneration(body.generation);
         setError(""); setUnavailable(false);
         rememberGenerationVersion(body.generation);
@@ -309,6 +321,7 @@ function GeneratedPetPreviewContent({ generationId, previousGenerationId, animat
 
     {animationRevisionsEnabled && generation?.status === "completed" && !pendingAcceptance && !generation.canReviseAnimations && <p lang="ru">Редактирование недоступно: у этой версии нет сохранённого базового образа.</p>}
     {generation?.pet && generation.status === "completed" && pendingAcceptance && generation.animationRevision && <AnimationRevisionComparison generationId={generationId} sourceGenerationId={generation.animationRevision.sourceGenerationId} expiresAt={generation.expiresAt} petJsonUrl={files + "pet.json"} spritesheetUrl={files + "spritesheet.webp"} beforeSpritesheetUrl={generation.animationRevision.beforeSpritesheetUrl} selectedStates={generation.animationRevision.selectedStates} unavailable={unavailable} onAccepted={() => setRefreshVersion(value => value + 1)}/>}
+    {submissionHistoryError && <p role="alert">Отправка подтверждена, но отметку не удалось сохранить в этом браузере. Сохраните ссылку на питомца.</p>}
     <GeneratedPetResult ready={ready}
       petJsonUrl={files + "pet.json"} spritesheetUrl={files + "spritesheet.webp"}
       metadataEditor={ready ? metadataEditor : undefined} animationEditor={animationEditor} publicationForm={ready ? publicationForm : null}
