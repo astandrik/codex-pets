@@ -709,6 +709,31 @@ in `deploy/pets-image-ssh-proxy.service` preserves the existing service isolatio
 Permit the new port only from the private Docker bridge. Leave the shared
 18089 proxy and its persistent tunnel unchanged for other applications.
 
+Optional `phase_diagnostics: true` enables bounded phase-only SSH diagnostics;
+the default is `false`. The proxy captures DEBUG2 stderr in memory, drains it
+asynchronously, and emits only allowlisted phase names and monotonic elapsed
+milliseconds. Raw stderr, hosts, key paths, fingerprints and application bytes
+are never logged. Lines longer than 4096 bytes and unknown lines are discarded.
+The proxy owns the diagnostic pipe separately from the subprocess transport,
+so an inherited stderr writer cannot delay reaping SSH. After SSH exits, the
+reader gets at most one second to drain before its pipe is closed. It does not
+trigger retries; the handshake slot is released only after SSH is reaped.
+
+Each process has a `runId`; connection numbers and child PIDs identify its events.
+`ssh_phase` can report `tcp_connected`, `ssh_banner`, `ssh_authenticated`,
+`upstream_connected`, and `first_inbound_bytes`; the closing event records
+`lastPhase`. Missing or unrecognized markers remain unknown, not inferred.
+Upstream connection combines remote DNS/TCP; first incoming bytes do not prove a
+completed TLS handshake or an HTTP response. These observations are not used to
+classify provider outcomes or decide retries. The existing `ssh_ready` event and
+all timeouts/caps remain unchanged.
+
+Release diagnostics separately from worker recovery. Enable it only under an
+explicit proxy rollout; retain the prior script/config for rollback. Validate
+the deployed OpenSSH markers with bounded TLS-only checks without an API key.
+Disable the option to stop phase capture; no job, budget or queue changes are
+needed. Do not change handshake timeouts based only on a missing marker.
+
 Set only the generation worker's `PET_GENERATION_PROXY_URL` to
 `http://172.17.0.1:18090`. Both the image renderer and card metadata transport
 accept this dedicated endpoint; the legacy 18089 endpoint remains supported for
