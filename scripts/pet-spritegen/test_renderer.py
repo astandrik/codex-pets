@@ -25,6 +25,20 @@ def base_prompt(brief):
     return captured[0]
 
 class RendererTests(unittest.TestCase):
+    def test_all_requests_use_sunburst_26_even_for_older_job_metadata(self):
+        for prompt_revision in ['old', 'new']:
+            with self.subTest(prompt_revision=prompt_revision), tempfile.TemporaryDirectory() as folder:
+                captured = []
+                class StopBeforeProvider(Exception): pass
+                def capture(_root, args):
+                    captured.append(args)
+                    raise StopBeforeProvider()
+                with patch.object(renderer, 'run_tool', side_effect=capture):
+                    with self.assertRaises(StopBeforeProvider):
+                        renderer.generate(Path(folder), {'prompt': 'A fox', 'promptRevision': prompt_revision}, 'base')
+                self.assertEqual(captured[0][captured[0].index('--model')+1], 'gpt-image-2.6-sunburst')
+                self.assertEqual(captured[0][captured[0].index('--quality')+1], 'high')
+
     def test_repeated_output_refusal_keeps_exact_prompt_references_and_options(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder); (root/'run').mkdir()
@@ -114,7 +128,7 @@ class RendererTests(unittest.TestCase):
             for name,color in zip(names, [(255,0,0),(0,0,255),(0,128,0),(255,255,0)]):
                 self.assertEqual(results[name]['usage']['outputTokens'], (names.index(name)+1)*100)
                 with renderer.Image.open(root/(name+'.png')) as image: self.assertEqual(image.getpixel((0,0)),color)
-                args=observed[name]['args'];self.assertEqual(args[args.index('--model')+1],'gpt-image-2.5-sunburst');self.assertEqual(args[args.index('--quality')+1],'high')
+                args=observed[name]['args'];self.assertEqual(args[args.index('--model')+1],'gpt-image-2.6-sunburst');self.assertEqual(args[args.index('--quality')+1],'high')
                 self.assertEqual(args[args.index('--aspect-ratio')+1],'3:1');self.assertEqual(args[args.index('--facing-fix')+1],'none')
 
     def test_base_keeps_unicode_after_api_json_roundtrip(self):

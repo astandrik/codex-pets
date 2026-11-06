@@ -645,6 +645,14 @@ days. The global scheduler row holds only a bounded queue and one lease, without
 prompts or credentials. Do not send task IDs, private URLs or prompt text to
 analytics or ordinary diagnostic output.
 
+### Image model updates
+
+Both the Node provider and Python renderer use `gpt-image-2.6-sunburst` for every future image call, including allowed retries and remaining stages of older tasks. Keep `high` quality, PNG, dimensions, prompts, retry limits, UUIDs and recorded-spend accounting unchanged. Standard Sunburst 2.5 and 2.6 rates are identical as of 2026-11-06; changing the model alone does not authorize a new paid attempt.
+
+Deploy compatible web and generation-worker images together. Drain the old generation-worker before starting its replacement so two model versions do not execute tasks concurrently. Preserve the result journal, scheduler, unknown requests, attempts, expenses and runtime flags. Do not replay an uncertain call to test availability. Verify model access with a read-only model lookup and use synthetic provider responses for offline contracts; a real generation needs separate permission. A rollback must preserve those same records and cannot rerun a previously sent request.
+
+Model documentation: <https://developers.openai.com/api/docs/models/gpt-image-2.6-sunburst> and <https://developers.openai.com/api/docs/pricing>.
+
 ### Row-stage recovery and rollback
 
 The three existing tables retain their shapes. Pipeline version2 stores12ordered

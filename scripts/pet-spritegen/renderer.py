@@ -15,7 +15,7 @@ from http_diagnostics import PREFIX, read_http_diagnostic
 from animation_revision import selected_rows, compose_revision
 from extraction_diagnostics import extraction_issues, issues_from_report, read_extraction_report
 
-MODEL = 'gpt-image-2.5-sunburst'
+MODEL = 'gpt-image-2.6-sunburst'
 PROVIDER_ERROR_CODES = frozenset(json.loads((Path(__file__).resolve().parents[2] / 'src/lib/pets/generation/provider-error-codes.json').read_text()))
 class RenderError(Exception):
     def __init__(self, code, provider_failure=None, failure_diagnostic=None, cli_cause=None, error_details=None, assembly_issues=None):
