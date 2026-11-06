@@ -94,6 +94,8 @@ def run_tool(root, args):
     if result.returncode:
         failure = failure_diagnostic(boundary,'process_exit',started,exitCode=result.returncode)
         if args[0] == 'gen':
+            if cause and cause.get('kind') == 'tls_error' and cause.get('requestSent') is False:
+                raise RenderError('provider_not_sent', failure_diagnostic=failure, cli_cause=cause, error_details=details)
             diagnostic = provider_failure(result.stderr)
             status = diagnostic['httpStatus'] if diagnostic else 0
             if 400 <= status < 500 and status != 408:

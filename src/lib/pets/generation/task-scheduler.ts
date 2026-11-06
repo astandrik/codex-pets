@@ -7,7 +7,7 @@ import {latestBaseAttempt} from "@/lib/pets/generation/base-repair";
 import {recoverUnconfirmedCardMetadata} from "@/lib/pets/generation/card-metadata";
 import {configuredProviderCalls} from "@/lib/pets/generation/execution-limits";
 import {stageOperation} from "@/lib/pets/generation/execution-slots";
-import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
+import {isRetryableImageCause,isRetryableImageFailure,isUnsentImageFailure} from "@/lib/pets/generation/cli-cause";
 import {GenerationError, LEASE_MS, generationStageNames, usesStageCheckpoints, type GenerationJob, type GenerationTask, type TaskScheduler} from "@/lib/pets/generation/model";
 import {isTaskScheduler, requireJobWithActiveWorkerLease, saveScheduler, scheduler} from "@/lib/pets/generation/scheduler";
 import type {GenerationStore, GenerationTransaction} from "@/lib/pets/generation/store";
@@ -26,7 +26,7 @@ function hasUnknownProviderOperation(task: GenerationTask, job: GenerationJob, s
   }
   return operation !== undefined && state.providerSlots.some(slot => slot.jobId === job.id && slot.unknown && slot.key === operation);
 }
-function recordedProviderFailure(task: GenerationTask, job: GenerationJob): "transport" | "rejection" | undefined {
+function recordedProviderFailure(task: GenerationTask, job: GenerationJob): "transport" | "rejection" | "not_sent" | undefined {
   const error = task.error;
   if (task.kind !== "image" || !task.stage || error?.diagnostic?.boundary !== "provider_cli") return;
   let recorded: GenerationTask["error"];
@@ -45,6 +45,7 @@ function recordedProviderFailure(task: GenerationTask, job: GenerationJob): "tra
   }
   if (!recorded || recorded.code !== error.code || !isDeepStrictEqual(recorded.diagnostic, error.diagnostic) ||
       !isDeepStrictEqual(recorded.cliCause, error.cliCause) || (attemptJournal && !isDeepStrictEqual(recorded.providerFailure, error.providerFailure))) return;
+  if (isUnsentImageFailure(error) && (exhausted || !isRetryableImageFailure(error))) return "not_sent";
   if (error.code === "outcome_unknown" && exhausted && isRetryableImageCause(error.cliCause)) return "transport";
   if ((error.code === "provider_rejected" || error.code === "provider_rate_limited") && error.cliCause?.kind === "http_error" &&
       error.providerFailure?.httpStatus === error.cliCause.httpStatus && error.cliCause.httpStatus !== undefined) return "rejection";
@@ -96,7 +97,7 @@ async function reconcile(tx: GenerationTransaction, state: TaskScheduler, now: n
         const recorded = failures.map(task => ({task, kind: recordedProviderFailure(task, job)}));
         const failed = failures.find(t => t.error?.code === "outcome_unknown" && hasUnknownProviderOperation(t, job, state)) ??
           recorded.find(f => f.task.error?.code === "outcome_unknown" && f.kind !== "transport")?.task ??
-          recorded.find(f => f.kind === "rejection")?.task ??
+          recorded.find(f => f.kind === "rejection" || f.kind === "not_sent")?.task ??
           failures.find(t => t.error?.code === "outcome_unknown") ??
           failures.find(t => t.error?.code !== "generation_paused") ?? failures[0];
         state.tasks = state.tasks.filter(t => t.jobId !== id);

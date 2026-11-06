@@ -10,7 +10,7 @@ export type WorkerContext = {
   report: (error: unknown, secondary?: boolean) => void;
 };
 export type WorkerErrorHandler = (error: unknown, context: WorkerContext, secondary: boolean) => void;
-const codes = new Set(["generation_paused", "generation_disabled", "generation_expired", "generation_not_configured", "invalid_stage", "stage_conflict", "stale_worker", "outcome_unknown", "provider_rejected", "provider_rate_limited", "budget_exhausted", "saved_stage_unavailable", "source_unavailable", "metadata_unavailable", "provider_not_configured", "invalid_provider_result"]);
+const codes = new Set(["generation_paused", "generation_disabled", "generation_expired", "generation_not_configured", "invalid_stage", "stage_conflict", "stale_worker", "outcome_unknown", "provider_not_sent", "provider_rejected", "provider_rate_limited", "budget_exhausted", "saved_stage_unavailable", "source_unavailable", "metadata_unavailable", "provider_not_configured", "invalid_provider_result"]);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 export function createWorkerContext(owner: string, onError?: WorkerErrorHandler, now = Date.now): WorkerContext {
   const context: WorkerContext = {phase:"cleanup", startedAt:now(), iterationHash:hash(owner), report(error, secondary = false) {

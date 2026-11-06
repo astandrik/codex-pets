@@ -655,6 +655,25 @@ Model documentation: <https://developers.openai.com/api/docs/models/gpt-image-2.
 
 ### Row-stage recovery and rollback
 
+An initial TLS handshake failure can be stored as `provider_not_sent` only when
+the CLI transport observed that exact exception before any provider connection
+completed. Its private cause records `requestSent: false`. A transient TLS EOF
+uses the existing attempt limit and delay and records zero cost. Certificate
+failures stop the affected task. Missing proof and failures after connection
+retain the existing unknown-outcome handling.
+
+TLS failures consume the existing saved attempt limit; they do not introduce
+extra attempts. A retry reservation with a lost acknowledgement is read back and
+reused. A confirmed YDB ABORTED with unchanged state yields before another call.
+Persisted unsent failures, including certificate failures mixed with exhausted
+HTTP 520 attempts, can finish their job without globally pausing other jobs.
+Unconfirmed checkpoints, stale ownership and real unknown calls remain protected.
+
+Deploy compatible web and worker readers before writing this new failure code.
+After those records exist, rollback must retain readers for `provider_not_sent`.
+Older unknown tasks require separate inspection and recovery. A code rollout
+does not itself clear a scheduler pause or reclassify existing expenses.
+
 The three existing tables retain their shapes. Pipeline version2 stores12ordered
 stages in job JSON and `stage-<name>.png` artifacts; legacy records default to version1.
 An owner-fenced intent is committed before each paid call. The worker renews the

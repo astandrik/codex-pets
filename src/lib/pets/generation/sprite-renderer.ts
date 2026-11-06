@@ -38,7 +38,7 @@ async function preparationFiles(directory:string):Promise<ReadonlyMap<string,Buf
   return files;
 }
 const replySchema = z.object({ generationMs: z.number().nonnegative().optional(), usage: usageSchema.nullable().optional(), ok: z.boolean().optional() });
-const ERROR_CODES = new Set(["provider_rejected", "provider_rate_limited", "outcome_unknown", "invalid_sprite_extraction", "missing_animation_frame", "invalid_stage"]);
+const ERROR_CODES = new Set(["provider_not_sent", "provider_rejected", "provider_rate_limited", "outcome_unknown", "invalid_sprite_extraction", "missing_animation_frame", "invalid_stage"]);
 export function parseSpritegenReply(text: string) {
   let input: unknown;
   try { input = JSON.parse(text.trim()); } catch { throw new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"renderer_reply",reason:"invalid_json"}); }

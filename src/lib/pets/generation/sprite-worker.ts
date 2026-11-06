@@ -6,7 +6,7 @@ import {WorkerYield} from "@/lib/pets/generation/scheduler";
 import {readSavedGenerationBase} from "@/lib/pets/generation/base-review";
 import {readRevisionAtlas} from "@/lib/pets/generation/animation-revisions";
 import { createHash } from "node:crypto";
-import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
+import {isRetryableImageCause,isRetryableImageFailure} from "@/lib/pets/generation/cli-cause";
 import {isAnimationState, getRepairScope} from "@/lib/pets/generation/animation-repair";
 import {generateRepairAnimation, composeWithAnimationRepairs, repairGenerationTotals} from "@/lib/pets/generation/animation-repair-worker";
 import {prepareGeneratedCard} from "@/lib/pets/generation/card-worker";
@@ -157,7 +157,7 @@ export function createSpriteGenerationWorker(options: {
             const existingRetry = batchJob.workerLeaseId ? batchJob.rowRetries?.find(r => r.stage === name) : undefined;
             const recorded = batchJob.workerLeaseId ? batchJob.rowAttemptLogs?.filter(log => log.stage === name).at(-1) : undefined;
             if (recorded) {
-              if (recorded.attempt !== 1 || recorded.code !== "outcome_unknown" || !isRetryableImageCause(recorded.cliCause)) {
+              if (recorded.attempt !== 1 || !isRetryableImageFailure(recorded)) {
                 throw new GenerationError(recorded.code, undefined, undefined, undefined, recorded.diagnostic, recorded.cliCause, recorded.details);
               }
               if (!existingRetry) {
@@ -207,7 +207,7 @@ export function createSpriteGenerationWorker(options: {
               image=await call(existingRetry?2:1);
             }
             catch(error){
-              if(existingRetry || !(error instanceof GenerationError)||error.code!=="outcome_unknown"||!isRetryableImageCause(error.cliCause))throw error;
+              if(existingRetry || !(error instanceof GenerationError)||!isRetryableImageFailure(error))throw error;
               if(batchJob.expiresAt<=now())throw error;
               try{
                 const retry=await mutate(()=>options.service.beginRowRetry(batchJob,name));

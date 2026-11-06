@@ -4,16 +4,29 @@ export const cliCauseSchema=z.object({
   kind:z.enum(["timeout","connection_reset","connection_refused","broken_pipe","tls_error","dns_error","incomplete_response","remote_disconnected","invalid_json","invalid_encoding","io_error","http_error","invalid_response_shape","missing_image","invalid_image","transport_error","unclassified"]),
   errno:z.number().int().min(-4096).max(4096).optional(),
   httpStatus:z.number().int().min(400).max(599).optional(),
-}).strict();
+  requestSent:z.literal(false).optional(),
+}).strict().refine(value=>value.requestSent===undefined||(value.kind==="tls_error"&&value.httpStatus===undefined));
 export type CliCause=z.infer<typeof cliCauseSchema>;
+export function isUnsentTlsHandshake(cause: CliCause | undefined): boolean {
+  return cause?.kind === "tls_error" && cause.requestSent === false;
+}
+export function isUnsentImageFailure(failure: {code: string; cliCause?: CliCause; providerFailure?: unknown}): boolean {
+  return failure.code === "provider_not_sent" && isUnsentTlsHandshake(failure.cliCause) && failure.providerFailure === undefined;
+}
 export function isRetryableImageCause(cause:CliCause|undefined):boolean{
   return cause?.kind==="remote_disconnected"||cause?.kind==="incomplete_response"
     ||(cause?.kind==="http_error"&&(cause.httpStatus===500||cause.httpStatus===520));
 }
+export function isRetryableImageFailure(failure: {code: string; cliCause?: CliCause; providerFailure?: unknown}): boolean {
+  if (failure.code === "provider_not_sent") {
+    return isUnsentImageFailure(failure) && failure.cliCause?.errno === 8;
+  }
+  return failure.code === "outcome_unknown" && isRetryableImageCause(failure.cliCause);
+}
 export function readCliCause(value:unknown):CliCause|undefined{
   if(!value||typeof value!=="object")return undefined;
   const fields:Record<string,unknown>={};
-  for(const key of Object.keys(cliCauseSchema.shape))if(Object.hasOwn(value,key))fields[key]=Reflect.get(value,key);
+  for(const key of ["kind","errno","httpStatus","requestSent"])if(Object.hasOwn(value,key))fields[key]=Reflect.get(value,key);
   const parsed=cliCauseSchema.safeParse(fields);
   return parsed.success?parsed.data:undefined;
 }

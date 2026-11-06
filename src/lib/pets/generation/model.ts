@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { z } from "zod";
 import {cardMetadataRecordSchema} from "@/lib/pets/generation/card-metadata";
 import { providerFailureSchema, readProviderFailure, type ProviderFailure } from "@/lib/pets/generation/provider-failure";
-import {cliCauseSchema,readCliCause,type CliCause,errorDetailsSchema,readErrorDetails,type ErrorDetails} from "@/lib/pets/generation/cli-cause";
+import {cliCauseSchema,readCliCause,isUnsentTlsHandshake,type CliCause,errorDetailsSchema,readErrorDetails,type ErrorDetails} from "@/lib/pets/generation/cli-cause";
 import { failureDiagnosticSchema, readFailureDiagnostic, type FailureDiagnostic } from "@/lib/pets/generation/failure-diagnostic";
 import {retryInputMetadataSchema} from "@/lib/pets/generation/base-retry-model";
 import {MAX_PROVIDER_CALLS} from "@/lib/pets/generation/execution-limits";
@@ -84,7 +84,7 @@ export const usageSchema = z.object({
   costUsd: z.number().nonnegative(),
 });
 export type ImageUsage = z.infer<typeof usageSchema>;
-export const ANIMATION_ATTEMPT_FAILURE_CODES = ["outcome_unknown", "provider_rejected", "provider_rate_limited", "invalid_sprite_extraction", "invalid_stage", "missing_animation_frame"] as const;
+export const ANIMATION_ATTEMPT_FAILURE_CODES = ["outcome_unknown", "provider_not_sent", "provider_rejected", "provider_rate_limited", "invalid_sprite_extraction", "invalid_stage", "missing_animation_frame"] as const;
 export const animationAttemptSchema = z.object({
   state: z.enum(CONTINUATION_STATES), ordinal: z.number().int().min(1).max(REGENERATION_RETRIES.max + 1), token: z.uuid(),
   reason: z.enum(["initial", "transport", "quality", "moderation"]),
@@ -152,7 +152,7 @@ export const stageSchema = z.object({
 export const submissionSchema = z.object({ petId: z.string(), slug: z.string(), submittedAt: z.iso.datetime() });
 export const stageFailureDiagnosticSchema = z.object({stage:z.enum(STAGE_NAMES),diagnostic:failureDiagnosticSchema}).strict();
 export const stageCliCauseSchema=z.object({stage:z.enum(STAGE_NAMES),cause:cliCauseSchema}).strict();
-export const rowAttemptLogSchema=z.object({stage:z.enum(STAGE_NAMES),attempt:z.union([z.literal(1),z.literal(2)]),at:z.number(),code:z.enum(["outcome_unknown","provider_rejected","provider_rate_limited","invalid_sprite_extraction","invalid_stage","missing_animation_frame"]),diagnostic:failureDiagnosticSchema.optional(),cliCause:cliCauseSchema.optional(),details:errorDetailsSchema.optional()}).strict();
+export const rowAttemptLogSchema=z.object({stage:z.enum(STAGE_NAMES),attempt:z.union([z.literal(1),z.literal(2)]),at:z.number(),code:z.enum(ANIMATION_ATTEMPT_FAILURE_CODES),diagnostic:failureDiagnosticSchema.optional(),cliCause:cliCauseSchema.optional(),details:errorDetailsSchema.optional()}).strict();
 export type RowAttemptLog=z.infer<typeof rowAttemptLogSchema>;
 export const rowRetrySchema=z.object({stage:z.enum(STAGE_NAMES),token:z.uuid(),notBefore:z.number(),state:z.enum(["waiting","started","completed"])}).strict();
 export const ROW_RETRY_DELAY_MS=5000;
@@ -302,6 +302,9 @@ export class GenerationError extends Error {
     this.providerFailure = readProviderFailure(providerFailure);
     this.diagnostic = readFailureDiagnostic(diagnostic);
     this.cliCause = readCliCause(cliCause);
+    if(code==="provider_not_sent"&&(!isUnsentTlsHandshake(this.cliCause)||this.providerFailure!==undefined)){
+      this.code="outcome_unknown";this.message=this.code;
+    }
     this.details=readErrorDetails(details);
   }
 }

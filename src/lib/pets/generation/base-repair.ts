@@ -1,12 +1,12 @@
 import type {BaseAttempt,BaseRepairState,GenerationJob} from "@/lib/pets/generation/model";
 import type {FailureDiagnostic} from "@/lib/pets/generation/failure-diagnostic";
 import type {BaseRepairProgress} from "@/lib/pets/generation/base-repair-progress";
-import {isRetryableImageCause,type CliCause} from "@/lib/pets/generation/cli-cause";
+import {isRetryableImageFailure,type CliCause} from "@/lib/pets/generation/cli-cause";
 import {isOutputModerationFailure,type ProviderFailure} from "@/lib/pets/generation/provider-failure";
 export function baseFailureRetryReason(failure:{code:string;cliCause?:CliCause;providerFailure?:ProviderFailure;diagnostic?:FailureDiagnostic}):"transport"|"moderation"|"rate_limit"|undefined {
   if(failure.diagnostic && failure.diagnostic.boundary!=="provider_cli")return undefined;
   if(failure.providerFailure && failure.cliCause && (failure.cliCause.kind!=="http_error" || failure.cliCause.httpStatus!==failure.providerFailure.httpStatus))return undefined;
-  if(failure.code==="outcome_unknown"&&isRetryableImageCause(failure.cliCause))return "transport";
+  if(isRetryableImageFailure(failure))return "transport";
   if(failure.code==="provider_rejected"&&isOutputModerationFailure(failure.providerFailure))return "moderation";
   if(failure.code==="provider_rate_limited"&&failure.providerFailure?.httpStatus===429)return "rate_limit";
 }

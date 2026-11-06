@@ -5,7 +5,7 @@ import {journalIdentitySchema,type JournalRecord} from "@/lib/pets/generation/re
 import {imageOperation} from "@/lib/pets/generation/checkpoint-journal";
 import {latestAnimationAttempt,isAnimationState} from "@/lib/pets/generation/animation-repair";
 import {latestBaseAttempt} from "@/lib/pets/generation/base-repair";
-import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
+import {isRetryableImageCause,isUnsentTlsHandshake} from "@/lib/pets/generation/cli-cause";
 import {normalizeCardMetadata} from "@/lib/pets/generation/card-metadata";
 import {recordRecoveredResultCost} from "@/lib/pets/generation/expired-generation";
 import {scheduler,isTaskScheduler,saveScheduler} from "@/lib/pets/generation/scheduler";
@@ -36,6 +36,8 @@ export async function recoverResult(store:GenerationStore,record:JournalRecord,o
   if(!current&&!expired)conflict();
   if(current&&(current.createdAt!==identity.createdAt||current.expiresAt!==identity.expiresAt||current.pipelineVersion!==identity.pipelineVersion))conflict();
   const outcome=record.outcome;
+  const retainedFailure=outcome?.kind==="failure"?outcome:record.failure;
+  if(retainedFailure?.code==="provider_not_sent"&&(!isUnsentTlsHandshake(retainedFailure.cliCause)||retainedFailure.providerFailure!==undefined||record.costUsd!==0))conflict();
   if(!outcome&&!expired)conflict();
   let updated:GenerationJob|null=null;
   let mode:"image"|"failure"|"metadata"|"accounting-only"="accounting-only";

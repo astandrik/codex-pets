@@ -2,7 +2,7 @@ import {isDeepStrictEqual} from "node:util";
 import {YdbError, StatusCode} from "@/lib/ydb/client";
 import {animationFailureRetryReason} from "@/lib/pets/generation/animation-repair";
 import {baseFailureRetryReason} from "@/lib/pets/generation/base-repair";
-import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
+import {isRetryableImageFailure} from "@/lib/pets/generation/cli-cause";
 import type {ContinuationState} from "@/lib/pets/generation/continuation-model";
 import {GenerationError, type GenerationJob, type StageName} from "@/lib/pets/generation/model";
 import {isTaskScheduler, readActiveWorkerJob, requireJobWithActiveWorkerLease, scheduler, WorkerYield} from "@/lib/pets/generation/scheduler";
@@ -41,7 +41,7 @@ function reservationState(before: GenerationJob, current: GenerationJob, request
   if (request.kind === "row") {
     const logs = before.rowAttemptLogs?.filter(log => log.stage === request.stage) ?? [];
     const first = logs[0];
-    if (logs.length !== 1 || first.attempt !== 1 || first.code !== "outcome_unknown" || !isRetryableImageCause(first.cliCause) ||
+    if (logs.length !== 1 || first.attempt !== 1 || !isRetryableImageFailure(first) ||
       !isDeepStrictEqual(logs, current.rowAttemptLogs?.filter(log => log.stage === request.stage)) ||
       before.rowRetries?.some(retry => retry.stage === request.stage)) return;
     const retries = current.rowRetries?.filter(retry => retry.stage === request.stage) ?? [];

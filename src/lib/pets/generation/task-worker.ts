@@ -8,7 +8,7 @@ import {generateRepairBase} from "@/lib/pets/generation/base-repair-worker";
 import {readRetrySnapshot, recoverRetryReservation} from "@/lib/pets/generation/retry-reservation-recovery";
 import {readSavedGenerationBase} from "@/lib/pets/generation/base-review";
 import {readRevisionAtlas} from "@/lib/pets/generation/animation-revisions";
-import {isRetryableImageCause} from "@/lib/pets/generation/cli-cause";
+import {isRetryableImageFailure} from "@/lib/pets/generation/cli-cause";
 import {errorFromTask} from "@/lib/pets/generation/task-scheduler";
 import {prepareGeneratedCard} from "@/lib/pets/generation/card-worker";
 import {buildGeneratedPackage} from "@/lib/pets/generation/package";
@@ -74,7 +74,7 @@ export async function runGenerationTask(initial: GenerationJob, options: Options
     beforeCall();
     const recorded = job.rowAttemptLogs?.filter(log => log.stage === name).at(-1);
     if (recorded) {
-      const retryable = recorded.attempt === 1 && recorded.code === "outcome_unknown" && isRetryableImageCause(recorded.cliCause);
+      const retryable = recorded.attempt === 1 && isRetryableImageFailure(recorded);
       if (!retryable) throw new GenerationError(recorded.code, undefined, undefined, undefined, recorded.diagnostic, recorded.cliCause, recorded.details);
       if (!retry) {
         const recovered = await reserveRowRetry(name);
@@ -91,9 +91,9 @@ export async function runGenerationTask(initial: GenerationJob, options: Options
     catch (error) {
       const failure = error instanceof GenerationError ? error : new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary:"renderer_process",reason:"unclassified"});
       await options.service.recordRowAttemptFailure(job,name,retry?2:1,failure);
-      if (retry && failure.code === "outcome_unknown" && isRetryableImageCause(failure.cliCause) && failure.diagnostic?.boundary === "provider_cli") recordedTerminalFailure = true;
+      if (retry && isRetryableImageFailure(failure) && failure.diagnostic?.boundary === "provider_cli") recordedTerminalFailure = true;
       if (initial.expiresAt <= now()) throw failure;
-      if (!retry && failure.code === "outcome_unknown" && isRetryableImageCause(failure.cliCause)) {
+      if (!retry && isRetryableImageFailure(failure)) {
         const next = await reserveRowRetry(name);throw new WorkerYield(next.notBefore);
       }
       throw failure;
