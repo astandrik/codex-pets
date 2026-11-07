@@ -7,6 +7,8 @@ import {synchronizeBatchHistory} from './batch-history';
 const pauseErrors:Record<string,string>={
   budget_exhausted:'Достигнут лимит расходов сервиса.',rate_limited:'Достигнут дневной лимит генераций.',
   generation_paused:'Сервис приостановил генерации.',generation_disabled:'Генерации отключены.',
+  generation_not_configured:'Сервис генерации не настроен. Продолжите после восстановления сервиса.',
+  client_ip_unavailable:'Сервис не смог определить адрес запроса. Продолжите позже.',
   generation_review_disabled:'Создание персонажей временно отключено.',generation_expired:'Срок проверки запроса истёк. Новый запрос автоматически не создаётся.',
 };
 function unknown(generation:ReturnType<typeof readGeneration>) {

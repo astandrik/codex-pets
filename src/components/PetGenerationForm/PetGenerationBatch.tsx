@@ -88,17 +88,19 @@ export function PetGenerationBatch({enabled,admissionAvailable=true,onAvailabili
         const item:BatchItem={id:crypto.randomUUID(),requestId:crypto.randomUUID(),name:source.name,type:source.type,state:'ready'};
         let prepared:Awaited<ReturnType<typeof prepareReferenceImage>>|undefined;
         let preview:Blob|undefined;
-        try{prepared=await prepareReferenceImage(source,signal);preview=await thumbnail(prepared.url);}
-        catch(error){
-          if(signal.aborted)break;
-          item.state='invalid';item.error=error instanceof ReferenceImageError&&error.code==='too_large'?'Изображение больше 5 МиБ.':error instanceof Error?error.message:'Не удалось прочитать изображение.';
-        }
         try {
+          try{prepared=await prepareReferenceImage(source,signal);preview=await thumbnail(prepared.url);}
+          catch(error){
+            if(signal.aborted)break;
+            item.state='invalid';item.error=error instanceof ReferenceImageError&&error.code==='too_large'?'Изображение больше 5 МиБ.':error instanceof Error?error.message:'Не удалось прочитать изображение.';
+          }
           if(signal.aborted)break;
-          await storage.add(item,item.state==='ready'?prepared?.file:undefined,preview,expected);
-          expected=batchSnapshot(await storage.read());
-          await refresh();
-        }catch{setIncomplete(true);setNotice('Не хватило места или сохранение прервано. В списке только сохранённые файлы. Уменьшите пакет.');break;}
+          try {
+            await storage.add(item,item.state==='ready'?prepared?.file:undefined,preview,expected);
+            expected=batchSnapshot(await storage.read());
+            await refresh();
+          }catch{setIncomplete(true);setNotice('Не хватило места или сохранение прервано. В списке только сохранённые файлы. Уменьшите пакет.');break;}
+        }
         finally{if(prepared)URL.revokeObjectURL(prepared.url);}
       }
     });

@@ -122,3 +122,37 @@ describe('image batch dispatch',()=>{
     expect(f.get().items[0].state).toBe('uncertain');expect(f.files.size).toBe(1);
   });
 });
+
+describe('known pre-admission rejections',()=>{
+  it.each(['generation_not_configured','client_ip_unavailable'])('can resume fresh %s after a day using the same UUID and bytes',async code=>{
+    const f=fixture(2),original=structuredClone(f.get());let time=Date.now();
+    const request=vi.fn(async(url:string,init?:RequestInit)=>{
+      expect(url).toBe('/api/pet-generations');expect(init?.method).toBe('POST');
+      if(request.mock.calls.length===1)return Response.json({code},{status:503});
+      return Response.json({generation:{generationId:request.mock.calls.length.toString(16).padStart(64,'0'),expiresAt:new Date(time+86400000).toISOString(),status:'queued'}});
+    });
+    const options={signal:new AbortController().signal,request,now:()=>time,remember:()=>true};
+    await runBatch(f.store,{...options,expected:batchSnapshot(f.get())});
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(f.get().items[0].state).toBe('ready');expect(f.get().items[0].firstSentAt).toBeUndefined();
+    expect(f.get().items[1].state).toBe('ready');expect(f.files.size).toBe(2);expect(f.get().message).toBeTruthy();
+    time+=2*86400000;
+    await runBatch(f.store,{...options,expected:batchSnapshot(f.get())});
+    expect(request).toHaveBeenCalledTimes(3);
+    const bodies=request.mock.calls.map(call=>call[1]!.body as FormData);
+    expect(bodies.map(body=>body.get('requestId'))).toEqual([original.items[0].requestId,original.items[0].requestId,original.items[1].requestId]);
+    expect(await (bodies[0].get('referenceImage') as Blob).text()).toBe(await (bodies[1].get('referenceImage') as Blob).text());
+    expect(f.get().items.every(item=>item.receipt)).toBe(true);expect(f.files.size).toBe(0);
+    expect(f.get().createdAt).toBe(original.createdAt);expect(f.get().expiresAt).toBe(original.expiresAt);
+  });
+  it.each(['generation_not_configured','client_ip_unavailable'])('does not erase earlier uncertainty after %s',async code=>{
+    const f=fixture(2),item=f.get().items[0],time=Date.now();
+    item.state='uncertain';item.firstSentAt=time-1000;const original=structuredClone(item);
+    const request=vi.fn(async()=>Response.json({code},{status:503}));
+    await runBatch(f.store,{expected:batchSnapshot(f.get()),signal:new AbortController().signal,now:()=>time,request,remember:()=>true});
+    expect(request).toHaveBeenCalledTimes(1);expect(f.get().items[0]).toMatchObject(original);expect(f.files.size).toBe(2);
+    await runBatch(f.store,{expected:batchSnapshot(f.get()),signal:new AbortController().signal,now:()=>time+2*86400000,request,remember:()=>true});
+    expect(request).toHaveBeenCalledTimes(1);expect(f.get().items[0]).toMatchObject(original);
+    expect(f.get().items[1].state).toBe('ready');expect(f.get().message).toContain('истёк');
+  });
+});
