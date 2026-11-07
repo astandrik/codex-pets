@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Container } from "@/components/GravityUI/GravityUI";
-import { PetGenerationForm } from "@/components/PetGenerationForm/PetGenerationForm";
+import { PetGenerationModes } from "@/components/PetGenerationForm/PetGenerationModes";
 import { GenerationError, generationEnabled, generationReviewFlowEnabled, generationAnimationAutoRepairEnabled, generationQueueLimit, generationDailyQuotaLimits } from "@/lib/pets/generation/model";
 import type {GenerationDailyQuotaLimits} from "@/lib/pets/generation/quota-limits";
 
@@ -21,6 +21,6 @@ export default function GeneratePage() {
     if (!(error instanceof GenerationError) || error.code !== "generation_not_configured") throw error;
   }
   return <Container as="main" maxWidth="xl" gutters={0}>
-    <PetGenerationForm enabled={generationEnabled()} reviewBase={reviewBase} automaticAnimationRepair={generationAnimationAutoRepairEnabled()} queueLimit={queueLimit} dailyQuotaLimits={dailyQuotaLimits} />
+    <PetGenerationModes enabled={generationEnabled()} reviewBase={reviewBase} automaticAnimationRepair={generationAnimationAutoRepairEnabled()} queueLimit={queueLimit} dailyQuotaLimits={dailyQuotaLimits} />
   </Container>;
 }

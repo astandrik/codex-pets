@@ -242,7 +242,22 @@ export function historyParent(generation:HistoryGenerationReference):{generation
 export function rememberGenerationVersion(input:unknown,source?:{generationId:string;kind:HistoryVersionKind},now=Date.now(),storage?:HistoryStorage):boolean {
   return saveGenerationVersion(input,source,now,storage,true);
 }
-function saveGenerationVersion(input:unknown,source:{generationId:string;kind:HistoryVersionKind}|undefined,now:number,storage:HistoryStorage|undefined,allowQuotaRetry:boolean):boolean {
+// A receipt is acknowledged even when it has expired or falls outside the retained 50 families.
+// This must not reintroduce an old family after an IndexedDB acknowledgement was interrupted.
+export function reconcileGenerationHistoryReceipt(input:HistoryGenerationReference,savedAt:number,now=Date.now(),storage?:HistoryStorage):boolean {
+  try {
+    const expiresAt=Date.parse(input.expiresAt),createdAt=input.createdAt===undefined?undefined:Date.parse(input.createdAt);
+    if(!ID.test(input.generationId)||!Number.isFinite(expiresAt)||!Number.isFinite(savedAt)||savedAt>now+CLOCK_SKEW_MS||savedAt<=0)return false;
+    if(expiresAt<=now)return true;
+    const target=storage??window.localStorage,snapshot=scanGenerationHistory(now,target);
+    if(snapshot.allEntries.some(entry=>entry.generationId===input.generationId))return true;
+    const entry={generationId:input.generationId,familyId:input.generationId,savedAt,expiresAt,...(Number.isFinite(createdAt)?{createdAt}:{})};
+    const retained=groupGenerationVersions([...snapshot.allEntries,entry]).slice(0,HISTORY_FAMILY_LIMIT);
+    if(!retained.some(group=>group.versions.some(version=>version.generationId===input.generationId)))return true;
+    return saveGenerationVersion(input,undefined,now,target,true,savedAt);
+  } catch {return false;}
+}
+function saveGenerationVersion(input:unknown,source:{generationId:string;kind:HistoryVersionKind}|undefined,now:number,storage:HistoryStorage|undefined,allowQuotaRetry:boolean,initialSavedAt?:number):boolean {
   try {
     const parsed=historyGenerationSchema.pick({generationId:true,expiresAt:true,createdAt:true,baseRetrySourceId:true,continuation:true,animationRevision:true,submission:true}).safeParse(input);
     if(!parsed.success)return false;
@@ -257,7 +272,7 @@ function saveGenerationVersion(input:unknown,source:{generationId:string;kind:Hi
     const deadline=Math.min(previous?.expiresAt??expiresAt,expiresAt);
     if(createdAt!==undefined)writeFact(target,{generationId:id,expiresAt:deadline,createdAt});
     if(parent)writeFact(target,{generationId:id,expiresAt:deadline,parentGenerationId:parent.generationId,familyId:previous?.parentGenerationId?previous.familyId:parent.generationId,kind:parent.kind});
-    writeEntryIfMissing(target,{generationId:id,savedAt:previous?.savedAt??now,expiresAt:deadline,familyId:previous?.familyId??parent?.generationId??id,...(createdAt!==undefined?{createdAt}:{}),...(previous?.parentGenerationId?{parentGenerationId:previous.parentGenerationId,kind:previous.kind}:parent?{parentGenerationId:parent.generationId,kind:parent.kind}:{})},now);
+    writeEntryIfMissing(target,{generationId:id,savedAt:previous?.savedAt??initialSavedAt??now,expiresAt:deadline,familyId:previous?.familyId??parent?.generationId??id,...(createdAt!==undefined?{createdAt}:{}),...(previous?.parentGenerationId?{parentGenerationId:previous.parentGenerationId,kind:previous.kind}:parent?{parentGenerationId:parent.generationId,kind:parent.kind}:{})},now);
     if(generation.submission){
       const notice=parseSubmissionNotice({generationId:id,expiresAt:deadline,submission:generation.submission},now);
       if(!notice||!writeSubmissionNotice(notice,target,now))return false;
@@ -269,7 +284,7 @@ function saveGenerationVersion(input:unknown,source:{generationId:string;kind:Hi
     if(allowQuotaRetry&&isQuotaExceeded(cause)){
       try {
         const target=storage??window.localStorage;
-        if(pruneGenerationHistory(now,target))return saveGenerationVersion(input,source,now,target,false);
+        if(pruneGenerationHistory(now,target))return saveGenerationVersion(input,source,now,target,false,initialSavedAt);
       } catch {/* Preserve the caller's pending request when storage stays unavailable. */}
     }
     return false;
