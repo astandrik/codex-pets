@@ -2,7 +2,7 @@ import { withSerializableTransaction } from "@/lib/ydb/transaction";
 import { findAvailablePublicPetSlug } from "@/lib/pets/public-slug-allocation";
 import type { YdbQueryExecutor } from "@/lib/ydb/client";
 import { TABLES } from "@/lib/ydb/schema";
-import { TypedValues, withSession, isYdbConfigured } from "@/lib/ydb/client";
+import { ExecuteQuerySettings, Types, TypedValues, withSession, isYdbConfigured } from "@/lib/ydb/client";
 import { boolAt, rowsFromResult, textAt, uintAt } from "@/lib/ydb/result";
 import {
   listPublicUserProfilesByIds,
@@ -1087,25 +1087,18 @@ async function getMetricsBySlugs(slugs: string[]): Promise<Map<string, PetMetric
   if (!isYdbConfigured() || slugs.length === 0) return new Map();
 
   const uniqueSlugs = Array.from(new Set(slugs));
-  const declarations = uniqueSlugs
-    .map((_, index) => `DECLARE $slug${index} AS Utf8;`)
-    .join("\n");
-  const predicate = uniqueSlugs
-    .map((_, index) => `pet_slug = $slug${index}`)
-    .join(" OR ");
-  const params = Object.fromEntries(
-    uniqueSlugs.map((slug, index) => [`$slug${index}`, TypedValues.utf8(slug)]),
-  );
 
   const result = await withSession((session) =>
     session.executeQuery(
       `
-${declarations}
+DECLARE $slugs AS List<Utf8>;
 SELECT pet_slug, download_count, install_count, like_count
 FROM ${TABLES.metrics}
-WHERE ${predicate};
+WHERE pet_slug IN $slugs;
       `,
-      params,
+      { $slugs: TypedValues.list(Types.UTF8, uniqueSlugs) },
+      undefined,
+      new ExecuteQuerySettings().withKeepInCache(true),
     ),
   );
 
