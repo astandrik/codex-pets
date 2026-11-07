@@ -20,7 +20,7 @@ async function fixture(kind: Kind) {
   f.store.ledger.get("scheduler")!.value = JSON.stringify({...JSON.parse(f.store.ledger.get("scheduler")!.value), queue: [id]});
   const job = (await f.service.claim("owner"))!, stage = kind === "base" ? "base" : "idle";
   await f.service.beginStage(job, stage);
-  const initial = await readActiveWorkerJob(f.store, job, f.clock.now);
+  const initial = await readActiveWorkerJob(f.store, job, () => f.clock.now);
   const failure = new GenerationError("outcome_unknown", undefined, undefined, undefined,
     {boundary: "provider_cli", reason: "process_exit"}, {kind: "http_error", httpStatus: 520});
   if (kind === "base") {
@@ -35,7 +35,7 @@ async function fixture(kind: Kind) {
     await f.service.authorizeStage(job, stage);
     await f.service.recordRowAttemptFailure(job, stage, 1, failure);
   }
-  const before = await readActiveWorkerJob(f.store, job, f.clock.now);
+  const before = await readActiveWorkerJob(f.store, job, () => f.clock.now);
   const request: Parameters<typeof recoverRetryReservation>[2] = kind === "base"
     ? {kind, stage: "base", reason: "transport"} : kind === "animation"
       ? {kind, stage: "idle", reason: "transport"} : {kind, stage: "idle"};

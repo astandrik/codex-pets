@@ -58,24 +58,28 @@ export function createQuotaAdminService(store: GenerationStore, options: { secre
   const clock = options.now ?? Date.now;
   return {
     async inspect(ip: string): Promise<DailyQuota> {
-      normalizeQuotaIp(ip); const now = clock(); const secret = options.secret();
-      return store.transaction(tx => readDailyQuota(tx, secret, ip, now));
+      normalizeQuotaIp(ip); const secret = options.secret();
+      return store.transaction(tx => readDailyQuota(tx, secret, ip, clock()));
     },
     async grant(input: unknown, actorId: string): Promise<QuotaGrantReceipt> {
       const parsed = quotaGrantSchema.safeParse(input);
       if (!parsed.success || !actorId || actorId.length > 128) throw new GenerationError("invalid_argument");
-      const body = parsed.data; const ip = normalizeQuotaIp(body.ip); const secret = options.secret(); const now = clock();
+      const body = parsed.data; const ip = normalizeQuotaIp(body.ip); const secret = options.secret();
       const requestKey = `quota-grant:request:${generationDigest(secret, "quota-grant-request", body.requestId)}`;
       const fingerprint = generationDigest(secret, "quota-grant-input", JSON.stringify({ ip, amount: body.amount, day: body.day, actorId }));
       return store.transaction(async tx => {
+        let now = clock();
         const previous = await tx.getLedger(requestKey, now);
         if (previous) {
           const saved = requestSchema.parse(JSON.parse(previous));
           if (saved.fingerprint !== fingerprint) throw new GenerationError("request_id_conflict");
           return saved.event.receipt;
         }
+        now = clock();
         if (body.day !== moscowDay(now)) throw new GenerationError("quota_day_changed");
         const key = keys(secret, ip, now); const bonus = await readBonus(tx, key.bonus, now);
+        now = clock();
+        if (body.day !== moscowDay(now)) throw new GenerationError("quota_day_changed");
         const maxExtra = Math.min(MAX_EXTRA_ATTEMPTS, Number.MAX_SAFE_INTEGER - generationDailyQuotaLimits().ip);
         if (body.amount > maxExtra - bonus.extra) throw new GenerationError("quota_grant_limit");
         const receipt: QuotaGrantReceipt = { requestId: body.requestId, day: body.day, amount: body.amount,

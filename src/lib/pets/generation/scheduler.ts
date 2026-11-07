@@ -36,8 +36,13 @@ export function releaseActiveLease(state: Scheduler, id: string) {
 export function requireQueueCapacity(state: Scheduler) {
   if (process.env.PET_GENERATION_DRAIN === "true") throw new GenerationError("generation_paused");
   const limit = generationQueueLimit();
-  const initial = isParallelScheduler(state) ? state.queue.filter(id => state.resumes[id] === undefined).length : state.queue.length;
-  if (initial >= limit || (isParallelScheduler(state) && state.queue.length + state.active.length >= limit + state.activeLimit)) throw new GenerationError("queue_full");
+  const occupied = new Set(state.queue);
+  if (isTaskScheduler(state)) {
+    for (const task of state.tasks) if (task.status === "running") occupied.add(task.jobId);
+  } else if (isParallelScheduler(state)) {
+    for (const lease of state.active) occupied.add(lease.id);
+  } else if (state.active) occupied.add(state.active.id);
+  if (occupied.size >= limit) throw new GenerationError("queue_full");
 }
 export class WorkerYield extends Error {
   constructor(readonly eligibleAt = 0) { super("Worker slice complete"); }
@@ -159,13 +164,14 @@ export async function yieldParallel(tx: GenerationTransaction, state: Scheduler,
   await saveScheduler(tx, state);
 }
 
-export async function readActiveWorkerJob(store: import("./store").GenerationStore, job: GenerationJob, now: number) {
+export async function readActiveWorkerJob(store: import("./store").GenerationStore, job: GenerationJob, clock: () => number) {
   if (!job.workerTask) {
     const current = await store.readJob(job.id);
+    const now = clock();
     if (!current || current.expiresAt <= now || current.worker !== job.worker || current.workerLeaseId !== job.workerLeaseId || !current.leaseUntil || current.leaseUntil <= now) throw new GenerationError("stale_worker");
     return current;
   }
-  return store.transaction(async tx => requireJobWithActiveWorkerLease(tx, await scheduler(tx, now), job, now));
+  return store.transaction(async tx => requireJobWithActiveWorkerLease(tx, await scheduler(tx, clock()), job, clock()));
 }
 
 export function requireActiveWorkerLease(state: Scheduler, job: GenerationJob, now: number) {

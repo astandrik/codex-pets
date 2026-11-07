@@ -63,12 +63,30 @@ SELECT payload FROM ${GENERATION_TABLES.jobs} WHERE id = $id;`, { $id: TypedValu
       const unique = [...new Set(ids)];
       const jobs = new Map<string, GenerationJob>();
       for (let offset = 0; offset < unique.length; offset += JOB_READ_BATCH_SIZE) {
+        const batch = unique.slice(offset, offset + JOB_READ_BATCH_SIZE);
+        // Cap the batch at 8 MiB (the SDK receives at most 16 MiB). Legacy records can still contain embedded image bytes.
         const result = await execute(`DECLARE $ids AS List<Utf8>;
-SELECT id, payload FROM ${GENERATION_TABLES.jobs} WHERE id IN $ids;`, {
-          $ids: TypedValues.list(Types.UTF8, unique.slice(offset, offset + JOB_READ_BATCH_SIZE)),
+SELECT id, IF(LENGTH(CAST(payload AS String)) <= 262144, payload, CAST("" AS Utf8)) AS payload,
+LENGTH(CAST(payload AS String)) > 262144 AS oversized
+FROM ${GENERATION_TABLES.jobs} WHERE id IN $ids;`, {
+          $ids: TypedValues.list(Types.UTF8, batch),
         });
-        if (result.resultSets?.some(set => set.truncated)) throw new Error("Incomplete generation job batch");
-        for (const row of rowsFromResult(result)) jobs.set(textAt(row, 0), jobSchema.parse(JSON.parse(textAt(row, 1))));
+        if (result.resultSets?.length !== 1 || result.resultSets.some(set => set.truncated)) throw new Error("Incomplete generation job batch");
+        for (const row of rowsFromResult(result)) {
+          const id = textAt(row, 0), oversized = row.items?.[2]?.boolValue;
+          if (!batch.includes(id) || jobs.has(id) || typeof oversized !== "boolean") throw new Error("Invalid generation job batch");
+          let payload = textAt(row, 1);
+          if (oversized) {
+            if (payload !== "") throw new Error("Invalid oversized job marker");
+            const single = await execute(`DECLARE $id AS Utf8;
+SELECT payload FROM ${GENERATION_TABLES.jobs} WHERE id = $id;`, {$id: TypedValues.utf8(id)});
+            if (single.resultSets?.length !== 1 || single.resultSets.some(set => set.truncated) || rowsFromResult(single).length !== 1) throw new Error("Incomplete oversized job read");
+            payload = textAt(rowsFromResult(single)[0], 0);
+          }
+          const job = jobSchema.parse(JSON.parse(payload));
+          if (job.id !== id) throw new Error("Mismatched generation job ID");
+          jobs.set(id, job);
+        }
       }
       return jobs;
     },
@@ -145,9 +163,15 @@ UPSERT INTO ${GENERATION_TABLES.artifacts} (id, kind, bytes, expires_at) VALUES 
   };
 }
 
+// Generation transactions share scheduler and accounting rows. Queue only the
+// local database work; provider calls and direct artifact reads stay concurrent.
+let pendingTransaction: Promise<void> = Promise.resolve();
+
 export const generationStore: GenerationStore = {
   transaction(operation) {
-    return withSerializableTransaction(execute => operation(transactionApi(execute)));
+    const result = pendingTransaction.then(() => withSerializableTransaction(execute => operation(transactionApi(execute))));
+    pendingTransaction = result.then(() => undefined, () => undefined);
+    return result;
   },
   readJob(id) {
     return withSession((session) => transactionApi((sql, params) => session.executeQuery(sql, params)).getJob(id));

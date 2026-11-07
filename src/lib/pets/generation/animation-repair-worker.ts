@@ -25,7 +25,7 @@ type Context = {
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const uncertain = (boundary: "intent" | "checkpoint") => new GenerationError("outcome_unknown", undefined, undefined, undefined, {boundary, reason: "unconfirmed_write"});
 async function currentJob(context: Context, original: GenerationJob) {
-  return readActiveWorkerJob(context.store, original, context.now());
+  return readActiveWorkerJob(context.store, original, context.now);
 }
 export async function reserveAnimationRetry(context: Context, job: GenerationJob, name: ContinuationState, reason: "quality" | "transport" | "moderation") {
   const before = await readRetrySnapshot(context.store, job, name, context.now);

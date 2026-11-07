@@ -73,8 +73,9 @@ function desiredTasks(job: GenerationJob): GenerationTask[] {
 }
 
 async function reconcile(tx: GenerationTransaction, state: TaskScheduler, now: number) {
+  const jobs = await tx.getJobs(state.queue);
   for (const id of state.queue) {
-    const job = await tx.getJob(id);
+    const job = jobs.get(id);
     if (!job || job.expiresAt <= now || !["queued", "generating", "processing"].includes(job.status)) continue;
     if (!usesStageCheckpoints(job)) throw new GenerationError("generation_not_configured");
     const existing = state.tasks.filter(t => t.jobId === id);
@@ -178,8 +179,9 @@ export function errorFromTask(task: GenerationTask) {
   const e = task.error;
   return new GenerationError(e?.code ?? "outcome_unknown", e?.retryAt, e?.providerFailure, undefined, e?.diagnostic, e?.cliCause, e?.details, e?.assemblyIssues);
 }
-export async function completeGenerationTask(store: GenerationStore, job: GenerationJob, now: number, result: {error?: GenerationError; eligibleAt?: number} = {}) {
+export async function completeGenerationTask(store: GenerationStore, job: GenerationJob, clock: () => number, result: {error?: GenerationError; eligibleAt?: number} = {}) {
   return store.transaction(async tx => {
+    const now = clock();
     const state = await scheduler(tx, now);
     if (!isTaskScheduler(state)) throw new GenerationError("invalid_stage");
     const task = state.tasks.find(t => t.key === job.workerTask?.key);

@@ -19,7 +19,7 @@ type Readback = {state: "unchanged"} | {state: "reserved"; notBefore: number};
 // fences a yielded task against its current lease and any dispatched slot.
 export async function readRetrySnapshot(store: GenerationStore, job: GenerationJob, stage: StageName, now: () => number) {
   try {
-    const current = await readActiveWorkerJob(store, job, now());
+    const current = await readActiveWorkerJob(store, job, now);
     if (current.expiresAt <= now() || current.leaseUntil === undefined || current.leaseUntil <= now()) throw new GenerationError("stale_worker");
     return current;
   } catch (error) {

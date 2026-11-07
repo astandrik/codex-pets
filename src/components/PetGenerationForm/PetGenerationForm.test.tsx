@@ -318,8 +318,8 @@ it.each(["dark", "light"] as const)("shows queue capacity and the original stora
   const show = [...element.querySelectorAll("button")].find(button => button.textContent === "Limits & privacy")!;
   act(() => show.click());
   const dialog = document.querySelector('[role="dialog"]')!;
-  expect(dialog.textContent).toContain("Up to 7 tasks may wait");
-  expect(dialog.textContent).toContain("until they start or their 24-hour lifetime expires");
+  expect(dialog.textContent).toContain("Up to 7 tasks may be waiting or processing in total");
+  expect(dialog.textContent).toContain("24-hour lifetime still starts when the task is accepted");
   expect(dialog.textContent).not.toContain("60 minutes");
   expect(dialog.textContent).toContain("24 hours from task acceptance");
   act(() => [...dialog.querySelectorAll("button")].find(button => button.textContent === "Got it")!.click());

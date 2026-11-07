@@ -17,7 +17,11 @@ export async function withSerializableTransaction<T>(operation: (execute: YdbQue
           await session.executeQuery("SELECT 1;", {}, { ...control, commitTx: true });
           return result;
         } catch (error) {
-          await session.rollbackTransaction(control).catch(() => undefined);
+          // ABORTED has already discarded the transaction. The SDK retries a
+          // rollback of that missing transaction for seconds before giving up.
+          if (!(error instanceof YdbError) || Reflect.get(error.constructor, "status") !== StatusCode.ABORTED) {
+            await session.rollbackTransaction(control).catch(() => undefined);
+          }
           throw error;
         }
       });

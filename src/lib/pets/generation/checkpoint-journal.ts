@@ -46,7 +46,7 @@ export function attachResultJournal<T extends Service>(service:T,store:Generatio
  const remember=(job:GenerationJob,stage:StageName,operation:string)=>{const entries=authorizedOperations.get(job)??new Map<StageName,string>();entries.set(stage,operation);authorizedOperations.set(job,entries);};
  const operationFor=(job:GenerationJob,stage:StageName)=>authorizedOperations.get(job)?.get(stage)??imageOperation(job,stage);
  async function reserve(job:GenerationJob,operation:string,receipt:string,stage?:StageName){
-  const current=await readActiveWorkerJob(store,job,now());
+  const current=await readActiveWorkerJob(store,job,now);
   const identity=journalIdentity(current,operation,receipt,stage),key=journalKey(identity);
   try{return {key:await durability.journal.reserve(identity),identity};}
   catch(error){

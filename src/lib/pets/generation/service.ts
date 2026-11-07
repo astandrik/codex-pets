@@ -55,11 +55,12 @@ export function createGenerationService(store: GenerationStore, options: {
   resultDurability?: ResultDurability;
 }) {
   const clock = options.now ?? Date.now;
+  let pendingClaim: Promise<void> = Promise.resolve();
   const createId = options.createId ?? newGenerationId;
   const budgetUsd = options.budgetUsd ?? (() => null);
   async function beginStages(job: GenerationJob, names: StageName[]) {
-    const now = clock();
     return store.transaction(async tx => {
+      const now = clock();
       const state = await scheduler(tx, now);
       const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
       if (!options.enabled()) throw new GenerationError("generation_disabled");
@@ -94,8 +95,8 @@ export function createGenerationService(store: GenerationStore, options: {
     });
   }
   const service = {
-    readWorkerJob: (job: GenerationJob) => readActiveWorkerJob(store, job, clock()),
-    completeTask: (job: GenerationJob, result?: {error?: GenerationError; eligibleAt?: number}) => completeGenerationTask(store, job, clock(), result),
+    readWorkerJob: (job: GenerationJob) => readActiveWorkerJob(store, job, clock),
+    completeTask: (job: GenerationJob, result?: {error?: GenerationError; eligibleAt?: number}) => completeGenerationTask(store, job, clock, result),
     ...createBaseRepairService(store,{now:clock,enabled:options.enabled,budgetUsd}),
     ...createBaseRetryService(store,{now:clock,enabled:options.enabled,secret:options.secret,createId,budgetUsd,baseRetries:options.baseRetries??(()=>false),reviewFlow:options.reviewFlow??generationReviewFlowEnabled,automaticAnimationRepair:options.automaticAnimationRepair,automaticCardMetadata:options.automaticCardMetadata}),
     finishExpiredGeneration: (job: GenerationJob, uncertain: boolean) => finishExpiredGeneration(store, job, clock, uncertain),
@@ -108,7 +109,6 @@ export function createGenerationService(store: GenerationStore, options: {
       const parsed = (admission.reviewBase && admission.sourceBaseId === undefined ? browserGenerationInputSchema : generationInputSchema).safeParse(input);
       if (!parsed.success || (!parsed.data.prompt && !admission.reference) || (admission.reference && !admission.reviewBase)) throw new GenerationError("invalid_argument");
       const body = parsed.data;
-      const requestTime = clock();
       const secret = options.secret();
       const requestKey = "request:" + generationDigest(secret, "request", body.requestId);
       const fingerprint = (value: GenerationInput) => generationDigest(secret, "body", JSON.stringify({ prompt: value.prompt, displayName: value.displayName ?? "Generated pet", ...(admission.reference ? {referenceSha256: admission.reference.metadata.sourceSha256} : {}), ...(admission.sourceBaseId ? {sourceBaseId: admission.sourceBaseId} : {}) }));
@@ -123,12 +123,13 @@ export function createGenerationService(store: GenerationStore, options: {
       }
       const id = createId();
       return store.transaction(async (tx) => {
-        let now = admission.sourceBaseId ? clock() : requestTime;
+        let now = clock();
         const previous = await tx.getLedger(requestKey, now);
         if (previous) {
           const record = dedupSchema.parse(JSON.parse(previous));
           if ((record.hash !== hash && record.hash !== legacyHash) || (record.nameProvided!==undefined && record.nameProvided!==(body.displayName!==undefined))) throw new GenerationError("request_id_conflict");
           const job = await tx.getJob(record.id);
+          now = clock();
           if (!job || job.expiresAt <= now) throw new GenerationError("generation_expired");
           return publicJob(job, now);
         }
@@ -140,6 +141,7 @@ export function createGenerationService(store: GenerationStore, options: {
         let sourceExpiresAt: number | undefined;
         if (admission.sourceBaseId) {
           const source = await tx.getJob(admission.sourceBaseId);
+          now = clock();
           if (!source) throw new GenerationError("not_found");
           if (source.expiresAt <= now) throw new GenerationError("generation_expired");
           if (!source.reviewBase || source.status !== "awaiting_confirmation" || source.baseConfirmedAt !== undefined) throw new GenerationError("base_not_ready");
@@ -150,6 +152,7 @@ export function createGenerationService(store: GenerationStore, options: {
           if (source.expiresAt <= now) throw new GenerationError("generation_expired");
           if (displayName === undefined && source.nameSource === "user") displayName = source.displayName;
         }
+        now = clock();
         const job = await admitGeneration(tx,{id,input:{...body,displayName},reviewBase:admission.reviewBase,reference,acceptedAt:now,sourceDeadline:sourceExpiresAt},clientIp,
           {now:clock,enabled:options.enabled,secret:()=>secret,budgetUsd,automaticAnimationRepair:options.automaticAnimationRepair,automaticCardMetadata:options.automaticCardMetadata,baseRetries:options.baseRetries??(()=>false)});
         await tx.putLedger(requestKey, JSON.stringify({ hash, id, expiresAt: now + 7 * DAY, nameProvided:body.displayName!==undefined }), now + 7 * DAY);
@@ -268,79 +271,86 @@ export function createGenerationService(store: GenerationStore, options: {
         throw error;
       }
     },
-    async claim(owner: string) {
-      if (!options.enabled()) return null;
-      return store.transaction(async (tx) => {
-        const state = await scheduler(tx, clock());
-        const beforeTaskCleanup = isTaskScheduler(state) ? JSON.stringify(state) : undefined;
-        let now = clock();
-        const hadPendingWork = Boolean(state.active || state.queue.length);
-        const queuedBeforeCleanup = state.queue.length;
-        await expireQueue(tx, state, now);
-        if (isTaskScheduler(state)) return claimGenerationTask(tx, state, owner, clock, budgetUsd(), beforeTaskCleanup);
-        if (isParallelScheduler(state)) return claimParallel(tx, state, owner, clock);
-        if (process.env.PET_GENERATION_DRAIN === "true") return null;
-        const saveQueueCleanup = async () => {
-          if (state.queue.length !== queuedBeforeCleanup) await saveScheduler(tx, state);
-        };
-        now = clock();
-        if(state.pauseReason){
-          const pending=state.active&&state.active.until<=now?await tx.getJob(state.active.id):null;
+    claim(owner: string, stopping?: () => boolean) {
+      const claim = async () => {
+        if (stopping?.() || !options.enabled()) return null;
+        return store.transaction(async (tx) => {
+          if (stopping?.() || !options.enabled()) return null;
+          const state = await scheduler(tx, clock());
+          const beforeTaskCleanup = isTaskScheduler(state) ? JSON.stringify(state) : undefined;
+          let now = clock();
+          const hadPendingWork = Boolean(state.active || state.queue.length);
+          const queuedBeforeCleanup = state.queue.length;
+          await expireQueue(tx, state, now);
+          if (isTaskScheduler(state)) return claimGenerationTask(tx, state, owner, clock, budgetUsd(), beforeTaskCleanup);
+          if (isParallelScheduler(state)) return claimParallel(tx, state, owner, clock);
+          if (process.env.PET_GENERATION_DRAIN === "true") return null;
+          const saveQueueCleanup = async () => {
+            if (state.queue.length !== queuedBeforeCleanup) await saveScheduler(tx, state);
+          };
           now = clock();
-          if(!pending||pending.status!=="processing"||pending.cardMetadata?.state!=="failed") {
-            await saveQueueCleanup(); return null;
+          if(state.pauseReason){
+            const pending=state.active&&state.active.until<=now?await tx.getJob(state.active.id):null;
+            now = clock();
+            if(!pending||pending.status!=="processing"||pending.cardMetadata?.state!=="failed") {
+              await saveQueueCleanup(); return null;
+            }
           }
-        }
-        if (state.active) {
-          if (state.active.until > now) { await saveQueueCleanup(); return null; }
-          const abandoned = await tx.getJob(state.active.id);
-          now = clock();
-          if(abandoned&&abandoned.expiresAt>now&&abandoned.status==="processing"&&abandoned.cardMetadata?.state==="inflight"){
-            state.active={id:abandoned.id,owner,until:now+LEASE_MS,inflight:true};
-            const recovered={...abandoned,worker:owner,leaseUntil:now+LEASE_MS};await tx.putJob(recovered);await saveScheduler(tx,state);return recovered;
+          if (state.active) {
+            if (state.active.until > now) { await saveQueueCleanup(); return null; }
+            const abandoned = await tx.getJob(state.active.id);
+            now = clock();
+            if(abandoned&&abandoned.expiresAt>now&&abandoned.status==="processing"&&abandoned.cardMetadata?.state==="inflight"){
+              state.active={id:abandoned.id,owner,until:now+LEASE_MS,inflight:true};
+              const recovered={...abandoned,worker:owner,leaseUntil:now+LEASE_MS};await tx.putJob(recovered);await saveScheduler(tx,state);return recovered;
+            }
+            if (abandoned && abandoned.expiresAt > now && (state.active.inflight !== true || (canResumeAnimationRepair(abandoned) || canResumeBaseRepair(abandoned))) && (abandoned.status === "processing" || (usesStageCheckpoints(abandoned) && abandoned.status === "generating" && (!abandoned.stages.some(stage => stage.status === "inflight") || (canResumeAnimationRepair(abandoned) || canResumeBaseRepair(abandoned)))))) {
+              state.active = { id: abandoned.id, owner, until: now + LEASE_MS, inflight: false };
+              const recovered = { ...abandoned, worker: owner, leaseUntil: now + LEASE_MS };
+              await tx.putJob(recovered);
+              await saveScheduler(tx, state);
+              return recovered;
+            }
+            if (!abandoned || abandoned.expiresAt <= now) {
+              const uncertain = state.active.inflight !== false;
+              await settleBudget(tx, state.active.id, now, uncertain);
+              if (uncertain) state.pauseReason = "outcome_unknown";
+            }
+            if (abandoned && abandoned.expiresAt > now && abandoned.status === "generating") {
+              await tx.putJob({ ...abandoned, status: "failed", error: "outcome_unknown", prompt: "",
+                failureDiagnostic:{boundary:"lease",reason:"expired_lease"},
+                stageFailureDiagnostics:abandoned.stages.filter(stage=>stage.status==="inflight").map(stage=>({stage:stage.name,diagnostic:{boundary:"lease",reason:"expired_lease"}})),
+              });
+              await settleBudget(tx, abandoned.id, now, true);
+              state.pauseReason = "outcome_unknown";
+            }
+            state.active = null;
+            if (state.pauseReason) { await saveScheduler(tx, state); return null; }
           }
-          if (abandoned && abandoned.expiresAt > now && (state.active.inflight !== true || (canResumeAnimationRepair(abandoned) || canResumeBaseRepair(abandoned))) && (abandoned.status === "processing" || (usesStageCheckpoints(abandoned) && abandoned.status === "generating" && (!abandoned.stages.some(stage => stage.status === "inflight") || (canResumeAnimationRepair(abandoned) || canResumeBaseRepair(abandoned)))))) {
-            state.active = { id: abandoned.id, owner, until: now + LEASE_MS, inflight: false };
-            const recovered = { ...abandoned, worker: owner, leaseUntil: now + LEASE_MS };
-            await tx.putJob(recovered);
+          while (state.queue.length) {
+            const id = state.queue.shift()!;
+            const job = await tx.getJob(id);
+            // Reads and transaction retries can cross the retention deadline after expireQueue.
+            const decisionTime = clock();
+            if (!job || job.expiresAt <= decisionTime) {
+              await settleBudget(tx, id, decisionTime);
+              continue;
+            }
+            if (job.status !== "queued") continue;
+            const claimed: GenerationJob = {...job, status: "generating", worker: owner, leaseUntil: decisionTime + LEASE_MS};
+            state.active = {id, owner, until: decisionTime + LEASE_MS, inflight: !usesStageCheckpoints(job)};
+            await tx.putJob(claimed);
             await saveScheduler(tx, state);
-            return recovered;
+            return claimed;
           }
-          if (!abandoned || abandoned.expiresAt <= now) {
-            const uncertain = state.active.inflight !== false;
-            await settleBudget(tx, state.active.id, now, uncertain);
-            if (uncertain) state.pauseReason = "outcome_unknown";
-          }
-          if (abandoned && abandoned.expiresAt > now && abandoned.status === "generating") {
-            await tx.putJob({ ...abandoned, status: "failed", error: "outcome_unknown", prompt: "",
-              failureDiagnostic:{boundary:"lease",reason:"expired_lease"},
-              stageFailureDiagnostics:abandoned.stages.filter(stage=>stage.status==="inflight").map(stage=>({stage:stage.name,diagnostic:{boundary:"lease",reason:"expired_lease"}})),
-            });
-            await settleBudget(tx, abandoned.id, now, true);
-            state.pauseReason = "outcome_unknown";
-          }
-          state.active = null;
-          if (state.pauseReason) { await saveScheduler(tx, state); return null; }
-        }
-        while (state.queue.length) {
-          const id = state.queue.shift()!;
-          const job = await tx.getJob(id);
-          // Reads and transaction retries can cross the retention deadline after expireQueue.
-          const decisionTime = clock();
-          if (!job || job.expiresAt <= decisionTime) {
-            await settleBudget(tx, id, decisionTime);
-            continue;
-          }
-          if (job.status !== "queued") continue;
-          const claimed: GenerationJob = {...job, status: "generating", worker: owner, leaseUntil: decisionTime + LEASE_MS};
-          state.active = {id, owner, until: decisionTime + LEASE_MS, inflight: !usesStageCheckpoints(job)};
-          await tx.putJob(claimed);
-          await saveScheduler(tx, state);
-          return claimed;
-        }
-        if (hadPendingWork) await saveScheduler(tx, state);
-        return null;
-      });
+          if (hadPendingWork) await saveScheduler(tx, state);
+          return null;
+        });
+      };
+      // Serialize acquisition only; provider work and checkpoints retain their concurrency.
+      const result = pendingClaim.then(claim);
+      pendingClaim = result.then(() => undefined, () => undefined);
+      return result;
     },
     async authorizeLegacyImage(job: GenerationJob) {
       const acquired = await store.transaction(async tx => {
@@ -407,8 +417,8 @@ export function createGenerationService(store: GenerationStore, options: {
     },
     async authorizeStage(job: GenerationJob, name: StageName) {
       assertTaskStage(job, name);
-      const now = clock();
       const acquired = await store.transaction(async tx => {
+        const now = clock();
         const state = await scheduler(tx, now);
         const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
         if (!options.enabled()) throw new GenerationError("generation_disabled");
@@ -433,7 +443,8 @@ export function createGenerationService(store: GenerationStore, options: {
       });
     },
     async recordRowAttemptFailure(job:GenerationJob,name:StageName,attempt:1|2,error:GenerationError){
-      const now=clock();return store.transaction(async tx=>{
+      return store.transaction(async tx=>{
+        const now=clock();
         const state=await scheduler(tx,now);
         const fingerprint=createHash("sha256").update(error.code).digest("hex");
         if(await recordExpiredResult(tx,state,job,now,{key:`failure:${name}:${attempt}`,fingerprint},error.code==="outcome_unknown"?undefined:{costUsd:0},name))return;
@@ -448,7 +459,8 @@ export function createGenerationService(store: GenerationStore, options: {
       });
     },
     async beginRowRetry(job:GenerationJob,name:StageName){
-      const now=clock(),token=randomUUID();return store.transaction(async tx=>{
+      const token=randomUUID();return store.transaction(async tx=>{
+        const now=clock();
         const state=await scheduler(tx,now),current=await requireJobWithActiveWorkerLease(tx,state,job,now);
         if(!options.enabled())throw new GenerationError("generation_disabled");
         if(state.pauseReason)throw new GenerationError("generation_paused");
@@ -460,7 +472,8 @@ export function createGenerationService(store: GenerationStore, options: {
       });
     },
     async authorizeRowRetry(job:GenerationJob,name:StageName,token:string){
-      const now=clock();const acquired=await store.transaction(async tx=>{
+      const acquired=await store.transaction(async tx=>{
+        const now=clock();
         const state=await scheduler(tx,now),current=await requireJobWithActiveWorkerLease(tx,state,job,now);
         if(!options.enabled())throw new GenerationError("generation_disabled");
         if(state.pauseReason)throw new GenerationError("generation_paused");
@@ -503,7 +516,8 @@ export function createGenerationService(store: GenerationStore, options: {
       }));
     },
     async beginCardMetadata(job:GenerationJob,requestHash:string){
-      const now=clock();return store.transaction(async tx=>{
+      return store.transaction(async tx=>{
+        const now=clock();
         const state=await scheduler(tx,now),current=await requireJobWithActiveWorkerLease(tx,state,job,now);
         if(!options.enabled())throw new GenerationError("generation_disabled");
         if(state.pauseReason)throw new GenerationError("generation_paused");
@@ -514,7 +528,8 @@ export function createGenerationService(store: GenerationStore, options: {
       });
     },
     async authorizeCardMetadata(job:GenerationJob){
-      const now=clock();const acquired=await store.transaction(async tx=>{
+      const acquired=await store.transaction(async tx=>{
+        const now=clock();
         const state=await scheduler(tx,now),current=await requireJobWithActiveWorkerLease(tx,state,job,now);
         if(!options.enabled())throw new GenerationError("generation_disabled");
         if(state.pauseReason)throw new GenerationError("generation_paused");
@@ -602,8 +617,8 @@ export function createGenerationService(store: GenerationStore, options: {
       }));
     },
     async finish(job: GenerationJob, files: Record<string, Buffer>) {
-      const now = clock();
       await store.transaction(async (tx) => {
+        const now = clock();
         const state = await scheduler(tx, now);
         const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
         if (current.status !== "processing") throw new GenerationError("stale_worker");
@@ -616,8 +631,8 @@ export function createGenerationService(store: GenerationStore, options: {
       });
     },
     async fail(job: GenerationJob, code: string, providerFailure?: unknown, failureDiagnostic?:unknown, stageDiagnostics:StageFailureDiagnostic[] = [], cliCauses:StageCliCause[] = [], assemblyIssues:import("./continuation-model").AssemblyIssue[] = []) {
-      const now = clock();
       await store.transaction(async (tx) => {
+        const now = clock();
         const state = await scheduler(tx, now);
         const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
         const diagnostic = readProviderFailure(providerFailure);

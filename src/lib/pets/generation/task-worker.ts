@@ -35,7 +35,7 @@ export async function runGenerationTask(initial: GenerationJob, options: Options
   const beforeCall = () => {checkLease();if (options.stopping?.()) throw new WorkerYield();};
   const context = {service: options.service, store: options.store, now, wait: options.wait ?? (async () => {throw new WorkerYield();}),
     checkLease, beforeCall, onTerminalFailure: () => {recordedTerminalFailure = true;}, mutate: <T>(run: () => Promise<T>) => run()};
-  async function refresh() {job = await readActiveWorkerJob(options.store, initial, now());return job;}
+  async function refresh() {job = await readActiveWorkerJob(options.store, initial, now);return job;}
   async function open(composing = false) {
     const saved = new Map<StageName, Buffer>();
     for (const stage of job.stages) {
