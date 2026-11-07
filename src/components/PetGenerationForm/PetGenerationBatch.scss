@@ -1,0 +1,11 @@
+.generation-modes { display:flex; flex-wrap:wrap; gap:8px; margin:24px auto; max-width:1100px; padding:0 16px; }
+.generation-batch { max-width:1000px; margin:32px auto; padding:0 16px 40px; overflow-wrap:anywhere;
+  h1 { font-size:clamp(24px,4vw,36px); }
+  &__picker { display:flex; flex-direction:column; gap:12px; padding:24px; border:1px dashed var(--g-color-line-generic); border-radius:12px; input { max-width:100%; } }
+  &__progress { display:flex; flex-direction:column; gap:8px; margin:24px 0; }
+  &__actions, &__confirm { display:flex; flex-wrap:wrap; gap:12px; margin:16px 0; .g-button { max-width:100%; } }
+  &__list { list-style:none; padding:0; li { display:flex; align-items:center; gap:16px; padding:12px 0; border-bottom:1px solid var(--g-color-line-generic); } img { object-fit:contain; flex-shrink:0; background:var(--g-color-base-generic); border-radius:8px; } }
+  &__item { display:flex; flex:1; min-width:0; flex-direction:column; gap:6px; }
+  &__placeholder { width:80px; height:80px; flex-shrink:0; }
+  @media(max-width:400px) { &__list li { gap:8px; flex-wrap:wrap; } &__placeholder,&__list img { width:56px; height:56px; } }
+}
