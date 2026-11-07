@@ -296,3 +296,39 @@ describe("transactional batch job reads", () => {
     expect(session.executeQuery).toHaveBeenCalledTimes(1);
   });
 });
+
+
+describe("lightweight queue reads", () => {
+  it("reads only id, status and expiry and retains transaction control", async () => {
+    const {generationStore}=await import("./store");
+    const id="c".repeat(64);
+    session.executeQuery.mockResolvedValueOnce({resultSets:[{rows:[{items:[{textValue:id},{textValue:"generating"},{uint64Value:"123456"}]}]}]});
+    const rows=await generationStore.transaction(tx=>tx.getQueueJobs([id,id]));
+    expect(rows.get(id)).toEqual({id,status:"generating",expiresAt:123456});
+    const [sql,params,control]=session.executeQuery.mock.calls[0];
+    expect(sql).toContain("JSON_VALUE");expect(sql).not.toContain("SELECT id, payload");
+    expect(params.$ids).toEqual(TypedValues.list(Types.UTF8,[id]));expect(control).toEqual({txId:"tx-1"});
+  });
+  it.each(["bad-status", "truncated", "unexpected-id"])("rejects %s before queue mutation", async kind => {
+    const {generationStore}=await import("./store");const id="d".repeat(64);
+    session.executeQuery.mockResolvedValueOnce({resultSets:[{truncated:kind==="truncated",rows:[{items:[{textValue:kind==="unexpected-id"?"e".repeat(64):id},{textValue:kind==="bad-status"?"invalid":"queued"},{uint64Value:"123"}]}]}]});
+    await expect(generationStore.transaction(tx=>tx.getQueueJobs([id]))).rejects.toThrow();
+    expect(session.rollbackTransaction).toHaveBeenCalled();
+  });
+});
+
+describe('cleanup artifact expiry',()=>{
+  it('retains the exact native microsecond deadline with the artifact bytes',async()=>{
+    const {metadataCleanupStore}=await import('./metadata-cleanup-store');
+    const bytes=Buffer.from('synthetic PNG');
+    session.executeQuery.mockResolvedValueOnce({resultSets:[{rows:[{items:[{bytesValue:bytes},{uint64Value:'1794142364910001'}]}]}]});
+    await expect(metadataCleanupStore.transaction(tx=>tx.artifact('a'.repeat(64),'base',1000))).resolves.toEqual({bytes,expiresMicros:'1794142364910001'});
+    expect(session.executeQuery.mock.calls[0][0]).toContain('SELECT bytes, expires_at');
+  });
+  it('rejects an artifact response missing its deadline',async()=>{
+    const {metadataCleanupStore}=await import('./metadata-cleanup-store');
+    session.executeQuery.mockResolvedValueOnce({resultSets:[{rows:[{items:[{bytesValue:Buffer.from('synthetic PNG')}]}]}]});
+    await expect(metadataCleanupStore.transaction(tx=>tx.artifact('a'.repeat(64),'base',1000))).rejects.toThrow('invalid_artifact_expiry');
+    expect(session.rollbackTransaction).toHaveBeenCalled();
+  });
+});

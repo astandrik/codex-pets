@@ -53,7 +53,7 @@ export async function saveScheduler(tx: GenerationTransaction, state: Scheduler)
 
 export async function expireQueue(tx: GenerationTransaction, state: Scheduler, now: number) {
   if (!state.queue.length) return;
-  const jobs = await tx.getJobs(state.queue);
+  const jobs = await tx.getQueueJobs(state.queue);
   const ready: string[] = [];
   for (const id of state.queue) {
     const job = jobs.get(id);

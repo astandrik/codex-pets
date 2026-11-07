@@ -22,6 +22,7 @@ class MemoryStore implements GenerationStore {
       const tx: GenerationTransaction = {
         listTakenSlugs: async () => [],
         saveSubmission: async () => { throw new Error("Submission is outside this admission fixture"); },
+        getQueueJobs: async ids => new Map([...jobs].filter(([id])=>ids.includes(id)).map(([id,job])=>[id,{id,status:job.status,expiresAt:job.expiresAt}])),
         getJob: async (id) => jobs.get(id) ?? null,
         getJobs: async ids => {
           const result = new Map<string, GenerationJob>();

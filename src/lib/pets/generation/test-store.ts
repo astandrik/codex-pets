@@ -20,6 +20,11 @@ export class MemoryStore implements GenerationStore {
           submissions.set(input.identity.id, input);
         },
         getJob: async (id) => jobs.get(id) ?? null,
+        getQueueJobs: async ids => {
+          const result = new Map();
+          for (const id of ids) {const job = jobs.get(id); if (job) result.set(id, {id:job.id,status:job.status,expiresAt:job.expiresAt});}
+          return result;
+        },
         getJobs: async ids => {
           const result = new Map<string, GenerationJob>();
           for (const id of ids) {const job = jobs.get(id); if (job) result.set(id, job);}

@@ -114,9 +114,9 @@ export function attachResultJournal<T extends Service>(service:T,store:Generatio
    }
   },
   async saveStage(job:GenerationJob,stage:StageName,bytes:Buffer,meta:{usage?:ImageUsage;generationMs:number}){
-   return save(job,operationFor(job,stage),`stage:${stage}`,{kind:"image",bytes,...meta},()=>original.saveStage(job,stage,bytes,meta));},
-  async saveAnimationAttempt(job:GenerationJob,stage:Parameters<typeof latestAnimationAttempt>[1],token:string,bytes:Buffer,meta:{usage?:ImageUsage;generationMs:number}){return save(job,`attempt:${token}`,`attempt:${token}`,{kind:"image",bytes,...meta},()=>original.saveAnimationAttempt(job,stage,token,bytes,meta));},
-  async saveBaseAttempt(job:GenerationJob,token:string,bytes:Buffer,meta:{usage?:ImageUsage;generationMs:number}){return save(job,`base-attempt:${token}`,`base-attempt:${token}`,{kind:"image",bytes,...meta},()=>original.saveBaseAttempt(job,token,bytes,meta));},
+   return save(job,operationFor(job,stage),`stage:${stage}`,{kind:"image",bytes,usage:meta.usage,generationMs:meta.generationMs},()=>original.saveStage(job,stage,bytes,meta));},
+  async saveAnimationAttempt(job:GenerationJob,stage:Parameters<typeof latestAnimationAttempt>[1],token:string,bytes:Buffer,meta:{usage?:ImageUsage;generationMs:number}){return save(job,`attempt:${token}`,`attempt:${token}`,{kind:"image",bytes,usage:meta.usage,generationMs:meta.generationMs},()=>original.saveAnimationAttempt(job,stage,token,bytes,meta));},
+  async saveBaseAttempt(job:GenerationJob,token:string,bytes:Buffer,meta:{usage?:ImageUsage;generationMs:number}){return save(job,`base-attempt:${token}`,`base-attempt:${token}`,{kind:"image",bytes,usage:meta.usage,generationMs:meta.generationMs},()=>original.saveBaseAttempt(job,token,bytes,meta));},
   async failAnimationAttempt(job:GenerationJob,stage:Parameters<typeof latestAnimationAttempt>[1],token:string,error:GenerationError){return save(job,`attempt:${token}`,`failed-attempt:${token}`,failure(error),()=>original.failAnimationAttempt(job,stage,token,error));},
   async failBaseAttempt(job:GenerationJob,token:string,error:GenerationError){return save(job,`base-attempt:${token}`,`base-failure:${token}`,failure(error),()=>original.failBaseAttempt(job,token,error));},
   async recordRowAttemptFailure(job:GenerationJob,stage:StageName,attempt:1|2,error:GenerationError){return save(job,operationFor(job,stage),`failure:${stage}:${attempt}`,failure(error),()=>original.recordRowAttemptFailure(job,stage,attempt,error));},

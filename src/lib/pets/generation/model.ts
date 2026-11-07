@@ -165,12 +165,13 @@ export const animationRevisionSchema = z.object({
   baseSha256: z.string().regex(/^[a-f0-9]{64}$/), sourceAtlasSha256: z.string().regex(/^[a-f0-9]{64}$/),
   corrections: animationCorrectionsSchema, acceptedAt: z.number().optional(),
 }).strict();
+export const jobStatusSchema = z.enum(["queued", "generating", "awaiting_confirmation", "processing", "completed", "failed"]);
 export const jobSchema = z.object({
   id: z.string().regex(GENERATION_ID),
   prompt: z.string(),
   displayName: z.string(),
   nameSource: z.enum(["user", "automatic"]).optional(),
-  status: z.enum(["queued", "generating", "awaiting_confirmation", "processing", "completed", "failed"]),
+  status: jobStatusSchema,
   reviewBase: z.boolean().optional(),
   baseConfirmedAt: z.number().optional(),
   queuedAt: z.number().optional(),
@@ -354,5 +355,6 @@ export function newGenerationId() {
 
 // Task ownership is transient; legacy leases still persist their owner after a downgrade.
 export function storedGenerationJob(job: GenerationJob): GenerationJob {
-  return job.workerTask ? {...job, worker: "", workerLeaseId: undefined, leaseUntil: undefined, workerTask: undefined} : job;
+  const stored = {...job, stages: job.stages.map(stage => stageSchema.parse(stage))};
+  return job.workerTask ? {...stored, worker: "", workerLeaseId: undefined, leaseUntil: undefined, workerTask: undefined} : stored;
 }

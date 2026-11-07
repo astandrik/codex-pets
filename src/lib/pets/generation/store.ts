@@ -1,8 +1,8 @@
 import { withSerializableTransaction } from "@/lib/ydb/transaction";
 import type { Session } from "ydb-sdk";
 import { TypedValues, Types, withSession } from "@/lib/ydb/client";
-import { bytesAt, rowsFromResult, textAt } from "@/lib/ydb/result";
-import { storedGenerationJob, jobSchema, type GenerationJob } from "@/lib/pets/generation/model";
+import { bytesAt, rowsFromResult, textAt, uintAt } from "@/lib/ydb/result";
+import { storedGenerationJob, jobSchema, jobStatusSchema, GENERATION_ID, type GenerationJob } from "@/lib/pets/generation/model";
 import { insertPendingPetInTransaction, listTakenPetSlugsInTransaction, type CreatePendingPetInput } from "@/lib/pets/repository";
 import { insertPetAssetsInTransaction, type PetAssetInput } from "@/lib/pets/assets-repository";
 
@@ -18,7 +18,10 @@ export const GENERATION_TABLES = {
   quotas: "codex_pet_generation_quotas",
 } as const;
 
+export type QueueJob = Pick<GenerationJob, "id" | "status" | "expiresAt">;
+
 export interface GenerationTransaction {
+  getQueueJobs(ids: readonly string[]): Promise<Map<string, QueueJob>>;
   getJob(id: string): Promise<GenerationJob | null>;
   getJobs(ids: readonly string[]): Promise<Map<string, GenerationJob>>;
   putJob(job: GenerationJob): Promise<void>;
@@ -66,6 +69,27 @@ SELECT id, payload FROM ${GENERATION_TABLES.jobs} WHERE id IN $ids;`, {
         });
         if (result.resultSets?.some(set => set.truncated)) throw new Error("Incomplete generation job batch");
         for (const row of rowsFromResult(result)) jobs.set(textAt(row, 0), jobSchema.parse(JSON.parse(textAt(row, 1))));
+      }
+      return jobs;
+    },
+    async getQueueJobs(ids) {
+      const unique = [...new Set(ids)];
+      const jobs = new Map<string, QueueJob>();
+      for (let offset = 0; offset < unique.length; offset += JOB_READ_BATCH_SIZE) {
+        const batch = unique.slice(offset, offset + JOB_READ_BATCH_SIZE);
+        const result = await execute(`DECLARE $ids AS List<Utf8>;
+SELECT id, JSON_VALUE(CAST(payload AS Json), "strict $.status" ERROR ON EMPTY ERROR ON ERROR) AS status,
+JSON_VALUE(CAST(payload AS Json), "strict $.expiresAt" RETURNING Uint64 ERROR ON EMPTY ERROR ON ERROR) AS expires
+FROM ${GENERATION_TABLES.jobs} WHERE id IN $ids;`, {$ids: TypedValues.list(Types.UTF8, batch)});
+        if (result.resultSets?.length !== 1 || result.resultSets.some(set => set.truncated)) throw new Error("Incomplete queue job batch");
+        for (const row of rowsFromResult(result)) {
+          const id = textAt(row, 0);
+          const status = jobStatusSchema.parse(textAt(row, 1));
+          if (row.items?.[2]?.uint64Value === undefined && row.items?.[2]?.uint32Value === undefined) throw new Error("Missing queue job expiry");
+          const expiresAt = uintAt(row, 2);
+          if (!GENERATION_ID.test(id) || !batch.includes(id) || jobs.has(id) || !Number.isSafeInteger(expiresAt) || expiresAt < 0) throw new Error("Invalid queue job summary");
+          jobs.set(id, {id, status, expiresAt});
+        }
       }
       return jobs;
     },
