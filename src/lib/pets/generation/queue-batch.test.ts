@@ -16,7 +16,7 @@ it.each([5, 30, 200])("uses the batched reader for a full %s-job queue and keeps
   const transaction = store.transaction.bind(store);
   let batches = 0, pointReads = 0;
   vi.spyOn(store, "transaction").mockImplementation(operation => transaction(tx => operation({...tx,
-    getJobs: async ids => {batches++; return tx.getJobs(ids);},
+    getQueueJobs: async ids => {batches++; return tx.getQueueJobs(ids);},
     getJob: async id => {pointReads++; return tx.getJob(id);},
   })));
   await expect(service.generate({requestId: randomUUID(), prompt: "Synthetic"}, "198.51.100.1")).rejects.toMatchObject({code: "queue_full"});
@@ -48,7 +48,7 @@ it("preserves aged queue entries, FIFO and unknown charges when a batch omits mi
   const {store, live, aged, ttl, done, tail} = mixedQueue();
   await store.transaction(async tx => {
     const state = await scheduler(tx, now);
-    await expireQueue({...tx, getJobs: async ids => new Map([...(await tx.getJobs(ids))].reverse())}, state, now);
+    await expireQueue({...tx, getQueueJobs: async ids => new Map([...(await tx.getQueueJobs(ids))].reverse())}, state, now);
     await saveScheduler(tx, state);
   });
   expect(JSON.parse(store.ledger.get("scheduler")!.value).queue).toEqual([live, aged, tail, live]);
@@ -83,9 +83,9 @@ it("reads transaction-local job changes and skips the database for an empty queu
   await store.transaction(async tx => {
     await tx.putJob({...store.jobs.get(live)!, displayName: "Updated in transaction"});
     expect((await tx.getJobs([live, live])).get(live)?.displayName).toBe("Updated in transaction");
-    const getJobs = vi.fn(tx.getJobs);
-    await expireQueue({...tx, getJobs}, {revision: 0, queue: [], active: null}, now);
-    expect(getJobs).not.toHaveBeenCalled();
+    const getQueueJobs = vi.fn(tx.getQueueJobs);
+    await expireQueue({...tx, getQueueJobs}, {revision: 0, queue: [], active: null}, now);
+    expect(getQueueJobs).not.toHaveBeenCalled();
   });
 });
 
@@ -97,7 +97,7 @@ it("replays an accepted UUID without any queue batch or new accounting writes", 
   const before = structuredClone([...store.ledger]);
   const transaction = store.transaction.bind(store), batch = vi.fn();
   vi.spyOn(store, "transaction").mockImplementation(operation => transaction(tx => operation({...tx,
-    getJobs: async ids => {batch(); return tx.getJobs(ids);},
+    getQueueJobs: async ids => {batch(); return tx.getQueueJobs(ids);},
   })));
   vi.stubEnv("PET_GENERATION_QUEUE_LIMIT", "invalid");
   expect((await service.generate(input, "203.0.113.1")).generationId).toBe(accepted.generationId);

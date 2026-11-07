@@ -491,7 +491,7 @@ export function createGenerationService(store: GenerationStore, options: {
           return current;
         }
         const stages = [...current.stages];
-        stages[index] = { ...stages[index], ...metadata, status: "completed", sha256: hash };
+        stages[index] = { ...stages[index], usage: metadata.usage, generationMs: metadata.generationMs, status: "completed", sha256: hash };
         await tx.putArtifact(job.id, "stage-" + name + ".png", bytes, current.expiresAt);
         await recordResultCost(tx, job, now, receipt, metadata.usage, name);
         await settleProviderOperation(tx, state, current, stageOperation(current, name));
@@ -592,7 +592,7 @@ export function createGenerationService(store: GenerationStore, options: {
         if (current.continuation) {
           if (requiredStageNames(current).some(name => !current.stages.some(s => s.name === name && s.status === "completed"))) throw new GenerationError("invalid_stage");
         } else if (usesStageCheckpoints(current) && (current.stages.length !== requiredStageNames(current).length || current.stages.some((stage, index) => stage.status !== "completed" || stage.name !== requiredStageNames(current)[index]))) throw new GenerationError("invalid_stage");
-        const processing: GenerationJob = { ...current, ...metadata, status: "processing", leaseUntil: now + LEASE_MS };
+        const processing: GenerationJob = { ...current, usage: metadata.usage, providerRequestId: metadata.providerRequestId, generationMs: metadata.generationMs, status: "processing", leaseUntil: now + LEASE_MS };
         await tx.putArtifact(job.id, "source.png", bytes, job.expiresAt);
         if (!usesStageCheckpoints(current)) await settleProviderOperation(tx, state, current, "legacy");
         await tx.putJob(processing);

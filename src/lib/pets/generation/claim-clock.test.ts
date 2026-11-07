@@ -26,7 +26,7 @@ it.each(["transaction", "scheduler", "batch", "candidate"])("does not call the p
     if (boundary === "transaction") f.clock.now = deadline + 1000;
     return operation({...tx,
       getLedger: async (...args) => {const value = await tx.getLedger(...args); if (boundary === "scheduler" && args[0] === "scheduler") f.clock.now = deadline + 1000; return value;},
-      getJobs: async ids => {const value = await tx.getJobs(ids); if (boundary === "batch") f.clock.now = deadline + 1000; return value;},
+      getQueueJobs: async ids => {const value = await tx.getQueueJobs(ids); if (boundary === "batch") f.clock.now = deadline + 1000; return value;},
       getJob: async id => {const value = await tx.getJob(id); if (boundary === "candidate") f.clock.now = deadline + 1000; return value;},
     });
   }));
