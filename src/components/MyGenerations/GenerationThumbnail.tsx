@@ -36,8 +36,8 @@ function ThumbnailImage({url, atlas, refreshKey, onUnavailable}: {url: string; a
   const image = <Image
     src={url}
     alt=""
-    width={atlas ? sheet.width : 64}
-    height={atlas ? sheet.height : 64}
+    width={atlas ? sheet.width : 80}
+    height={atlas ? sheet.height : 80}
     className={`${atlas ? "my-generations__thumbnail-atlas" : "my-generations__thumbnail-image"}${status === "loading" ? " my-generations__thumbnail-image_loading" : ""}`}
     loading="lazy"
     decoding="async"

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /* eslint-disable @next/next/no-img-element, jsx-a11y/alt-text, @typescript-eslint/no-unused-vars */
+import "./browser.test-utils";
 import {act} from 'react';
 import {createRoot, type Root} from 'react-dom/client';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
@@ -150,7 +151,7 @@ it('retains a confirmation received across expiry after a cold reload without ch
  expect(localStorage.getItem('pending-request')).toBe(recovery);
 });
 
-it.each(['link','summary'])('moves an expired filtered %s to the checkbox without fetching again',async control=>{
+it.each(['link','history'])('moves an expired filtered %s to the checkbox without fetching again',async control=>{
  save(1);
  rememberGenerationVersion({generationId:id(2),createdAt:new Date(now+2).toISOString(),expiresAt:new Date(now+1100).toISOString()},{generationId:id(1),kind:'continuation'});
  for(const n of [1,2]){
@@ -162,13 +163,13 @@ it.each(['link','summary'])('moves an expired filtered %s to the checkbox withou
  const filter=element.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
  await act(async()=>filter.click());
  const row=element.querySelector<HTMLLIElement>('.my-generations__item')!;
- const focused=row.querySelector<HTMLElement>(control==='summary'?'summary':'a')!;focused.focus();
+ const focused=row.querySelector<HTMLElement>(control==='history'?'button[data-generation-id]':'a')!;focused.focus();
  await act(async()=>vi.advanceTimersByTimeAsync(1100));
  expect(row.hidden).toBe(true);expect(document.activeElement).toBe(filter);
  expect(fetcher).not.toHaveBeenCalled();
 });
 
-it.each(['link','summary'])('restores a filtered %s after an unchanged recheck and keeps the row and thumbnail',async control=>{
+it.each(['link','history'])('restores a filtered %s after an unchanged recheck and keeps the row and thumbnail',async control=>{
  save(1);save(2,1);
  for(const n of [1,2]){
    cacheHistoryStatus(readGenerationHistory().entries.find(entry=>entry.generationId===id(n))!,{generation:(await response(n,'completed').json()).generation,failedReads:0},null,now+100);
@@ -180,13 +181,12 @@ it.each(['link','summary'])('restores a filtered %s after an unchanged recheck a
  await act(async()=>filter.click());
  const row=element.querySelector<HTMLLIElement>('.my-generations__item')!;
  const thumbnail=row.querySelector('img');
- const details=row.querySelector('details')!;details.open=true;
- const focused=row.querySelector<HTMLElement>(control==='summary'?'summary':'a')!;focused.focus();
+ const focused=row.querySelector<HTMLElement>(control==='history'?'button[data-generation-id]':'a')!;focused.focus();
  await act(async()=>vi.advanceTimersByTimeAsync(31000));
  expect(row.hidden).toBe(true);
  await act(async()=>finish(response(2,'completed')));
  expect(row.hidden).toBe(false);expect(document.activeElement).toBe(focused);
- expect(row.querySelector('img')).toBe(thumbnail);expect(details.open).toBe(true);
+ expect(row.querySelector('img')).toBe(thumbnail);
  expect(element.querySelector('.my-generations__item')).toBe(row);
 });
 
