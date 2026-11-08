@@ -1,9 +1,11 @@
 # Eleven rows with recorded-spend accounting
 
 The worker generates the base reference first, then requests the eleven animation
-rows in one batch. One pet is active for the whole service, with up to 30 waiting
-tasks by default (`PET_GENERATION_QUEUE_LIMIT`, integer 1–200, configured identically
-in web and worker). Waiting alone does not cancel queued work; the 24-hour lifetime
+rows with the task scheduler. At most 100 parent tasks may be waiting or processing
+in total by default (`PET_GENERATION_QUEUE_LIMIT`, integer 1–200, configured identically
+in web and worker). Ready characters awaiting confirmation do not occupy a place;
+confirmation checks capacity again. Parallel provider calls retain their separate
+limit of 20, including unknown permits. Waiting alone does not cancel queued work; the 24-hour lifetime
 still starts at acceptance. Invalid nonempty queue settings fail closed. Model, prompts, image dimensions, twelve-image-stage maximum, English card
 metadata and proxy routing are unchanged.
 
@@ -282,3 +284,26 @@ Completed candidates release the active slot and budget tracking. `animationRevi
 A saved anatomy policy is assigned to new ordinary jobs while the flag is enabled and always to revisions. It removes mandatory humanoid body/limb assumptions while preserving the approved base and technical constraints. Previously accepted jobs retain their old prompt policy. The two gaze rows are immutable during revisions; new ordinary policy uses only existing eyes for gaze.
 
 Private text, references and version links do not enter public packages, metadata AI, analytics or logs. Browser recovery stores only UUID, state keys, metadata revision, hash and expiry for48hours; history retains IDs/times only. No new mutating MCP/WebMCP tool is exposed. Synthetic tests establish routing and pixel preservation, not generated motion quality.
+
+## Claim throughput
+
+Each service instance serializes claim transactions, including transaction retries.
+The generation store also queues short local transactions so claims, authorization,
+heartbeats and result checkpoints do not invalidate each other in the same process.
+Provider calls and direct job/artifact reads stay concurrent; no provider call runs
+inside this queue. Lease/expiry decisions are made after waiting for the database
+turn. Multiple processes still use YDB serializable transactions and lease tokens
+as the authority.
+
+V3 reconciliation reads jobs in batches of 32 within each transaction attempt.
+Payloads larger than 256 KiB are read separately, bounding each batch below the YDB
+response limit. The selected job is read again before acquiring its lease; expiry
+and stop checks remain effective after waits and transaction retries.
+
+Reducing queue capacity never evicts accepted work. UUID replay and repeated
+confirmation of accepted tasks remain available when the queue is full.
+
+A confirmed YDB `ABORTED` already rolls back the transaction. The serializable
+wrapper starts its next existing retry without calling the SDK rollback again.
+Other failures retain explicit rollback; unknown commit outcomes are not replayed.
+The five-attempt bound and backoff are unchanged.

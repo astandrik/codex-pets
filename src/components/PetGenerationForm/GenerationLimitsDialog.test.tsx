@@ -30,7 +30,7 @@ it('shows short and full conditions without network calls and returns focus on E
     const dialog=document.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain('2000 accepted tasks');expect(dialog.textContent).toContain('100 per IP');expect(dialog.textContent).toContain('24 hours from task acceptance');
     const full=[...dialog.querySelectorAll('button')].find(b=>b.textContent==='Full details')!;act(()=>full.click());
-    expect(dialog.textContent).toContain('until they start or their 24-hour lifetime expires');expect(dialog.textContent).toContain('additional AI request');expect(dialog.textContent).toContain('retried once');expect(dialog.textContent).toContain('midnight Moscow');
+    expect(dialog.textContent).toContain('24-hour lifetime still starts when the task is accepted');expect(dialog.textContent).toContain('additional AI request');expect(dialog.textContent).toContain('retried once');expect(dialog.textContent).toContain('midnight Moscow');
     expect(document.activeElement?.tagName).toBe('H2');
     act(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true})));expect(close).toHaveBeenCalledOnce();
     render(false);await act(async()=>{await new Promise(r=>setTimeout(r,350));});expect(document.activeElement).toBe(trigger);
@@ -44,7 +44,7 @@ it.each(['light', 'dark'] as const)('shows configured daily allowances in the %s
     await act(async()=>root.render(<ThemeProvider theme={theme}><GenerationLimitsDialog open onClose={()=>{}} reviewBase dailyQuotaLimits={{ip:12,global:345}}/></ThemeProvider>));
     const text=document.querySelector('[role="dialog"]')?.textContent;
     expect(text).toContain('345 accepted tasks per day and 12 per IP');
-    expect(text).toContain('24-hour lifetime expires');
+    expect(text).toContain('24-hour lifetime still starts when the task is accepted');
     expect(text).not.toContain('60 minutes');
   } finally {await act(async()=>root.unmount());host.remove();}
 });

@@ -35,7 +35,7 @@ export function GenerationLimitsDialog({ open, onClose, reviewBase, automaticAni
           : <>Up to {dailyQuotaLimits.global} accepted tasks per day and {dailyQuotaLimits.ip} per IP, resetting at midnight Moscow time.</>}</li>
         <li>{queueLimit === null
           ? <>Queue capacity is temporarily unavailable. Accepted tasks may wait until their 24-hour lifetime expires.</>
-          : <>One pet at a time. Up to {queueLimit} {queueLimit === 1 ? "task" : "tasks"} may wait. Tasks remain queued until they start or their 24-hour lifetime expires.</>}</li>
+          : <>Up to {queueLimit} {queueLimit === 1 ? "task" : "tasks"} may be waiting or processing in total. Characters awaiting your confirmation do not occupy a place; confirming them requires a free place. The 24-hour lifetime still starts when the task is accepted.</>}</li>
         <li>Accepted tasks count toward the limit even if generation fails or the result is unsuitable.</li>
         <li>Your task and private files expire 24 hours from task acceptance, including time in the queue.</li>
       </ul>

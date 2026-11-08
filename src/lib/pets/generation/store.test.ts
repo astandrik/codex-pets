@@ -61,6 +61,7 @@ describe("generation serializable transaction contention", () => {
     expect(session.beginTransaction).toHaveBeenCalledTimes(2);
     expect(session.executeQuery).toHaveBeenLastCalledWith("SELECT 1;", {}, { txId: "tx-2", commitTx: true });
     expect(session.commitTransaction).not.toHaveBeenCalled();
+    expect(session.rollbackTransaction).not.toHaveBeenCalled();
   });
   it("does not retry an unknown outcome or a non-contention failure", async () => {
     const { generationStore } = await import("@/lib/pets/generation/store");
@@ -229,7 +230,7 @@ describe("transactional batch job reads", () => {
   const now = Date.UTC(2026, 9, 31, 12);
   const first = "a".repeat(64), second = "b".repeat(64), absent = "c".repeat(64);
   const job = (id: string) => ({id, prompt: "", displayName: "Synthetic", status: "queued", createdAt: now, expiresAt: now + 86400000, worker: "", promptRevision: "test", pipelineVersion: 2, stages: []});
-  const row = (id: string, payload: unknown) => ({items: [{textValue: id}, {textValue: JSON.stringify(payload)}]});
+  const row = (id: string, payload: unknown) => ({items: [{textValue: id}, {textValue: JSON.stringify(payload)}, {boolValue: false}]});
 
   it("reads unique IDs in one parameterized query and retains legacy and expired rows", async () => {
     const {generationStore} = await import("./store");
@@ -241,7 +242,8 @@ describe("transactional batch job reads", () => {
     expect(result.get(second)).toEqual({...legacy, worker: "", pipelineVersion: 1, stages: []});
     expect(result.has(absent)).toBe(false);
     const [sql, params, control] = session.executeQuery.mock.calls[0];
-    expect(sql).toMatch(/SELECT id, payload FROM codex_pet_generation_jobs WHERE id IN \$ids/);
+    expect(sql).toContain("FROM codex_pet_generation_jobs WHERE id IN $ids");
+    expect(sql).toContain("LENGTH(CAST(payload AS String)) <= 262144");
     expect(sql).not.toContain("expires_at");
     expect(params.$ids.type.listType.item).toEqual(Types.UTF8);
     expect(params.$ids.value.items.map((item: {textValue: string}) => item.textValue)).toEqual([first, second, absent]);
@@ -331,4 +333,65 @@ describe('cleanup artifact expiry',()=>{
     await expect(metadataCleanupStore.transaction(tx=>tx.artifact('a'.repeat(64),'base',1000))).rejects.toThrow('invalid_artifact_expiry');
     expect(session.rollbackTransaction).toHaveBeenCalled();
   });
+});
+
+
+it("falls back to a single read for an oversized legacy payload", async () => {
+  const {generationStore} = await import("./store");
+  const id = "a".repeat(64);
+  const job = {id, prompt: "", displayName: "Synthetic", status: "queued", createdAt: 1, expiresAt: 86400001, worker: "", promptRevision: "test", pipelineVersion: 2, stages: [], legacyBytes: "x".repeat(1048577)};
+  session.executeQuery.mockResolvedValueOnce({resultSets:[{rows:[{items:[{textValue:id},{textValue:""},{boolValue:true}]}]}]})
+    .mockResolvedValueOnce({resultSets:[{rows:[{items:[{textValue:JSON.stringify(job)}]}]}]});
+  const read = await generationStore.transaction(tx => tx.getJobs([id]));
+  expect(read.get(id)?.id).toBe(id);
+  expect(session.executeQuery.mock.calls[0][0]).toContain("262144");
+  expect(session.executeQuery.mock.calls[1][0]).toContain("WHERE id = $id");
+});
+
+it.each(["no-result", "extra-result", "duplicate", "foreign-id", "mismatched-payload", "missing-marker", "bad-marker", "missing-large"])("rejects unsafe batch response: %s", async kind => {
+  const {generationStore} = await import("./store");
+  const id = "a".repeat(64), other = "b".repeat(64);
+  const job = {id, prompt:"",displayName:"Synthetic",status:"queued",createdAt:1,expiresAt:86400001,worker:"",promptRevision:"test",pipelineVersion:2,stages:[]};
+  const row = {items:[{textValue:kind === "foreign-id" ? other : id},{textValue:JSON.stringify({...job,id:kind === "mismatched-payload" ? other : id})},{boolValue:false}]};
+  if (kind === "missing-marker") row.items.pop();
+  if (kind === "bad-marker") row.items[2] = {boolValue:true};
+  if (kind === "missing-large") {row.items[1] = {textValue:""};row.items[2] = {boolValue:true};}
+  const set = {rows:kind === "duplicate" ? [row,row] : [row]};
+  session.executeQuery.mockResolvedValueOnce({resultSets:kind === "no-result" ? [] : kind === "extra-result" ? [set,set] : [set]});
+  await expect(generationStore.transaction(tx => tx.getJobs([id]))).rejects.toThrow();
+  expect(session.rollbackTransaction).toHaveBeenCalledOnce();
+});
+
+it("retains rollback and never retries a non-YDB lookalike ABORTED", async () => {
+  const {generationStore} = await import("./store");
+  const error = Object.assign(new Error("not a confirmed database outcome"), {status:400040});
+  session.executeQuery.mockRejectedValueOnce(error);
+  await expect(generationStore.transaction(async () => "result")).rejects.toBe(error);
+  expect(session.rollbackTransaction).toHaveBeenCalledOnce();
+  expect(session.beginTransaction).toHaveBeenCalledOnce();
+});
+
+it("orders local generation transactions while keeping artifact reads independent", async () => {
+  const {generationStore} = await import("./store");
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => {release = resolve;});
+  let firstEntered!: () => void;
+  const entered = new Promise<void>(resolve => {firstEntered = resolve;});
+  const calls: string[] = [];
+  const first = generationStore.transaction(async () => {calls.push("first"); firstEntered(); await gate;});
+  await entered;
+  const second = generationStore.transaction(async () => {calls.push("second");});
+  await new Promise(resolve => setImmediate(resolve));
+  const beforeRelease = [...calls];
+  await expect(generationStore.readArtifact("a".repeat(64), "stage-base.png", 1)).resolves.toBeNull();
+  release(); await Promise.all([first, second]);
+  expect(beforeRelease).toEqual(["first"]); expect(calls).toEqual(["first", "second"]);
+});
+
+it("releases the local transaction queue after rejection", async () => {
+  const {generationStore} = await import("./store");
+  const first = generationStore.transaction(async () => {throw Error("synthetic operation failed");});
+  const second = generationStore.transaction(async () => "following operation");
+  await expect(first).rejects.toThrow("synthetic operation failed");
+  await expect(second).resolves.toBe("following operation");
 });

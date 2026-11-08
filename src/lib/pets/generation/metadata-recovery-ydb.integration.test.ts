@@ -52,7 +52,9 @@ it.skipIf(process.env.PET_METADATA_YDB_INTEGRATION!=='1')('recovers 25 oversized
     }
     expect(rawBytes).toBeGreaterThan(48*1024*1024);
     const ids=accepted.map(reply=>reply.generationId);
-    await expect(generationStore.transaction(tx=>tx.getJobs(ids))).rejects.toThrow(/result size limit/i);
+    const unboundedRead=()=>withSession(session=>session.executeQuery("DECLARE $ids AS List<Utf8>; SELECT id,payload FROM codex_pet_generation_jobs WHERE id IN $ids;",{$ids:TypedValues.list(Types.UTF8,ids)}));
+    await expect(unboundedRead()).rejects.toThrow(/result size limit/i);
+    expect((await generationStore.transaction(tx=>tx.getJobs(ids))).size).toBe(25);
     const summaries=await generationStore.transaction(tx=>tx.getQueueJobs(ids));
     expect(summaries.size).toBe(25);expect(JSON.stringify([...summaries]).length).toBeLessThan(8192);
     const idsFile=path.join(directory,'ids.json'),manifestFile=path.join(directory,'manifest.json'),backupFile=path.join(directory,'backup.json');
@@ -65,7 +67,8 @@ it.skipIf(process.env.PET_METADATA_YDB_INTEGRATION!=='1')('recovers 25 oversized
     expect(backup.rows).toHaveLength(17);
     expect((await cli(['--apply',...args])).changed).toEqual([]);
     expect((await cli(['--restore',...args])).changed).toHaveLength(17);
-    await expect(generationStore.transaction(tx=>tx.getJobs(ids))).rejects.toThrow(/result size limit/i);
+    await expect(unboundedRead()).rejects.toThrow(/result size limit/i);
+    expect((await generationStore.transaction(tx=>tx.getJobs(ids))).size).toBe(25);
     await cli(['--apply',...args]);
     expect((await generationStore.transaction(tx=>tx.getJobs(ids))).size).toBe(25);
     for(let index=0;index<17;index++){

@@ -31,8 +31,8 @@ export function createBaseReviewService(store: GenerationStore, options: {now: (
       return bytes;
     },
     async awaitConfirmation(job: GenerationJob) {
-      const now = options.now();
       return store.transaction(async tx => {
+        const now = options.now();
         const state = await scheduler(tx, now);
         const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
         if (!current.reviewBase || current.baseConfirmedAt !== undefined || current.status !== "generating" ||

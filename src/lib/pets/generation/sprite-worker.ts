@@ -42,7 +42,7 @@ export function createSpriteGenerationWorker(options: {
     if (options.stopping?.()) return "idle";
     if (now() - lastCleanup >= 60_000) { lastCleanup = now(); await options.resultJournal?.expire(now()); await options.renderer.cleanupExpired?.(now()); await options.store.cleanup(now()); }
     setWorkerPhase(context, "claim");
-    let job = await options.service.claim(owner);
+    let job = await options.service.claim(owner, options.stopping);
     if (!job) return "idle";
     setWorkerPhase(context, "prepare", job);
     if (job.workerTask) return runGenerationTask(job, options, context);

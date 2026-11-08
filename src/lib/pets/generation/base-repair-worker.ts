@@ -13,7 +13,7 @@ type Context={service:ReturnType<typeof createGenerationService>;store:Generatio
 const hash=(bytes:Buffer)=>createHash("sha256").update(bytes).digest("hex");
 const uncertain=(boundary:"intent"|"checkpoint")=>new GenerationError("outcome_unknown",undefined,undefined,undefined,{boundary,reason:"unconfirmed_write"});
 async function currentJob(context:Context,job:GenerationJob){
-  return readActiveWorkerJob(context.store, job, context.now());
+  return readActiveWorkerJob(context.store, job, context.now);
 }
 function pendingRetryFailure(job:GenerationJob){
   let failed=latestBaseAttempt(job);

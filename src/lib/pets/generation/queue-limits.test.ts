@@ -19,28 +19,27 @@ const queued = (store: MemoryStore): string[] => JSON.parse(store.ledger.get("sc
 afterEach(() => vi.unstubAllEnvs());
 
 describe("shared generation queue capacity", () => {
-  it("admits exactly 30 concurrent requests by default, with no charge or job for overflow", async () => {
+  it("admits exactly 100 concurrent requests by default, with no charge or job for overflow", async () => {
     vi.stubEnv("PET_GENERATION_QUEUE_LIMIT", "");
     const f = fixture();
-    const results = await Promise.allSettled(Array.from({length: 35}, (_, i) => f.service.generate(input(), `203.0.113.${i + 1}`)));
-    expect(results.filter(r => r.status === "fulfilled")).toHaveLength(30);
+    const results = await Promise.allSettled(Array.from({length: 105}, (_, i) => f.service.generate(input(), `203.0.113.${i + 1}`)));
+    expect(results.filter(r => r.status === "fulfilled")).toHaveLength(100);
     expect(results.filter(r => r.status === "rejected").map(r => r.reason.code)).toEqual(Array(5).fill("queue_full"));
-    expect(queued(f.store)).toHaveLength(30);
-    expect(f.store.jobs.size).toBe(30);
-    expect(f.store.ledger.get("day:2026-10-22")?.value).toBe("30");
+    expect(queued(f.store)).toHaveLength(100);
+    expect(f.store.jobs.size).toBe(100);
+    expect(f.store.ledger.get("day:2026-10-22")?.value).toBe("100");
     const budget = JSON.parse(f.store.ledger.get("budget")!.value);
-    expect(Object.keys(budget.reservations)).toHaveLength(30);
+    expect(Object.keys(budget.reservations)).toHaveLength(100);
     expect(budget.spent).toEqual({});
   });
 
-  it("excludes the active job and replays a UUID even when the waiting queue is full", async () => {
+  it("counts the active job and replays a UUID even when total capacity is full", async () => {
     vi.stubEnv("PET_GENERATION_QUEUE_LIMIT", "2");
     const f = fixture(), first = input();
     const accepted = await f.service.generate(first, "203.0.113.1");
     expect((await f.service.claim("one"))?.id).toBe(accepted.generationId);
     expect(await f.service.claim("two")).toBeNull();
     await f.service.generate(input(), "203.0.113.2");
-    await f.service.generate(input(), "203.0.113.3");
     const before = structuredClone([...f.store.ledger]);
     await expect(f.service.generate(input(), "203.0.113.4")).rejects.toMatchObject({code: "queue_full"});
     expect((await f.service.generate(first, "203.0.113.1")).generationId).toBe(accepted.generationId);
