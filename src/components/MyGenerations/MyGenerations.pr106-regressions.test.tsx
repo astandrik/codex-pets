@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /* eslint-disable @typescript-eslint/no-unused-vars, @next/next/no-img-element, jsx-a11y/alt-text */
+import "./browser.test-utils";
 import {act} from 'react';
 import {createRoot,type Root} from 'react-dom/client';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
@@ -33,6 +34,7 @@ it('does not silently change the focused action to a newer task',async()=>{
  save(1);vi.stubGlobal('fetch',vi.fn((url:string)=>Promise.resolve(response(Number.parseInt(url.slice(-2),16)))));await render();
  const link=element.querySelector<HTMLAnchorElement>('.my-generations__actions a')!;link.focus();
  await act(async()=>{save(2,1);window.dispatchEvent(new StorageEvent('storage',{key:HISTORY_V2_PREFIX+id(2)}));});
+ await act(async()=>vi.advanceTimersByTimeAsync(200));
  expect(document.activeElement?.getAttribute('href')).toBe('/generated/'+id(1));
 });
 it('cleans expired physical records when only using the generation saver',()=>{
@@ -42,12 +44,14 @@ it('cleans expired physical records when only using the generation saver',()=>{
  expect(readGenerationHistory(later).entries.map(e=>e.generationId)).toEqual([id(2)]);
  expect(localStorage.getItem(HISTORY_V2_PREFIX+id(1))).toBeNull();
 });
-it('preserves unavailable summary focus and expansion during a late merge',async()=>{
+it('preserves unavailable open history and focus during a late merge',async()=>{
  save(1);save(2);save(3,2);
  vi.stubGlobal('fetch',vi.fn((url:string)=>Promise.resolve(url.endsWith(id(3))?{ok:false,status:410,json:async()=>({})}:response(Number.parseInt(url.slice(-2),16)))));await render();
- const details=element.querySelector<HTMLDetailsElement>('details')!;details.open=true;details.querySelector<HTMLElement>('summary')!.focus();
+ await act(async()=>element.querySelector<HTMLButtonElement>('button[data-generation-id]')!.click());
+ await act(async()=>vi.advanceTimersByTimeAsync(200));
+ const modal=document.querySelector('[role=dialog]')!;
  await act(async()=>{save(2,1);window.dispatchEvent(new StorageEvent('storage',{key:HISTORY_V2_PREFIX+id(2)}));});
  expect(element.querySelectorAll('.my-generations__item')).toHaveLength(1);
- expect(document.activeElement).toBe(element.querySelector('summary'));
- expect(element.querySelector('details')?.open).toBe(true);
+ expect(modal.contains(document.activeElement)).toBe(true);
+ expect(document.querySelector('[role=dialog]')).toBe(modal);
 });

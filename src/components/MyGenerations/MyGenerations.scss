@@ -1,104 +1,111 @@
 .my-generations {
   display: grid;
   gap: var(--g-spacing-4);
-  justify-items: start;
+  width: 100%;
+  min-width: 0;
 
   &__list {
     display: grid;
-    gap: var(--g-spacing-4);
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
     width: 100%;
     margin: 0;
     padding: 0;
     list-style: none;
+    @media (min-width: 360px) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    @media (min-width: 768px) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    @media (min-width: 1200px) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   }
 
   &__item {
-    display: grid;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
     gap: var(--g-spacing-3);
-    justify-items: start;
+    min-width: 0;
     padding: var(--g-spacing-4);
     border: 1px solid var(--g-color-line-generic);
     border-radius: var(--g-border-radius-l);
     background: var(--g-color-base-float);
     overflow-wrap: anywhere;
-
+    &[hidden] { display: none; }
     h2, p { margin: 0; }
   }
 
-  &__heading {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--g-spacing-3);
-    min-width: 0;
-  }
-
+  &__announcement:empty { position: absolute; width: 1px; height: 1px; padding: 0; margin: 0; overflow: hidden; clip-path: inset(50%); }
+  &__heading { min-width: 0; }
   &__identity {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: flex-start;
     gap: var(--g-spacing-3);
     width: 100%;
     min-width: 0;
+    @media (min-width: 768px) { flex-direction: row; align-items: center; }
   }
 
   &__thumbnail {
+    --thumbnail-size: 64px;
+    --frame-width: calc(var(--thumbnail-size) - 8px);
     display: grid;
     place-items: center;
-    flex: 0 0 64px;
-    width: 64px;
-    height: 64px;
+    flex: 0 0 var(--thumbnail-size);
+    width: var(--thumbnail-size);
+    height: var(--thumbnail-size);
     overflow: hidden;
     border-radius: var(--g-border-radius-m);
     background: var(--g-color-base-generic);
     color: var(--g-color-text-secondary);
-
     > * { grid-area: 1 / 1; }
+    @media (min-width: 768px) { --thumbnail-size: 80px; }
   }
-
   &__thumbnail-image {
     display: block;
-    width: 64px;
-    height: 64px;
+    width: var(--thumbnail-size);
+    height: var(--thumbnail-size);
     object-fit: contain;
-
     &_loading { visibility: hidden; }
   }
-
-  &__thumbnail-frame {
-    width: 56px;
-    aspect-ratio: 192 / 208;
-    overflow: hidden;
-  }
-
-  &__thumbnail-atlas {
-    display: block;
-    width: calc(56px * 8);
+  &__thumbnail-frame { width: var(--frame-width); aspect-ratio: 192 / 208; overflow: hidden; }
+  &__thumbnail-atlas { display: block; width: calc(var(--frame-width) * 8); height: auto; max-width: none; image-rendering: pixelated; }
+  &__item &__expiry { margin-top: auto; color: var(--g-color-text-secondary); }
+  &__actions { display: grid; gap: var(--g-spacing-2); width: 100%; min-width: 0; }
+  &__actions .g-button, &__history-trigger {
     height: auto;
-    max-width: none;
-    image-rendering: pixelated;
+    min-height: 44px;
+    max-width: 100%;
+    min-width: 0;
+    line-height: 20px;
+    padding-block: 12px;
+    align-items: center;
+    white-space: normal;
   }
+  &__actions .g-button__text, &__history-trigger .g-button__text { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+  &__history-trigger { align-self: stretch; }
+  &__toolbar, &__filter, &__submission { display: flex; align-items: center; flex-wrap: wrap; gap: var(--g-spacing-3); min-width: 0; }
+  &__filter { min-height: 44px; cursor: pointer; }
+  &__filter input { width: 18px; height: 18px; accent-color: var(--g-color-base-brand); }
 }
 
-.my-generations__actions {display:flex;flex-wrap:wrap;gap:var(--g-spacing-3);align-items:center;max-width:100%;}
-.my-generations__actions .g-button {
-  height: auto;
-  min-height: 44px;
-  max-width: 100%;
-  min-width: 0;
-  line-height: 20px;
-  padding-block: 12px;
-  align-items: center;
-  white-space: normal;
+.my-generations__item, .my-generations-history {
+  .g-label { max-width: 100%; height: auto; min-height: 20px; padding-block: 2px; }
+  .g-label__text { white-space: normal; text-align: start; color: inherit; }
+  .g-label__content { overflow-wrap: anywhere; color: inherit; }
 }
-.my-generations__actions .g-button__text {min-width:0;white-space:normal;overflow-wrap:anywhere;}
-.my-generations__versions {width:100%;}
-.my-generations__versions summary {cursor:pointer;padding:12px 0;min-height:44px;box-sizing:border-box;}
-.my-generations__versions summary:focus-visible {outline:2px solid var(--g-color-line-brand);outline-offset:2px;}
-.my-generations__versions ol {padding-left:24px;margin:0;display:grid;gap:var(--g-spacing-3);}
-.my-generations__versions li {display:grid;gap:var(--g-spacing-1);padding:var(--g-spacing-2);border-left:2px solid var(--g-color-line-generic);}
-.my-generations__versions a {width:fit-content;min-height:44px;display:flex;align-items:center;}
 
-.my-generations__toolbar,.my-generations__filter,.my-generations__submission {display:flex;align-items:center;flex-wrap:wrap;gap:var(--g-spacing-3);}
-.my-generations__filter {min-height:44px;cursor:pointer;}
-.my-generations__filter input {width:18px;height:18px;accent-color:var(--g-color-base-brand);}
-.my-generations__item[hidden] {display:none;}
+.my-generations-history {
+  --g-dialog-width: min(640px, calc(100vw - 32px));
+  --_--side-padding: 20px;
+  max-height: calc(100dvh - 32px);
+  overflow-wrap: anywhere;
+  .g-dialog-header, .g-dialog-footer { flex-shrink: 0; }
+  .g-dialog-body { overflow-y: auto; min-height: 0; }
+  h2 { margin: 0; font-size: var(--g-text-header-1-font-size); line-height: var(--g-text-header-1-line-height); }
+  &__versions { display: grid; gap: var(--g-spacing-4); list-style: none; padding: 0; margin: 0; }
+  &__versions li { display: grid; justify-items: start; gap: var(--g-spacing-2); padding-block: var(--g-spacing-3); border-top: 1px solid var(--g-color-line-generic); min-width: 0; }
+  &__versions a { display: flex; align-items: center; min-height: 44px; }
+  .g-button { --g-button-height: 44px; }
+}
+
+.my-generations-history-modal { --g-modal-margin: 16px; }
+.my-generations-history .g-dialog-btn-close { min-width: 44px; min-height: 44px; inset-block-start: 4px; inset-inline-end: 4px; }

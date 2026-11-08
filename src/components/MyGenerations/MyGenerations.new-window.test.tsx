@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import "./browser.test-utils";
 import {act} from "react";
 import {createRoot} from "react-dom/client";
 import {ThemeProvider} from "@gravity-ui/uikit";

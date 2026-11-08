@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /* eslint-disable @next/next/no-img-element, jsx-a11y/alt-text, @typescript-eslint/no-unused-vars */
+import "./browser.test-utils";
 import {act} from 'react';
 import {createRoot, type Root} from 'react-dom/client';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
@@ -22,11 +23,12 @@ it.each(['queued','failed','awaiting_confirmation'])('keeps one row and the prev
  expect(element.querySelectorAll('.my-generations__item')).toHaveLength(1);
  expect(element.textContent).toContain('Previous fox');expect(element.textContent).toContain('История версий · 2');
  expect(element.querySelector(`a[href="/generated/${id(1)}"]`)?.textContent).toBe('Открыть предыдущий готовый результат');
- const row=element.querySelector('.my-generations__item'),details=element.querySelector('details')!;
- await act(async()=>{details.open=true;details.dispatchEvent(new Event('toggle'));});
+ const row=element.querySelector('.my-generations__item');
+ await act(async()=>element.querySelector<HTMLButtonElement>('button[data-generation-id]')!.click());
+ await act(async()=>vi.advanceTimersByTimeAsync(200));
  expect(fetcher.mock.calls.every(([,init])=>!init?.method)).toBe(true);
  await act(async()=>document.dispatchEvent(new Event('visibilitychange')));
- expect(element.querySelector('.my-generations__item')).toBe(row);expect(element.querySelector('details')?.open).toBe(true);
+ expect(element.querySelector('.my-generations__item')).toBe(row);expect(document.querySelector('[role=dialog]')).not.toBeNull();
 });
 it('does not treat an unaccepted animation revision as the previous ready result',async()=>{
  save(1);save(2,1);save(3,2);vi.stubGlobal('fetch',vi.fn((url:string,_init?:RequestInit)=>Promise.resolve(url.endsWith(id(1))?response(1,'completed'):url.endsWith(id(2))?response(2,'completed',{animationRevision:{sourceGenerationId:id(1)}}):response(3,'failed'))));
@@ -53,14 +55,14 @@ it('removes an expired previous-ready action on its own deadline while the next 
  expect(element.textContent).not.toContain('Открыть предыдущий готовый результат');
 });
 
-it('keeps summary focus when two legacy families are reconciled',async()=>{
+it('keeps history trigger focus when two legacy families are reconciled',async()=>{
  save(1);save(2);save(3,2);let finish!:(value:ReturnType<typeof response>)=>void;
  vi.stubGlobal('fetch',vi.fn((url:string)=>url.endsWith(id(2))?new Promise(resolve=>{finish=resolve;}):Promise.resolve(response(url.endsWith(id(1))?1:3,url.endsWith(id(1))?'completed':'queued'))));
  await act(async()=>root.render(<ThemeProvider theme='light'><MyGenerations/></ThemeProvider>));
- element.querySelector<HTMLElement>('summary')!.focus();
+ element.querySelector<HTMLElement>('button[data-generation-id]')!.focus();
  await act(async()=>finish(response(2,'queued',{continuation:{sourceGenerationId:id(1),mode:'regenerate'}})));
  expect(element.querySelectorAll('.my-generations__item')).toHaveLength(1);
- expect(document.activeElement).toBe(element.querySelector('summary'));
+ expect(document.activeElement).toBe(element.querySelector('button[data-generation-id]'));
 });
 
 it('falls back to the previous image once, without retrying broken images on status updates',async()=>{
@@ -74,20 +76,21 @@ it('falls back to the previous image once, without retrying broken images on sta
  await act(async()=>vi.advanceTimersByTimeAsync(5000));expect(element.querySelector('img')).toBeNull();
 });
 
-it('retains summary focus when a relationship arrives from another window',async()=>{
+it('retains the open history when a relationship arrives from another window',async()=>{
  save(1);save(2);save(3,2);
  vi.stubGlobal('fetch',vi.fn((url:string)=>Promise.resolve(response(Number.parseInt(url.slice(-2),16),'queued'))));
  await act(async()=>root.render(<ThemeProvider theme='light'><MyGenerations/></ThemeProvider>));
  expect(element.querySelectorAll('.my-generations__item')).toHaveLength(2);
- element.querySelector<HTMLDetailsElement>('details')!.open=true;
- element.querySelector<HTMLElement>('summary')!.focus();
+ await act(async()=>element.querySelector<HTMLButtonElement>('.my-generations__item button[data-generation-id]')!.click());
+ await act(async()=>vi.advanceTimersByTimeAsync(200));
+ const modal=document.querySelector('[role=dialog]')!;
  await act(async()=>{
   rememberGenerationVersion({generationId:id(2),createdAt:new Date(now+2).toISOString(),expiresAt:new Date(now+86400000).toISOString()},{generationId:id(1),kind:'base-refinement'});
   window.dispatchEvent(new StorageEvent('storage',{key:'pets-generation-history-v2:'+id(2)}));
  });
  expect(element.querySelectorAll('.my-generations__item')).toHaveLength(1);
- expect(document.activeElement).toBe(element.querySelector('summary'));
- expect(element.querySelector('details')?.open).toBe(true);
+ expect(modal.contains(document.activeElement)).toBe(true);
+ expect(document.querySelector('[role=dialog]')).not.toBeNull();
 });
 
 it('keeps the previous ready result while an overflow legacy child is being classified',async()=>{

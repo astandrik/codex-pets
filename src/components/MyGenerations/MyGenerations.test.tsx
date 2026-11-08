@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import "./browser.test-utils";
 import {act} from "react";
 import {createRoot,type Root} from "react-dom/client";
 import {ThemeProvider} from "@gravity-ui/uikit";
@@ -265,7 +266,7 @@ describe("generation thumbnails", () => {
     expect(image.getAttribute("loading")).toBe("lazy");
     expect(image.getAttribute("referrerpolicy")).toBe("no-referrer");
     expect(image.getAttribute("alt")).toBe("");
-    expect(element.textContent).toContain("Продолжить генерацию");
+    expect(element.querySelector('.my-generations__actions a')?.getAttribute("href")).toBe("/generated/"+id);
     expect(request).toHaveBeenCalledTimes(1);
     expect(localStorage.getItem(HISTORY_PREFIX + id)).toBe(saved);
   });
@@ -322,7 +323,7 @@ describe("generation thumbnails", () => {
     await act(async () => element.querySelector("img")!.dispatchEvent(new Event("error")));
     expect(element.querySelector("img")).toBeNull();
     expect(element.querySelector(".my-generations__thumbnail")).not.toBeNull();
-    expect(element.textContent).toContain("Продолжить генерацию");
+    expect(element.querySelector('.my-generations__actions a')?.getAttribute("href")).toBe("/generated/"+id);
     expect(element.textContent).toContain("Failed");
     expect(localStorage.getItem(HISTORY_PREFIX + id)).toBe(saved);
     await tick(15000);
