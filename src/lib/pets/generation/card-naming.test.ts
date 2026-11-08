@@ -1,0 +1,41 @@
+import { describe, expect, it } from "vitest";
+import { buildCardMetadataRequest } from "./card-provider";
+
+describe("automatic pet naming contract", () => {
+  it("requires a subject and grounded distinction without an extra model request", () => {
+    const brief = "A red imp with a blue cape";
+    const request = buildCardMetadataRequest({ prompt: brief, displayName: "Generated pet", nameSource: "automatic" }, Array(4).fill("data:image/png;base64,YQ=="));
+    expect(request.body.instructions).toContain("name the subject or role and a confirmed visible distinction");
+    expect(request.body.instructions).toContain("Do not invent a nickname just to make the name distinctive");
+    expect(request.body.instructions).toContain("Do not infer a franchise from visual resemblance alone");
+    expect(request.body.input).toHaveLength(1);
+    expect(request.body.input[0].content).toHaveLength(5);
+    const content = request.body.input[0].content[0];
+    expect(content).toHaveProperty("text");
+    if (!("text" in content)) throw Error("text input missing");
+    expect(JSON.parse(content.text)).toMatchObject({ characterBrief: brief, name: null, nameSource: "automatic" });
+  });
+  it.each([
+    "Fox-eared character in a cream blouse and lace-up boots.",
+    "Fox-eared character in a cream shirt and denim shorts.",
+    "Fox-eared character in white ruffles with black bows.",
+    "Fox-eared character in white stockings and black heels.",
+    "Fox-eared character in a white two-piece outfit.",
+    "Reclining fox-eared character in a loose cream shirt.",
+    "Standing fox-eared character in an oversized ivory shirt.",
+    "Fox-eared character in a dark jacket and brown stockings.",
+    "Fox-eared character in a brown dress and lace-up heels.",
+    "Fox-eared character in a striped sweater and red plaid skirt.",
+    "Fox-eared character in a tan trench coat and black boots.",
+    "Fox-eared character in a tied blouse and dark shorts, barefoot.",
+  ])("preserves the distinguishing evidence for %s without adding another input or call", brief => {
+    const request = buildCardMetadataRequest({ prompt: brief, displayName: "Generated pet", nameSource: "automatic" }, Array(4).fill("data:image/png;base64,YQ=="));
+    const content = request.body.input[0].content[0];
+    if (!("text" in content)) throw Error("text input missing");
+    expect(JSON.parse(content.text)).toEqual({ name: null, nameSource: "automatic", characterBrief: brief });
+    expect(request.body.input).toHaveLength(1);
+    expect(request.body.input[0].content).toHaveLength(5);
+    expect(request.body.instructions).toContain("Do not invent differences, append collision counters");
+    expect(request.body.instructions).toContain("Preserve numbers that belong to an explicitly supplied name or identity");
+  });
+});
