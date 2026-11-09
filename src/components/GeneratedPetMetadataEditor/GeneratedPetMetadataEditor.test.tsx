@@ -14,6 +14,15 @@ async function render(value=metadata,disabled=false){await act(async()=>root.ren
 function edit(value:string){const input=element.querySelector('textarea')!;act(()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));});}
 async function submit(){await act(async()=>element.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));}
 describe('generated card editor',()=>{
+ it('explains character names without changing the supplied name or submitting an edit',async()=>{
+  await render({...metadata,displayName:'Мятня'});
+  const input=element.querySelector<HTMLInputElement>('#generated-name')!;
+  const help=document.getElementById(input.getAttribute('aria-describedby')!);
+  expect(help?.textContent).toContain('Pip the Unbothered');
+  expect(help?.textContent).toContain('Describe the visible character');
+  expect(help?.textContent).not.toContain('Use a clear subject and a visible distinction');
+  expect(input.value).toBe('Мятня');expect(input.maxLength).toBe(80);expect(fetchMock).not.toHaveBeenCalled();
+ });
  it('shows automatic fields, protects dirty input from polls and saves once with revision',async()=>{
   await render();expect(element.querySelector('textarea')?.value).toBe(metadata.description);edit('My edited description');expect(blocked).toHaveBeenLastCalledWith(true);
   await render({...metadata,description:'Other poll'});expect(element.querySelector('textarea')?.value).toBe('My edited description');
