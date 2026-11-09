@@ -19,6 +19,7 @@ const frames = Array(4).fill("data:image/png;base64,YQ==");
 // Captured from the pre-PR provider at 490f487, not derived from current instructions.
 const legacyRequestHash = "b36f5881c159e7fafa8a5f3bfa175eab90d16446cc9741c61994d233dc8cd741";
 const clarityRequestHash = "208ff6eaa328cc47b88db3c94e42bac7697ea0b5a678f9204a949052899eda9e";
+const compactRequestHash = "8c51cc49a64d85cedd11cde379541f3853b55d1af7c8c9bd501481cf899b28e1";
 const response = { fields: { displayName: "Blue-Caped Imp", description: "A red imp wearing a blue cape.", tags: ["red", "imp", "cape"] },
   responseHash: "b".repeat(64), inputTokens: 10, outputTokens: 10, costUsd: .002 };
 const directories: string[] = [];
@@ -27,7 +28,7 @@ afterEach(async () => {
   for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true });
 });
 
-async function fixture(policy: 1 | 2 = 1, capacityBytes?: number) {
+async function fixture(policy: 1 | 2 | 3 = 1, capacityBytes?: number) {
   const f = await taskFixture(20), target = f.store.jobs.get(f.jobs[0].id)!;
   target.cardMetadata = { policy, state: "pending", revision: 0, edited: false };
   const historical = ["c", "d", "e"].map((letter, index) => ({ jobId: letter.repeat(64), owner: "historical", leaseId: `historical-${index}`,
@@ -81,30 +82,31 @@ async function fixture(policy: 1 | 2 = 1, capacityBytes?: number) {
 }
 
 describe("metadata policy and unsent journal recovery", () => {
-  it("pins the original request for policy 1 and issues policy 2 only for new admissions", async () => {
-    const job = { prompt: "Synthetic pet", displayName: "Generated pet", nameSource: "automatic" as const,
-      cardMetadata: { policy: 1 as const, state: "pending" as const, revision: 0, edited: false } };
-    expect(buildCardMetadataRequest(job, frames).requestHash).toBe(legacyRequestHash);
+  it("pins both older requests and admits new tasks with the compact naming policy", async () => {
     const input = { prompt: "Synthetic pet", requestId: randomUUID() }, store = new MemoryStore();
     const service = createGenerationService(store, { enabled: () => true, secret: () => "metadata-policy-test-secret", automaticCardMetadata: () => true });
     const accepted = await service.generate(input, "203.0.113.11"), before = structuredClone(store.ledger);
-    expect(store.jobs.get(accepted.generationId)?.cardMetadata?.policy).toBe(2);
-    expect((await service.generate(input, "203.0.113.11")).generationId).toBe(accepted.generationId);
-    expect(store.ledger).toEqual(before); expect(store.jobs.size).toBe(1);
-    expect(cardMetadataRecordSchema.parse({ ...job.cardMetadata, policy: 2 }).policy).toBe(2);
-    expect(() => cardMetadataRecordSchema.parse({ ...job.cardMetadata, policy: 3 })).toThrow();
-    expect(buildCardMetadataRequest(store.jobs.get(accepted.generationId)!, frames).requestHash).toBe(clarityRequestHash);
-    store.jobs.get(accepted.generationId)!.cardMetadata!.policy = 1;
-    expect((await service.generate(input, "203.0.113.11")).generationId).toBe(accepted.generationId);
-    expect(store.jobs.get(accepted.generationId)!.cardMetadata!.policy).toBe(1);
-    expect(store.ledger).toEqual(before); expect(store.jobs.size).toBe(1);
+    const job = store.jobs.get(accepted.generationId)!;
+    expect(job.cardMetadata?.policy).toBe(3);
+    expect(buildCardMetadataRequest(job, frames).requestHash).toBe(compactRequestHash);
+    expect(() => cardMetadataRecordSchema.parse({ ...job.cardMetadata, policy: 4 })).toThrow();
+
+    for (const [policy, hash] of [[3, compactRequestHash], [2, clarityRequestHash], [1, legacyRequestHash]] as const) {
+      const stored = store.jobs.get(accepted.generationId)!;
+      stored.cardMetadata = cardMetadataRecordSchema.parse({ ...stored.cardMetadata, policy });
+      expect((await service.generate(input, "203.0.113.11")).generationId).toBe(accepted.generationId);
+      expect(store.jobs.get(accepted.generationId)?.cardMetadata?.policy).toBe(policy);
+      expect(buildCardMetadataRequest(store.jobs.get(accepted.generationId)!, frames).requestHash).toBe(hash);
+      expect(store.ledger).toEqual(before);
+      expect(store.jobs.size).toBe(1);
+    }
   });
 
-  it("resumes the old intent saved before dispatch without failing or repeating paid images", async () => {
-    const f = await fixture(), job = await f.claim(legacyRequestHash);
+  it.each([[1, legacyRequestHash], [2, clarityRequestHash]] as const)("resumes policy %s's saved intent without repeating paid images", async (policy, hash) => {
+    const f = await fixture(policy), job = await f.claim(hash);
     await f.service.completeTask(job, { eligibleAt: f.clock.now });
     expect(f.store.jobs.get(job.id)?.cardMetadata?.state).toBe("inflight");
-    await f.finish(); expect(f.requests).toEqual([legacyRequestHash]);
+    await f.finish(); expect(f.requests).toEqual([hash]);
   });
 
   it("reclaims a legacy pending reservation after restart with a one-slot journal", async () => {
@@ -116,7 +118,7 @@ describe("metadata policy and unsent journal recovery", () => {
     await f.finish(); expect(f.requests).toEqual([legacyRequestHash]);
   });
 
-  it.each([1, 2] as const)("releases a policy %s reservation immediately after confirmed defer and repeats safely", async policy => {
+  it.each([1, 2, 3] as const)("releases a policy %s reservation immediately after confirmed defer and repeats safely", async policy => {
     const f = await fixture(policy, FileResultJournal.reservationBytes), job = await f.claim();
     await f.service.authorizeCardMetadata(job);
     await f.service.deferUnsentCardMetadata(job);
@@ -194,7 +196,7 @@ describe("metadata policy and unsent journal recovery", () => {
     expect(await f.journal.list()).toEqual([key]);
   });
 
-  it.each([1, 2] as const)("recovers a saved policy %s journal response once without replaying the provider", async policy => {
+  it.each([1, 2, 3] as const)("recovers a saved policy %s journal response once without replaying the provider", async policy => {
     const f = await fixture(policy), current = f.store.jobs.get(f.target.id)!;
     current.nameSource = "user"; current.displayName = "Мятня";
     const job = await f.claim(); await f.service.authorizeCardMetadata(job);
