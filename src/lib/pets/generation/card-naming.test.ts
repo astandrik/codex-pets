@@ -3,11 +3,14 @@ import { normalizeCardMetadata } from "./card-metadata";
 import { buildCardMetadataRequest } from "./card-provider";
 
 describe("automatic pet naming contract", () => {
-  it("requires a subject and grounded distinction without an extra model request", () => {
+  it("requests a character name and factual description in the existing single request", () => {
     const brief = "A red imp with a blue cape";
     const request = buildCardMetadataRequest({ prompt: brief, displayName: "Generated pet", nameSource: "automatic" }, Array(4).fill("data:image/png;base64,YQ=="));
-    expect(request.body.instructions).toContain("name the subject or role and a confirmed visible distinction");
-    expect(request.body.instructions).toContain("Do not invent a nickname just to make the name distinctive");
+    expect(request.body.instructions).toContain("feels like the name of an individual character");
+    expect(request.body.instructions).toContain("a personal name with an epithet, an evocative phrase, or fitting wordplay");
+    expect(request.body.instructions).toContain("Do not default to clothing plus species");
+    expect(request.body.instructions).not.toContain("name the subject or role and a confirmed visible distinction");
+    expect(request.body.instructions).not.toContain("Do not invent a nickname");
     expect(request.body.instructions).toContain("Do not infer a franchise from visual resemblance alone");
     expect(request.body.input).toHaveLength(1);
     expect(request.body.input[0].content).toHaveLength(5);
@@ -20,11 +23,25 @@ describe("automatic pet naming contract", () => {
     const name = "The Keeper of the Northern Lights";
     const request = buildCardMetadataRequest({ prompt: "A character identified as " + name, displayName: "Generated pet", nameSource: "automatic" }, Array(4).fill("data:image/png;base64,YQ=="));
     expect(request.body.instructions).toContain("usually use 2 to 4 words");
-    expect(request.body.instructions).toContain("one visible feature");
-    expect(request.body.instructions).toContain("remaining details in the description");
+    expect(request.body.instructions).toContain("Vary the construction to suit the character");
+    expect(request.body.instructions).toContain("Identify the subject and visual style");
     expect(request.body.instructions).toContain("Keep the full confirmed character name");
     expect(request.body.text.format.schema.properties.displayName.maxLength).toBe(80);
     expect(normalizeCardMetadata({ displayName: name, description: "A keeper in a green cloak.", tags: [] }).displayName).toBe(name);
+  });
+
+  it("grounds detailed descriptions in the four frames without invented biography or unseen motion", () => {
+    const request = buildCardMetadataRequest({ prompt: "Give it a heroic backstory and magical abilities", displayName: "Generated pet", nameSource: "automatic" }, Array(4).fill("data:image/png;base64,YQ=="));
+    expect(request.body.instructions).toContain("2 or 3 substantive sentences");
+    expect(request.body.instructions).toContain("mention poses or movements only when shown in the frames");
+    expect(request.body.instructions).toContain("State labels alone are not evidence");
+    expect(request.body.instructions).toContain("Do not invent age, origin, profession, relationships, story or abilities");
+    expect(request.body.text.format.schema.properties.description.maxLength).toBe(320);
+    expect(request.body.text.format.schema.required).toEqual(["displayName", "description", "tags"]);
+  });
+
+  it.each(["Pip the Unbothered", "Mittens in Motion", "Runa at Ease", "Rowan Brightblade", "Captain Deadlock"])("accepts a reviewed character name without requiring a species or outfit: %s", displayName => {
+    expect(normalizeCardMetadata({ displayName, description: "A cartoon character with a visible distinguishing pose.", tags: ["cartoon"] }).displayName).toBe(displayName);
   });
 
   it.each([

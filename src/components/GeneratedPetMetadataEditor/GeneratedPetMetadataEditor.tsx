@@ -40,7 +40,7 @@ export function GeneratedPetMetadataEditor({generationId,metadata,disabled,onBlo
   }
   return <form className="generated-pet-metadata" onSubmit={save}>
     <h2>Name, description and tags</h2>
-      <p id="generated-name-help">Use a clear subject and a visible distinction, such as Blue-Caped Imp. Keep your own name or a confirmed character name; do not guess an identity from resemblance alone.</p>
+      <p id="generated-name-help">Try a 2–4-word character name, such as Pip the Unbothered. Describe the visible character and distinguishing details below. Keep your own name or a confirmed character name; do not guess an identity from resemblance alone.</p>
     {metadata.automaticState==="failed"&&!saved.edited&&<p>Automatic details were unavailable. Your images are saved; you can enter the name, description and tags below.</p>}
     <label htmlFor="generated-name">Name</label>
       <TextInput id="generated-name" value={locked?(metadata.displayName??""):displayName} onUpdate={value=>change(description,tags,value)} disabled={saving} controlProps={{maxLength:80,readOnly:locked,"aria-describedby":"generated-name-help"}}/>
