@@ -1,4 +1,5 @@
 import {createHash} from "node:crypto";
+import {isDeepStrictEqual} from "node:util";
 import {resultInputHash,resultPromptHash} from "@/lib/pets/generation/result-input";
 import {currentWorkerContext,setWorkerPhase} from "@/lib/pets/generation/worker-diagnostics";
 import {ANIMATION_ATTEMPT_FAILURE_CODES, GenerationError, type GenerationJob, type StageName, type ImageUsage} from "@/lib/pets/generation/model";
@@ -30,6 +31,7 @@ interface Service {
  startAnimationAttempt(job:GenerationJob,stage:Parameters<typeof latestAnimationAttempt>[1],token:string):Promise<unknown>;
  startBaseAttempt(job:GenerationJob,token:string):Promise<unknown>;
  authorizeCardMetadata(job:GenerationJob):Promise<void>;
+ deferUnsentCardMetadata(job:GenerationJob):Promise<void>;
  saveStage(job:GenerationJob,stage:StageName,bytes:Buffer,meta:{usage?:ImageUsage;generationMs:number}):Promise<unknown>;
  saveAnimationAttempt(job:GenerationJob,stage:Parameters<typeof latestAnimationAttempt>[1],token:string,bytes:Buffer,meta:{usage?:ImageUsage;generationMs:number}):Promise<unknown>;
  saveBaseAttempt(job:GenerationJob,token:string,bytes:Buffer,meta:{usage?:ImageUsage;generationMs:number}):Promise<unknown>;
@@ -111,6 +113,27 @@ export function attachResultJournal<T extends Service>(service:T,store:Generatio
    try{return await original.authorizeCardMetadata(job);}catch(error){
     if(error instanceof GenerationError&&["budget_exhausted","generation_disabled"].includes(error.code))metadataPreflightRejected.add(job);
     throw error;
+   }
+  },
+  async deferUnsentCardMetadata(job:GenerationJob){
+   await readActiveWorkerJob(store,job,now);
+   const operation=`card:${job.cardMetadata?.requestHash}`,key=journalKey({jobId:job.id,operationKey:operation});
+   let identity:JournalIdentity|undefined;
+   try{identity=await durability.journal.reservationIdentity(key);}
+   catch(error){if(!(error&&typeof error==="object"&&"code"in error&&error.code==="ENOENT"))throw error;}
+   if(identity){
+    if(!isDeepStrictEqual(identity,journalIdentity(job,operation,operation)))throw new GenerationError("stale_worker");
+    if(await durability.journal.read(key,now()))throw new JournalError("journal_result_exists");
+   }
+   await retryCheckpoint(()=>original.deferUnsentCardMetadata(job),{attempts:5,...durability.retry,now,
+    shouldRetry:error=>!(error instanceof GenerationError)&&job.expiresAt>now()});
+   if(identity){
+    try{await durability.journal.releaseUnsent(key,identity);}
+    catch(error){
+     // The DB already proved no dispatch. A retained empty reservation is reclaimed under
+     // the same policy/hash on the next lease; cleanup must not turn it into unknown spending.
+     if(!(error&&typeof error==="object"&&"code"in error&&error.code==="ENOENT"))currentWorkerContext()?.report(error,true);
+    }
    }
   },
   async saveStage(job:GenerationJob,stage:StageName,bytes:Buffer,meta:{usage?:ImageUsage;generationMs:number}){

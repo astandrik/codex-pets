@@ -1,4 +1,5 @@
 import {initialAnimationRepair} from "@/lib/pets/generation/animation-repair";
+import {CARD_METADATA_POLICY} from "@/lib/pets/generation/card-metadata";
 import {startBudgetTracking,type GenerationBudgetLimit} from "@/lib/pets/generation/budget";
 import {encodeGenerationInput,GENERATION_INPUT_ARTIFACT} from "@/lib/pets/generation/generation-input";
 import {DAY,GenerationError,generationAnimationRevisionsEnabled,nextMoscowDay,PROMPT_REVISION,type GenerationInput,type GenerationJob,type GenerationReference} from "@/lib/pets/generation/model";
@@ -32,7 +33,7 @@ export async function admitGeneration(tx:GenerationTransaction,prepared:Prepared
     promptRevision:reviewBase?"pet-v2-review-20261017-1":PROMPT_REVISION,...(reviewBase?{reviewBase:true,queuedAt:now}:{}),
     ...(reference?{reference:reference.metadata}:{}),pipelineVersion:2,stages:[],
     ...(generationAnimationRevisionsEnabled()?{animationAnatomyPolicy:1 as const}:{}),nameSource:input.displayName===undefined?"automatic":"user",
-    ...(options.automaticCardMetadata?.()?{cardMetadata:{policy:1 as const,state:"pending" as const,revision:0,edited:false}}:{}),
+    ...(options.automaticCardMetadata?.()?{cardMetadata:{policy:CARD_METADATA_POLICY,state:"pending" as const,revision:0,edited:false}}:{}),
     ...(prepared.baseMaxRetries!==undefined?{baseRepair:{policy:1 as const,maxAttempts:prepared.baseMaxRetries+1,phase:"active" as const,attempts:[]}}:{}),
     ...(prepared.baseRetrySourceId?{baseRetrySourceId:prepared.baseRetrySourceId}:{})};
   if(reference)await tx.putArtifact(id,"reference.png",reference.bytes,job.expiresAt);

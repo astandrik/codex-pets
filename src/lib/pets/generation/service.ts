@@ -544,6 +544,10 @@ export function createGenerationService(store: GenerationStore, options: {
         const state = await scheduler(tx, clock());
         const current = await requireJobWithActiveWorkerLease(tx, state, job, clock());
         const card = current.cardMetadata;
+        // A lost commit acknowledgement may repeat the same live caller's unsent transition.
+        if (current.status === "processing" && card?.state === "pending" && card.requestHash === undefined &&
+            card.policy === job.cardMetadata?.policy && card.revision === job.cardMetadata?.revision &&
+            isParallelScheduler(state) && !state.providerSlots.some(slot => slot.leaseId === job.workerLeaseId)) return;
         if (current.status !== "processing" || card?.state !== "inflight" || card.requestHash !== job.cardMetadata?.requestHash) throw new GenerationError("metadata_already_started");
         await releaseUnsentProviderOperation(tx, state, current, `card:${card.requestHash}`);
         await tx.putJob({...current, cardMetadata: {...card, state: "pending", requestHash: undefined, startedAt: undefined}});
