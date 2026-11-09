@@ -33,6 +33,7 @@ const PUBLIC_ALLOW_PATHS = [
   "/api/openapi.json",
   "/api/manifest$",
   "/api/manifest.toon$",
+  "/api/assets/*/idle-strip.webp$",
   "/.well-known/mcp",
   "/server.json",
   "/.well-known/mcp/server.json",
