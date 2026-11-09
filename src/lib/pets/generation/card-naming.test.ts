@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { normalizeCardMetadata } from "./card-metadata";
 import { buildCardMetadataRequest } from "./card-provider";
 
 describe("automatic pet naming contract", () => {
@@ -15,6 +16,17 @@ describe("automatic pet naming contract", () => {
     if (!("text" in content)) throw Error("text input missing");
     expect(JSON.parse(content.text)).toMatchObject({ characterBrief: brief, name: null, nameSource: "automatic" });
   });
+  it("guides automatic names toward two to four words while allowing longer names", () => {
+    const name = "The Keeper of the Northern Lights";
+    const request = buildCardMetadataRequest({ prompt: "A character identified as " + name, displayName: "Generated pet", nameSource: "automatic" }, Array(4).fill("data:image/png;base64,YQ=="));
+    expect(request.body.instructions).toContain("usually use 2 to 4 words");
+    expect(request.body.instructions).toContain("one visible feature");
+    expect(request.body.instructions).toContain("remaining details in the description");
+    expect(request.body.instructions).toContain("Keep the full confirmed character name");
+    expect(request.body.text.format.schema.properties.displayName.maxLength).toBe(80);
+    expect(normalizeCardMetadata({ displayName: name, description: "A keeper in a green cloak.", tags: [] }).displayName).toBe(name);
+  });
+
   it.each([
     "Fox-eared character in a cream blouse and lace-up boots.",
     "Fox-eared character in a cream shirt and denim shorts.",
