@@ -105,6 +105,8 @@ describe("HomeHeroPetPicker install command", () => {
     expect(
       container.querySelector(".home-hero-pet__actions a")?.getAttribute("href"),
     ).toBe("/pets/silver-wink");
+    expect(container.querySelector('[data-pet-poster]')?.getAttribute("src"))
+      .toBe("/pets/silver-wink/preview.webp");
   });
 
   it("keeps copying available for a single pet and hides it for the empty fallback", async () => {
@@ -125,6 +127,29 @@ describe("HomeHeroPetPicker install command", () => {
 
     act(() => root.render(<HomeHeroPetPicker pets={[]} initialIndex={0} />));
     expect(container.querySelector('button[aria-label^="Copy install command"]')).toBeNull();
+  });
+
+  it.each(["error", "load"])("starts a fresh image attempt when shuffling A → B → A after %s", (event) => {
+    act(() => root.render(<HomeHeroPetPicker pets={pets} initialIndex={0} />));
+    const image = container.querySelector(event === "error" ? "[data-pet-poster]" : ".home-hero-pet__sprite-strip");
+    act(() => image!.dispatchEvent(new Event(event)));
+    const shuffle = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.includes("I'm feeling lucky"))!;
+    act(() => shuffle.click());
+    act(() => shuffle.click());
+    const poster = container.querySelector<HTMLImageElement>("[data-pet-poster]");
+    expect(poster?.getAttribute("src")).toBe("/pets/ravensteel/preview.webp");
+    expect(poster?.style.visibility).toBe("");
+    expect(container.querySelector<HTMLImageElement>(".home-hero-pet__sprite-strip")?.style.visibility).toBe("hidden");
+  });
+
+  it("retains the legacy atlas fallback if a public poster is unavailable", () => {
+    const externalPet = { ...pets[0], spritesheetUrl: "https://assets.example/atlas.png" };
+    act(() => root.render(<HomeHeroPetPicker pets={[externalPet]} initialIndex={0} />));
+    expect(container.querySelector(".home-hero-pet__sprite-frame")).toBeNull();
+    act(() => container.querySelector("[data-pet-poster]")!.dispatchEvent(new Event("error")));
+    expect(container.querySelector<HTMLElement>(".home-hero-pet__sprite-frame")?.style.backgroundImage)
+      .toContain(externalPet.spritesheetUrl);
   });
 });
 describe("HomeHeroPetPicker public author email", () => {
@@ -148,6 +173,8 @@ describe("HomeHeroPetPicker public author email", () => {
     );
     const container = document.createElement("div");
     container.innerHTML = markup;
+    expect(container.querySelector('img[data-pet-poster]')?.getAttribute("src"))
+      .toBe("/pets/boba/preview.webp");
 
     expect(
       container.querySelector('a[href="mailto:creator+public@example.com"]')
