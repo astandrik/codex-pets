@@ -1,13 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-// Evaluate the literal prefixes and end anchors used by this robots policy.
+// Evaluate prefixes, wildcards and end anchors used by this robots policy.
 function allowsPath(path: string, allow: string[], disallow: string[]): boolean {
   const matches = [
     ...allow.map((pattern) => ({ pattern, allowed: true })),
     ...disallow.map((pattern) => ({ pattern, allowed: false })),
-  ].filter(({ pattern }) => pattern.endsWith("$")
-    ? path === pattern.slice(0, -1)
-    : path.startsWith(pattern));
+  ].filter(({ pattern }) => {
+    const anchored = pattern.endsWith("$");
+    const source = (anchored ? pattern.slice(0, -1) : pattern)
+      .split("*")
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join(".*");
+    return new RegExp(`^${source}${anchored ? "$" : ""}`).test(path);
+  });
   matches.sort((a, b) => b.pattern.replace(/\$$/, "").length - a.pattern.replace(/\$$/, "").length
     || Number(b.allowed) - Number(a.allowed));
   return matches[0]?.allowed ?? true;
@@ -17,7 +22,7 @@ describe("robots", () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it.each(["", "/codex-pets"])(
-    "allows only canonical manifests within the API for base path %s",
+    "allows canonical manifests and idle strips while keeping other API assets blocked for base path %s",
     async (basePath) => {
       vi.resetModules();
       vi.stubEnv("NEXT_PUBLIC_BASE_PATH", basePath);
@@ -30,7 +35,11 @@ describe("robots", () => {
         expect(rule, userAgent).toBeDefined();
         const allow = [rule?.allow ?? []].flat();
         const disallow = [rule?.disallow ?? []].flat();
-        for (const path of ["/api/manifest", "/api/manifest.toon"]) {
+        for (const path of [
+          "/api/manifest", "/api/manifest.toon",
+          "/api/assets/asset_1/idle-strip.webp",
+          "/api/assets/asset_a7d5672ff4c5/idle-strip.webp",
+        ]) {
           expect(allowsPath(`${basePath}${path}`, allow, disallow), `${userAgent}: ${path}`).toBe(true);
         }
         for (const path of [
@@ -38,6 +47,11 @@ describe("robots", () => {
           "/api/manifest-private", "/api/manifest.toon-private",
           "/api/manifest/child", "/api/manifest.toon/child",
           "/api/manifest?x=1", "/api/manifest.toon?x=1",
+          "/api/assets/asset_1/preview.webp", "/api/assets/asset_1/spritesheet.webp",
+          "/api/assets/asset_1/spritesheet.png", "/api/assets/asset_1/pet.json",
+          "/api/assets/asset_1/pet.zip", "/api/assets/asset_1/idle-strip.webp/child",
+          "/api/assets/asset_1/idle-strip.webp?x=1", "/api/assets/asset_1/idle-strip.webp.bak",
+          "/api/assets/asset_1/idle-stripXwebp", "/api/admin/asset_1/idle-strip.webp",
         ]) {
           expect(allowsPath(`${basePath}${path}`, allow, disallow), `${userAgent}: ${path}`).toBe(false);
         }

@@ -1,12 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import type { CSSProperties } from "react";
 import { useState } from "react";
 import { ArrowRight, Shuffle } from "@gravity-ui/icons";
 
 import { Button, Flex, Text } from "@/components/GravityUI/GravityUI";
 import { InstallCommandButton } from "@/components/InstallCommand/InstallCommandButton";
-import { PetSpritePreview } from "@/components/PetSpritePreview/PetSpritePreview";
 import { withBasePath } from "@/lib/base-path";
 import { trackGoal } from "@/lib/metrics/yandex";
 import { getPetIdleStripUrl } from "@/lib/pets/asset-urls";
@@ -117,25 +117,30 @@ export function HomeHeroPetPicker({
         onClick={() => trackViewPetClick("image")}
       >
         <span className="home-hero-pet__stage" aria-hidden>
-          <span className="home-hero-pet__sprite-viewport" style={stripStyle}>
-            <PetSpritePreview
-              key={pet.slug}
-              posterSlug={pet.slug}
-              stripSrc={idleStripUrl}
-              alt={`${pet.displayName}: ${pet.description}`}
-              stripClassName="home-hero-pet__sprite-strip"
-              eager
-            >
-              <span
-                className="home-hero-pet__sprite-frame"
-                style={{
-                  backgroundImage: `url(${pet.spritesheetUrl})`,
-                  backgroundSize: `${PET_SHEET.columns * 100}% ${PET_SHEET.rows * 100}%`,
-                  backgroundPosition: "0 0",
-                }}
+          {idleStripUrl ? (
+            <span className="home-hero-pet__sprite-viewport" style={stripStyle}>
+              <Image
+                src={idleStripUrl}
+                alt={`${pet.displayName} — animated sprite preview`}
+                width={PREVIEW_STRIP_WIDTH}
+                height={PET_SHEET.cellHeight}
+                className="home-hero-pet__sprite-strip"
+                priority
+                sizes={`${PREVIEW_STRIP_WIDTH}px`}
+                unoptimized
+                draggable={false}
               />
-            </PetSpritePreview>
-          </span>
+            </span>
+          ) : (
+            <span
+              className="home-hero-pet__sprite-frame"
+              style={{
+                backgroundImage: `url(${pet.spritesheetUrl})`,
+                backgroundSize: `${PET_SHEET.columns * 100}% ${PET_SHEET.rows * 100}%`,
+                backgroundPosition: "0 0",
+              }}
+            />
+          )}
         </span>
       </a>
       <Flex direction="column" gap={2} className="home-hero-pet__meta">

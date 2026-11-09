@@ -6,7 +6,6 @@ import { ArrowRight } from "@gravity-ui/icons";
 
 import { InstallCommandButton } from "@/components/InstallCommand/InstallCommandButton";
 import { PetCardMetrics } from "@/components/PetCard/PetCardMetrics";
-import { PetSpritePreview } from "@/components/PetSpritePreview/PetSpritePreview";
 import type { RelatedPetContext } from "@/lib/metrics/related-pet-attribution";
 import { getPetIdleStripUrl } from "@/lib/pets/asset-urls";
 import { previewCycleDurationMs } from "@/lib/pets/preview-timing";
@@ -57,17 +56,20 @@ export function PetCard({
       />
       <div className="pet-card__sprite-wrap" aria-hidden>
         <div className="pet-card__sprite-frame">
-          {idleStripUrl || pet.status === "approved" ? (
+          {idleStripUrl ? (
             <span className="pet-card__sprite-viewport" style={stripStyle}>
-              <PetSpritePreview
-                key={pet.slug}
-                posterSlug={pet.status === "approved" ? pet.slug : undefined}
-                stripSrc={idleStripUrl}
-                alt={`${pet.displayName}: ${pet.description}`}
-                stripClassName="pet-card__sprite-strip"
-              >
-                <span className="pet-card__sprite-placeholder" />
-              </PetSpritePreview>
+              <Image
+                src={idleStripUrl}
+                alt={`${pet.displayName} — animated sprite preview`}
+                width={PET_SHEET.cellWidth * PREVIEW_STATE.frames}
+                height={PET_SHEET.cellHeight}
+                className="pet-card__sprite-strip"
+                loading="lazy"
+                decoding="async"
+                sizes={`${PREVIEW_STRIP_WIDTH}px`}
+                unoptimized
+                draggable={false}
+              />
             </span>
           ) : (
             <span className="pet-card__sprite-placeholder" />

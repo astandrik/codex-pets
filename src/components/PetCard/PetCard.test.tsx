@@ -4,8 +4,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import { PetCard } from "@/components/PetCard/PetCard";
-import { RelatedPets } from "@/components/RelatedPets/RelatedPets";
-import { listMockPetRecords } from "@/lib/pets/mock-data";
 
 vi.mock("next/link", () => ({
   default: ({
@@ -61,8 +59,6 @@ describe("PetCard public author email", () => {
     );
     const container = document.createElement("div");
     container.innerHTML = markup;
-    expect(container.querySelector('img[data-pet-poster]')?.getAttribute("src"))
-      .toBe("/pets/boba/preview.webp");
     expect(container.querySelector<HTMLElement>(".pet-card__sprite-viewport")?.style.getPropertyValue("--pet-card-frame-duration")).toBe("6600ms");
 
     expect(
@@ -70,23 +66,4 @@ describe("PetCard public author email", () => {
         ?.textContent,
     ).toBe("creator+public@example.com");
   });
-});
-
-it.each(["pending", "rejected", "deleted"] as const)("does not request a public poster for a %s pet", (status) => {
-  const pet = listMockPetRecords()[0];
-  const markup = renderToStaticMarkup(<PetCard pet={{ ...pet, ...pet.metrics, status }} />);
-  const container = document.createElement("div");
-  container.innerHTML = markup;
-  expect(container.querySelector("[data-pet-poster]")).toBeNull();
-  expect(container.querySelector(".pet-card__sprite-strip")?.getAttribute("src"))
-    .toContain("/idle-strip.webp");
-});
-
-it("includes crawlable posters in the related-pets server markup", () => {
-  const pet = listMockPetRecords()[0];
-  const markup = renderToStaticMarkup(<RelatedPets pets={[{ ...pet, ...pet.metrics }]} sourceSlug="another" />);
-  const container = document.createElement("div");
-  container.innerHTML = markup;
-  expect(container.querySelector(".related-pets [data-pet-poster]")?.getAttribute("src"))
-    .toBe(`/pets/${pet.slug}/preview.webp`);
 });
