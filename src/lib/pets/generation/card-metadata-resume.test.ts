@@ -21,6 +21,7 @@ const legacyRequestHash = "b36f5881c159e7fafa8a5f3bfa175eab90d16446cc9741c61994d
 const clarityRequestHash = "208ff6eaa328cc47b88db3c94e42bac7697ea0b5a678f9204a949052899eda9e";
 const compactRequestHash = "8c51cc49a64d85cedd11cde379541f3853b55d1af7c8c9bd501481cf899b28e1";
 const characterRequestHash = "c4a1b96594f9743342f094c31c1cf102e360a29d2956aff98675e765bf72d307";
+const distinctiveRequestHash = "1464cf123adbedc0014a01fc5bbe51e92eab593c8769a04635b5f830ec389eb4";
 const response = { fields: { displayName: "Blue-Caped Imp", description: "A red imp wearing a blue cape.", tags: ["red", "imp", "cape"] },
   responseHash: "b".repeat(64), inputTokens: 10, outputTokens: 10, costUsd: .002 };
 const directories: string[] = [];
@@ -29,7 +30,7 @@ afterEach(async () => {
   for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true });
 });
 
-async function fixture(policy: 1 | 2 | 3 | 4 = 1, capacityBytes?: number) {
+async function fixture(policy: 1 | 2 | 3 | 4 | 5 = 1, capacityBytes?: number) {
   const f = await taskFixture(20), target = f.store.jobs.get(f.jobs[0].id)!;
   target.cardMetadata = { policy, state: "pending", revision: 0, edited: false };
   const historical = ["c", "d", "e"].map((letter, index) => ({ jobId: letter.repeat(64), owner: "historical", leaseId: `historical-${index}`,
@@ -88,9 +89,9 @@ describe("metadata policy and unsent journal recovery", () => {
     const service = createGenerationService(store, { enabled: () => true, secret: () => "metadata-policy-test-secret", automaticCardMetadata: () => true });
     const accepted = await service.generate(input, "203.0.113.11"), before = structuredClone(store.ledger);
     const job = store.jobs.get(accepted.generationId)!;
-    expect(job.cardMetadata?.policy).toBe(4);
-    expect(buildCardMetadataRequest(job, frames).requestHash).toBe(characterRequestHash);
-    expect(() => cardMetadataRecordSchema.parse({ ...job.cardMetadata, policy: 5 })).toThrow();
+    expect(job.cardMetadata?.policy).toBe(5);
+    expect(buildCardMetadataRequest(job, frames).requestHash).toBe(distinctiveRequestHash);
+    expect(() => cardMetadataRecordSchema.parse({ ...job.cardMetadata, policy: 6 })).toThrow();
 
     for (const [policy, hash] of [[4, characterRequestHash], [3, compactRequestHash], [2, clarityRequestHash], [1, legacyRequestHash]] as const) {
       const stored = store.jobs.get(accepted.generationId)!;
@@ -103,7 +104,7 @@ describe("metadata policy and unsent journal recovery", () => {
     }
   });
 
-  it.each([[1, legacyRequestHash], [2, clarityRequestHash], [3, compactRequestHash]] as const)("resumes policy %s's saved intent without repeating paid images", async (policy, hash) => {
+  it.each([[1, legacyRequestHash], [2, clarityRequestHash], [3, compactRequestHash], [4, characterRequestHash], [5, distinctiveRequestHash]] as const)("resumes policy %s's saved intent without repeating paid images", async (policy, hash) => {
     const f = await fixture(policy), job = await f.claim(hash);
     await f.service.completeTask(job, { eligibleAt: f.clock.now });
     expect(f.store.jobs.get(job.id)?.cardMetadata?.state).toBe("inflight");
@@ -119,7 +120,7 @@ describe("metadata policy and unsent journal recovery", () => {
     await f.finish(); expect(f.requests).toEqual([legacyRequestHash]);
   });
 
-  it.each([1, 2, 3, 4] as const)("releases a policy %s reservation immediately after confirmed defer and repeats safely", async policy => {
+  it.each([1, 2, 3, 4, 5] as const)("releases a policy %s reservation immediately after confirmed defer and repeats safely", async policy => {
     const f = await fixture(policy, FileResultJournal.reservationBytes), job = await f.claim();
     await f.service.authorizeCardMetadata(job);
     await f.service.deferUnsentCardMetadata(job);
@@ -177,7 +178,7 @@ describe("metadata policy and unsent journal recovery", () => {
     expect(await f.journal.list()).toEqual([key]);
   });
 
-  it.each([1, 4] as const)("preserves policy %s's unknown permit and journal reservation without another call", async policy => {
+  it.each([1, 4, 5] as const)("preserves policy %s's unknown permit and journal reservation without another call", async policy => {
     const f = await fixture(policy), job = await f.claim(); await f.service.authorizeCardMetadata(job);
     const key = (await f.journal.list())[0], row = f.store.ledger.get("scheduler")!, state = JSON.parse(row.value);
     state.providerSlots.find((slot: { leaseId: string }) => slot.leaseId === job.workerLeaseId).unknown = true;
@@ -197,7 +198,7 @@ describe("metadata policy and unsent journal recovery", () => {
     expect(await f.journal.list()).toEqual([key]);
   });
 
-  it.each([1, 2, 3, 4] as const)("recovers a saved policy %s journal response once without replaying the provider", async policy => {
+  it.each([1, 2, 3, 4, 5] as const)("recovers a saved policy %s journal response once without replaying the provider", async policy => {
     const f = await fixture(policy), current = f.store.jobs.get(f.target.id)!;
     current.nameSource = "user"; current.displayName = "Мятня";
     const job = await f.claim(); await f.service.authorizeCardMetadata(job);

@@ -1,7 +1,7 @@
 import {z} from "zod";
 
 export const CARD_METADATA_MAX_ESTIMATED_MICRO_USD = 500_000;
-export const CARD_METADATA_POLICY = 4;
+export const CARD_METADATA_POLICY = 5;
 export const CARD_METADATA_FALLBACK = "An animated desktop pet created from a saved character reference.";
 export const cardMetadataFieldsSchema = z.object({
   displayName: z.string().trim().min(1).max(80).optional(),
@@ -15,7 +15,7 @@ export function normalizeCardMetadata(value:unknown):CardMetadataFields {
   return cardMetadataFieldsSchema.parse({...(fields.displayName===undefined?{}:{displayName:fields.displayName}),description:fields.description,tags:[...new Set(fields.tags.map(tag=>tag.toLowerCase()))]});
 }
 export const cardMetadataRecordSchema = z.object({
-  policy:z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4)]),
+  policy:z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4),z.literal(5)]),
   state:z.enum(["pending","inflight","completed","failed"]),
   revision:z.number().int().nonnegative().default(0),
   edited:z.boolean().default(false),
