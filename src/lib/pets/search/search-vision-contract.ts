@@ -265,7 +265,13 @@ function stringListSchema(
 function normalizedStringSchema(minLength: number, maxLength: number) {
   return z
     .string()
-    .transform((value) => value.normalize("NFKC").replace(/\s+/g, " ").trim())
+    .transform((value) => {
+      const normalized = value.normalize("NFKC").replace(/\s+/g, " ").trim();
+      if (normalized.length <= maxLength) return normalized;
+      // Compatibility expansion (for example, … to ...) must not reject
+      // bounded provider text. Preserve its characters without truncation.
+      return value.normalize("NFC").replace(/\s+/g, " ").trim();
+    })
     .pipe(z.string().min(minLength).max(maxLength));
 }
 

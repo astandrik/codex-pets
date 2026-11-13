@@ -73,6 +73,32 @@ describe("pet vision caption contract", () => {
   });
 
   it.each([
+    { field: "clothing", limit: 240 },
+    { field: "appearance", limit: 320 },
+  ] as const)("preserves bounded $field text when compatibility normalization expands punctuation", ({ field, limit }) => {
+    const value = `${"я".repeat(limit - 1)}…`;
+    const caption = parsePetVisionCaption({
+      ...rawCaption,
+      [field]: { en: "Synthetic description", ru: value },
+    });
+    expect(caption[field].ru).toBe(value);
+    expect(caption[field].ru).toHaveLength(limit);
+    expect(parsePetVisionCaption(caption)).toEqual(caption);
+    expect(() => parsePetVisionCaption({
+      ...rawCaption,
+      [field]: { en: "Synthetic description", ru: `${value}я` },
+    })).toThrow(new RegExp(`${field}\\.ru`));
+  });
+
+  it("still uses compatibility normalization when the resulting text fits", () => {
+    const caption = parsePetVisionCaption({
+      ...rawCaption,
+      clothing: { en: "  Ｂｌｕｅ   coat…  ", ru: "Синий плащ…" },
+    });
+    expect(caption.clothing).toEqual({ en: "Blue coat...", ru: "Синий плащ..." });
+  });
+
+  it.each([
     {
       caption: {
         ...rawCaption,
