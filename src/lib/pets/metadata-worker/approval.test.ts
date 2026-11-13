@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,6 +6,8 @@ import type { StoredRelatedPetAnnotation } from "@/lib/pets/related/related-pets
 import type { StoredPetSearchCaption } from "@/lib/pets/search/search-captions-repository";
 import { PET_VISION_FRAME_POLICY } from "@/lib/pets/search/search-vision-frames";
 import { prepareOpenAIApprovalMetadata } from "@/lib/pets/metadata-worker/approval";
+import { MetadataLedger, metadataHash } from "@/lib/pets/metadata-worker/ledger";
+import { prepareApprovalMetadataInputs } from "@/lib/pets/metadata-worker/producer";
 
 const mocks = vi.hoisted(() => ({ request: vi.fn(), annotation: null as StoredRelatedPetAnnotation | null,
   caption: null as StoredPetSearchCaption | null, extract: vi.fn(), putAnnotation: vi.fn(), putCaption: vi.fn() }));
@@ -46,6 +48,32 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllEnvs(); rmSync(directory, { recursive: true }); });
 
 describe("general OpenAI approval metadata", () => {
+  it("recovers a bounded saved caption without modifying receipts or repeating provider calls", async () => {
+    const source = { ...caption, clothing: { en: "Blue coat", ru: `${"я".repeat(239)}…` } };
+    const extracted = await mocks.extract();
+    const plan = prepareApprovalMetadataInputs(pet, "asset_test", extracted);
+    const provider = vi.fn(async (body: unknown) => response(body === plan.annotation.body ? proposal : source));
+    const ledger = new MetadataLedger(join(directory, pet.id), plan.contextHash, provider);
+    await ledger.generate(plan.annotation, (value) => value);
+    await ledger.generate(plan.caption, (value) => value);
+    const file = join(directory, pet.id, "metadata-ledger.json");
+    const originalReceipt = readFileSync(file, "utf8");
+    const originalSummary = ledger.summary;
+    mocks.request.mockRejectedValue(new Error("provider_must_not_be_called"));
+
+    await prepareOpenAIApprovalMetadata(pet, async () => undefined);
+    await prepareOpenAIApprovalMetadata(pet, async () => undefined);
+
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(mocks.putCaption).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(mocks.caption?.captionJson ?? "{}").caption.clothing.ru).toBe(source.clothing.ru);
+    expect(readFileSync(file, "utf8")).toBe(originalReceipt);
+    expect(ledger.summary).toEqual(originalSummary);
+    expect(JSON.parse(originalReceipt).receipts.map((receipt: { requestHash: string }) => receipt.requestHash))
+      .toEqual([metadataHash(plan.annotation.body), metadataHash(plan.caption.body)]);
+  });
+
   it("prepares both sources for a non-Lumi pet and reuses fresh persisted records on restart", async () => {
     const check = vi.fn(async () => undefined);
     await prepareOpenAIApprovalMetadata(pet, check);
