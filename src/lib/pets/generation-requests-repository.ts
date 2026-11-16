@@ -1,3 +1,5 @@
+import { withSerializableTransaction } from "@/lib/ydb/transaction";
+import { createAdminQueuePagination, type AdminQueuePage } from "@/lib/pets/admin-pagination";
 import type { Session } from "ydb-sdk";
 
 import { withBasePath } from "@/lib/base-path";
@@ -134,21 +136,42 @@ VALUES ($id, $status, $kind, $display_name_hint, $prompt, $contact_email, $reque
   return request;
 }
 
-export async function listGenerationRequests(): Promise<PetGenerationRequest[]> {
+export async function listGenerationRequests(page = 1): Promise<AdminQueuePage<PetGenerationRequest>> {
   if (isMockPetsDataSource()) {
-    return Array.from(mockGenerationRequestsById.values())
+    const requests = Array.from(mockGenerationRequestsById.values())
       .filter((request) => request.status !== "deleted")
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      .sort((a, b) =>
+        Number(OPEN_REQUEST_STATUSES.has(b.status)) - Number(OPEN_REQUEST_STATUSES.has(a.status)) ||
+        b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id),
+      );
+    const pagination = createAdminQueuePagination(requests.length, page);
+    const offset = (pagination.page - 1) * pagination.pageSize;
+    return { items: requests.slice(offset, offset + pagination.pageSize), pagination };
   }
 
-  if (!isYdbConfigured()) return [];
+  if (!isYdbConfigured()) {
+    return { items: [], pagination: createAdminQueuePagination(0, page) };
+  }
 
-  const result = await withSession((session) =>
-    session.executeQuery(
+  const { rows, pagination } = await withSerializableTransaction(async (execute) => {
+    const count = await execute(
+      `
+DECLARE $deleted_status AS Utf8;
+SELECT COUNT(*) AS request_count
+FROM ${TABLES.generationRequests}
+WHERE status != $deleted_status;
+      `,
+      { $deleted_status: TypedValues.utf8("deleted") },
+    );
+    const countRow = rowsFromResult(count)[0];
+    const pagination = createAdminQueuePagination(countRow ? uintAt(countRow, 0) : 0, page);
+    const result = await execute(
       `
 DECLARE $deleted_status AS Utf8;
 DECLARE $pending_status AS Utf8;
 DECLARE $in_progress_status AS Utf8;
+DECLARE $limit AS Uint64;
+DECLARE $offset AS Uint64;
 SELECT ${generationRequestColumns()}
 FROM ${TABLES.generationRequests} AS r
 LEFT JOIN ${TABLES.generationRequestImages} AS i
@@ -160,18 +183,20 @@ ORDER BY
     WHEN r.status = $in_progress_status THEN 0
     ELSE 1
   END,
-  r.created_at DESC
-LIMIT 200;
+  r.created_at DESC, r.id ASC
+LIMIT $limit OFFSET $offset;
       `,
       {
         $deleted_status: TypedValues.utf8("deleted"),
         $pending_status: TypedValues.utf8("pending"),
         $in_progress_status: TypedValues.utf8("in_progress"),
+        $limit: TypedValues.uint64(pagination.pageSize),
+        $offset: TypedValues.uint64((pagination.page - 1) * pagination.pageSize),
       },
-    ),
-  );
-
-  return withRequesterProfiles(rowsFromResult(result).map(parseGenerationRequestRow));
+    );
+    return { rows: rowsFromResult(result).map(parseGenerationRequestRow), pagination };
+  });
+  return { items: await withRequesterProfiles(rows), pagination };
 }
 
 export async function listGenerationRequestsForUser(

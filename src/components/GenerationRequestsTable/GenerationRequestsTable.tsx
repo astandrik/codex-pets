@@ -169,11 +169,6 @@ export function GenerationRequestsTable({ rows }: GenerationRequestsTableProps) 
 
   return (
     <Flex direction="column" gap={3} className="generation-requests-table">
-      <Flex justifyContent="flex-end">
-        <Text variant="caption-2" color="secondary">
-          {rows.length} {rows.length === 1 ? "request" : "requests"}
-        </Text>
-      </Flex>
       <Table
         data={rows}
         columns={columns}

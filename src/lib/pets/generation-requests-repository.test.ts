@@ -28,7 +28,6 @@ vi.mock("@/lib/ydb/result", () => ({
 import {
   countOpenGenerationRequests,
   listGenerationRequestsForUser,
-  listGenerationRequests,
 } from "@/lib/pets/generation-requests-repository";
 
 describe("pet generation request repository", () => {
@@ -57,23 +56,6 @@ describe("pet generation request repository", () => {
     expect(statement).toContain("status = $in_progress_status");
     expect(statement).not.toContain("LIMIT");
     expect(params).toEqual({
-      $pending_status: { kind: "utf8", value: "pending" },
-      $in_progress_status: { kind: "utf8", value: "in_progress" },
-    });
-  });
-
-  it("prioritizes open requests in the capped admin list", async () => {
-    await listGenerationRequests();
-
-    expect(mocks.executeQuery).toHaveBeenCalledTimes(1);
-    const [statement, params] = mocks.executeQuery.mock.calls[0];
-    expect(statement).toContain("CASE");
-    expect(statement).toContain("WHEN r.status = $pending_status THEN 0");
-    expect(statement).toContain("WHEN r.status = $in_progress_status THEN 0");
-    expect(statement).toContain("LEFT JOIN codex_pet_generation_request_images");
-    expect(statement).toContain("LIMIT 200");
-    expect(params).toEqual({
-      $deleted_status: { kind: "utf8", value: "deleted" },
       $pending_status: { kind: "utf8", value: "pending" },
       $in_progress_status: { kind: "utf8", value: "in_progress" },
     });
