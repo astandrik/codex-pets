@@ -39,7 +39,7 @@ interface Service {
  failBaseAttempt(job:GenerationJob,token:string,error:GenerationError):Promise<unknown>;
  recordRowAttemptFailure(job:GenerationJob,stage:StageName,attempt:1|2,error:GenerationError):Promise<unknown>;
  saveCardMetadata(job:GenerationJob,result:CardMetadataResult):Promise<unknown>;
- failCardMetadata(job:GenerationJob,code:string):Promise<unknown>;
+ failCardMetadata(job:GenerationJob,code:string,origin?:"provider"):Promise<unknown>;
 }
 export function attachResultJournal<T extends Service>(service:T,store:GenerationStore,durability:ResultDurability):T{
  const original={...service},now=durability.now??Date.now;
@@ -111,7 +111,7 @@ export function attachResultJournal<T extends Service>(service:T,store:Generatio
   async authorizeCardMetadata(job:GenerationJob){
    const operation=`card:${job.cardMetadata?.requestHash}`;metadataPreflightRejected.delete(job);await reserve(job,operation,operation);
    try{return await original.authorizeCardMetadata(job);}catch(error){
-    if(error instanceof GenerationError&&["budget_exhausted","generation_disabled"].includes(error.code))metadataPreflightRejected.add(job);
+    if(error instanceof GenerationError&&["budget_exhausted","generation_disabled","metadata_unavailable"].includes(error.code))metadataPreflightRejected.add(job);
     throw error;
    }
   },
@@ -143,16 +143,16 @@ export function attachResultJournal<T extends Service>(service:T,store:Generatio
   async failAnimationAttempt(job:GenerationJob,stage:Parameters<typeof latestAnimationAttempt>[1],token:string,error:GenerationError){return save(job,`attempt:${token}`,`failed-attempt:${token}`,failure(error),()=>original.failAnimationAttempt(job,stage,token,error));},
   async failBaseAttempt(job:GenerationJob,token:string,error:GenerationError){return save(job,`base-attempt:${token}`,`base-failure:${token}`,failure(error),()=>original.failBaseAttempt(job,token,error));},
   async recordRowAttemptFailure(job:GenerationJob,stage:StageName,attempt:1|2,error:GenerationError){return save(job,operationFor(job,stage),`failure:${stage}:${attempt}`,failure(error),()=>original.recordRowAttemptFailure(job,stage,attempt,error));},
-  async failCardMetadata(job:GenerationJob,code:string){
+  async failCardMetadata(job:GenerationJob,code:string,origin?:"provider"){
    const operation=`card:${job.cardMetadata?.requestHash}`,key=journalKey({jobId:job.id,operationKey:operation});
    let identity:JournalIdentity;
-   try{identity=await durability.journal.reservationIdentity(key);}catch(error){if(error&&typeof error==="object"&&"code" in error&&error.code==="ENOENT")return original.failCardMetadata(job,code);throw error;}
+   try{identity=await durability.journal.reservationIdentity(key);}catch(error){if(error&&typeof error==="object"&&"code" in error&&error.code==="ENOENT")return original.failCardMetadata(job,code,origin);throw error;}
    const retained=await durability.journal.read(key,now());
-   if(retained?.outcomeKind==="metadata")return original.failCardMetadata(job,code);
+   if(retained?.outcomeKind==="metadata")return original.failCardMetadata(job,code,origin);
    const unsent=await store.transaction(async tx=>{const state=await scheduler(tx,now());return isTaskScheduler(state)&&state.providerSlots.some(s=>s.jobId===job.id&&s.leaseId===job.workerLeaseId&&s.dispatched===false);});
-   if(unsent||metadataPreflightRejected.has(job)){const result=await original.failCardMetadata(job,code);await durability.journal.releaseUnsent(key,identity);return result;}
+   if(unsent||metadataPreflightRejected.has(job)){const result=await original.failCardMetadata(job,code,origin);await durability.journal.releaseUnsent(key,identity);return result;}
    const error=new GenerationError(code);
-   return save(job,operation,`card-failure:${job.cardMetadata?.requestHash}`,failure(error),()=>original.failCardMetadata(job,code));
+   return save(job,operation,`card-failure:${job.cardMetadata?.requestHash}`,failure(error),()=>original.failCardMetadata(job,code,origin));
   },
   async saveCardMetadata(job:GenerationJob,result:CardMetadataResult){const operation=`card:${job.cardMetadata?.requestHash}`;return save(job,operation,operation,{kind:"metadata",result},()=>original.saveCardMetadata(job,result));},
  });

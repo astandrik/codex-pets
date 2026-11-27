@@ -13,7 +13,7 @@ import { taskFixture } from "./task-pool.test-utils";
 import { createSpriteGenerationWorker } from "./sprite-worker";
 import { createGenerationService } from "./service";
 import { MemoryStore } from "./test-store";
-import { LEASE_MS } from "./model";
+import { LEASE_MS, type TaskScheduler } from "./model";
 
 const frames = Array(4).fill("data:image/png;base64,YQ==");
 // Captured from the pre-PR provider at 490f487, not derived from current instructions.
@@ -176,6 +176,103 @@ describe("metadata policy and unsent journal recovery", () => {
     f.clock.now += LEASE_MS + 1;
     await expect(f.service.deferUnsentCardMetadata(job)).rejects.toMatchObject({ code: "stale_worker" });
     expect(await f.journal.list()).toEqual([key]);
+  });
+
+  it("confirms the journaled provider failure while releasing only its own permit", async () => {
+    const f = await fixture(5);
+    const job = await f.claim();
+    await f.service.authorizeCardMetadata(job);
+    await f.service.failCardMetadata(job, "outcome_unknown", "provider");
+    await f.service.completeTask(job);
+    expect(await f.run("package")).toBe("completed");
+
+    const receipt = JSON.parse(f.store.ledger.get("generation-results:" + job.id)!.value);
+    expect(receipt.results["card-failure:" + job.cardMetadata!.requestHash]).toMatch(/^[a-f0-9]{64}$/);
+    expect(await f.journal.list()).toEqual([]);
+    const state = JSON.parse(f.store.ledger.get("scheduler")!.value);
+    expect(state.providerSlots).toEqual(f.historical);
+    expect(state.pauseReason).toBeUndefined();
+    expect(JSON.parse(f.store.ledger.get("budget")!.value).reservations[job.id].unknown).toBe(true);
+    expect(f.counts).toEqual({images: 12, metadata: 0, packages: 1});
+  });
+
+  it.each([
+    {expired: false, delay: "job read"},
+    {expired: false, delay: "receipt read"},
+    {expired: true, delay: "receipt read"},
+    {expired: false, delay: "scheduler write"},
+    {expired: true, delay: "cooldown write"},
+  ])("retains the dispatched metadata permit when the lease ends during $delay (expired=$expired)", async ({expired, delay}) => {
+    const f = await fixture(5);
+    if (expired) f.clock.now = f.target.expiresAt - LEASE_MS + 10;
+    const job = await f.claim();
+    await f.service.authorizeCardMetadata(job);
+    f.clock.now = job.leaseUntil! - 1;
+    if (expired) await f.store.cleanup(f.clock.now);
+
+    const receiptKey = "generation-results:" + job.id;
+    const priorReceipt = f.store.ledger.get(receiptKey);
+    const scheduler = (): TaskScheduler => JSON.parse(f.store.ledger.get("scheduler")!.value);
+    const slots = scheduler().providerSlots;
+    const [journalKey] = await f.journal.list();
+    let crossedDeadline = false;
+    function delayOperation(point: string) {
+      if (delay === point && !crossedDeadline) {
+        f.clock.now += 2;
+        crossedDeadline = true;
+      }
+    }
+    const transaction = f.store.transaction.bind(f.store);
+    vi.spyOn(f.store, "transaction").mockImplementation(run => transaction(tx => run({...tx,
+      getJob: async id => {
+        const value = await tx.getJob(id);
+        if (id === job.id) delayOperation("job read");
+        return value;
+      },
+      getLedger: async (key, now) => {
+        const value = await tx.getLedger(key, now);
+        if (key === receiptKey) delayOperation("receipt read");
+        return value;
+      },
+      putLedger: async (key, value, expiresAt) => {
+        await tx.putLedger(key, value, expiresAt);
+        if (key === "scheduler") delayOperation("scheduler write");
+        if (key === "card-metadata-cooldown") delayOperation("cooldown write");
+      },
+    })));
+
+    await expect(f.service.failCardMetadata(job, "outcome_unknown", "provider")).rejects.toMatchObject({code: "stale_worker"});
+    expect(crossedDeadline).toBe(true);
+    expect(scheduler().providerSlots).toEqual(slots);
+    expect(f.store.ledger.get(receiptKey)).toEqual(priorReceipt);
+    expect(f.store.ledger.has("card-metadata-cooldown")).toBe(false);
+    expect(await f.journal.list()).toEqual([journalKey]);
+
+    await f.run("replacement");
+    expect(scheduler()).toMatchObject({pauseReason: "outcome_unknown"});
+    expect(scheduler().providerSlots).toContainEqual(expect.objectContaining({
+      jobId: job.id, leaseId: job.workerLeaseId, unknown: true,
+    }));
+    expect(JSON.parse(f.store.ledger.get("budget")!.value).reservations[job.id].unknown).toBe(true);
+    await expect(f.service.generate({requestId: randomUUID(), prompt: "Fresh peer"}, "203.0.113.12"))
+      .rejects.toMatchObject({code: "generation_paused"});
+  });
+
+  it("replays a finalized expired metadata failure receipt after its lease is gone", async () => {
+    const f = await fixture(5);
+    f.clock.now = f.target.expiresAt - 10;
+    const job = await f.claim();
+    await f.service.authorizeCardMetadata(job);
+    f.clock.now += 20;
+    await f.store.cleanup(f.clock.now);
+    await expect(f.service.failCardMetadata(job, "outcome_unknown", "provider")).rejects.toMatchObject({code: "generation_expired"});
+    await f.service.finishExpiredGeneration(job, false);
+
+    const ledger = structuredClone(f.store.ledger);
+    f.clock.now += 1000;
+    await expect(f.service.failCardMetadata(job, "outcome_unknown", "provider")).rejects.toMatchObject({code: "generation_expired"});
+    expect(f.store.ledger).toEqual(ledger);
+    expect(await f.journal.list()).toEqual([]);
   });
 
   it.each([1, 4, 5] as const)("preserves policy %s's unknown permit and journal reservation without another call", async policy => {

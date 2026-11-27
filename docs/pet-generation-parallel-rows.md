@@ -47,11 +47,14 @@ TTL and midnight. Stage records and request hashes enforce no-replay behavior.
 Clearing historical holds requires an explicit, audited operation; deploying
 code does not erase old accounting evidence. Preserve recorded expenses, daily
 attempt counters, grant receipts, failed jobs and a receipt for any released
-unknown balance. Unclassified outcomes and uncertain storage/lease transitions still pause the service until reviewed.
+unknown balance. Unclassified image outcomes and uncertain storage or lease transitions still pause the service until reviewed.
 
 The card request remains sequential and keeps its existing input-size and
 estimated request-cost bounds; those checks allocate no money from the daily
-budget. There is no smaller-batch fallback to fit monetary reservations.
+budget. Once the worker records a returned card metadata error, it releases the
+provider permit and packages the saved images. An ambiguous result preserves the
+unknown-cost marker and defers automatic metadata for new requests by five minutes.
+A new job processed during that interval gets editable fallback fields.
 
 ### Provider responses after task expiry
 
@@ -59,7 +62,8 @@ The 24-hour task and artifact deadline is not extended for an in-flight request.
 A live owning worker may renew only its scheduler lease while draining responses.
 No new provider call is started after task expiry, and expired tasks or artifacts
 are not recreated. Known returned costs are still recorded before the worker
-releases its active slot; unknown outcomes retain their pause and accounting rules.
+releases its active slot. Returned card metadata errors follow the same accounting
+and cooldown rules after expiry, even when there is no package left to build.
 
 The existing ledger stores a `generation-results:<id>` receipt containing result
 fingerprints and the finalizing worker identity, without prompts or image bytes.
