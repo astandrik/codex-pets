@@ -178,6 +178,24 @@ describe("metadata policy and unsent journal recovery", () => {
     expect(await f.journal.list()).toEqual([key]);
   });
 
+  it("confirms the journaled provider failure while releasing only its own permit", async () => {
+    const f = await fixture(5);
+    const job = await f.claim();
+    await f.service.authorizeCardMetadata(job);
+    await f.service.failCardMetadata(job, "outcome_unknown", "provider");
+    await f.service.completeTask(job);
+    expect(await f.run("package")).toBe("completed");
+
+    const receipt = JSON.parse(f.store.ledger.get("generation-results:" + job.id)!.value);
+    expect(receipt.results["card-failure:" + job.cardMetadata!.requestHash]).toMatch(/^[a-f0-9]{64}$/);
+    expect(await f.journal.list()).toEqual([]);
+    const state = JSON.parse(f.store.ledger.get("scheduler")!.value);
+    expect(state.providerSlots).toEqual(f.historical);
+    expect(state.pauseReason).toBeUndefined();
+    expect(JSON.parse(f.store.ledger.get("budget")!.value).reservations[job.id].unknown).toBe(true);
+    expect(f.counts).toEqual({images: 12, metadata: 0, packages: 1});
+  });
+
   it.each([1, 4, 5] as const)("preserves policy %s's unknown permit and journal reservation without another call", async policy => {
     const f = await fixture(policy), job = await f.claim(); await f.service.authorizeCardMetadata(job);
     const key = (await f.journal.list())[0], row = f.store.ledger.get("scheduler")!, state = JSON.parse(row.value);

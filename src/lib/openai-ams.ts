@@ -37,17 +37,25 @@ export function createAMSOpenAIJSONTransport(apiKey: string, proxyURL: string) {
     const socket = await new Promise<tls.TLSSocket>((resolve, reject) => {
       const connect = http.request({ hostname: proxy.hostname, port: proxy.port,
         method: "CONNECT", path: "api.openai.com:443", headers: { Host: "api.openai.com:443" } });
-      const timer = setTimeout(() => connect.destroy(new Error("openai_ams_connect_timeout")), 10_000);
-      connect.once("error", () => { clearTimeout(timer); reject(new Error("openai_ams_proxy_unavailable")); });
+      const connectTimeout = new Error("openai_ams_connect_timeout");
+      const timer = setTimeout(() => connect.destroy(connectTimeout), 10_000);
+      connect.once("error", error => {
+        clearTimeout(timer);
+        reject(error === connectTimeout ? connectTimeout : new Error("openai_ams_proxy_unavailable"));
+      });
       connect.once("connect", (response, raw, head) => {
         clearTimeout(timer);
         if (response.statusCode !== 200 || head.length) {
           raw.destroy(); reject(new Error("openai_ams_proxy_rejected")); return;
         }
         const encrypted = tls.connect({ socket: raw, servername: "api.openai.com", rejectUnauthorized: true });
-        const tlsTimer = setTimeout(() => encrypted.destroy(new Error("openai_ams_tls_timeout")), 10_000);
+        const tlsTimeout = new Error("openai_ams_tls_timeout");
+        const tlsTimer = setTimeout(() => encrypted.destroy(tlsTimeout), 10_000);
         encrypted.once("secureConnect", () => { clearTimeout(tlsTimer); resolve(encrypted); });
-        encrypted.once("error", () => { clearTimeout(tlsTimer); reject(new Error("openai_ams_tls_failed")); });
+        encrypted.once("error", error => {
+          clearTimeout(tlsTimer);
+          reject(error === tlsTimeout ? tlsTimeout : new Error("openai_ams_tls_failed"));
+        });
       });
       connect.end();
     });

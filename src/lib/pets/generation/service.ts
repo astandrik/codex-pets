@@ -42,6 +42,9 @@ import {finishExpiredGeneration, persistResult, recordExpiredResult, recordResul
 import {createBaseReviewService, readSavedGenerationBase} from "@/lib/pets/generation/base-review";
 import {normalizeSavedGenerationBase} from "@/lib/pets/generation/reference-image";
 
+const CARD_METADATA_COOLDOWN_KEY = "card-metadata-cooldown";
+const CARD_METADATA_COOLDOWN_MS = 5 * 60 * 1000;
+
 export function createGenerationService(store: GenerationStore, options: {
   enabled: () => boolean;
   secret: () => string;
@@ -534,6 +537,7 @@ export function createGenerationService(store: GenerationStore, options: {
         if(!options.enabled())throw new GenerationError("generation_disabled");
         if(state.pauseReason)throw new GenerationError("generation_paused");
         if(current.status!=="processing"||current.cardMetadata?.state!=="inflight"||current.cardMetadata.requestHash!==job.cardMetadata?.requestHash)throw new GenerationError("metadata_already_started");
+        if(await tx.getLedger(CARD_METADATA_COOLDOWN_KEY,now))throw new GenerationError("metadata_unavailable");
         await checkStageBudget(tx,job.id,now,budgetUsd());
           return tryStartProviderOperation(tx,state,current,`card:${current.cardMetadata.requestHash}`,clock());
       });
@@ -574,24 +578,56 @@ export function createGenerationService(store: GenerationStore, options: {
         await tx.putJob(updated);const lease=activeLease(state,job.id,job.workerLeaseId);if(lease)lease.inflight=false;await saveScheduler(tx,state);return updated;
       }));
     },
-    async failCardMetadata(job:GenerationJob,code:string){
-      const error:NonNullable<CardMetadataRecord["error"]>=code==="provider_rejected"||code==="outcome_unknown"||code==="budget_exhausted"||code==="generation_disabled"?code:"metadata_unavailable";
-      const receipt={key:`card-failure:${job.cardMetadata?.requestHash}`,fingerprint:createHash("sha256").update(error).digest("hex")};
-      return persistResult(job,clock,()=>store.transaction(async tx=>{
-        const state=await scheduler(tx,clock());let now=clock();
-        if(await recordExpiredResult(tx,state,job,now,receipt,error==="outcome_unknown"?undefined:{costUsd:0},"card"))return null;
-        const current=await requireJobWithActiveWorkerLease(tx,state,job,now),card=current.cardMetadata;
-        now=clock();
-        if(await recordExpiredResult(tx,state,job,now,receipt,error==="outcome_unknown"?undefined:{costUsd:0},"card"))return null;
-        if(!card||current.status!=="processing")throw new GenerationError("metadata_already_started");
-        if(card.state==="completed"||card.state==="failed")return current;
-        if(card.requestHash)await recordResultCost(tx,job,now,receipt,error==="outcome_unknown"?undefined:{costUsd:0},"card");
-        else await recordStageCost(tx,job.id,now,error==="outcome_unknown"?undefined:{costUsd:0},"card");
-        if(error==="outcome_unknown")state.pauseReason="outcome_unknown";
-          await settleProviderOperation(tx,state,current,`card:${card.requestHash}`,error==="outcome_unknown");
-        const updated={...current,cardMetadata:{...card,state:"failed" as const,error,fields:{description:CARD_METADATA_FALLBACK,tags:[]}}};
-        await tx.putJob(updated);const lease=activeLease(state,job.id,job.workerLeaseId);if(lease)lease.inflight=false;await saveScheduler(tx,state);return updated;
-      }),new GenerationError(error==="outcome_unknown"?"outcome_unknown":"generation_expired"));
+    async failCardMetadata(job: GenerationJob, code: string, origin?: "provider") {
+      const error: NonNullable<CardMetadataRecord["error"]> =
+        code === "provider_rejected" || code === "outcome_unknown" || code === "budget_exhausted" || code === "generation_disabled" ? code : "metadata_unavailable";
+      const requestHash = job.cardMetadata?.requestHash;
+      const operation = `card:${requestHash}`;
+      const receipt = {key: `card-failure:${requestHash}`, fingerprint: createHash("sha256").update(error).digest("hex")};
+      const usage = error === "outcome_unknown" ? undefined : {costUsd: 0};
+      const providerOutcomeUnknown = error === "outcome_unknown" && origin === "provider" &&
+        job.cardMetadata?.state === "inflight" && requestHash !== undefined;
+
+      return persistResult(job, clock, () => store.transaction(async tx => {
+        const state = await scheduler(tx, clock());
+        const coolDownMetadata = (now: number) => tx.putLedger(CARD_METADATA_COOLDOWN_KEY, error, now + CARD_METADATA_COOLDOWN_MS);
+
+        async function recordAfterExpiry(now: number) {
+          if (!await recordExpiredResult(tx, state, job, now, receipt, usage, "card")) return false;
+          const lease = activeLease(state, job.id, job.workerLeaseId);
+          if (providerOutcomeUnknown && lease?.owner === job.worker && lease.until > now &&
+              (!isParallelScheduler(state) || lease.leaseId === job.workerLeaseId)) {
+            await settleProviderOperation(tx, state, job, operation);
+            await coolDownMetadata(now);
+          }
+          return true;
+        }
+
+        let now = clock();
+        if (await recordAfterExpiry(now)) return null;
+        const current = await requireJobWithActiveWorkerLease(tx, state, job, now);
+        const card = current.cardMetadata;
+        now = clock();
+        if (await recordAfterExpiry(now)) return null;
+        if (!card || current.status !== "processing") throw new GenerationError("metadata_already_started");
+        if (card.state === "completed" || card.state === "failed") return current;
+        if (card.requestHash) await recordResultCost(tx, job, now, receipt, usage, "card");
+        else await recordStageCost(tx, job.id, now, usage, "card");
+
+        // A returned provider error can leave unknown spending without an open connection or an ambiguous write.
+        const isolated = providerOutcomeUnknown && card.state === "inflight" && card.requestHash === requestHash;
+        const pauseQueue = error === "outcome_unknown" && !isolated;
+        if (pauseQueue) state.pauseReason = "outcome_unknown";
+        if (isolated) await coolDownMetadata(now);
+        await settleProviderOperation(tx, state, current, `card:${card.requestHash}`, pauseQueue);
+
+        const updated = {...current, cardMetadata: {...card, state: "failed" as const, error, fields: {description: CARD_METADATA_FALLBACK, tags: []}}};
+        await tx.putJob(updated);
+        const lease = activeLease(state, job.id, job.workerLeaseId);
+        if (lease) lease.inflight = false;
+        await saveScheduler(tx, state);
+        return updated;
+      }), new GenerationError(error === "outcome_unknown" && !providerOutcomeUnknown ? "outcome_unknown" : "generation_expired"));
     },
     async saveSource(job: GenerationJob, bytes: Buffer, metadata: { usage?: ImageUsage; providerRequestId?: string; generationMs: number }) {
       return persistResult(job,clock,()=>store.transaction(async (tx) => {

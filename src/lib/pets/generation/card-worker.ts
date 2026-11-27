@@ -1,11 +1,17 @@
 import {currentWorkerContext,setWorkerPhase} from "@/lib/pets/generation/worker-diagnostics";
 import {WorkerYield} from "@/lib/pets/generation/scheduler";
 import { GenerationError, type GenerationJob } from "@/lib/pets/generation/model";
-import type { GenerationCardProvider } from "@/lib/pets/generation/card-provider";
+import type { CardMetadataResult, GenerationCardProvider } from "@/lib/pets/generation/card-provider";
 import type { createGenerationService } from "@/lib/pets/generation/service";
 import type { GenerationStore } from "@/lib/pets/generation/store";
 
 type Service = ReturnType<typeof createGenerationService>;
+
+function cardFailureCode(error: unknown): string {
+  if (error instanceof WorkerYield || (error instanceof GenerationError && ["stale_worker", "generation_expired"].includes(error.code))) throw error;
+  if (error instanceof GenerationError && ["provider_rejected", "metadata_unavailable", "budget_exhausted", "generation_disabled"].includes(error.code)) return error.code;
+  return "outcome_unknown";
+}
 
 export async function prepareGeneratedCard(
   job: GenerationJob,
@@ -57,7 +63,12 @@ export async function prepareGeneratedCard(
     checkLease();
     if (stopping()) {await service.deferUnsentCardMetadata(job); throw new WorkerYield();}
     setWorkerPhase(currentWorkerContext(),"provider",job);
-    const response = await provider.generate(request);
+    let response: CardMetadataResult;
+    try {
+      response = await provider.generate(request);
+    } catch (error) {
+      return service.failCardMetadata(job, cardFailureCode(error), "provider");
+    }
     try {
       return await service.saveCardMetadata(job, response);
     } catch (error) {
@@ -73,10 +84,7 @@ export async function prepareGeneratedCard(
       return service.failCardMetadata(job, "outcome_unknown");
     }
   } catch (error) {
-    if (error instanceof WorkerYield || (error instanceof GenerationError && ["stale_worker", "generation_expired"].includes(error.code))) throw error;
-    const knownFailure = error instanceof GenerationError &&
-      ["provider_rejected", "metadata_unavailable", "budget_exhausted", "generation_disabled"].includes(error.code);
-    return service.failCardMetadata(job, knownFailure ? error.code : "outcome_unknown");
+    return service.failCardMetadata(job, cardFailureCode(error));
   }
 }
 

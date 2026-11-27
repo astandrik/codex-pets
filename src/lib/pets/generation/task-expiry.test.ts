@@ -1,6 +1,6 @@
 import {afterEach, expect, it, vi} from "vitest";
 import {taskFixture} from "./task-pool.test-utils";
-import {GenerationError, moscowDay} from "./model";
+import {GenerationError, moscowDay, STAGE_NAMES} from "./model";
 import {createSpriteGenerationWorker} from "./sprite-worker";
 import {randomUUID} from "node:crypto";
 
@@ -76,6 +76,43 @@ it.each(["success", "rejected", "unknown"])("finishes an expired %s provider res
   const budget = JSON.parse(f.store.ledger.get("budget")!.value);
   expect(budget.reservations[f.jobs[0].id]?.unknown).toBe(outcome === "unknown" ? true : undefined);
   expect(budget.spent[moscowDay(f.clock.now)] ?? 0).toBe(outcome === "success" ? 20_000 : outcome === "rejected" ? 10_000 : 0);
+});
+
+it("accounts an expired metadata failure while allowing a fresh image to start", async () => {
+  const f = await taskFixture(1);
+  f.saved(0, STAGE_NAMES);
+  const target = f.store.jobs.get(f.jobs[0].id)!;
+  target.status = "processing";
+  target.cardMetadata = {policy: 5, state: "pending", revision: 0, edited: false};
+  f.clock.now = target.expiresAt - 10;
+  f.store.artifacts.set(target.id + ":source.png", {bytes: Buffer.from("atlas"), expiresAt: target.expiresAt});
+  const scheduler = f.store.ledger.get("scheduler")!;
+  scheduler.expiresAt += 60_000;
+  scheduler.value = JSON.stringify({...JSON.parse(scheduler.value), queue: [target.id]});
+  const {buildCardMetadataRequest} = await import("./card-provider");
+  const metadata = vi.fn(async () => {
+    f.clock.now += 20;
+    await f.store.cleanup(f.clock.now);
+    throw new GenerationError("outcome_unknown");
+  });
+  const worker = createSpriteGenerationWorker({
+    service: f.service, store: f.store, now: () => f.clock.now,
+    cardProvider: {
+      prepare: async job => buildCardMetadataRequest(job, Array(4).fill("data:image/png;base64,YQ==")),
+      generate: metadata,
+    },
+    renderer: {open: async () => ({prepare: async () => {}, cleanup: async () => {}, compose: async () => Buffer.from("atlas"),
+      generate: async stage => ({bytes:Buffer.from(stage),generationMs:1,usage})})},
+    build: async () => ({"pet.zip": Buffer.from("zip")}),
+  });
+
+  expect(await worker("metadata")).toBe("failed");
+  expect(await f.store.readJob(target.id)).toBeNull();
+  expect(JSON.parse(f.store.ledger.get("budget")!.value).reservations[target.id].unknown).toBe(true);
+  const peer = await f.service.generate({requestId:randomUUID(),prompt:"Fresh peer"}, "203.0.113.12");
+  expect(await worker("peer")).toBe("yielded");
+  expect((await f.store.readJob(peer.generationId))?.stages).toMatchObject([{name: "base", status: "completed"}]);
+  expect(metadata).toHaveBeenCalledTimes(1);
 });
 
 it("rechecks retention after a slow claim read and starts the fresh peer instead", async () => {

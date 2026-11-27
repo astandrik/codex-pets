@@ -1,3 +1,4 @@
+import {randomUUID} from "node:crypto";
 import {afterEach, expect, it, vi} from "vitest";
 import {taskFixture} from "./task-pool.test-utils";
 import {STAGE_NAMES} from "./model";
@@ -161,22 +162,87 @@ it("requeues an unacknowledged pre-dispatch failure without spending or changing
   f.clock.now+=5000;expect(await run("next")).toBe("yielded");expect(calls).toBe(1);
   expect(f.store.jobs.get(target.id)).toMatchObject({id:target.id,expiresAt:target.expiresAt});
 });
-it("packages a saved atlas after uncertain metadata without retrying or freeing its unknown permit",async()=>{
-  const f=await taskFixture(1);f.saved(0,STAGE_NAMES);
-  const target=f.store.jobs.get(f.jobs[0].id)!;target.status="processing";target.cardMetadata={policy:1,state:"pending",revision:0,edited:false};
-  f.store.artifacts.set(`${target.id}:source.png`,{bytes:Buffer.from("atlas"),expiresAt:target.expiresAt});
-  const row=f.store.ledger.get("scheduler")!;row.value=JSON.stringify({...JSON.parse(row.value),queue:[target.id]});
-  const {buildCardMetadataRequest}=await import("./card-provider");const {GenerationError}=await import("./model");let calls=0,packages=0;
-  const run=createSpriteGenerationWorker({service:f.service,store:f.store,now:()=>f.clock.now,
-    cardProvider:{prepare:async job=>buildCardMetadataRequest(job,Array(4).fill("data:image/png;base64,YQ==")),generate:async()=>{calls++;throw new GenerationError("outcome_unknown");}},
-    renderer:{open:async()=>{throw Error("No image regeneration");}},build:async()=>{packages++;return {"pet.zip":Buffer.from("zip")};}});
-  for(let i=0;i<5&&f.store.jobs.get(target.id)?.status!=="completed";i++){await run("worker");f.clock.now+=250;}
-  expect(f.store.jobs.get(target.id)).toMatchObject({status:"completed",cardMetadata:{state:"failed",error:"outcome_unknown"}});
-  expect(calls).toBe(1);expect(packages).toBe(1);
-  const state=JSON.parse(f.store.ledger.get("scheduler")!.value);
-  expect(state.pauseReason).toBe("outcome_unknown");expect(state.providerSlots).toHaveLength(1);expect(state.providerSlots[0].unknown).toBe(true);
+it("keeps the image queue open when a metadata call returns an unknown outcome", async () => {
+  const f = await taskFixture(1);
+  f.saved(0, STAGE_NAMES);
+  const target = f.store.jobs.get(f.jobs[0].id)!;
+  target.status = "processing";
+  target.cardMetadata = {policy: 5, state: "pending", revision: 0, edited: false};
+  f.store.artifacts.set(target.id + ":source.png", {bytes: Buffer.from("atlas"), expiresAt: target.expiresAt});
+  const scheduler = f.store.ledger.get("scheduler")!;
+  scheduler.value = JSON.stringify({...JSON.parse(scheduler.value), queue: [target.id]});
+  const {buildCardMetadataRequest} = await import("./card-provider");
+  const {GenerationError} = await import("./model");
+  const metadata = vi.fn(async () => {throw new GenerationError("outcome_unknown");});
+  const image = vi.fn(async (stage: string) => ({bytes: Buffer.from(stage), generationMs: 1}));
+  const run = createSpriteGenerationWorker({
+    service: f.service,
+    store: f.store,
+    now: () => f.clock.now,
+    cardProvider: {
+      prepare: async job => buildCardMetadataRequest(job, Array(4).fill("data:image/png;base64,YQ==")),
+      generate: metadata,
+    },
+    renderer: {open: async () => ({prepare: async () => {}, cleanup: async () => {}, compose: async () => Buffer.from("atlas"), generate: image})},
+    build: async () => ({"pet.zip": Buffer.from("zip")}),
+  });
+
+  expect(await run("metadata-worker")).toBe("yielded");
+  expect(await run("package-worker")).toBe("completed");
+  expect(await f.service.get(target.id)).toMatchObject({status: "completed", metadata: {automaticState: "failed", editable: true}});
+  expect(await f.store.readArtifact(target.id, "pet.zip", f.clock.now)).toEqual(Buffer.from("zip"));
+  expect(metadata).toHaveBeenCalledTimes(1);
+  expect(image).not.toHaveBeenCalled();
   expect(JSON.parse(f.store.ledger.get("budget")!.value).reservations[target.id].unknown).toBe(true);
+
+  const accepted = await f.service.generate({prompt: "Another synthetic pet", requestId: randomUUID()}, "203.0.113.22");
+  await run("image-worker");
+  expect((await f.store.readJob(accepted.generationId))?.stages).toMatchObject([{name: "base", status: "completed"}]);
+  expect(image).toHaveBeenCalledExactlyOnceWith("base");
+  expect(metadata).toHaveBeenCalledTimes(1);
 });
+it("temporarily skips new metadata calls after an unknown request outcome", async () => {
+  const f = await taskFixture(1);
+  const targets = f.jobs.map((job, index) => {
+    f.saved(index, STAGE_NAMES);
+    const target = f.store.jobs.get(job.id)!;
+    target.status = "processing";
+    target.cardMetadata = {policy: 5, state: "pending", revision: 0, edited: false};
+    f.store.artifacts.set(target.id + ":source.png", {bytes: Buffer.from("atlas"), expiresAt: target.expiresAt});
+    return target;
+  });
+  const {buildCardMetadataRequest} = await import("./card-provider");
+  const {GenerationError} = await import("./model");
+  const metadata = vi.fn(async () => ({
+    fields: {displayName: "Bluebell", description: "A blue trolleybus.", tags: ["blue", "cartoon", "vehicle"]},
+    responseHash: "a".repeat(64), costUsd: .002, inputTokens: 20, outputTokens: 10,
+  })).mockRejectedValueOnce(new GenerationError("outcome_unknown"));
+  const worker = createSpriteGenerationWorker({
+    service: f.service, store: f.store, now: () => f.clock.now,
+    cardProvider: {
+      prepare: async job => buildCardMetadataRequest(job, Array(4).fill("data:image/png;base64,YQ==")),
+      generate: metadata,
+    },
+    renderer: {open: async () => {throw Error("Saved atlases must not be regenerated");}},
+    build: async () => ({"pet.zip": Buffer.from("zip")}),
+  });
+  const processCard = async (index: number) => {
+    const scheduler = f.store.ledger.get("scheduler")!;
+    scheduler.value = JSON.stringify({...JSON.parse(scheduler.value), queue: [targets[index].id]});
+    expect(await worker("metadata")).toBe("yielded");
+    expect(await worker("packager")).toBe("completed");
+    return f.service.get(targets[index].id);
+  };
+
+  expect((await processCard(0)).metadata?.automaticState).toBe("failed");
+  expect((await processCard(1)).metadata?.automaticState).toBe("failed");
+  expect(metadata).toHaveBeenCalledTimes(1);
+
+  f.clock.now += 5 * 60_000;
+  expect((await processCard(2)).metadata).toMatchObject({automaticState: "completed", description: "A blue trolleybus."});
+  expect(metadata).toHaveBeenCalledTimes(2);
+});
+
 it("packages the saved atlas when the budget blocks optional metadata",async()=>{
   const f=await taskFixture(1, false, 50);f.saved(0,STAGE_NAMES);
   const target=f.store.jobs.get(f.jobs[0].id)!;target.status="processing";target.cardMetadata={policy:1,state:"pending",revision:0,edited:false};

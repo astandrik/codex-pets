@@ -7,6 +7,7 @@ import {METADATA_MAX_OUTPUT_TOKENS,metadataReserveUSD,parseMetadataResponse} fro
 import {extractPetVisionFrames} from "@/lib/pets/search/search-vision-frames";
 import {validateGeneratedSheet} from "@/lib/pets/generation/package";
 import {GenerationError,type GenerationJob} from "@/lib/pets/generation/model";
+import {currentWorkerContext} from "@/lib/pets/generation/worker-diagnostics";
 import {CARD_METADATA_MAX_ESTIMATED_MICRO_USD,CARD_METADATA_POLICY,normalizeCardMetadata,type CardMetadataFields,type CardMetadataRecord,cardMetadataFieldsSchema} from "@/lib/pets/generation/card-metadata";
 
 const hash=(value:unknown)=>createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -124,6 +125,33 @@ export function parseCardMetadataResponse(value:unknown, formatName = "generated
   return {fields,responseHash:hash({fields,usage:parsed.usage}),inputTokens:parsed.usage.input_tokens,outputTokens:parsed.usage.output_tokens,costUsd:parsed.estimatedCostBoundUSD};
 }
 export type GenerationCardProvider={prepare(job:GenerationJob,source:Buffer):Promise<CardMetadataRequest>;generate(request:CardMetadataRequest):Promise<CardMetadataResult>};
+// These transport errors occur before a request is written to the OpenAI TLS stream.
+const unsentTransportErrors = new Set([
+  "openai_ams_request_invalid", "openai_ams_proxy_unavailable", "openai_ams_proxy_rejected",
+  "openai_ams_connect_timeout", "openai_ams_tls_failed", "openai_ams_tls_timeout",
+]);
+const responseTransportErrors = new Set(["openai_ams_response_failed", "openai_ams_response_invalid", "openai_ams_outcome_unknown"]);
+const parserErrors = new Set([
+  "metadata_response_invalid", "metadata_usage_invalid", "metadata_response_content_invalid", "metadata_response_json_invalid", "metadata_unavailable",
+]);
+const responseSummary = z.object({
+  status: z.enum(["completed", "incomplete", "failed", "queued", "in_progress", "cancelled"]).optional().catch(undefined),
+  incomplete_details: z.object({reason: z.enum(["max_output_tokens", "content_filter"])}).nullish().catch(undefined),
+});
+
+function logCardProviderFailure(phase: "config" | "transport" | "response", reason: string, httpStatus?: number, response?: unknown) {
+  try {
+    const summary = responseSummary.safeParse(response);
+    const targetHash = currentWorkerContext()?.targetHash;
+    console.warn(JSON.stringify({
+      operation: "pet-generation-metadata-error", phase, reason, httpStatus, targetHash,
+      responseStatus: summary.data?.status, incompleteReason: summary.data?.incomplete_details?.reason,
+    }));
+  } catch {
+    // Logging cannot change the outcome of a paid operation.
+  }
+}
+
 export const generationCardProvider:GenerationCardProvider={
   async prepare(job,source){
     const file=process.env.PET_GENERATION_OPENAI_KEY_FILE;
@@ -132,14 +160,38 @@ export const generationCardProvider:GenerationCardProvider={
     const frames=await extractPetVisionFrames(source);
     return buildCardMetadataRequest(job,frames.frames.map(frame=>frame.dataUrl));
   },
-  async generate(request){
-    let transport:ReturnType<typeof createAMSOpenAIJSONTransport>;
-    try{transport=createAMSOpenAIJSONTransport(readFileSync(process.env.PET_GENERATION_OPENAI_KEY_FILE!,"utf8").trim(),process.env.PET_GENERATION_PROXY_URL??"");}
-    catch{throw new GenerationError("metadata_unavailable");}
-    try{return parseCardMetadataResponse(await transport("responses",request.body), request.body.text.format.name);}
-    catch(error){
-      const code=error instanceof Error?/^openai_ams_http_(4\d\d)$/.exec(error.message)?.[1]:undefined;
-      if(code&&code!=="408")throw new GenerationError("provider_rejected");
+  async generate(request) {
+    let transport: ReturnType<typeof createAMSOpenAIJSONTransport>;
+    try {
+      const key = readFileSync(process.env.PET_GENERATION_OPENAI_KEY_FILE!, "utf8").trim();
+      transport = createAMSOpenAIJSONTransport(key, process.env.PET_GENERATION_PROXY_URL ?? "");
+    } catch {
+      logCardProviderFailure("config", "metadata_unavailable");
+      throw new GenerationError("metadata_unavailable");
+    }
+
+    let response: unknown;
+    try {
+      response = await transport("responses", request.body);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      const http = /^openai_ams_http_([45]\d\d)$/.exec(message);
+      const httpStatus = http ? Number(http[1]) : undefined;
+      const unsent = unsentTransportErrors.has(message);
+      let reason = "transport_error";
+      if (httpStatus !== undefined) reason = "provider_http_error";
+      else if (unsent || responseTransportErrors.has(message)) reason = message;
+      logCardProviderFailure("transport", reason, httpStatus);
+      if (unsent) throw new GenerationError("metadata_unavailable");
+      if (httpStatus && httpStatus < 500 && httpStatus !== 408) throw new GenerationError("provider_rejected");
+      throw new GenerationError("outcome_unknown");
+    }
+
+    try {
+      return parseCardMetadataResponse(response, request.body.text.format.name);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      logCardProviderFailure("response", parserErrors.has(message) ? message : "metadata_fields_invalid", 200, response);
       throw new GenerationError("outcome_unknown");
     }
   },

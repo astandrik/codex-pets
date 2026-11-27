@@ -947,11 +947,19 @@ metadata and image calls may overlap them. Every image task has its own temporar
 workspace. Parent job updates reload current data inside Serializable RW
 transactions, and task lease tokens fence late writes.
 
-An unsent expired lease is recoverable. A dispatched call with an unknown outcome
-retains its permit and unknown-cost marker and pauses new provider work. Local
-failure finalization can still run. Never free such a permit on a timer or clear
-its accounting to make room. Local packaging failures can retry without a provider
-call. Successful siblings finish before a known terminal parent failure.
+An unsent expired lease is recoverable. A lost lease or an unconfirmed checkpoint
+for a dispatched call still pauses new provider work for operator review. Local
+failure finalization can still run. Keep unresolved permits and their accounting
+until reviewed. Local packaging failures can retry without a provider call.
+Successful siblings finish before a known terminal parent failure.
+
+When a card metadata call returns an error and its outcome is committed under the
+owning lease, the worker releases its permit and builds the package with editable
+fallback fields. A connection failure before HTTP dispatch records zero cost.
+An ambiguous returned error retains its unknown-cost marker and skips additional
+card metadata calls for five minutes. Image generation continues during that
+interval, and the failed metadata request is never replayed. The worker logs
+allowlisted failure codes and statuses as `pet-generation-metadata-error`.
 
 Activation is explicit; startup, page reads and tests never migrate production:
 
