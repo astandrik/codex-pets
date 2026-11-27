@@ -591,14 +591,18 @@ export function createGenerationService(store: GenerationStore, options: {
       return persistResult(job, clock, () => store.transaction(async tx => {
         const state = await scheduler(tx, clock());
         const coolDownMetadata = (now: number) => tx.putLedger(CARD_METADATA_COOLDOWN_KEY, error, now + CARD_METADATA_COOLDOWN_MS);
+        // A write can outlast the lease. Recheck after the last await so the transaction rolls back in that case.
+        const requireCurrentLease = () => requireActiveWorkerLease(state, job, clock());
 
         async function recordAfterExpiry(now: number) {
           if (!await recordExpiredResult(tx, state, job, now, receipt, usage, "card")) return false;
           const lease = activeLease(state, job.id, job.workerLeaseId);
-          if (providerOutcomeUnknown && lease?.owner === job.worker && lease.until > now &&
+          if (providerOutcomeUnknown && lease?.owner === job.worker &&
               (!isParallelScheduler(state) || lease.leaseId === job.workerLeaseId)) {
+            requireCurrentLease();
             await settleProviderOperation(tx, state, job, operation);
             await coolDownMetadata(now);
+            requireCurrentLease();
           }
           return true;
         }
@@ -619,6 +623,7 @@ export function createGenerationService(store: GenerationStore, options: {
         const pauseQueue = error === "outcome_unknown" && !isolated;
         if (pauseQueue) state.pauseReason = "outcome_unknown";
         if (isolated) await coolDownMetadata(now);
+        requireCurrentLease();
         await settleProviderOperation(tx, state, current, `card:${card.requestHash}`, pauseQueue);
 
         const updated = {...current, cardMetadata: {...card, state: "failed" as const, error, fields: {description: CARD_METADATA_FALLBACK, tags: []}}};
@@ -626,6 +631,7 @@ export function createGenerationService(store: GenerationStore, options: {
         const lease = activeLease(state, job.id, job.workerLeaseId);
         if (lease) lease.inflight = false;
         await saveScheduler(tx, state);
+        requireCurrentLease();
         return updated;
       }), new GenerationError(error === "outcome_unknown" && !providerOutcomeUnknown ? "outcome_unknown" : "generation_expired"));
     },
